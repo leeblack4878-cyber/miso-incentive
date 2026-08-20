@@ -266,6 +266,15 @@ function emptyDraft() {
 function won(n) { return `${Math.round(n || 0).toLocaleString()}원`; }
 function monthKeyOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function monthLabel(key) { const [y, m] = key.split('-'); return `${y}년 ${parseInt(m, 10)}월`; }
+function formatLastSignIn(iso) {
+  if (!iso) return '기록 없음';
+  const d = new Date(iso);
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+  if (diffDays <= 0) return `오늘 (${dateStr})`;
+  if (diffDays === 1) return `어제 (${dateStr})`;
+  return `${diffDays}일 전 (${dateStr})`;
+}
 function lastMonths(n) {
   const arr = []; const now = new Date();
   for (let i = 0; i < n; i++) arr.push(monthKeyOf(new Date(now.getFullYear(), now.getMonth() - i, 1)));
@@ -734,6 +743,12 @@ export default function App({ authUser, authProfile }) {
       return [];
     }
 
+    let lastSignInMap = {};
+    try {
+      const { data: signIns, error: siErr } = await supabase.rpc('get_last_sign_ins');
+      if (!siErr && signIns) lastSignInMap = Object.fromEntries(signIns.map((s) => [s.id, s.last_sign_in_at]));
+    } catch (e) { /* 매니저 이하 권한이면 빈 값, 무시 */ }
+
     const list = (data || []).map((p) => ({
       id: p.id,
       name: p.name || (p.id === authUser.id ? (authUser.email || '내 계정') : '이름 미설정'),
@@ -742,6 +757,7 @@ export default function App({ authUser, authProfile }) {
       hireDate: p.hire_date || month,
       employeeCode: p.employee_code || '',
       role: p.role || 'employee',
+      lastSignInAt: lastSignInMap[p.id] || null,
     }));
 
     setEmployees(list);
@@ -1882,9 +1898,11 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
 
   const [filterBranch, setFilterBranch] = useState('전체');
   const [sortBy, setSortBy] = useState('hireDesc');
+  const [nameQuery, setNameQuery] = useState('');
 
   const visibleEmployees = employees
     .filter((e) => filterBranch === '전체' || e.branch === filterBranch)
+    .filter((e) => !nameQuery.trim() || e.name.includes(nameQuery.trim()))
     .slice()
     .sort((a, b) => {
       if (sortBy === 'hireDesc') return (b.hireDate || '').localeCompare(a.hireDate || '');
@@ -1924,6 +1942,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
         <button onClick={submit} className="col-span-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold"><UserPlus size={14} /> 직원 추가</button>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
+        <input placeholder="이름 검색" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white w-28" />
         <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
           <option value="전체">전체 매장</option>
           {stores.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -1956,7 +1975,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-medium text-gray-800">{e.name} · {e.position}</div>
-                  <div className="text-[11px] text-gray-400">{e.branch} {e.hireDate ? `· 입사 ${e.hireDate}` : ''}</div>
+                  <div className="text-[11px] text-gray-400">{e.branch} {e.hireDate ? `· 입사 ${e.hireDate}` : ''} · 최종 접속 {formatLastSignIn(e.lastSignInAt)}</div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => startEdit(e)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 text-gray-600">수정</button>
