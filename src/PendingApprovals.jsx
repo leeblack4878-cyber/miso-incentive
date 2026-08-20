@@ -37,11 +37,18 @@ export default function PendingApprovals() {
 
   useEffect(() => { load(); }, [load]);
 
+  const MANAGER_POSITIONS = ['점장', '부점장', '담당'];
+
   const decide = async (id, approve) => {
     setBusyId(id);
     setError('');
+    const target = pending.find((p) => p.id === id);
     const patch = approve
-      ? { status: 'approved', active: true }
+      ? {
+          status: 'approved',
+          active: true,
+          ...(MANAGER_POSITIONS.includes(target?.position) ? { role: 'manager' } : {}),
+        }
       : { status: 'rejected', active: false };
 
     const { error } = await supabase.from('profiles').update(patch).eq('id', id);
