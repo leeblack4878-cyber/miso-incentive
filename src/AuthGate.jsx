@@ -9,7 +9,7 @@ const SIGNUP_STORES = [
   '본오3동_주민센터점', '장곡동_장곡역점', '거모동_도일시장점', '월곶동_월곶점',
   '월피동_성포역점', '광정동_산본점', '고잔동_법조타운점', '은행동_은계사거리점', '본오1동_본오중학교점',
 ];
-const SIGNUP_POSITIONS = ['점장', '부점장', '매니저', '사원'];
+const SIGNUP_POSITIONS = ['담당', '점장', '부점장', '매니저', '사원'];
 
 export default function AuthGate({ children }) {
   const [session, setSession] = useState(null);
@@ -31,7 +31,7 @@ export default function AuthGate({ children }) {
   // 회원가입 전용 필드
   const [suName, setSuName] = useState('');
   const [suStore, setSuStore] = useState(SIGNUP_STORES[0]);
-  const [suPosition, setSuPosition] = useState(SIGNUP_POSITIONS[3]);
+  const [suPosition, setSuPosition] = useState(SIGNUP_POSITIONS[SIGNUP_POSITIONS.length - 1]);
   const [suEmployeeCode, setSuEmployeeCode] = useState('');
   const [suHireDate, setSuHireDate] = useState('');
   const [suPassword2, setSuPassword2] = useState('');
