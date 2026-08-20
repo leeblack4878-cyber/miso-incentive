@@ -40,7 +40,10 @@ const DEFAULT_STORES = [
   '신천동_삼미시장점', '신천동_삼미시장2호점', '본오3동_상록수역점', '대야동_롯데마트점',
   '본오3동_주민센터점', '장곡동_장곡역점', '거모동_도일시장점', '월곶동_월곶점',
   '월피동_성포역점', '광정동_산본점', '고잔동_법조타운점', '은행동_은계사거리점', '본오1동_본오중학교점',
+  '영업지원팀',
 ];
+// 실제 영업을 하지 않는 조직 — 실적표/실적비교/지급 총액 집계에서 제외
+const NON_SALES_STORES = ['운영진', '영업지원팀'];
 
 const DEFAULT_TENURE = [
   { key: 'under6', label: '6개월 미만 (실적무관)', rate: 0 },
@@ -1021,7 +1024,9 @@ export default function App({ authUser, authProfile }) {
   const currentEmp = employees.find((e) => e.id === empId);
   const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config);
-  const totalPay = rows.reduce((s, r) => s + r.pay.total, 0);
+  // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
+  const salesRows = rows.filter((r) => !NON_SALES_STORES.includes(r.branch));
+  const totalPay = salesRows.reduce((s, r) => s + r.pay.total, 0);
   const pendingCount = rows.filter((r) => r.status === 'pending').length;
 
   return (
@@ -1073,10 +1078,11 @@ export default function App({ authUser, authProfile }) {
       ) : (
         <AdminView
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
-          rows={rows} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
+          rows={salesRows} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
           config={config} persistConfig={persistConfig}
           employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
+          isFullAdmin={authProfile?.role === 'admin'}
         />
       )}
     </div>
@@ -1663,17 +1669,22 @@ function RowKV({ label, value, bold }) {
 
 /* ===================== 관리자 화면 ===================== */
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin }) {
+  const TABS = [
+    { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
+    { key: 'compare', label: '실적 비교', icon: Layers },
+    { key: 'employees', label: '직원 관리', icon: Users },
+    ...(isFullAdmin ? [{ key: 'rates', label: '지급기준 관리', icon: Settings }] : []),
+  ];
+  useEffect(() => {
+    if (adminTab === 'rates' && !isFullAdmin) setAdminTab('dashboard');
+  }, [adminTab, isFullAdmin]); // eslint-disable-line
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-5">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex bg-white border border-gray-200 rounded-lg p-0.5 flex-wrap">
-          {[
-            { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-            { key: 'compare', label: '실적 비교', icon: Layers },
-            { key: 'employees', label: '직원 관리', icon: Users },
-            { key: 'rates', label: '지급기준 관리', icon: Settings },
-          ].map((n) => (
+          {TABS.map((n) => (
             <button key={n.key} onClick={() => setAdminTab(n.key)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${adminTab === n.key ? 'bg-violet-600 text-white' : 'text-gray-500'}`}>
               <n.icon size={14} /> {n.label}
             </button>
@@ -1733,7 +1744,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} />
       )}
 
-      {adminTab === 'rates' && (
+      {adminTab === 'rates' && isFullAdmin && (
         <RatesManager config={config} persistConfig={persistConfig} />
       )}
     </div>
