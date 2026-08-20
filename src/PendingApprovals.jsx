@@ -48,6 +48,7 @@ export default function PendingApprovals() {
           status: 'approved',
           active: true,
           ...(MANAGER_POSITIONS.includes(target?.position) ? { role: 'manager' } : {}),
+          ...(target?.position === '담당' ? { store_name: '운영진' } : {}),
         }
       : { status: 'rejected', active: false };
 
