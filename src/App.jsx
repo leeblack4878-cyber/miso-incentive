@@ -683,28 +683,37 @@ export default function App({ authUser, authProfile }) {
 
   const loadConfig = useCallback(async () => {
     try {
-      const r = await window.storage.get('config-v2', true);
-      if (r && r.value) setConfig({ ...defaultConfig(), ...JSON.parse(r.value) });
-      else { await window.storage.set('config-v2', JSON.stringify(defaultConfig()), true); }
-    } catch (e) {}
+      const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'config').maybeSingle();
+      if (error) throw error;
+      if (data && data.value) {
+        setConfig({ ...defaultConfig(), ...data.value });
+      } else {
+        const def = defaultConfig();
+        await supabase.from('app_config').upsert({ config_key: 'config', value: def }, { onConflict: 'config_key' });
+        setConfig(def);
+      }
+    } catch (e) { console.error('CONFIG LOAD ERROR:', e); setConfig(defaultConfig()); }
   }, []);
 
   const loadStores = useCallback(async () => {
     try {
-      const r = await window.storage.get('stores-v2', true);
-      if (r && r.value) {
-        const list = JSON.parse(r.value);
-        setStores(list.length ? list : DEFAULT_STORES);
+      const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'stores').maybeSingle();
+      if (error) throw error;
+      if (data && data.value && data.value.length) {
+        setStores(data.value);
       } else {
-        await window.storage.set('stores-v2', JSON.stringify(DEFAULT_STORES), true);
+        await supabase.from('app_config').upsert({ config_key: 'stores', value: DEFAULT_STORES }, { onConflict: 'config_key' });
         setStores(DEFAULT_STORES);
       }
-    } catch (e) { setStores(DEFAULT_STORES); }
+    } catch (e) { console.error('STORES LOAD ERROR:', e); setStores(DEFAULT_STORES); }
   }, []);
 
   const persistStores = async (next) => {
     setStores(next);
-    try { await window.storage.set('stores-v2', JSON.stringify(next), true); } catch (e) {}
+    try {
+      const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: next }, { onConflict: 'config_key' });
+      if (error) throw error;
+    } catch (e) { console.error('STORES SAVE ERROR:', e); setDbError(`매장 목록 저장 실패: ${e.message || e}`); }
   };
   const addStore = (name) => { if (name.trim() && !stores.includes(name.trim())) persistStores([...stores, name.trim()]); };
   const removeStore = (name) => persistStores(stores.filter((s) => s !== name));
@@ -873,7 +882,10 @@ export default function App({ authUser, authProfile }) {
 
   const persistConfig = async (next) => {
     setConfig(next);
-    try { await window.storage.set('config-v2', JSON.stringify(next), true); } catch (e) {}
+    try {
+      const { error } = await supabase.from('app_config').upsert({ config_key: 'config', value: next }, { onConflict: 'config_key' });
+      if (error) throw error;
+    } catch (e) { console.error('CONFIG SAVE ERROR:', e); setDbError(`지급기준 저장 실패: ${e.message || e}`); }
   };
   const persistEmployees = async (next) => {
     setEmployees(next);
