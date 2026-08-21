@@ -2838,7 +2838,6 @@ const CARE_TEMPLATES = [
   { key:'plan93', label:'📱 93일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:93 },
   { key:'addon93', label:'🧾 93일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:93 },
   { key:'plan183', label:'📱 183일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:183 },
-  { key:'addon183', label:'🧾 183일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:183 },
 ];
 
 function addDaysDate(dateStr, days) {
@@ -3206,10 +3205,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </div>
           )}
 
-          <div className="mb-3">
-            <SpotClaimPanel userId={authUser?.id} month={month} />
-          </div>
-
           <DailyInputTab
             month={month}
             dailyDays={dailyDays}
@@ -3220,6 +3215,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             locked={monthLocked}
             currentEmp={currentEmp}
           />
+
+          <div className="mt-4">
+            <SpotClaimPanel userId={authUser?.id} month={month} />
+          </div>
 
           <div className="mt-4">
             <SalesExpensePanel
@@ -3341,6 +3340,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileCustomTitle,setMobileCustomTitle]=useState('');
   const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
+  const [mobileSpotPolicies,setMobileSpotPolicies]=useState([]);
+  const [mobileSpotPolicyId,setMobileSpotPolicyId]=useState('');
+  const [mobileExpenseOpen,setMobileExpenseOpen]=useState(false);
+  const [mobileExpenseCategory,setMobileExpenseCategory]=useState('케이스');
+  const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
+  const [mobileExpenseMemo,setMobileExpenseMemo]=useState('');
   const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
 
   const dayMatrix = day.matrix;
@@ -3404,6 +3409,23 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const bump = (ri, ci, delta) => setCell(ri, ci, (day.matrix[ri][ci] || 0) + delta);
   const setGroupItem = (gk, key, v) => mutate({ ...day, groups: { ...day.groups, [gk]: { ...day.groups[gk], [key]: Math.max(0, v) } } });
   const setNumeric = (key, v) => mutate({ ...day, [key]: Math.max(0, v) });
+
+
+  useEffect(() => {
+    if (!mobileSaleDraft) return;
+    const saleDate=`${month}-${selectedDay}`;
+    (async()=>{
+      const {data}=await supabase
+        .from('spot_policies')
+        .select('*')
+        .eq('active',true)
+        .lte('start_date',saleDate)
+        .gte('end_date',saleDate)
+        .order('start_date');
+      setMobileSpotPolicies(data||[]);
+      setMobileSpotPolicyId('');
+    })();
+  }, [mobileSaleDraft, month, selectedDay]);
 
   const openHomeOrder = (groupKey, itemKey) => {
     if (locked) return;
@@ -3668,6 +3690,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCustomTitle('');
     setMobileCustomDueDate('');
     setMobileVasKeys([]);
+    setMobileSpotPolicyId('');
+    setMobileExpenseOpen(false);
+    setMobileExpenseCategory('케이스');
+    setMobileExpenseAmount('');
+    setMobileExpenseMemo('');
   };
 
   const submitMobileSale = async () => {
@@ -3682,6 +3709,31 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate
       });
+
+      // 선택한 스팟 정책도 같은 판매 건으로 신청
+      if (mobileSpotPolicyId) {
+        const {error:spotError}=await supabase.from('spot_claims').insert({
+          policy_id:mobileSpotPolicyId,
+          user_id:currentEmp.id,
+          claim_date:saleDate,
+          customer_name:customer,
+          status:'pending'
+        });
+        if (spotError) throw spotError;
+      }
+
+      // 고객에게 사용한 영업비용도 같은 판매 건에서 바로 등록
+      if (mobileExpenseOpen && Number(mobileExpenseAmount)>0) {
+        const {error:expenseError}=await supabase.from('sales_expenses').insert({
+          user_id:currentEmp.id,
+          expense_date:saleDate,
+          amount:Number(mobileExpenseAmount),
+          category:mobileExpenseCategory,
+          customer_name:customer,
+          memo:mobileExpenseMemo.trim()||null
+        });
+        if (expenseError) throw expenseError;
+      }
 
       // 모바일 실적과 선택한 VAS를 한 번에 반영
       commitMobileOne(
@@ -3985,7 +4037,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       {mobileSaleDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">실적 + 고객관리</div>
+            <div className="text-xs text-violet-500 font-semibold">한 번에 판매 등록</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{mobileSaleDraft.label}</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">고객명 *</label>
@@ -4032,7 +4084,37 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const el=document.getElementById('mobile-care-options');
+                  if(el)el.classList.toggle('hidden');
+                }}
+                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileCareKeys.length||mobileCustomTitle?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-100 text-gray-600'}`}
+              >
+                + 고객 약속{mobileCareKeys.length?` ${mobileCareKeys.length}`:''}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const el=document.getElementById('mobile-spot-options');
+                  if(el)el.classList.toggle('hidden');
+                }}
+                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileSpotPolicyId?'bg-orange-50 border-orange-200 text-orange-600':'bg-gray-50 border-gray-100 text-gray-600'}`}
+              >
+                + 스팟{mobileSpotPolicyId?' ✓':''}
+              </button>
+              <button
+                type="button"
+                onClick={()=>setMobileExpenseOpen(v=>!v)}
+                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}
+              >
+                + 영업비용
+              </button>
+            </div>
+
+            <div id="mobile-care-options" className="hidden mt-4">
               <CareTemplatePicker
                 selected={mobileCareKeys} setSelected={setMobileCareKeys}
                 customTitle={mobileCustomTitle} setCustomTitle={setMobileCustomTitle}
@@ -4040,6 +4122,44 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 saleDate={`${month}-${selectedDay}`}
               />
             </div>
+
+            <div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">🔥 적용할 스팟 정책</div>
+              {mobileSpotPolicies.length ? (
+                <div className="space-y-1.5">
+                  <button type="button" onClick={()=>setMobileSpotPolicyId('')}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${!mobileSpotPolicyId?'bg-white border-orange-200 text-orange-700':'bg-white/70 border-transparent text-gray-500'}`}>
+                    적용 안 함
+                  </button>
+                  {mobileSpotPolicies.map(p=>(
+                    <button key={p.id} type="button" onClick={()=>setMobileSpotPolicyId(p.id)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${mobileSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}>
+                      <span className="font-semibold">{mobileSpotPolicyId===p.id?'✓ ':''}{p.title}</span>
+                      <span className="float-right">+{won(p.amount)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : <div className="text-xs text-gray-400">이 판매일에 적용 가능한 스팟 정책이 없어요.</div>}
+            </div>
+
+            {mobileExpenseOpen && (
+              <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3">
+                <div className="text-xs font-semibold text-gray-700 mb-2">💳 이 고객에게 사용한 영업비용</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={mobileExpenseCategory} onChange={e=>setMobileExpenseCategory(e.target.value)}
+                    className="border rounded-lg px-2 py-2 text-xs bg-white">
+                    <option>케이스</option><option>오퍼</option><option>판촉</option><option>기타</option>
+                  </select>
+                  <input inputMode="numeric" value={mobileExpenseAmount}
+                    onChange={e=>setMobileExpenseAmount(e.target.value.replace(/\D/g,''))}
+                    placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/>
+                </div>
+                <input value={mobileExpenseMemo} onChange={e=>setMobileExpenseMemo(e.target.value)}
+                  placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>
+                <div className="text-[10px] text-gray-400 mt-1">고객명과 판매일은 자동으로 연결돼요.</div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2 mt-5">
               <button onClick={()=>setMobileSaleDraft(null)} disabled={mobileSaleSaving}
                 className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
