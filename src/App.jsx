@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
   Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
   Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut
+  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Award
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -1292,6 +1292,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={isFullAdmin}
+          authUserId={authUser?.id}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
         />
       )}
@@ -1573,6 +1574,611 @@ function MyRankingCard({ rows, userId, branch }) {
   );
 }
 
+
+/* ===================== 게임화 2차: 배지 · 퀘스트 · 칭호 · 인정 ===================== */
+
+const BADGE_DEFS = [
+  { key: 'first_step', icon: '🌱', name: '첫 발자국', rarity: 'COMMON', hidden: false, desc: '첫 실적 기록을 남겼어요.', auto: true },
+  { key: 'streak5', icon: '🔥', name: '폼 올라오는 중', rarity: 'RARE', hidden: false, desc: '5근무일 연속 기록을 달성했어요.', auto: true },
+  { key: 'streak10', icon: '🔥', name: '꾸준함이 실력', rarity: 'EPIC', hidden: true, desc: '10근무일 연속 기록을 달성했어요.', auto: true },
+  { key: 'rising3', icon: '⚡', name: '요즘 좀 치는데?', rarity: 'RARE', hidden: false, desc: '최근 7일 핵심지표 TOP3에 진입했어요.', auto: true },
+  { key: 'top3', icon: '🥉', name: '순위권 입성', rarity: 'EPIC', hidden: false, desc: '핵심지표 전체 TOP3에 진입했어요.', auto: true },
+  { key: 'number1', icon: '👑', name: '오늘은 내가 1등', rarity: 'LEGEND', hidden: true, desc: '핵심지표 전체 1위를 달성했어요.', auto: true },
+  { key: 'goal_one', icon: '🎯', name: '말보다 결과', rarity: 'RARE', hidden: false, desc: '내가 정한 월 목표를 하나 달성했어요.', auto: true },
+  { key: 'goal_all', icon: '🏆', name: '싹쓸이', rarity: 'LEGEND', hidden: true, desc: '이번 달에 설정한 목표를 모두 달성했어요.', auto: true },
+
+  // 관리자/점장 특별 배지
+  { key: 'special_growth', icon: '⭐', name: '이달의 성장', rarity: 'SPECIAL', hidden: false, desc: '관리자가 직접 인정한 성장 배지예요.', auto: false },
+  { key: 'special_team', icon: '🤝', name: '팀플레이어', rarity: 'SPECIAL', hidden: false, desc: '동료와 매장에 좋은 영향을 준 사람에게 주는 배지예요.', auto: false },
+  { key: 'special_pick', icon: '💎', name: '점장 PICK', rarity: 'SPECIAL', hidden: false, desc: '관리자가 직접 선정한 특별 배지예요.', auto: false },
+];
+
+const SPECIAL_BADGE_KEYS = ['special_growth', 'special_team', 'special_pick'];
+
+function badgeDefOf(key) {
+  return BADGE_DEFS.find((b) => b.key === key) || null;
+}
+
+function evaluateAutomaticBadges({
+  dailyDays,
+  month,
+  personalGoals,
+  mergedDraft,
+  pay,
+  competitionRows,
+  allDailyRecords,
+  config,
+  userId,
+}) {
+  const earned = new Set();
+  const stats = getWorkActivityStats(dailyDays, month);
+
+  if (stats.activeDays > 0) earned.add('first_step');
+  if (stats.streak >= 5) earned.add('streak5');
+  if (stats.streak >= 10) earned.add('streak10');
+
+  const actuals = getPersonalGoalActuals(mergedDraft, pay);
+  const goals = Object.entries(personalGoals || {}).filter(([, value]) => Number(value) > 0);
+  const completed = goals.filter(([key, value]) => Number(actuals[key] || 0) >= Number(value));
+
+  if (completed.length > 0) earned.add('goal_one');
+  if (goals.length > 0 && completed.length === goals.length) earned.add('goal_all');
+
+  let bestMonthlyRank = Infinity;
+  COMPETITION_METRICS.forEach((metric) => {
+    const ranked = [...(competitionRows || [])]
+      .filter((r) => !NON_SALES_STORES.includes(r.branch))
+      .sort((a, b) => metric.value(b) - metric.value(a) || a.name.localeCompare(b.name));
+    const idx = ranked.findIndex((r) => r.id === userId);
+    if (idx >= 0 && Number(metric.value(ranked[idx]) || 0) > 0) {
+      bestMonthlyRank = Math.min(bestMonthlyRank, idx + 1);
+    }
+  });
+
+  if (bestMonthlyRank <= 3) earned.add('top3');
+  if (bestMonthlyRank === 1) earned.add('number1');
+
+  let bestRecentRank = Infinity;
+  COMPETITION_METRICS.forEach((metric) => {
+    const ranked = buildRisingRanking(
+      competitionRows,
+      allDailyRecords,
+      month,
+      config,
+      metric.key
+    );
+    const idx = ranked.findIndex((r) => r.id === userId);
+    if (idx >= 0 && Number(ranked[idx]?.recentValue || 0) > 0) {
+      bestRecentRank = Math.min(bestRecentRank, idx + 1);
+    }
+  });
+
+  if (bestRecentRank <= 3) earned.add('rising3');
+
+  return earned;
+}
+
+function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }) {
+  const highlights = useMemo(() => {
+    const out = [];
+
+    // 월간 1위 중 서로 다른 사람을 최대 2명 노출
+    const used = new Set();
+    for (const metric of COMPETITION_METRICS) {
+      const ranked = [...(rows || [])]
+        .filter((r) => !NON_SALES_STORES.includes(r.branch))
+        .sort((a, b) => metric.value(b) - metric.value(a));
+      const top = ranked[0];
+      if (top && Number(metric.value(top) || 0) > 0 && !used.has(top.id)) {
+        out.push({
+          id: `month-${metric.key}-${top.id}`,
+          icon: '👑',
+          title: `${metric.label} 전체 1위`,
+          name: top.name,
+          branch: top.branch,
+        });
+        used.add(top.id);
+      }
+      if (out.length >= 2) break;
+    }
+
+    // 최근 7일 급상승 1명
+    const rising = buildRisingRanking(rows, dailyRecords, month, config, 'hs')[0];
+    if (rising && rising.recentValue > 0 && !used.has(rising.id)) {
+      out.push({
+        id: `rising-${rising.id}`,
+        icon: '⚡',
+        title: '최근 7일 HS 급상승',
+        name: rising.name,
+        branch: rising.branch,
+      });
+    }
+
+    return out.slice(0, 3);
+  }, [rows, dailyRecords, month, config]);
+
+  const combined = [
+    ...(specialFeed || []).slice(0, 2),
+    ...highlights,
+  ].slice(0, 4);
+
+  if (!combined.length) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-amber-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-amber-50">
+        <div className="text-xs text-amber-600">지금 주목할 사람 ✨</div>
+        <div className="text-sm font-bold text-gray-900 mt-0.5">좋은 기록은 같이 봐야 제맛</div>
+      </div>
+
+      <div className="divide-y divide-gray-50">
+        {combined.map((item) => (
+          <div key={item.id} className="px-4 py-3 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center text-lg shrink-0">
+              {item.icon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
+              <div className="text-xs text-violet-600 font-medium mt-0.5">{item.title}</div>
+              {item.branch && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{item.branch}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GamificationHub({
+  dailyDays,
+  month,
+  personalGoals,
+  mergedDraft,
+  pay,
+  competitionRows,
+  allDailyRecords,
+  config,
+  userId,
+}) {
+  const [storedBadges, setStoredBadges] = useState([]);
+  const [titleKey, setTitleKey] = useState('');
+  const [loadingBadges, setLoadingBadges] = useState(true);
+  const [showCollection, setShowCollection] = useState(false);
+  const [newBadge, setNewBadge] = useState(null);
+  const [specialFeed, setSpecialFeed] = useState([]);
+
+  const autoEarned = useMemo(
+    () => evaluateAutomaticBadges({
+      dailyDays,
+      month,
+      personalGoals,
+      mergedDraft,
+      pay,
+      competitionRows,
+      allDailyRecords,
+      config,
+      userId,
+    }),
+    [
+      dailyDays,
+      month,
+      personalGoals,
+      mergedDraft,
+      pay,
+      competitionRows,
+      allDailyRecords,
+      config,
+      userId,
+    ]
+  );
+
+  const earnedKeys = useMemo(() => {
+    const set = new Set(storedBadges.map((r) => r.badge_key));
+    autoEarned.forEach((key) => set.add(key));
+    return set;
+  }, [storedBadges, autoEarned]);
+
+  const actuals = useMemo(() => getPersonalGoalActuals(mergedDraft, pay), [mergedDraft, pay]);
+  const quests = PERSONAL_GOAL_DEFS.filter((def) => Number(personalGoals?.[def.key]) > 0);
+
+  const loadBadges = useCallback(async () => {
+    if (!userId) return;
+
+    setLoadingBadges(true);
+
+    const [{ data: badgeRows, error: badgeError }, { data: titleRow }] = await Promise.all([
+      supabase
+        .from('user_achievements')
+        .select('badge_key, earned_at, awarded_by, note')
+        .eq('user_id', userId)
+        .order('earned_at', { ascending: true }),
+      supabase
+        .from('user_titles')
+        .select('badge_key')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ]);
+
+    if (!badgeError) setStoredBadges(badgeRows || []);
+    setTitleKey(titleRow?.badge_key || '');
+
+    // 최근 특별 인정 피드
+    try {
+      const { data: recentAwards } = await supabase
+        .from('user_achievements')
+        .select('id, user_id, badge_key, earned_at, note')
+        .not('awarded_by', 'is', null)
+        .order('earned_at', { ascending: false })
+        .limit(6);
+
+      const ids = [...new Set((recentAwards || []).map((r) => r.user_id))];
+      let names = {};
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, name, store_name')
+          .in('id', ids);
+        names = Object.fromEntries((profs || []).map((p) => [p.id, p]));
+      }
+
+      setSpecialFeed(
+        (recentAwards || []).map((r) => {
+          const def = badgeDefOf(r.badge_key);
+          const profile = names[r.user_id] || {};
+          return {
+            id: `award-${r.id}`,
+            icon: def?.icon || '⭐',
+            title: def?.name || '특별 인정',
+            name: profile.name || '직원',
+            branch: profile.store_name || '',
+          };
+        })
+      );
+    } catch (e) {
+      // 공개 인정 피드가 실패해도 본인 배지 기능은 유지
+    }
+
+    setLoadingBadges(false);
+  }, [userId]);
+
+  useEffect(() => {
+    loadBadges();
+  }, [loadBadges]);
+
+  // 자동 달성 배지를 DB에 영구 보관
+  useEffect(() => {
+    if (!userId || loadingBadges) return;
+
+    const stored = new Set(storedBadges.map((r) => r.badge_key));
+    const missing = [...autoEarned].filter((key) => !stored.has(key));
+
+    if (!missing.length) return;
+
+    (async () => {
+      for (const key of missing) {
+        const { error } = await supabase
+          .from('user_achievements')
+          .insert({
+            user_id: userId,
+            badge_key: key,
+            awarded_by: null,
+          });
+
+        if (!error) {
+          const def = badgeDefOf(key);
+          if (def) setNewBadge(def);
+        } else if (error.code !== '23505') {
+          console.error('ACHIEVEMENT SAVE ERROR:', error);
+        }
+      }
+
+      await loadBadges();
+    })();
+  }, [autoEarned, storedBadges, loadingBadges, userId, loadBadges]);
+
+  const saveTitle = async (key) => {
+    if (!userId || !earnedKeys.has(key)) return;
+
+    const { error } = await supabase
+      .from('user_titles')
+      .upsert(
+        {
+          user_id: userId,
+          badge_key: key,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (!error) setTitleKey(key);
+  };
+
+  const titleDef = badgeDefOf(titleKey);
+
+  return (
+    <>
+      {quests.length > 0 && (
+        <div className="bg-white rounded-xl border border-violet-100 p-4">
+          <div className="text-xs text-violet-500">이번 달 뭐 노려볼까?</div>
+          <div className="text-sm font-bold text-gray-900 mt-0.5">🎯 나의 퀘스트</div>
+
+          <div className="mt-3 space-y-3">
+            {quests.map((def) => {
+              const target = Number(personalGoals[def.key]);
+              const current = Number(actuals[def.key] || 0);
+              const pct = Math.max(0, Math.min(100, target ? (current / target) * 100 : 0));
+              const done = current >= target;
+
+              const fmt = (value) => {
+                if (def.unit === '원') return Math.round(value).toLocaleString();
+                if (def.unit === 'P') return Number(value).toFixed(1);
+                return Math.round(value);
+              };
+
+              return (
+                <div key={def.key}>
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-semibold text-gray-700">{def.label}</span>
+                    <span className={done ? 'font-bold text-emerald-600' : 'text-gray-500'}>
+                      {done ? '완료 ✨' : `${fmt(current)} / ${fmt(target)}${def.unit}`}
+                    </span>
+                  </div>
+
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        done ? 'bg-emerald-500' : 'bg-violet-600'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+
+                  {!done && pct >= 80 && (
+                    <div className="text-[10px] text-violet-500 mt-1">거의 다 왔는데? 👀</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs text-gray-400">나의 기록 컬렉션</div>
+            <div className="text-sm font-bold text-gray-900 mt-0.5">
+              🏅 내 배지 <span className="text-violet-600">{earnedKeys.size}</span>
+            </div>
+            {titleDef && (
+              <div className="text-xs text-violet-600 mt-1">
+                대표 칭호 · {titleDef.icon} {titleDef.name}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setShowCollection((v) => !v)}
+            className="text-xs text-violet-600 font-semibold"
+          >
+            {showCollection ? '접기' : '전체 보기'}
+          </button>
+        </div>
+
+        <div className={`grid ${showCollection ? 'grid-cols-2' : 'grid-cols-4'} gap-2 mt-3`}>
+          {(showCollection
+            ? BADGE_DEFS
+            : BADGE_DEFS.filter((b) => earnedKeys.has(b.key)).slice(0, 4)
+          ).map((badge) => {
+            const got = earnedKeys.has(badge.key);
+
+            return (
+              <button
+                key={badge.key}
+                disabled={!got}
+                onClick={() => got && saveTitle(badge.key)}
+                className={`rounded-xl border p-3 text-center ${
+                  got
+                    ? titleKey === badge.key
+                      ? 'bg-violet-100 border-violet-300 ring-1 ring-violet-200'
+                      : 'bg-violet-50 border-violet-100'
+                    : 'bg-gray-50 border-gray-100 opacity-55'
+                }`}
+              >
+                <div className="text-2xl">
+                  {got ? badge.icon : badge.hidden ? '❓' : '🔒'}
+                </div>
+                <div className="text-[11px] font-bold text-gray-800 mt-1">
+                  {got ? badge.name : badge.hidden ? '???' : badge.name}
+                </div>
+
+                {showCollection && (
+                  <>
+                    <div className="text-[9px] text-gray-400 mt-0.5">
+                      {got ? badge.rarity : badge.hidden ? 'HIDDEN' : badge.rarity}
+                    </div>
+                    {got && (
+                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">
+                        {badge.desc}
+                      </div>
+                    )}
+                    {got && (
+                      <div className="text-[9px] text-violet-500 mt-1.5">
+                        {titleKey === badge.key ? '대표 칭호 사용 중' : '눌러서 대표 칭호로 설정'}
+                      </div>
+                    )}
+                  </>
+                )}
+              </button>
+            );
+          })}
+
+          {!showCollection && earnedKeys.size === 0 && (
+            <div className="col-span-4 text-xs text-gray-400 py-3 text-center">
+              첫 기록을 남기면 첫 배지가 열려요 🌱
+            </div>
+          )}
+        </div>
+      </div>
+
+      <RecognitionSpotlight
+        rows={competitionRows}
+        dailyRecords={allDailyRecords}
+        month={month}
+        config={config}
+        specialFeed={specialFeed}
+      />
+
+      {newBadge && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-5">
+          <div className="w-full max-w-xs bg-white rounded-3xl p-6 shadow-2xl text-center">
+            <div className="text-[11px] tracking-[0.25em] text-violet-500 font-bold">NEW BADGE</div>
+            <div className="text-5xl mt-4">{newBadge.icon}</div>
+            <div className="text-xl font-bold text-gray-900 mt-3">{newBadge.name}</div>
+            <div className="text-xs font-semibold text-violet-500 mt-1">{newBadge.rarity}</div>
+            <div className="text-sm text-gray-500 mt-3">{newBadge.desc}</div>
+            <div className="text-xs text-gray-400 mt-2">잘한 건 티 내도 돼요 ✨</div>
+
+            <div className="mt-5 space-y-2">
+              <button
+                onClick={async () => {
+                  await saveTitle(newBadge.key);
+                  setNewBadge(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold"
+              >
+                대표 칭호로 설정
+              </button>
+              <button
+                onClick={() => setNewBadge(null)}
+                className="w-full py-2 text-sm text-gray-400"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SpecialBadgeAwardPanel({ employees, authUserId }) {
+  const [employeeId, setEmployeeId] = useState(employees?.[0]?.id || '');
+  const [badgeKey, setBadgeKey] = useState('special_growth');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!employees?.some((e) => e.id === employeeId)) {
+      setEmployeeId(employees?.[0]?.id || '');
+    }
+  }, [employees, employeeId]);
+
+  const award = async () => {
+    if (!employeeId || !badgeKey) return;
+
+    setSaving(true);
+    setMessage('');
+
+    const { error } = await supabase
+      .from('user_achievements')
+      .insert({
+        user_id: employeeId,
+        badge_key: badgeKey,
+        awarded_by: authUserId,
+        note: note.trim() || null,
+      });
+
+    if (error) {
+      if (error.code === '23505') {
+        setMessage('이미 이 배지를 받은 직원이에요.');
+      } else {
+        setMessage(`배지 수여 실패: ${friendlyError(error)}`);
+      }
+    } else {
+      const employee = employees.find((e) => e.id === employeeId);
+      const badge = badgeDefOf(badgeKey);
+      setMessage(`${employee?.name || '직원'}님에게 ${badge?.icon || '⭐'} ${badge?.name || '특별 배지'}를 수여했어요.`);
+      setNote('');
+    }
+
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-violet-100 p-4">
+        <div className="text-xs text-violet-500">관리자가 직접 전하는 인정</div>
+        <div className="text-base font-bold text-gray-900 mt-0.5">⭐ 특별 배지 수여</div>
+        <div className="text-xs text-gray-400 mt-1">
+          숫자로 다 담기 어려운 성장과 팀워크도 기록으로 남겨주세요.
+        </div>
+
+        <div className="mt-4 grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">직원</label>
+            <select
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            >
+              {(employees || []).map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} · {e.branch}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">배지</label>
+            <select
+              value={badgeKey}
+              onChange={(e) => setBadgeKey(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
+            >
+              {SPECIAL_BADGE_KEYS.map((key) => {
+                const badge = badgeDefOf(key);
+                return (
+                  <option key={key} value={key}>
+                    {badge?.icon} {badge?.name}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <label className="block text-xs font-semibold text-gray-500 mb-1">
+            한마디 <span className="font-normal text-gray-300">(선택)</span>
+          </label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="예: 이번 달 성장세가 정말 좋았어요!"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+
+        <button
+          onClick={award}
+          disabled={saving || !employeeId}
+          className="w-full mt-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
+        >
+          {saving ? '수여 중...' : '특별 배지 수여'}
+        </button>
+
+        {message && (
+          <div className="mt-3 text-xs bg-gray-50 rounded-lg p-2.5 text-gray-600">{message}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
@@ -1639,6 +2245,17 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             rows={competitionRows}
             dailyRecords={allDailyRecords}
             month={month}
+            config={config}
+            userId={authUser?.id}
+          />
+          <GamificationHub
+            dailyDays={dailyDays}
+            month={month}
+            personalGoals={personalGoals}
+            mergedDraft={mergedDraft}
+            pay={pay}
+            competitionRows={competitionRows}
+            allDailyRecords={allDailyRecords}
             config={config}
             userId={authUser?.id}
           />
@@ -2848,11 +3465,12 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
 
 /* ===================== 관리자 화면 ===================== */
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'compare', label: '실적 비교', icon: Layers },
     { key: 'rankings', label: '랭킹', icon: Trophy },
+    { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
     ...(isFullAdmin ? [
@@ -2956,6 +3574,10 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'compare' && <ComparisonView rows={rows} />}
 
       {adminTab === 'rankings' && <RankingCenter rows={rankingRows || rows} dailyRecords={dailyRecords} month={month} config={config} />}
+
+      {adminTab === 'recognition' && (
+        <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
+      )}
 
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
