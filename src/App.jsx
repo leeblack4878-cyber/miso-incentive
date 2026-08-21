@@ -299,7 +299,7 @@ function emptyDayMatrix() { return MATRIX_ROWS.map(() => MATRIX_COLS.map(() => 0
 const DAILY_GROUP_DEFS = [
   { key: 'homeBase', label: '홈 실적 (그레이드 대상)', bucket: 'home' },
   { key: 'homeFlat', label: '홈 단독 / TV프리 / 스마트홈', bucket: 'home' },
-  { key: 'homeAddon', label: '홈 동시판매 가산금', bucket: 'home' },
+  { key: 'homeAddon', label: '동시판매 수수료', bucket: 'home' },
   { key: 'renew', label: '홈 재약정', bucket: 'home' },
   { key: 'bundle2nd', label: '2ND 번들 판매', bucket: 'extra' },
   { key: 'vas', label: '전략 부가서비스 (VAS)', bucket: 'extra' },
@@ -482,6 +482,10 @@ function computePay(draft, position, hireDate, month, config) {
   const homeCaseCount = homeTierCount; // 화면 표시용(총 홈 건수)
   const homeGradePay = homeGradeTotal(homeTierCount, homeGradeQualCount, config.homeTiers);
   const homeFlatPay = sumFlat(draft.homeFlat, config.homeFlat);
+  const tvFreeRate = config.homeFlat.find((t) => t.key === 'tvFree')?.rate || 0;
+  const smartHomeRate = config.homeFlat.find((t) => t.key === 'smartHome')?.rate || 0;
+  const tvFreePay = (draft.homeFlat.tvFree || 0) * tvFreeRate;
+  const smartHomePay = (draft.homeFlat.smartHome || 0) * smartHomeRate;
   const homeAddonPay = sumFlat(draft.homeAddon, config.homeAddon);
   const renewPay = sumFlat(draft.renew, config.renew);
   const vasPay = sumFlat(draft.vas, config.vas);
@@ -500,7 +504,7 @@ function computePay(draft, position, hireDate, month, config) {
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
     matrixTotal, bundle2ndTotal, positionBase, positionAllowance, otherComponents, guaranteedComponent,
     homeAnyCount, homeNoPerformance,
-    homeCaseCount, homeGradePay, homeFlatPay, homeAddonPay, renewPay, vasPay, mnpBundlePay, sonoPay,
+    homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay, vasPay, mnpBundlePay, sonoPay,
     custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
   };
 }
@@ -1118,6 +1122,7 @@ export default function App({ authUser, authProfile }) {
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
           dailyDays={dailyRecords[empId] || {}} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
+          canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
         />
       ) : (
         <AdminView
@@ -1136,8 +1141,11 @@ export default function App({ authUser, authProfile }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
+  useEffect(() => {
+    if (tab === 'criteria' && !canSeeCriteria) setTab('home');
+  }, [tab, canSeeCriteria]); // eslint-disable-line
   const dailyAgg = useMemo(() => aggregateDaily(dailyDays, month), [dailyDays, month]);
   const groupAutoKeys = useMemo(() => {
     const out = {};
@@ -1190,12 +1198,15 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </div>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-            <RowKV label="영업 활동 지원금 (직급 보장)" value={won(pay.guaranteedComponent)} />
+            <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
             <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
             <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
-            <RowKV label="홈 상품 수수료 합계" value={won(pay.homeGradePay + pay.homeFlatPay + pay.homeAddonPay + pay.renewPay)} />
+            <RowKV label="홈 상품 수수료" value={won(pay.homeGradePay + (pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay) + pay.homeAddonPay + pay.renewPay)} />
+            <RowKV label="TV프리" value={won(pay.tvFreePay)} />
+            <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.matrixTotal)} />
-            <RowKV label="2ND 번들 / VAS 유치 수수료" value={won(pay.bundle2ndTotal + pay.vasPay)} />
+            <RowKV label="2ND 번들 수수료" value={won(pay.bundle2ndTotal)} />
+            <RowKV label="VAS 유치 수수료" value={won(pay.vasPay)} />
             <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
             <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
             <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
@@ -1219,10 +1230,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         </>
       )}
 
-      {tab === 'criteria' && (
+      {tab === 'criteria' && canSeeCriteria && (
         <div className="space-y-3">
           <div className="text-sm font-semibold text-gray-700">지급 기준 안내</div>
-          <Section title="직급별 영업 활동 지원금" defaultOpen>
+          <Section title="영업 활동 지원금" defaultOpen>
             {POSITIONS.map((p) => <RowKV key={p} label={p} value={won(config.basePay[p])} />)}
           </Section>
           <Section title="직급별 직책수당">
@@ -1246,12 +1257,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-            <RowKV label="영업 활동 지원금 (직급 보장)" value={won(pay.guaranteedComponent)} />
+            <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
             <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
             <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
             <RowKV label="홈 그레이드 수수료" value={won(pay.homeGradePay)} />
-            <RowKV label="홈 단독 / TV프리 / 스마트홈" value={won(pay.homeFlatPay)} />
-            <RowKV label="홈 동시판매 가산금" value={won(pay.homeAddonPay)} />
+            <RowKV label="홈 단독" value={won(pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay)} />
+            <RowKV label="TV프리" value={won(pay.tvFreePay)} />
+            <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
+            <RowKV label="동시판매 수수료" value={won(pay.homeAddonPay)} />
             <RowKV label="홈 재약정" value={won(pay.renewPay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.matrixTotal)} />
             <RowKV label="2ND 번들 유치 수수료" value={won(pay.bundle2ndTotal)} />
@@ -1268,11 +1281,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className="max-w-5xl mx-auto grid grid-cols-4">
+        <div className={`max-w-5xl mx-auto grid ${canSeeCriteria ? 'grid-cols-4' : 'grid-cols-3'}`}>
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '일일입력', icon: Calendar },
-            { key: 'criteria', label: '지급기준', icon: Wallet },
+            ...(canSeeCriteria ? [{ key: 'criteria', label: '지급기준', icon: Wallet }] : []),
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
@@ -2348,7 +2361,7 @@ function RatesManager({ config, persistConfig }) {
       <GibyeonColumnMapEditor colMap={draft.gibyeonColumnMap} mobilePointItems={draft.mobilePointItems}
         onChange={(m) => setDraftCfg({ ...draft, gibyeonColumnMap: m })} />
 
-      <Section title="직급별 영업 활동 지원금" defaultOpen>
+      <Section title="영업 활동 지원금" defaultOpen>
         <div className="p-3 grid grid-cols-2 gap-2">
           {POSITIONS.map((p) => (
             <div key={p} className="flex items-center justify-between gap-2">
@@ -2375,7 +2388,7 @@ function RatesManager({ config, persistConfig }) {
       <RateTable title="성과등급 보너스" group="grades" data={draft.grades} updateFlatTable={updateFlatTable} field="bonus" labelKey="grade" extraField="min" />
       <RateTable title="홈 그레이드 (누적건수별)" group="homeTiers" data={draft.homeTiers} updateFlatTable={updateFlatTable} field="rate" labelKey="min" labelSuffix="건 이상" />
       <RateTable title="홈 단독 / TV프리 / 스마트홈" group="homeFlat" data={draft.homeFlat} updateFlatTable={updateFlatTable} field="rate" />
-      <RateTable title="홈 동시판매 가산금" group="homeAddon" data={draft.homeAddon} updateFlatTable={updateFlatTable} field="rate" />
+      <RateTable title="동시판매 수수료" group="homeAddon" data={draft.homeAddon} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="홈 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="VAS" group="vas" data={draft.vas} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="2ND 번들" group="bundle2nd" data={draft.bundle2nd} updateFlatTable={updateFlatTable} field="rate" />
