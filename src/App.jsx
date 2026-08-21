@@ -2195,7 +2195,19 @@ const HOME_ORDER_PRODUCTS = [
   { key: 'smartHome', label: '스마트홈' },
 ];
 
-function HomeOrderManager({ userId, month, locked }) {
+function homeOrderMeta(groupKey, itemKey) {
+  const map = {
+    'homeBase.homeOnly': { productType: 'homeOnly', label: '홈 단독' },
+    'homeBase.homeTv': { productType: 'homeTv', label: '홈+TV 동시청약' },
+    'homeFlat.tvFree': { productType: 'tvFree', label: 'TV프리(부)' },
+    'homeFlat.smartHome': { productType: 'smartHome', label: '스마트홈' },
+  };
+  return map[`${groupKey}.${itemKey}`] || null;
+}
+
+
+
+function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
   const [orders, setOrders] = useState([]);
   const [product, setProduct] = useState('homeOnly');
   const [customerName, setCustomerName] = useState('');
@@ -2217,35 +2229,6 @@ function HomeOrderManager({ userId, month, locked }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const addOrder = async () => {
-    if (!userId || locked) return;
-    if (!customerName.trim()) return alert('고객명을 입력해주세요.');
-    setSaving(true);
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('home_orders').insert({
-      user_id: userId, product_type: product,
-      customer_name: customerName.trim(),
-      status: directComplete ? 'completed' : 'pending',
-      applied_at: now, completed_at: directComplete ? now : null,
-      memo: memo.trim() || null,
-    });
-    setSaving(false);
-    if (error) return alert(`청약 등록 실패: ${friendlyError(error)}`);
-
-    const productLabel = HOME_ORDER_PRODUCTS.find((p) => p.key === product)?.label || product;
-    notifyStoreManagers({
-      actorId: userId,
-      type: directComplete ? 'home_completed' : 'home_order',
-      title: directComplete ? '홈 설치/개통 완료' : '새 홈 청약 등록',
-      message: `${customerName.trim()} · ${productLabel}${memo.trim() ? ` · ${memo.trim()}` : ''}`,
-      payload: {
-        product_type: product,
-        status: directComplete ? 'completed' : 'pending',
-      },
-    });
-
-    setMemo(''); setDirectComplete(false); await load();
-  };
 
   const changeStatus = async (order, status) => {
     if (locked) return;
@@ -2259,6 +2242,37 @@ function HomeOrderManager({ userId, month, locked }) {
       updated_at: now,
     }).eq('id', order.id).eq('user_id', userId);
     if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
+
+    // 진행중 → 완료 시에만 실제 일일 실적 +1
+    if (status === 'completed' && order.source_group && order.source_key && order.source_work_date) {
+      const dayKey = String(order.source_work_date).slice(8, 10);
+      const baseDay = normalizeDay(dailyDays?.[dayKey]);
+      const currentValue = Number(baseDay.groups?.[order.source_group]?.[order.source_key] || 0);
+      const nextDay = {
+        ...baseDay,
+        groups: {
+          ...baseDay.groups,
+          [order.source_group]: {
+            ...(baseDay.groups?.[order.source_group] || {}),
+            [order.source_key]: currentValue + 1,
+          },
+        },
+      };
+
+      const saved = await saveDailyDay(dayKey, nextDay);
+      if (!saved) {
+        // 일일 실적 반영이 실패하면 주문 상태도 진행중으로 되돌려 불일치 방지
+        await supabase.from('home_orders').update({
+          status: 'pending',
+          completed_at: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', order.id).eq('user_id', userId);
+
+        alert('실적 반영에 실패해 진행중 상태로 되돌렸어요. 다시 시도해주세요.');
+        await load();
+        return;
+      }
+    }
 
     const productLabel = HOME_ORDER_PRODUCTS.find((p) => p.key === order.product_type)?.label || order.product_type;
     notifyStoreManagers({
@@ -2282,32 +2296,6 @@ function HomeOrderManager({ userId, month, locked }) {
 
   return (
     <div className="space-y-3 mb-4">
-      <div className="bg-white rounded-xl border border-violet-100 p-4">
-        <div className="text-xs text-violet-500">접수부터 설치·개통까지</div>
-        <div className="text-base font-bold text-gray-900 mt-0.5">🏠 홈 청약 관리</div>
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          {HOME_ORDER_PRODUCTS.map(p => (
-            <button key={p.key} type="button" onClick={() => setProduct(p.key)} disabled={locked}
-              className={`rounded-xl border px-3 py-2.5 text-sm font-semibold ${product===p.key?'border-violet-300 bg-violet-50 text-violet-700':'border-gray-100 text-gray-600'}`}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <input value={customerName} onChange={e=>setCustomerName(e.target.value)} disabled={locked}
-          placeholder="고객명" className="w-full mt-3 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium" />
-        <input value={memo} onChange={e=>setMemo(e.target.value)} disabled={locked}
-          placeholder="메모 (선택)" className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
-        <label className="mt-3 flex items-center gap-2 text-sm text-gray-600">
-          <input type="checkbox" checked={directComplete} disabled={locked}
-            onChange={e=>setDirectComplete(e.target.checked)} />
-          지금 바로 설치/개통 완료된 건
-        </label>
-        <button type="button" onClick={addOrder} disabled={saving || locked}
-          className="w-full mt-3 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
-          {saving ? '등록 중...' : directComplete ? '완료 건으로 등록' : '청약 등록'}
-        </button>
-      </div>
-
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <div className="text-xs text-gray-400">이번 달 진행 현황</div>
         <div className="text-sm font-bold text-gray-900 mt-0.5">
@@ -2317,7 +2305,9 @@ function HomeOrderManager({ userId, month, locked }) {
           <div className="mt-3 space-y-4">
             {Object.entries(
               pending.reduce((acc, o) => {
-                const day = new Date(o.applied_at).toLocaleDateString('ko-KR');
+                const day = o.source_work_date
+                  ? new Date(`${o.source_work_date}T12:00:00`).toLocaleDateString('ko-KR')
+                  : new Date(o.applied_at).toLocaleDateString('ko-KR');
                 const customer = o.customer_name || '고객명 미입력';
                 const key = `${day}__${customer}`;
                 if (!acc[key]) acc[key] = { day, customer, items: [] };
@@ -2786,6 +2776,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             userId={authUser?.id}
             month={month}
             locked={monthLocked}
+            dailyDays={dailyDays}
+            saveDailyDay={saveDailyDay}
           />
         </div>
       )}
@@ -2870,6 +2862,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
   const [toast, setToast] = useState(null);         // 등록 피드백 카드
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
+  const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
+  const [homeCustomerName, setHomeCustomerName] = useState('');
+  const [homeDirectComplete, setHomeDirectComplete] = useState(false);
+  const [homeOrderSaving, setHomeOrderSaving] = useState(false);
 
   const dayMatrix = day.matrix;
   const isDayOff = !!day.dayOff;
@@ -2932,6 +2928,106 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const bump = (ri, ci, delta) => setCell(ri, ci, (day.matrix[ri][ci] || 0) + delta);
   const setGroupItem = (gk, key, v) => mutate({ ...day, groups: { ...day.groups, [gk]: { ...day.groups[gk], [key]: Math.max(0, v) } } });
   const setNumeric = (key, v) => mutate({ ...day, [key]: Math.max(0, v) });
+
+  const openHomeOrder = (groupKey, itemKey) => {
+    if (locked) return;
+    const meta = homeOrderMeta(groupKey, itemKey);
+    if (!meta) return;
+    setHomeOrderDraft({ groupKey, itemKey, ...meta });
+    setHomeCustomerName('');
+    setHomeDirectComplete(false);
+  };
+
+  const submitHomeOrder = async () => {
+    if (!homeOrderDraft || !currentEmp?.id || locked) return;
+    const customer = homeCustomerName.trim();
+    if (!customer) {
+      alert('고객명을 입력해야 등록할 수 있어요.');
+      return;
+    }
+
+    setHomeOrderSaving(true);
+    const sourceWorkDate = `${month}-${selectedDay}`;
+    const appliedAt = new Date(`${sourceWorkDate}T12:00:00`).toISOString();
+    const now = new Date().toISOString();
+
+    const { error } = await supabase.from('home_orders').insert({
+      user_id: currentEmp.id,
+      customer_name: customer,
+      product_type: homeOrderDraft.productType,
+      status: homeDirectComplete ? 'completed' : 'pending',
+      applied_at: appliedAt,
+      completed_at: homeDirectComplete ? now : null,
+      source_work_date: sourceWorkDate,
+      source_group: homeOrderDraft.groupKey,
+      source_key: homeOrderDraft.itemKey,
+    });
+
+    if (error) {
+      setHomeOrderSaving(false);
+      alert(`홈 상품 등록 실패: ${friendlyError(error)}`);
+      return;
+    }
+
+    // 바로 완료로 등록한 경우에만 확정 실적 +1
+    if (homeDirectComplete) {
+      const currentValue = Number(day.groups?.[homeOrderDraft.groupKey]?.[homeOrderDraft.itemKey] || 0);
+      const nextDay = {
+        ...normalizeDay(day),
+        groups: {
+          ...day.groups,
+          [homeOrderDraft.groupKey]: {
+            ...(day.groups?.[homeOrderDraft.groupKey] || {}),
+            [homeOrderDraft.itemKey]: currentValue + 1,
+          },
+        },
+      };
+      mutate(nextDay);
+    }
+
+    notifyStoreManagers({
+      actorId: currentEmp.id,
+      type: homeDirectComplete ? 'home_completed' : 'home_order',
+      title: homeDirectComplete ? '홈 설치/개통 완료' : '새 홈 청약 등록',
+      message: `${customer} · ${homeOrderDraft.label}`,
+      payload: {
+        employee_id: currentEmp.id,
+        customer_name: customer,
+        product_type: homeOrderDraft.productType,
+        status: homeDirectComplete ? 'completed' : 'pending',
+        source_work_date: sourceWorkDate,
+      },
+    });
+
+    setHomeOrderSaving(false);
+    setHomeOrderDraft(null);
+    setHomeCustomerName('');
+    setHomeDirectComplete(false);
+
+    const toastId = `home-${Date.now()}`;
+    setToast({
+      id: toastId,
+      label: `${customer} · ${homeOrderDraft.label}`,
+      kind: homeDirectComplete ? 'achievement' : 'normal',
+      title: homeDirectComplete ? '완료 실적으로 등록했어요 ✅' : '홈 진행관리에 등록했어요 🏠',
+      sub: homeDirectComplete ? '확정 실적에도 바로 반영됐어요' : '설치/개통 완료 후 확정 실적으로 반영돼요',
+      payDelta: 0,
+      currentTotal: computePay(
+        applyDailyToDraft(
+          draft,
+          { ...dailyDays, [selectedDay]: day },
+          month,
+          config.categoryMap,
+          config.gibyeonColumnMap
+        ),
+        currentEmp?.position || '사원',
+        currentEmp?.hireDate,
+        month,
+        config
+      ).total,
+    });
+    setTimeout(() => setToast((t) => (t?.id === toastId ? null : t)), 3600);
+  };
 
   const selectDay = (key) => { flush(); setSelectedDay(key); };
 
@@ -3227,12 +3323,38 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           const sum = table.reduce((s, t) => s + (day.groups[g.key]?.[t.key] || 0), 0);
           return (
             <Section key={g.key} title={g.label} sub={sum > 0 ? `${sum}건` : '없음'}>
-              {table.map((t) => (
-                <CountRow key={t.key} label={t.label}
-                  sub={t.rate ? `건당 ${won(t.rate)}` : (t.point ? `${t.point}P` : '')}
-                  value={day.groups[g.key]?.[t.key] || 0}
-                  onChange={(v) => setGroupItem(g.key, t.key, v)} />
-              ))}
+              {table.map((t) => {
+                const homeMeta = homeOrderMeta(g.key, t.key);
+                const confirmed = day.groups[g.key]?.[t.key] || 0;
+
+                if (homeMeta) {
+                  return (
+                    <div key={t.key} className="flex items-center justify-between px-4 py-2.5 gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm text-gray-700">{t.label}</div>
+                        <div className="text-[11px] text-gray-400">
+                          확정 {confirmed}건 · 고객명 입력 후 진행관리로 등록
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openHomeOrder(g.key, t.key)}
+                        disabled={locked}
+                        className="shrink-0 px-3 py-2 rounded-lg bg-violet-50 text-violet-700 text-xs font-bold disabled:opacity-50"
+                      >
+                        + 등록
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <CountRow key={t.key} label={t.label}
+                    sub={t.rate ? `건당 ${won(t.rate)}` : (t.point ? `${t.point}P` : '')}
+                    value={confirmed}
+                    onChange={(v) => setGroupItem(g.key, t.key, v)} />
+                );
+              })}
             </Section>
           );
         })}
@@ -3274,6 +3396,64 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       <div className="text-[11px] text-gray-400 text-center pb-2">입력하면 자동으로 저장돼요. 날짜를 옮겨도 안전해요.</div>
       </>
+      )}
+
+      {homeOrderDraft && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+            <div className="text-xs text-violet-500 font-semibold">홈 상품 등록</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">{homeOrderDraft.label}</div>
+            <div className="text-xs text-gray-400 mt-1">{month}-{selectedDay} 접수</div>
+
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
+              고객명 <span className="text-red-500">*</span>
+            </label>
+            <input
+              autoFocus
+              value={homeCustomerName}
+              onChange={(e) => setHomeCustomerName(e.target.value)}
+              placeholder="고객명을 입력해주세요"
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+            />
+
+            <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={homeDirectComplete}
+                onChange={(e) => setHomeDirectComplete(e.target.checked)}
+                className="w-4 h-4"
+              />
+              지금 바로 설치/개통 완료된 건
+            </label>
+
+            <div className="text-[11px] text-gray-400 mt-2">
+              체크하지 않으면 진행중으로 등록되고, 홈 진행관리에서 완료 처리할 수 있어요.
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setHomeOrderDraft(null);
+                  setHomeCustomerName('');
+                  setHomeDirectComplete(false);
+                }}
+                disabled={homeOrderSaving}
+                className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={submitHomeOrder}
+                disabled={homeOrderSaving || !homeCustomerName.trim()}
+                className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
+              >
+                {homeOrderSaving ? '등록 중...' : '등록'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
