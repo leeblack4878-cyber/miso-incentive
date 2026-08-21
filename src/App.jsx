@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
-  Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
-  Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Award, Bell
+  Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
+  Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
+  UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
