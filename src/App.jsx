@@ -6,35 +6,15 @@ import {
   AlertTriangle, Zap, UploadCloud, X, Target
 } from 'lucide-react';
 import { supabase } from './supabase';
+import { friendlyError } from './errorMessages';
 import PendingApprovals from './PendingApprovals';
-
-
-/* 브라우저 실행 호환 레이어
-   v6-login 단계에서는 기존 window.storage 호출을 localStorage로 유지합니다.
-   다음 단계에서 일일실적/월별상태를 Supabase 중앙 DB로 교체합니다. */
-if (typeof window !== 'undefined' && !window.storage) {
-  window.storage = {
-    async get(key) {
-      const value = window.localStorage.getItem(key);
-      return value === null ? null : { value };
-    },
-    async set(key, value) {
-      window.localStorage.setItem(key, value);
-      return { key, value };
-    },
-    async delete(key) {
-      window.localStorage.removeItem(key);
-      return { key };
-    }
-  };
-}
 
 /* ===================== 기본 정책 상수 (관리자가 수정 가능) ===================== */
 
-const POSITIONS = ['점장', '부점장', '매니저', '사원'];
-const DEFAULT_BASE_PAY = { 점장: 2800000, 부점장: 2600000, 매니저: 2500000, 사원: 2300000 };
+const POSITIONS = ['점장', '부점장', '매니저', '사원', '기타'];
+const DEFAULT_BASE_PAY = { 점장: 2800000, 부점장: 2600000, 매니저: 2500000, 사원: 2300000, 기타: 0 };
 const DEFAULT_BASE_PENALTY = 200000; // 활동시간 미충족시 차감
-const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0 }; // 직책수당 — 영업활동지원금 초과여부 체크에 포함
+const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0, 기타: 0 }; // 직책수당 — 영업활동지원금 초과여부 체크에 포함
 
 const DEFAULT_STORES = [
   '신천동_삼미시장점', '신천동_삼미시장2호점', '본오3동_상록수역점', '대야동_롯데마트점',
@@ -269,7 +249,7 @@ function monthLabel(key) { const [y, m] = key.split('-'); return `${y}년 ${pars
 function formatLastSignIn(iso) {
   if (!iso) return '기록 없음';
   const d = new Date(iso);
-  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  const diffDays = calendarDayDiff(d);
   const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
   if (diffDays <= 0) return `오늘 (${dateStr})`;
   if (diffDays === 1) return `어제 (${dateStr})`;
@@ -537,13 +517,17 @@ function StatusBadge({ status }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>;
 }
 
+function calendarDayDiff(past) {
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((startOf(new Date()) - startOf(past)) / 86400000);
+}
+
 function LastSaved({ updatedAt }) {
   if (!updatedAt) return <span className="text-xs text-gray-300">-</span>;
   const d = new Date(updatedAt);
-  const diffMs = Date.now() - d.getTime();
-  const diffDays = Math.floor(diffMs / 86400000);
+  const diffDays = calendarDayDiff(d);
   const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  let relLabel = diffDays <= 0 ? '오늘' : `${diffDays}일 전`;
+  let relLabel = diffDays <= 0 ? '오늘' : diffDays === 1 ? '어제' : `${diffDays}일 전`;
   const cls = diffDays >= 3 ? 'text-red-500' : diffDays >= 1 ? 'text-amber-600' : 'text-gray-500';
   return (
     <div className={`text-xs ${cls}`}>
@@ -629,7 +613,7 @@ export default function App({ authUser, authProfile }) {
   const [role, setRole] = useState('employee');
   const [employees, setEmployees] = useState([]);
   const [empId, setEmpId] = useState('');
-  const months = useMemo(() => lastMonths(6), []);
+  const months = useMemo(() => lastMonths(24), []);
   const [month, setMonth] = useState(months[0]);
   const [config, setConfig] = useState(defaultConfig());
   const [monthRecords, setMonthRecords] = useState({}); // { empId: {draft, status} }
@@ -644,6 +628,7 @@ export default function App({ authUser, authProfile }) {
   const [dirty, setDirty] = useState(false);            // 실적입력 탭에 저장 안 된 변경이 있는지
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [dbError, setDbError] = useState('');
+  const [lockedMonths, setLockedMonths] = useState([]);
 
   const DEFAULT_EMPLOYEES = [
     { id: 'e01', name: '어진석', branch: '장곡동_장곡역점', position: '사원', hireDate: '2026-08' },
@@ -722,10 +707,27 @@ export default function App({ authUser, authProfile }) {
     try {
       const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: next }, { onConflict: 'config_key' });
       if (error) throw error;
-    } catch (e) { console.error('STORES SAVE ERROR:', e); setDbError(`매장 목록 저장 실패: ${e.message || e}`); }
+    } catch (e) { console.error('STORES SAVE ERROR:', e); setDbError(`매장 목록 저장 실패: ${friendlyError(e)}`); }
   };
   const addStore = (name) => { if (name.trim() && !stores.includes(name.trim())) persistStores([...stores, name.trim()]); };
   const removeStore = (name) => persistStores(stores.filter((s) => s !== name));
+
+  const loadLockedMonths = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'locked_months').maybeSingle();
+      if (error) throw error;
+      setLockedMonths(Array.isArray(data?.value) ? data.value : []);
+    } catch (e) { console.error('LOCKED MONTHS LOAD ERROR:', e); setLockedMonths([]); }
+  }, []);
+
+  const toggleMonthLock = async (targetMonth, lock) => {
+    const next = lock ? [...new Set([...lockedMonths, targetMonth])] : lockedMonths.filter((m) => m !== targetMonth);
+    setLockedMonths(next);
+    try {
+      const { error } = await supabase.from('app_config').upsert({ config_key: 'locked_months', value: next }, { onConflict: 'config_key' });
+      if (error) throw error;
+    } catch (e) { console.error('MONTH LOCK SAVE ERROR:', e); setDbError(`월 마감 설정 실패: ${friendlyError(e)}`); }
+  };
 
   const loadEmployees = useCallback(async () => {
     if (!authUser) return [];
@@ -739,7 +741,7 @@ export default function App({ authUser, authProfile }) {
 
     if (error) {
       console.error('PROFILES LOAD ERROR:', error);
-      setDbError(`직원 정보 불러오기 실패: ${error.message}`);
+      setDbError(`직원 정보 불러오기 실패: ${friendlyError(error)}`);
       return [];
     }
 
@@ -788,7 +790,7 @@ export default function App({ authUser, authProfile }) {
 
     if (error) {
       console.error('MONTHLY LOAD ERROR:', error);
-      setDbError(`월별 상태 불러오기 실패: ${error.message}`);
+      setDbError(`월별 상태 불러오기 실패: ${friendlyError(error)}`);
     } else {
       (data || []).forEach((row) => {
         const payload = row.data || {};
@@ -833,7 +835,7 @@ export default function App({ authUser, authProfile }) {
 
     if (error) {
       console.error('DAILY LOAD ERROR:', error);
-      setDbError(`일일 실적 불러오기 실패: ${error.message}`);
+      setDbError(`일일 실적 불러오기 실패: ${friendlyError(error)}`);
       setDailyRecords(mapped);
       return;
     }
@@ -868,7 +870,7 @@ export default function App({ authUser, authProfile }) {
 
     if (error) {
       console.error('DAILY SAVE ERROR:', error);
-      setDbError(`일일 실적 저장 실패: ${error.message}`);
+      setDbError(`일일 실적 저장 실패: ${friendlyError(error)}`);
       return false;
     }
 
@@ -877,6 +879,7 @@ export default function App({ authUser, authProfile }) {
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
+  useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
   useEffect(() => {
     if (!authUser) return;
     (async () => {
@@ -901,7 +904,7 @@ export default function App({ authUser, authProfile }) {
     try {
       const { error } = await supabase.from('app_config').upsert({ config_key: 'config', value: next }, { onConflict: 'config_key' });
       if (error) throw error;
-    } catch (e) { console.error('CONFIG SAVE ERROR:', e); setDbError(`지급기준 저장 실패: ${e.message || e}`); }
+    } catch (e) { console.error('CONFIG SAVE ERROR:', e); setDbError(`지급기준 저장 실패: ${friendlyError(e)}`); }
   };
   const persistEmployees = async (next) => {
     setEmployees(next);
@@ -921,7 +924,7 @@ export default function App({ authUser, authProfile }) {
 
     const { error } = await supabase.from('profiles').update(dbPatch).eq('id', id);
     if (error) {
-      setDbError(`직원 정보 수정 실패: ${error.message}`);
+      setDbError(`직원 정보 수정 실패: ${friendlyError(error)}`);
       return;
     }
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
@@ -955,7 +958,7 @@ export default function App({ authUser, authProfile }) {
 
     if (error) {
       console.error('MONTHLY SAVE ERROR:', error);
-      setDbError(`월별 상태 저장 실패: ${error.message}`);
+      setDbError(`월별 상태 저장 실패: ${friendlyError(error)}`);
       setSaving(false);
       return;
     }
@@ -975,7 +978,11 @@ export default function App({ authUser, authProfile }) {
   };
 
   // 실적입력 탭 변경을 표시만 해두고, 아래 자동저장 타이머가 실제 저장을 맡음
-  const updateDraft = (next) => { setDraft(next); setDirty(true); };
+  const updateDraft = (next) => {
+    if (lockedMonths.includes(month)) return;
+    setDraft(next);
+    setDirty(true);
+  };
 
   // 자동저장 — 마지막 입력 후 1.2초 동안 조용하면 저장
   const draftRef = useRef(draft);
@@ -1036,7 +1043,7 @@ export default function App({ authUser, authProfile }) {
       );
 
     if (error) {
-      setDbError(`승인 저장 실패: ${error.message}`);
+      setDbError(`승인 저장 실패: ${friendlyError(error)}`);
       return;
     }
 
@@ -1053,7 +1060,10 @@ export default function App({ authUser, authProfile }) {
   const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config);
   // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
-  const salesRows = rows.filter((r) => !NON_SALES_STORES.includes(r.branch));
+  // '기타' 직급(대리입력용 매장 실적 계정)은 건수·성과포인트는 유지하되 인센티브 금액은 0으로 표시(개인 지급 없음)
+  const salesRows = rows
+    .filter((r) => !NON_SALES_STORES.includes(r.branch))
+    .map((r) => (r.position === '기타' ? { ...r, pay: { ...r.pay, total: 0, guaranteedComponent: 0 } } : r));
   const totalPay = salesRows.reduce((s, r) => s + r.pay.total, 0);
   const pendingCount = rows.filter((r) => r.status === 'pending').length;
 
@@ -1079,7 +1089,12 @@ export default function App({ authUser, authProfile }) {
           <div className="max-w-5xl mx-auto px-4 pb-3 flex items-center gap-2">
             <span className="text-xs text-gray-400">로그인:</span>
             <select value={empId} onChange={(e) => setEmpId(e.target.value)} disabled={!['manager', 'admin'].includes(authProfile?.role)} className="text-sm font-medium bg-violet-50 text-violet-700 px-2.5 py-1 rounded-lg border border-violet-100 disabled:opacity-80">
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.position} · {e.branch}</option>)}
+              {(() => {
+                const me = employees.find((m) => m.id === authUser?.id);
+                const seeAll = authProfile?.role === 'admin' || me?.position === '담당';
+                const list = seeAll ? employees : employees.filter((e) => e.branch === me?.branch);
+                return list.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.position} · {e.branch}</option>);
+              })()}
             </select>
           </div>
         )}
@@ -1102,6 +1117,7 @@ export default function App({ authUser, authProfile }) {
           status={(monthRecords[empId] || {}).status || 'none'}
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
           dailyDays={dailyRecords[empId] || {}} saveDailyDay={saveDailyDay}
+          monthLocked={lockedMonths.includes(month)}
         />
       ) : (
         <AdminView
@@ -1111,6 +1127,7 @@ export default function App({ authUser, authProfile }) {
           employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={authProfile?.role === 'admin'}
+          monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
         />
       )}
     </div>
@@ -1119,7 +1136,7 @@ export default function App({ authUser, authProfile }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   const dailyAgg = useMemo(() => aggregateDaily(dailyDays, month), [dailyDays, month]);
   const groupAutoKeys = useMemo(() => {
@@ -1192,7 +1209,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       {tab === 'daily' && (
-        <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} />
+        <>
+          {monthLocked && (
+            <div className="mb-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
+              <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
+            </div>
+          )}
+          <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} />
+        </>
       )}
 
       {tab === 'criteria' && (
@@ -1261,7 +1285,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   );
 }
 
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft }) {
+function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, locked }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -1308,6 +1332,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   }, []);
 
   const mutate = (next) => {
+    if (locked) return;
     setDay(next);
     pendingRef.current = { day: selectedDay, record: next };
     setSaveState('pending');
@@ -1697,16 +1722,31 @@ function RowKV({ label, value, bold }) {
 
 /* ===================== 관리자 화면 ===================== */
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'compare', label: '실적 비교', icon: Layers },
+    { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
     ...(isFullAdmin ? [{ key: 'rates', label: '지급기준 관리', icon: Settings }] : []),
   ];
   useEffect(() => {
     if (adminTab === 'rates' && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
+
+  const downloadCSV = () => {
+    const header = ['이름', '직급', '매장', 'HS', '등급', '총 인센티브', '상태'];
+    const lines = [header, ...rows.map((r) => [
+      r.name, r.position, r.branch, hsCount(r.draft), r.pay.gradeEligible ? r.pay.grade : '', r.pay.total, r.status,
+    ])];
+    const csv = '\uFEFF' + lines.map((row) => row.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `미소인센티브_${month}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5">
@@ -1718,10 +1758,27 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
             </button>
           ))}
         </div>
-        <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
-          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
+            {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          </select>
+          {isFullAdmin && (
+            <button onClick={() => toggleMonthLock(month, !monthLocked)}
+              className={`text-xs font-medium px-3 py-2 rounded-lg border ${monthLocked ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-gray-600 border-gray-200'}`}>
+              {monthLocked ? '🔒 마감됨 (해제)' : '마감하기'}
+            </button>
+          )}
+          <button onClick={downloadCSV} className="flex items-center gap-1 text-xs font-medium px-3 py-2 rounded-lg bg-emerald-600 text-white">
+            <UploadCloud size={13} /> 엑셀 다운로드
+          </button>
+        </div>
       </div>
+
+      {monthLocked && (
+        <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
+          <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감된 달이에요. 모든 직원의 실적 입력·수정이 잠겨 있어요.
+        </div>
+      )}
 
       {adminTab === 'dashboard' && (
         <div className="space-y-4">
@@ -1734,9 +1791,9 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 text-sm font-semibold text-gray-700 border-b border-gray-50">직원별 예상 인센티브</div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="text-sm min-w-max">
                 <thead>
-                  <tr className="text-left text-gray-400 text-xs">
+                  <tr className="text-left text-gray-400 text-xs whitespace-nowrap">
                     <th className="px-4 py-2">이름</th><th className="px-2 py-2">직급</th><th className="px-2 py-2">매장</th>
                     <th className="px-2 py-2 text-right">HS</th>
                     <th className="px-2 py-2 text-right">등급</th><th className="px-2 py-2 text-right">총 인센티브</th>
@@ -1745,7 +1802,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
                 </thead>
                 <tbody>
                   {rows.sort((a, b) => b.pay.total - a.pay.total).map((r) => (
-                    <tr key={r.id} className="border-t border-gray-50">
+                    <tr key={r.id} className="border-t border-gray-50 whitespace-nowrap">
                       <td className="px-4 py-2.5 font-medium text-gray-800">{r.name}</td>
                       <td className="px-2 py-2.5 text-gray-500">{r.position}</td>
                       <td className="px-2 py-2.5 text-gray-500">{r.branch}</td>
@@ -1767,6 +1824,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
       )}
 
       {adminTab === 'compare' && <ComparisonView rows={rows} />}
+
+      {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
       {adminTab === 'employees' && (
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} />
@@ -1811,6 +1870,135 @@ const COMPARE_METRICS = [
   { key: 'tailored', label: '맞춤제안 건수', unit: 'count', calc: (d) => d.tailoredCount || 0 },
   { key: 'kpiScore', label: 'KPI 생산성 점수', unit: 'point', calc: (d, p) => p.kpiScore },
 ];
+
+function formatDateTime(iso) {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function groupItemLabel(config, groupKey, itemKey) {
+  if (groupKey === 'homeBase') return HOME_BASE_ITEMS.find((i) => i.key === itemKey)?.label || itemKey;
+  const table = config?.[groupKey];
+  return (Array.isArray(table) && table.find((i) => i.key === itemKey)?.label) || itemKey;
+}
+
+// old_data/new_data(JSON) 두 시점을 비교해서 실제로 바뀐 항목만 뽑아냄
+function diffDayRecords(config, oldRaw, newRaw) {
+  const oldD = normalizeDay(oldRaw);
+  const newD = normalizeDay(newRaw);
+  const changes = [];
+
+  oldD.matrix.forEach((row, ri) => {
+    row.forEach((oldVal, ci) => {
+      const newVal = newD.matrix[ri]?.[ci] || 0;
+      if ((oldVal || 0) !== newVal) {
+        changes.push({ label: `${MATRIX_ROW_DEFS[ri]?.label || ''} · ${MATRIX_COLS[ci]}`, oldVal: oldVal || 0, newVal });
+      }
+    });
+  });
+
+  DAILY_GROUP_KEYS.forEach((gk) => {
+    const oldG = oldD.groups[gk] || {};
+    const newG = newD.groups[gk] || {};
+    const keys = new Set([...Object.keys(oldG), ...Object.keys(newG)]);
+    keys.forEach((k) => {
+      const oldVal = oldG[k] || 0;
+      const newVal = newG[k] || 0;
+      if (oldVal !== newVal) changes.push({ label: groupItemLabel(config, gk, k), oldVal, newVal });
+    });
+  });
+
+  const EXTRA_LABELS = { custRegCount: '고객등록 건수', tailoredCount: '맞춤제안 건수', tailoredAmount: '맞춤제안 업셀금액' };
+  DAILY_NUMERIC_KEYS.forEach((k) => {
+    const oldVal = oldD[k] || 0;
+    const newVal = newD[k] || 0;
+    if (oldVal !== newVal) changes.push({ label: EXTRA_LABELS[k] || k, oldVal, newVal });
+  });
+
+  return changes;
+}
+
+function HistoryTab({ employees, month, config }) {
+  const [empId, setEmpId] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [nameMap, setNameMap] = useState({});
+
+  useEffect(() => {
+    if (employees.length && !empId) setEmpId(employees[0].id);
+  }, [employees]); // eslint-disable-line
+
+  useEffect(() => {
+    setNameMap(Object.fromEntries(employees.map((e) => [e.id, e.name])));
+  }, [employees]);
+
+  useEffect(() => {
+    if (!empId) return;
+    (async () => {
+      setLoading(true);
+      const [y, m] = month.split('-').map(Number);
+      const from = `${month}-01`;
+      const to = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+      const { data, error } = await supabase
+        .from('daily_records_audit')
+        .select('id, work_date, action, old_data, new_data, changed_by, changed_at')
+        .eq('user_id', empId)
+        .gte('work_date', from)
+        .lt('work_date', to)
+        .order('changed_at', { ascending: false });
+      if (!error) setLogs(data || []);
+      setLoading(false);
+    })();
+  }, [empId, month]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={empId} onChange={(e) => setEmpId(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
+          {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.branch}</option>)}
+        </select>
+        <span className="text-xs text-gray-400">{monthLabel(month)} · 저장할 때마다 자동으로 기록돼요</span>
+      </div>
+
+      {loading ? (
+        <div className="text-xs text-gray-400 py-8 text-center">불러오는 중...</div>
+      ) : logs.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 text-xs text-gray-400 py-8 text-center">이번 달 변경 기록이 없어요.</div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          {logs.map((l) => {
+            const detail = diffDayRecords(config, l.old_data, l.new_data);
+            const totalNew = detail.reduce((s, c) => s + c.newVal, 0);
+            return (
+              <div key={l.id} className="px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-sm text-gray-700">{l.work_date} <span className="text-gray-300">·</span> {l.action === 'insert' ? '최초 입력' : '수정'}</div>
+                    <div className="text-[11px] text-gray-400">{formatDateTime(l.changed_at)} · {nameMap[l.changed_by] || '알 수 없음'}</div>
+                  </div>
+                  {detail.length === 0 && <span className="text-xs text-gray-400">변경 없음</span>}
+                </div>
+                {detail.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {detail.map((c, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs">
+                        <span className="text-gray-500">{c.label}</span>
+                        <span className={`font-medium tabular-nums ${c.oldVal !== c.newVal ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {l.action === 'insert' ? `${c.newVal}건` : `${c.oldVal}건 → ${c.newVal}건`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function ComparisonView({ rows }) {
   const [groupBy, setGroupBy] = useState('employee'); // employee | branch
