@@ -17,6 +17,8 @@ export default function PendingApprovals() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState('');
+  // 관리자 화면 "권한 관리"에서 편집 가능. 기본값은 점장/부점장/담당.
+  const [managerPositions, setManagerPositions] = useState(['점장', '부점장', '담당']);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,7 +40,12 @@ export default function PendingApprovals() {
 
   useEffect(() => { load(); }, [load]);
 
-  const MANAGER_POSITIONS = ['점장', '부점장', '담당'];
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'auto_manager_positions').maybeSingle();
+      if (!error && Array.isArray(data?.value)) setManagerPositions(data.value);
+    })();
+  }, []);
 
   const decide = async (id, approve) => {
     setBusyId(id);
@@ -48,7 +55,7 @@ export default function PendingApprovals() {
       ? {
           status: 'approved',
           active: true,
-          ...(MANAGER_POSITIONS.includes(target?.position) ? { role: 'manager' } : {}),
+          ...(managerPositions.includes(target?.position) ? { role: 'manager' } : {}),
           ...(target?.position === '담당' ? { store_name: '운영진' } : {}),
         }
       : { status: 'rejected', active: false };
@@ -97,14 +104,14 @@ export default function PendingApprovals() {
                 className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white disabled:opacity-50"
               >
                 {busyId === p.id ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
-                승인
+                가입 승인
               </button>
               <button
                 disabled={busyId === p.id}
                 onClick={() => decide(p.id, false)}
                 className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-500 disabled:opacity-50"
               >
-                <UserX size={13} /> 거절
+                <UserX size={13} /> 가입 거절
               </button>
             </div>
           </div>
