@@ -2773,30 +2773,85 @@ function SalesExpensePanel({ userId, month, onTotal }) {
 }
 
 function SpotClaimPanel({ userId, month, claimDate }) {
-  const [policies,setPolicies]=useState([]),[claims,setClaims]=useState([]),[open,setOpen]=useState(false);
-  const [policyId,setPolicyId]=useState(''),[customer,setCustomer]=useState('');
+  const [policies,setPolicies]=useState([]);
+  const [claims,setClaims]=useState([]);
+  const [open,setOpen]=useState(false);
+  const [policyId,setPolicyId]=useState('');
+  const [customer,setCustomer]=useState('');
+  const [directOpen,setDirectOpen]=useState(false);
+  const [directTitle,setDirectTitle]=useState('');
+  const [directAmount,setDirectAmount]=useState('');
+  const [directMemo,setDirectMemo]=useState('');
+
   const load=useCallback(async()=>{
-    const {data:p}=await supabase.from('spot_policies').select('*').lte('start_date',`${month}-31`).gte('end_date',`${month}-01`).eq('active',true).order('start_date');
-    const {data:c}=await supabase.from('spot_claims').select('*, spot_policies(title,amount)').eq('user_id',userId).gte('claim_date',`${month}-01`).lte('claim_date',`${month}-31`).order('created_at',{ascending:false});
-    setPolicies(p||[]);setClaims(c||[]);if(!policyId&&p?.[0])setPolicyId(p[0].id);
-  },[userId,month,policyId]);
-  useEffect(()=>{load()},[userId,month]); // eslint-disable-line
-  const add=async()=>{
+    const {data:p}=await supabase.from('spot_policies').select('*')
+      .lte('start_date',`${month}-31`).gte('end_date',`${month}-01`).eq('active',true).order('start_date');
+    const {data:c}=await supabase.from('spot_claims')
+      .select('*, spot_policies(title,amount)')
+      .eq('user_id',userId)
+      .gte('claim_date',`${month}-01`).lte('claim_date',`${month}-31`)
+      .order('created_at',{ascending:false});
+    setPolicies(p||[]);setClaims(c||[]);
+  },[userId,month]);
+
+  useEffect(()=>{load()},[load]);
+
+  const addPolicyClaim=async()=>{
     if(!policyId)return alert('스팟 정책을 선택해주세요.');
     const {error}=await supabase.from('spot_claims').insert({
-      policy_id:policyId,
-      user_id:userId,
-      claim_date:claimDate || new Date().toISOString().slice(0,10),
-      customer_name:customer.trim()||null,
-      status:'pending'
+      policy_id:policyId,user_id:userId,
+      claim_date:claimDate||new Date().toISOString().slice(0,10),
+      customer_name:customer.trim()||null,status:'pending'
     });
-    if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);setCustomer('');load();
+    if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);
+    setCustomer('');setPolicyId('');load();
   };
+
+  const addDirect=async()=>{
+    const title=directTitle.trim(), amount=Number(directAmount);
+    if(!title)return alert('스팟 정책명을 입력해주세요.');
+    if(!amount||amount<=0)return alert('추가 금액을 입력해주세요.');
+    const {error}=await supabase.from('spot_claims').insert({
+      policy_id:null,user_id:userId,
+      claim_date:claimDate||new Date().toISOString().slice(0,10),
+      customer_name:customer.trim()||null,status:'pending',
+      direct_title:title,direct_amount:amount,direct_memo:directMemo.trim()||null
+    });
+    if(error)return alert(`스팟 직접 입력 실패: ${friendlyError(error)}`);
+    setDirectTitle('');setDirectAmount('');setDirectMemo('');setCustomer('');setDirectOpen(false);load();
+  };
+
   return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-    <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between text-left"><div><div className="text-sm font-bold">🔥 스팟 추가 인센티브</div><div className="text-xs text-gray-400 mt-0.5">정책 선택 → 관리자 확인 후 반영</div></div><span className="text-xs text-violet-600">{open?'접기':'보기'}</span></button>
-    {open&&<div className="px-4 pb-4 space-y-2">
-      {policies.length?<><select value={policyId} onChange={e=>setPolicyId(e.target.value)} className="w-full border rounded-lg p-2 text-xs">{policies.map(p=><option key={p.id} value={p.id}>{p.title} · +{won(p.amount)}</option>)}</select><input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="고객명 (선택)" className="w-full border rounded-lg p-2 text-xs"/><button onClick={add} className="w-full py-2 rounded-lg bg-orange-500 text-white text-xs font-bold">스팟 적용 신청</button></>:<div className="text-xs text-gray-400 py-2">현재 등록된 스팟 정책이 없어요.</div>}
-      {claims.map(c=><div key={c.id} className="text-xs flex justify-between border-t pt-2"><span>{c.spot_policies?.title||'스팟'} · {c.customer_name||'일반'}</span><span className={c.status==='approved'?'text-emerald-600':c.status==='rejected'?'text-red-500':'text-orange-500'}>{c.status==='approved'?'승인':c.status==='rejected'?'반려':'확인대기'}</span></div>)}
+    <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between text-left">
+      <div><div className="text-sm font-bold">🔥 스팟 추가 인센티브</div>
+      <div className="text-xs text-gray-400 mt-0.5">정책 선택 또는 직접 입력 → 관리자 확인</div></div>
+      <span className="text-xs text-violet-600">{open?'접기':'보기'}</span>
+    </button>
+    {open&&<div className="px-4 pb-4 space-y-3">
+      {policies.length>0&&<>
+        <select value={policyId} onChange={e=>setPolicyId(e.target.value)} className="w-full border rounded-lg p-2 text-xs">
+          <option value="">등록된 정책 선택</option>
+          {policies.map(p=><option key={p.id} value={p.id}>{p.title} · +{won(p.amount)}</option>)}
+        </select>
+        <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="고객명 (선택)" className="w-full border rounded-lg p-2 text-xs"/>
+        <button onClick={addPolicyClaim} disabled={!policyId} className="w-full py-2 rounded-lg bg-orange-500 text-white text-xs font-bold disabled:opacity-40">선택 정책 신청</button>
+      </>}
+      <button onClick={()=>setDirectOpen(v=>!v)} className="w-full py-2.5 rounded-xl bg-orange-50 text-orange-700 border border-orange-100 text-xs font-bold">+ 스팟 직접 입력</button>
+      {directOpen&&<div className="space-y-2 bg-orange-50/40 border border-orange-100 rounded-xl p-3">
+        <input value={directTitle} onChange={e=>setDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+        <input value={directAmount} onChange={e=>setDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+        <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="고객명 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+        <input value={directMemo} onChange={e=>setDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+        <div className="text-[10px] text-gray-400">관리자가 확인·수정 후 승인하면 반영돼요.</div>
+        <button onClick={addDirect} className="w-full py-2 rounded-lg bg-orange-500 text-white text-xs font-bold">관리자 확인 요청</button>
+      </div>}
+      {policies.length===0&&!directOpen&&<div className="text-xs text-gray-400">등록된 정책이 없어요. 직접 입력을 이용해주세요.</div>}
+      <div className="divide-y">
+        {claims.map(c=>{const title=c.reviewed_title||c.direct_title||c.spot_policies?.title||'스팟';
+          const amount=c.final_amount??c.direct_amount??c.spot_policies?.amount??0;
+          return <div key={c.id} className="py-2 text-xs flex justify-between gap-2"><div>{title} · {c.customer_name||'일반'}<div className="text-[10px] text-gray-400">{won(amount)}</div></div>
+            <span className={c.status==='approved'?'text-emerald-600':c.status==='rejected'?'text-red-500':'text-orange-500'}>{c.status==='approved'?'승인':c.status==='rejected'?'반려':'확인대기'}</span></div>})}
+      </div>
     </div>}
   </div>;
 }
@@ -2821,16 +2876,96 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
 }
 
 function SpotAdmin({ authUserId }) {
-  const [policies,setPolicies]=useState([]),[claims,setClaims]=useState([]),[form,setForm]=useState({title:'',amount:'',start_date:'',end_date:'',description:''});
-  const load=useCallback(async()=>{const {data:p}=await supabase.from('spot_policies').select('*').order('created_at',{ascending:false});const {data:c}=await supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').eq('status','pending').order('created_at',{ascending:false});setPolicies(p||[]);setClaims(c||[])},[]);
+  const [policies,setPolicies]=useState([]);
+  const [claims,setClaims]=useState([]);
+  const [form,setForm]=useState({title:'',amount:'',start_date:'',end_date:'',description:''});
+  const [editingPolicyId,setEditingPolicyId]=useState(null);
+  const [editPolicy,setEditPolicy]=useState({});
+  const [claimEdits,setClaimEdits]=useState({});
+
+  const load=useCallback(async()=>{
+    const {data:p}=await supabase.from('spot_policies').select('*').order('created_at',{ascending:false});
+    const {data:c}=await supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').order('created_at',{ascending:false});
+    setPolicies(p||[]);setClaims(c||[]);
+    const map={};(c||[]).forEach(x=>map[x.id]={
+      title:x.reviewed_title||x.direct_title||x.spot_policies?.title||'',
+      amount:String(x.final_amount??x.direct_amount??x.spot_policies?.amount??''),
+      memo:x.reviewed_memo||x.direct_memo||''
+    });setClaimEdits(map);
+  },[]);
   useEffect(()=>{load()},[load]);
-  const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return alert('정책명, 금액, 기간을 입력해주세요.');const {error}=await supabase.from('spot_policies').insert({...form,amount:Number(form.amount),created_by:authUserId});if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:''});load()};
-  const decide=async(id,status)=>{await supabase.from('spot_claims').update({status,reviewed_by:authUserId,reviewed_at:new Date().toISOString()}).eq('id',id);load()};
-  return <div className="space-y-3"><div className="bg-white border rounded-xl p-4"><div className="font-bold">🔥 스팟 정책</div><div className="grid grid-cols-2 gap-2 mt-3"><input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/><input placeholder="건당 금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button></div>
-    <div className="bg-white border rounded-xl p-4"><div className="font-bold text-sm">승인 대기 {claims.length}건</div>{claims.map(c=><div key={c.id} className="py-3 border-t mt-2 text-xs flex justify-between gap-2"><div><b>{c.profiles?.name||'직원'}</b> · {c.spot_policies?.title} · +{won(c.spot_policies?.amount||0)}<div className="text-gray-400">{c.customer_name||'고객 연결 없음'}</div></div><div className="flex gap-1"><button onClick={()=>decide(c.id,'approved')} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded">승인</button><button onClick={()=>decide(c.id,'rejected')} className="px-2 py-1 bg-red-50 text-red-500 rounded">반려</button></div></div>)}</div>
+
+  const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return alert('정책명, 금액, 기간을 입력해주세요.');
+    const {error}=await supabase.from('spot_policies').insert({...form,amount:Number(form.amount),created_by:authUserId});
+    if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:''});load()};
+
+  const savePolicy=async(id)=>{
+    const p={...editPolicy,amount:Number(editPolicy.amount||0)};
+    const {error}=await supabase.from('spot_policies').update({
+      title:p.title,amount:p.amount,start_date:p.start_date,end_date:p.end_date,
+      description:p.description||null,active:p.active!==false
+    }).eq('id',id);
+    if(error)return alert(`정책 수정 실패: ${friendlyError(error)}`);
+    setEditingPolicyId(null);setEditPolicy({});load();
+  };
+
+  const decide=async(id,status)=>{
+    const edit=claimEdits[id]||{}, amount=Number(edit.amount||0);
+    if(status==='approved'&&amount<=0)return alert('최종 승인 금액을 입력해주세요.');
+    const {error}=await supabase.from('spot_claims').update({
+      status,reviewed_by:authUserId,reviewed_at:new Date().toISOString(),
+      final_amount:status==='approved'?amount:null,
+      reviewed_title:String(edit.title||'').trim()||null,
+      reviewed_memo:String(edit.memo||'').trim()||null
+    }).eq('id',id);
+    if(error)return alert(`스팟 처리 실패: ${friendlyError(error)}`);load();
+  };
+
+  return <div className="space-y-3">
+    <div className="bg-white border rounded-xl p-4">
+      <div className="font-bold">🔥 스팟 정책 등록</div>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        <input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/>
+        <input placeholder="건당 금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/>
+        <input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/>
+        <input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/>
+      </div>
+      <input placeholder="설명 (선택)" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} className="mt-2 w-full border rounded p-2 text-xs"/>
+      <button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button>
+    </div>
+
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="font-bold text-sm">등록된 정책 관리</div><div className="text-xs text-gray-400">명칭·금액·기간 수정 가능</div></div>
+      <div className="divide-y">{policies.map(p=><div key={p.id} className="p-3 text-xs">
+        {editingPolicyId===p.id?<div className="space-y-2">
+          <input value={editPolicy.title||''} onChange={e=>setEditPolicy({...editPolicy,title:e.target.value})} className="w-full border rounded p-2"/>
+          <div className="grid grid-cols-3 gap-2">
+            <input value={editPolicy.amount||''} onChange={e=>setEditPolicy({...editPolicy,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2"/>
+            <input type="date" value={editPolicy.start_date||''} onChange={e=>setEditPolicy({...editPolicy,start_date:e.target.value})} className="border rounded p-2"/>
+            <input type="date" value={editPolicy.end_date||''} onChange={e=>setEditPolicy({...editPolicy,end_date:e.target.value})} className="border rounded p-2"/>
+          </div>
+          <label className="flex gap-2"><input type="checkbox" checked={editPolicy.active!==false} onChange={e=>setEditPolicy({...editPolicy,active:e.target.checked})}/> 활성</label>
+          <div className="grid grid-cols-2 gap-2"><button onClick={()=>setEditingPolicyId(null)} className="py-2 bg-gray-100 rounded">취소</button><button onClick={()=>savePolicy(p.id)} className="py-2 bg-violet-600 text-white rounded font-bold">저장</button></div>
+        </div>:<div className="flex justify-between gap-2"><div><b>{p.title} · {won(p.amount)}</b><div className="text-[10px] text-gray-400">{p.start_date} ~ {p.end_date} · {p.active?'활성':'비활성'}</div></div>
+          <button onClick={()=>{setEditingPolicyId(p.id);setEditPolicy({...p,amount:String(p.amount||'')})}} className="text-violet-600">수정</button></div>}
+      </div>)}</div>
+    </div>
+
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 스팟 검토</div><div className="text-xs text-gray-400">직접 입력 건은 수정 후 승인하세요.</div></div>
+      <div className="divide-y">{claims.map(c=>{const x=claimEdits[c.id]||{}, direct=!c.policy_id;return <div key={c.id} className="p-4 text-xs">
+        <div className="flex justify-between"><div><b>{c.profiles?.name||'직원'} · {c.profiles?.store_name||''}</b><div className="text-[10px] text-gray-400">{c.claim_date} · {c.customer_name||'고객 없음'} · {direct?'직접 입력':'등록 정책'}</div></div>
+          <span className={c.status==='approved'?'text-emerald-600':c.status==='rejected'?'text-red-500':'text-orange-500'}>{c.status==='approved'?'승인':c.status==='rejected'?'반려':'확인대기'}</span></div>
+        <div className="space-y-2 mt-3">
+          <input value={x.title||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,title:e.target.value}})} placeholder="정책명" className="w-full border rounded p-2"/>
+          <input value={x.amount||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,amount:e.target.value.replace(/\D/g,'')}})} placeholder="최종 승인 금액" className="w-full border rounded p-2"/>
+          <input value={x.memo||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,memo:e.target.value}})} placeholder="관리자 메모" className="w-full border rounded p-2"/>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-3"><button onClick={()=>decide(c.id,'rejected')} className="py-2 bg-red-50 text-red-500 rounded">반려</button><button onClick={()=>decide(c.id,'approved')} className="py-2 bg-emerald-600 text-white rounded font-bold">{c.status==='approved'?'수정 저장':'수정 후 승인'}</button></div>
+      </div>})}</div>
+    </div>
   </div>;
 }
-
 
 /* ===================== v17 고객관리 ===================== */
 
@@ -3342,6 +3477,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileSpotPolicies,setMobileSpotPolicies]=useState([]);
   const [mobileSpotPolicyId,setMobileSpotPolicyId]=useState('');
+  const [mobileSpotDirectOpen,setMobileSpotDirectOpen]=useState(false);
+  const [mobileSpotDirectTitle,setMobileSpotDirectTitle]=useState('');
+  const [mobileSpotDirectAmount,setMobileSpotDirectAmount]=useState('');
+  const [mobileSpotDirectMemo,setMobileSpotDirectMemo]=useState('');
   const [mobileExpenseOpen,setMobileExpenseOpen]=useState(false);
   const [mobileExpenseCategory,setMobileExpenseCategory]=useState('케이스');
   const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
@@ -3691,6 +3830,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCustomDueDate('');
     setMobileVasKeys([]);
     setMobileSpotPolicyId('');
+    setMobileSpotDirectOpen(false);
+    setMobileSpotDirectTitle('');
+    setMobileSpotDirectAmount('');
+    setMobileSpotDirectMemo('');
     setMobileExpenseOpen(false);
     setMobileExpenseCategory('케이스');
     setMobileExpenseAmount('');
@@ -3720,6 +3863,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           status:'pending'
         });
         if (spotError) throw spotError;
+      } else if (mobileSpotDirectOpen && mobileSpotDirectTitle.trim() && Number(mobileSpotDirectAmount)>0) {
+        const {error:spotDirectError}=await supabase.from('spot_claims').insert({
+          policy_id:null,
+          user_id:currentEmp.id,
+          claim_date:saleDate,
+          customer_name:customer,
+          status:'pending',
+          direct_title:mobileSpotDirectTitle.trim(),
+          direct_amount:Number(mobileSpotDirectAmount),
+          direct_memo:mobileSpotDirectMemo.trim()||null
+        });
+        if (spotDirectError) throw spotDirectError;
       }
 
       // 고객에게 사용한 영업비용도 같은 판매 건에서 바로 등록
@@ -4124,22 +4279,24 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             </div>
 
             <div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
-              <div className="text-xs font-semibold text-gray-700 mb-2">🔥 적용할 스팟 정책</div>
-              {mobileSpotPolicies.length ? (
-                <div className="space-y-1.5">
-                  <button type="button" onClick={()=>setMobileSpotPolicyId('')}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${!mobileSpotPolicyId?'bg-white border-orange-200 text-orange-700':'bg-white/70 border-transparent text-gray-500'}`}>
-                    적용 안 함
-                  </button>
-                  {mobileSpotPolicies.map(p=>(
-                    <button key={p.id} type="button" onClick={()=>setMobileSpotPolicyId(p.id)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${mobileSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}>
-                      <span className="font-semibold">{mobileSpotPolicyId===p.id?'✓ ':''}{p.title}</span>
-                      <span className="float-right">+{won(p.amount)}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : <div className="text-xs text-gray-400">이 판매일에 적용 가능한 스팟 정책이 없어요.</div>}
+              <div className="text-xs font-semibold text-gray-700 mb-2">🔥 스팟 추가 인센티브</div>
+              {mobileSpotPolicies.length>0&&<div className="space-y-1.5">
+                {mobileSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setMobileSpotPolicyId(p.id);setMobileSpotDirectOpen(false)}}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs border ${mobileSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}>
+                  <b>{mobileSpotPolicyId===p.id?'✓ ':''}{p.title}</b><span className="float-right">+{won(p.amount)}</span>
+                </button>)}
+              </div>}
+              <button type="button" onClick={()=>{setMobileSpotPolicyId('');setMobileSpotDirectOpen(v=>!v)}}
+                className="w-full mt-2 px-3 py-2 rounded-lg text-left text-xs font-bold bg-orange-100/70 text-orange-700">
+                + 스팟 직접 입력
+              </button>
+              {mobileSpotDirectOpen&&<div className="space-y-2 mt-2">
+                <input value={mobileSpotDirectTitle} onChange={e=>setMobileSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+                <input value={mobileSpotDirectAmount} onChange={e=>setMobileSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+                <input value={mobileSpotDirectMemo} onChange={e=>setMobileSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+                <div className="text-[10px] text-gray-400">관리자가 확인·수정 후 승인하면 반영돼요.</div>
+              </div>}
+              {mobileSpotPolicies.length===0&&!mobileSpotDirectOpen&&<div className="text-xs text-gray-400 mt-2">등록된 정책이 없어요. 직접 입력해주세요.</div>}
             </div>
 
             {mobileExpenseOpen && (
