@@ -330,6 +330,7 @@ function emptyDay() {
     matrix: emptyDayMatrix(),
     groups: Object.fromEntries(DAILY_GROUP_KEYS.map((k) => [k, {}])),
     custRegCount: 0, tailoredCount: 0, tailoredAmount: 0,
+    dayOff: false,
   };
 }
 
@@ -345,6 +346,7 @@ function normalizeDay(raw) {
     custRegCount: raw.custRegCount || 0,
     tailoredCount: raw.tailoredCount || 0,
     tailoredAmount: raw.tailoredAmount || 0,
+    dayOff: !!raw.dayOff,
   };
 }
 
@@ -1269,7 +1271,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           draft={draft} setDraft={updateDraft} config={config} pay={myPay} mergedDraft={myMergedDraft}
           status={(monthRecords[empId] || {}).status || 'none'}
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
-          dailyDays={dailyRecords[empId] || {}} saveDailyDay={saveDailyDay}
+          dailyDays={dailyRecords[empId] || {}} allDailyRecords={dailyRecords} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
@@ -1279,12 +1281,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
           savePersonalGoals={savePersonalGoals}
           goalSaving={goalSaving}
           showPersonalGoal={empId === authUser?.id}
+          competitionRows={salesRows}
           authUser={authUser} authProfile={authProfile}
         />
       ) : (
         <AdminView
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
-          rows={scopedSalesRows} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
+          rows={scopedSalesRows} rankingRows={salesRows} dailyRecords={dailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
           config={config} persistConfig={persistConfig}
           employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
@@ -1298,7 +1301,279 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, authUser, authProfile }) {
+
+function getWorkActivityStats(dailyDays, month) {
+  const [yy, mm] = month.split('-').map(Number);
+  const now = new Date();
+  const isCurrentMonth = monthKeyOf(now) === month;
+  const lastDay = isCurrentMonth ? now.getDate() : daysInMonth(month);
+
+  let activeDays = 0;
+  for (let d = 1; d <= lastDay; d++) {
+    const key = String(d).padStart(2, '0');
+    const rec = normalizeDay(dailyDays?.[key]);
+    if (!rec.dayOff && dayHasData(rec)) activeDays += 1;
+  }
+
+  let streak = 0;
+  let todayHasData = false;
+  let todayOff = false;
+
+  for (let d = lastDay; d >= 1; d--) {
+    const key = String(d).padStart(2, '0');
+    const rec = normalizeDay(dailyDays?.[key]);
+
+    if (isCurrentMonth && d === now.getDate()) {
+      todayOff = !!rec.dayOff;
+      todayHasData = !rec.dayOff && dayHasData(rec);
+      if (rec.dayOff) continue;
+      if (!dayHasData(rec)) continue; // 오늘은 아직 입력 전이어도 기존 연속 기록 유지
+    }
+
+    if (rec.dayOff) continue;
+    if (dayHasData(rec)) {
+      streak += 1;
+      continue;
+    }
+    break;
+  }
+
+  return { activeDays, streak, todayHasData, todayOff, isCurrentMonth };
+}
+
+function WorkActivityCard({ dailyDays, month, onGoInput }) {
+  const stats = useMemo(() => getWorkActivityStats(dailyDays, month), [dailyDays, month]);
+
+  let message = '';
+  if (!stats.isCurrentMonth) {
+    message = `${monthLabel(month)} 활동 기록이에요`;
+  } else if (stats.todayOff) {
+    message = '오늘은 휴무예요. 푹 쉬고 다음 근무일부터 이어가요 :)';
+  } else if (stats.todayHasData) {
+    message = stats.streak > 0 ? '오늘 기록도 이어졌어요 🙌' : '오늘 기록 완료 🙌';
+  } else if (stats.streak > 0) {
+    message = `오늘 기록하면 ${stats.streak + 1}일 연속!`;
+  } else {
+    message = '오늘부터 첫 기록을 남겨보세요 🌱';
+  }
+
+  return (
+    <button onClick={onGoInput} className="w-full text-left bg-white rounded-xl border border-orange-100 p-4">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center text-lg shrink-0">🔥</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-gray-400">이번 달 활동</div>
+          <div className="text-base font-bold text-gray-900 mt-0.5">
+            {stats.streak > 0 ? `${stats.streak}근무일 연속 기록 중` : '기록을 시작해볼까요?'}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">{message}</div>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-lg font-bold text-orange-600">{stats.activeDays}</div>
+          <div className="text-[10px] text-gray-400">활동일</div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+const COMPETITION_METRICS = [
+  { key: 'hs', label: 'HS', unit: '건', value: (r) => hsCount(r.draft) },
+  { key: 'home', label: '홈', unit: '건', value: (r) => Number(r.pay?.homeCaseCount || 0) },
+  { key: 'tvFree', label: 'TV프리', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
+  { key: 'smartHome', label: '스마트홈', unit: '건', value: (r) => Number(r.draft?.homeFlat?.smartHome || 0) },
+  { key: 'kpi', label: '생산성', unit: 'P', value: (r) => Number(r.pay?.kpiScore || 0) },
+  { key: 'tailored', label: '맞춤제안', unit: '건', value: (r) => Number(r.draft?.tailoredCount || 0) },
+];
+
+
+function recentWindowDaysMap(daysMap, month, windowSize = 7) {
+  const now = new Date();
+  const isCurrent = monthKeyOf(now) === month;
+  const endDay = isCurrent ? now.getDate() : daysInMonth(month);
+  const startDay = Math.max(1, endDay - windowSize + 1);
+
+  const out = {};
+  for (let d = startDay; d <= endDay; d++) {
+    const key = String(d).padStart(2, '0');
+    if (daysMap?.[key]) out[key] = daysMap[key];
+  }
+  return out;
+}
+
+function metricValueFromDailyWindow(employee, daysMap, month, config, metricKey) {
+  const windowDays = recentWindowDaysMap(daysMap, month, 7);
+  const merged = applyDailyToDraft(
+    emptyDraft(),
+    windowDays,
+    month,
+    config.categoryMap,
+    config.gibyeonColumnMap
+  );
+  const pay = computePay(
+    merged,
+    employee?.position || '사원',
+    employee?.hireDate,
+    month,
+    config
+  );
+
+  const tempRow = { ...employee, draft: merged, pay };
+  const metric = COMPETITION_METRICS.find((m) => m.key === metricKey) || COMPETITION_METRICS[0];
+  return Number(metric.value(tempRow) || 0);
+}
+
+function buildRisingRanking(rows, dailyRecords, month, config, metricKey) {
+  return [...(rows || [])]
+    .filter((r) => !NON_SALES_STORES.includes(r.branch))
+    .map((r) => ({
+      ...r,
+      recentValue: metricValueFromDailyWindow(
+        r,
+        dailyRecords?.[r.id] || {},
+        month,
+        config,
+        metricKey
+      ),
+    }))
+    .sort((a, b) => b.recentValue - a.recentValue || a.name.localeCompare(b.name));
+}
+
+function RisingRankingCard({ rows, dailyRecords, month, config, userId }) {
+  const [metricKey, setMetricKey] = useState('hs');
+  const metric = COMPETITION_METRICS.find((m) => m.key === metricKey) || COMPETITION_METRICS[0];
+
+  const ranked = useMemo(
+    () => buildRisingRanking(rows, dailyRecords, month, config, metricKey),
+    [rows, dailyRecords, month, config, metricKey]
+  );
+
+  const top3 = ranked.slice(0, 3);
+  const myIndex = ranked.findIndex((r) => r.id === userId);
+  const me = myIndex >= 0 ? ranked[myIndex] : null;
+
+  if (!ranked.length) return null;
+
+  return (
+    <div className="bg-white rounded-xl border border-orange-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-orange-50 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs text-orange-500">최근 7일</div>
+          <div className="text-sm font-bold text-gray-900">급상승 랭킹 🔥</div>
+        </div>
+        <select
+          value={metricKey}
+          onChange={(e) => setMetricKey(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
+        >
+          {COMPETITION_METRICS.map((m) => (
+            <option key={m.key} value={m.key}>{m.label}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="divide-y divide-gray-50">
+        {top3.map((r, i) => (
+          <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                i === 0
+                  ? 'bg-amber-100 text-amber-700'
+                  : i === 1
+                    ? 'bg-gray-100 text-gray-600'
+                    : 'bg-orange-100 text-orange-700'
+              }`}>
+                {i + 1}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-800 truncate">{r.name}</div>
+                <div className="text-[11px] text-gray-400 truncate">{r.branch}</div>
+              </div>
+            </div>
+            <div className="text-sm font-bold text-orange-600 shrink-0">
+              +{formatCompetitionValue(r.recentValue, metric.unit)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {me && myIndex >= 3 && (
+        <div className="px-4 py-3 bg-violet-50 flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-violet-700">나는 현재 {myIndex + 1}위</div>
+          <div className="text-sm font-bold text-violet-700">
+            +{formatCompetitionValue(me.recentValue, metric.unit)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatCompetitionValue(v, unit) {
+  return unit === 'P' ? `${Number(v || 0).toFixed(1)}P` : `${Math.round(Number(v || 0))}건`;
+}
+
+function MyRankingCard({ rows, userId, branch }) {
+  const [metricKey, setMetricKey] = useState('hs');
+  const metric = COMPETITION_METRICS.find((m) => m.key === metricKey) || COMPETITION_METRICS[0];
+
+  const ranked = useMemo(() => [...(rows || [])]
+    .filter((r) => !NON_SALES_STORES.includes(r.branch))
+    .sort((a, b) => metric.value(b) - metric.value(a) || a.name.localeCompare(b.name)),
+  [rows, metricKey]);
+
+  const idx = ranked.findIndex((r) => r.id === userId);
+  if (idx < 0 || ranked.length <= 1) return null;
+
+  const mine = ranked[idx];
+  const above = idx > 0 ? ranked[idx - 1] : null;
+  const below = idx < ranked.length - 1 ? ranked[idx + 1] : null;
+  const gap = above ? Math.max(0, metric.value(above) - metric.value(mine)) : 0;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <div className="text-xs text-gray-400">내 주변 순위</div>
+          <div className="text-sm font-bold text-gray-900">전체 {idx + 1}위 · {mine.name}</div>
+        </div>
+        <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white">
+          {COMPETITION_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </div>
+
+      <div className="space-y-1.5">
+        {above && (
+          <div className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-gray-50">
+            <span>{idx}위 · {above.name}</span>
+            <b>{formatCompetitionValue(metric.value(above), metric.unit)}</b>
+          </div>
+        )}
+        <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-violet-50 text-violet-800">
+          <span className="font-bold">{idx + 1}위 · {mine.name}</span>
+          <b>{formatCompetitionValue(metric.value(mine), metric.unit)}</b>
+        </div>
+        {below && (
+          <div className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-gray-50">
+            <span>{idx + 2}위 · {below.name}</span>
+            <b>{formatCompetitionValue(metric.value(below), metric.unit)}</b>
+          </div>
+        )}
+      </div>
+
+      {above && (
+        <div className="text-xs text-gray-500 mt-3">
+          {idx === 1 ? '1위' : `${idx}위`}까지 <b className="text-violet-700">
+            {formatCompetitionValue(gap, metric.unit)}
+          </b> 차이예요 🔥
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -1358,18 +1633,15 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             config={config}
             onGoInput={() => setTab('daily')}
           />
-          {myRank && (
-            <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4">
-              <div className="flex-1">
-                <div className="text-xs text-gray-400">전체 순위</div>
-                <div className="text-lg font-bold text-gray-900">{myRank}<span className="text-sm text-gray-400 font-medium">위 / {myRankTotal}명</span></div>
-              </div>
-              {myBranchRank && myBranchTotal > 1 && (
-                <div className="flex-1 border-l border-gray-100 pl-4">
-                  <div className="text-xs text-gray-400">우리 매장 순위</div>
-                  <div className="text-lg font-bold text-gray-900">{myBranchRank}<span className="text-sm text-gray-400 font-medium">위 / {myBranchTotal}명</span></div>
-                </div>
-              )}
+          <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={() => setTab('daily')} />
+          <MyRankingCard rows={competitionRows} userId={authUser?.id} branch={currentEmp?.branch} />
+          <RisingRankingCard
+            rows={competitionRows}
+            dailyRecords={allDailyRecords}
+            month={month}
+            config={config}
+            userId={authUser?.id}
+          />
             </div>
           )}
           <GradeProgress pay={pay} config={config} dailyDays={dailyDays} month={month} />
@@ -1504,6 +1776,19 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
 
   const dayMatrix = day.matrix;
+  const isDayOff = !!day.dayOff;
+
+  const setDayOff = (nextOff) => {
+    if (locked) return;
+    if (nextOff && dayHasData(day)) {
+      const ok = window.confirm('이 날짜에는 이미 실적이 입력되어 있어요. 휴무로 표시해도 실적 데이터는 그대로 남습니다. 계속할까요?');
+      if (!ok) return;
+    }
+    const next = { ...normalizeDay(day), dayOff: nextOff };
+    setDay(next);
+    pendingRef.current = { day: selectedDay, record: next };
+    setSaveState('pending');
+  };
 
   // 저장되지 않은 변경을 담아두는 칸 — 날짜를 바꾸거나 화면을 떠날 때 이걸 먼저 비움
   const pendingRef = useRef(null);
@@ -1700,20 +1985,50 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           ))}
           {Array.from({ length: n }, (_, i) => i + 1).map((d) => {
             const key = String(d).padStart(2, '0');
-            const has = key === selectedDay ? dayHasData(day) : dayHasData(dailyDays[key]);
+            const rec = key === selectedDay ? day : normalizeDay(dailyDays[key]);
+            const has = dayHasData(rec);
+            const off = !!rec.dayOff;
             const isSel = key === selectedDay;
             const dow = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, d).getDay();
             return (
               <button key={d} onClick={() => selectDay(key)}
                 className={`relative aspect-square rounded-lg text-xs font-medium flex flex-col items-center justify-center
-                  ${isSel ? 'bg-violet-600 text-white' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
+                  ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
                 <span>{d}</span>
-                {has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />}
+                {off && <span className={`text-[8px] leading-none mt-0.5 ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>}
+                {has && !off && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />}
               </button>
             );
           })}
         </div>
+
+        <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-700">이 날짜는 휴무인가요?</div>
+            <div className="text-[11px] text-gray-400">휴무일은 근무일 연속 기록에서 자연스럽게 건너뛰어요.</div>
+          </div>
+          <button
+            onClick={() => setDayOff(!isDayOff)}
+            disabled={locked}
+            className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border ${
+              isDayOff
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-white text-gray-500 border-gray-200'
+            } disabled:opacity-50`}
+          >
+            {isDayOff ? '휴무 ✓' : '휴무'}
+          </button>
+        </div>
       </div>
+
+      {isDayOff ? (
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 text-center">
+          <div className="text-2xl mb-2">🌿</div>
+          <div className="text-sm font-bold text-emerald-800">오늘은 휴무로 설정했어요</div>
+          <div className="text-xs text-emerald-700/70 mt-1">푹 쉬고 다음 근무일부터 이어가요 :)</div>
+        </div>
+      ) : (
+      <>
 
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-800">{parseInt(selectedDay, 10)}일 · {dayTotal}건</div>
@@ -1847,6 +2162,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </div>
 
       <div className="text-[11px] text-gray-400 text-center pb-2">입력하면 자동으로 저장돼요. 날짜를 옮겨도 안전해요.</div>
+      </>
+      )}
 
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-24px)] max-w-sm">
@@ -2015,11 +2332,15 @@ function buildNextGoal(pay, draft, config) {
 
 
 const PERSONAL_GOAL_DEFS = [
-  { key: 'hs', label: 'HS', unit: '건' },
-  { key: 'home', label: '홈', unit: '건' },
-  { key: 'custReg', label: '고객등록', unit: '건' },
-  { key: 'tailored', label: '맞춤제안', unit: '건' },
-  { key: 'points', label: '성과포인트', unit: 'P' },
+  { key: 'hs', label: 'HS', unit: '건', defaultTarget: 20 },
+  { key: 'home', label: '홈 실적', unit: '건', defaultTarget: 5 },
+  { key: 'tvFree', label: 'TV프리', unit: '건', defaultTarget: 5 },
+  { key: 'smartHome', label: '스마트홈', unit: '건', defaultTarget: 5 },
+  { key: 'tailoredAmount', label: '맞춤제안 매출액', unit: '원', defaultTarget: 1000000 },
+  { key: 'tailored', label: '맞춤제안 건수', unit: '건', defaultTarget: 15 },
+  { key: 'points', label: '성과포인트', unit: 'P', defaultTarget: 35 },
+  { key: 'kpi', label: 'KPI 생산성', unit: 'P', defaultTarget: 35 },
+  { key: 'incentive', label: '인센티브', unit: '원', defaultTarget: 1500000 },
 ];
 
 function getPersonalGoalActuals(mergedDraft, pay) {
@@ -2034,9 +2355,13 @@ function getPersonalGoalActuals(mergedDraft, pay) {
   return {
     hs,
     home: Number(pay?.homeCaseCount || 0),
-    custReg: Number(mergedDraft?.custRegCount || 0),
+    tvFree: Number(mergedDraft?.homeFlat?.tvFree || 0),
+    smartHome: Number(mergedDraft?.homeFlat?.smartHome || 0),
+    tailoredAmount: Number(mergedDraft?.tailoredAmount || 0),
     tailored: Number(mergedDraft?.tailoredCount || 0),
     points: Number(pay?.totalPoints || 0),
+    kpi: Number(pay?.kpiScore || 0),
+    incentive: Number(pay?.total || 0),
   };
 }
 
@@ -2061,7 +2386,8 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
       } else {
         next.add(key);
         if (!(Number(values[key]) > 0)) {
-          setValues((v) => ({ ...v, [key]: key === 'points' ? 35 : 10 }));
+          const def = PERSONAL_GOAL_DEFS.find((d) => d.key === key);
+          setValues((v) => ({ ...v, [key]: def?.defaultTarget || 10 }));
         }
       }
       return next;
@@ -2114,7 +2440,7 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
                 <input
                   type="number"
                   min="0"
-                  step={def.key === 'points' ? '0.1' : '1'}
+                  step={def.unit === '원' ? '10000' : (def.unit === 'P' ? '0.1' : '1')}
                   disabled={!checked}
                   value={values[def.key] ?? ''}
                   onChange={(e) => setValues((v) => ({ ...v, [def.key]: e.target.value }))}
@@ -2182,13 +2508,17 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
           const pct = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
           const achieved = current >= target;
 
-          const currentLabel = def.key === 'points'
-            ? current.toFixed(1)
-            : Math.round(current).toString();
+          const currentLabel = def.unit === '원'
+            ? Math.round(current).toLocaleString()
+            : def.unit === 'P'
+              ? current.toFixed(1)
+              : Math.round(current).toString();
 
-          const targetLabel = def.key === 'points'
-            ? target.toFixed(1)
-            : Math.round(target).toString();
+          const targetLabel = def.unit === '원'
+            ? Math.round(target).toLocaleString()
+            : def.unit === 'P'
+              ? target.toFixed(1)
+              : Math.round(target).toString();
 
           return (
             <div key={def.key}>
@@ -2417,12 +2747,114 @@ function RowKV({ label, value, bold }) {
   );
 }
 
+
+function RankingCenter({ rows, dailyRecords, month, config }) {
+  const [metricKey, setMetricKey] = useState('hs');
+  const [mode, setMode] = useState('employees'); // employees | stores
+  const [storeMode, setStoreMode] = useState('total'); // total | avg
+  const [periodMode, setPeriodMode] = useState('month'); // month | recent7
+  const metric = COMPETITION_METRICS.find((m) => m.key === metricKey) || COMPETITION_METRICS[0];
+
+  const employeeRanked = useMemo(() => [...(rows || [])]
+    .filter((r) => !NON_SALES_STORES.includes(r.branch))
+    .sort((a, b) => metric.value(b) - metric.value(a) || a.name.localeCompare(b.name)),
+  [rows, metricKey]);
+
+  const recentEmployeeRanked = useMemo(
+    () => buildRisingRanking(rows, dailyRecords, month, config, metricKey),
+    [rows, dailyRecords, month, config, metricKey]
+  );
+
+  const storeRanked = useMemo(() => {
+    const baseRows = periodMode === 'recent7' ? recentEmployeeRanked : (rows || []);
+    const map = new Map();
+
+    baseRows.filter((r) => !NON_SALES_STORES.includes(r.branch)).forEach((r) => {
+      if (!map.has(r.branch)) map.set(r.branch, { name: r.branch, total: 0, count: 0 });
+      const item = map.get(r.branch);
+      const value = periodMode === 'recent7'
+        ? Number(r.recentValue || 0)
+        : Number(metric.value(r) || 0);
+      item.total += value;
+      item.count += 1;
+    });
+
+    return [...map.values()]
+      .map((s) => ({
+        ...s,
+        value: storeMode === 'avg' ? (s.count ? s.total / s.count : 0) : s.total,
+      }))
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  }, [rows, recentEmployeeRanked, metricKey, storeMode, periodMode]);
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white border border-gray-100 rounded-xl p-3">
+        <div className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => setMode('employees')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'employees' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>직원 순위</button>
+            <button onClick={() => setMode('stores')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'stores' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>매장 순위</button>
+          </div>
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => setPeriodMode('month')} className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${periodMode === 'month' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>월 누적</button>
+            <button onClick={() => setPeriodMode('recent7')} className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${periodMode === 'recent7' ? 'bg-white shadow text-orange-600' : 'text-gray-500'}`}>최근 7일</button>
+          </div>
+          <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white">
+            {COMPETITION_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
+        </div>
+
+        {mode === 'stores' && (
+          <div className="mt-2 flex justify-end">
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button onClick={() => setStoreMode('total')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'total' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>총 실적</button>
+              <button onClick={() => setStoreMode('avg')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'avg' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>1인당</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-50 text-sm font-semibold text-gray-700">
+          {periodMode === 'recent7' ? '최근 7일 · ' : ''}{metric.label} {mode === 'employees' ? '직원 순위' : '매장 순위'}
+        </div>
+        <div className="divide-y divide-gray-50">
+          {(mode === 'employees'
+            ? (periodMode === 'recent7' ? recentEmployeeRanked : employeeRanked)
+            : storeRanked
+          ).map((item, i) => {
+            const name = mode === 'employees' ? `${item.name} · ${item.branch}` : item.name;
+            const value = mode === 'employees'
+              ? (periodMode === 'recent7' ? item.recentValue : metric.value(item))
+              : item.value;
+            return (
+              <div key={mode === 'employees' ? item.id : item.name} className="flex items-center justify-between px-4 py-3 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                    i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-100 text-gray-600' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-gray-50 text-gray-400'
+                  }`}>{i + 1}</div>
+                  <div className="text-sm text-gray-800 truncate">{name}</div>
+                </div>
+                <div className="text-sm font-bold text-violet-700 shrink-0">
+                  {formatCompetitionValue(value, metric.unit)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== 관리자 화면 ===================== */
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'compare', label: '실적 비교', icon: Layers },
+    { key: 'rankings', label: '랭킹', icon: Trophy },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
     ...(isFullAdmin ? [
@@ -2524,6 +2956,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
       )}
 
       {adminTab === 'compare' && <ComparisonView rows={rows} />}
+
+      {adminTab === 'rankings' && <RankingCenter rows={rankingRows || rows} dailyRecords={dailyRecords} month={month} config={config} />}
 
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
