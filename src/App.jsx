@@ -195,6 +195,13 @@ const DEFAULT_TAILORED_TIERS = [
   { min: 30, bonus: 400000 },
 ];
 
+
+function displayStoreName(name) {
+  const value = String(name || '');
+  const idx = value.indexOf('_');
+  return idx >= 0 ? value.slice(idx + 1) : value;
+}
+
 function defaultConfig() {
   return {
     basePay: { ...DEFAULT_BASE_PAY },
@@ -1247,7 +1254,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
             >
               {scopedEmployees.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.name} · {e.position} · {e.branch}
+                  {e.name} · {e.position} · {displayStoreName(e.branch)}
                 </option>
               ))}
             </select>
@@ -1381,7 +1388,7 @@ function WorkActivityCard({ dailyDays, month, onGoInput }) {
 const COMPETITION_METRICS = [
   { key: 'hs', label: 'HS', unit: '건', value: (r) => hsCount(r.draft) },
   { key: 'home', label: '홈', unit: '건', value: (r) => Number((r.draft?.homeBase?.homeOnly || 0) + (r.draft?.homeBase?.homeTv || 0)) },
-  { key: 'tvFree', label: 'TV프리', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
+  { key: 'tvFree', label: 'TV프리(부)', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
   { key: 'smartHome', label: '스마트홈', unit: '건', value: (r) => Number(r.draft?.homeFlat?.smartHome || 0) },
   { key: 'kpi', label: '생산성', unit: 'P', value: (r) => Number(r.pay?.kpiScore || 0) },
   { key: 'tailored', label: '맞춤제안', unit: '건', value: (r) => Number(r.draft?.tailoredCount || 0) },
@@ -1488,7 +1495,7 @@ function RisingRankingCard({ rows, dailyRecords, month, config, userId }) {
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-medium text-gray-800 truncate">{r.name}</div>
-                <div className="text-[11px] text-gray-400 truncate">{r.branch}</div>
+                <div className="text-[11px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>
               </div>
             </div>
             <div className="text-sm font-bold text-orange-600 shrink-0">
@@ -1720,7 +1727,7 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
               <div className="text-xs text-violet-600 font-medium mt-0.5">{item.title}</div>
-              {item.branch && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{item.branch}</div>}
+              {item.branch && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{displayStoreName(item.branch)}</div>}
             </div>
           </div>
         ))}
@@ -2126,7 +2133,7 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
             >
               {(employees || []).map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.name} · {e.branch}
+                  {e.name} · {displayStoreName(e.branch)}
                 </option>
               ))}
             </select>
@@ -2240,7 +2247,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             onGoInput={() => setTab('daily')}
           />
           <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={() => setTab('daily')} />
-          <MyRankingCard rows={competitionRows} userId={authUser?.id} branch={currentEmp?.branch} />
+          <MyRankingCard rows={competitionRows} userId={authUser?.id} branch={displayStoreName(currentEmp?.branch)} />
           <RisingRankingCard
             rows={competitionRows}
             dailyRecords={allDailyRecords}
@@ -2282,7 +2289,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
             <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
             <RowKV label="홈 상품 수수료" value={won(pay.homeGradePay + (pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay) + pay.homeAddonPay + pay.renewPay)} />
-            <RowKV label="TV프리" value={won(pay.tvFreePay)} />
+            <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
             <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.matrixTotal)} />
             <RowKV label="2ND 번들 수수료" value={won(pay.bundle2ndTotal)} />
@@ -2342,7 +2349,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
             <RowKV label="홈 그레이드 수수료" value={won(pay.homeGradePay)} />
             <RowKV label="홈 단독" value={won(pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay)} />
-            <RowKV label="TV프리" value={won(pay.tvFreePay)} />
+            <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
             <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
             <RowKV label="동시판매 수수료" value={won(pay.homeAddonPay)} />
             <RowKV label="홈 재약정" value={won(pay.renewPay)} />
@@ -2352,7 +2359,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
             <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
             <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
-            <RowKV label="맞춤제안 건수 수수료" value={won(pay.tailoredBonus)} />
+            <RowKV label="맞춤제안 업셀 건수 수수료" value={won(pay.tailoredBonus)} />
             <RowKV label="맞춤제안 업셀금액 (100%)" value={won(pay.tailoredAmountBonus)} />
             <RowKV label="KPI 생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
             <RowKV label="총 인센티브" value={won(pay.total)} bold />
@@ -2949,10 +2956,10 @@ function buildNextGoal(pay, draft, config) {
 const PERSONAL_GOAL_DEFS = [
   { key: 'hs', label: 'HS', unit: '건', defaultTarget: 20 },
   { key: 'home', label: '홈 실적', unit: '건', defaultTarget: 5 },
-  { key: 'tvFree', label: 'TV프리', unit: '건', defaultTarget: 5 },
+  { key: 'tvFree', label: 'TV프리(부)', unit: '건', defaultTarget: 5 },
   { key: 'smartHome', label: '스마트홈', unit: '건', defaultTarget: 5 },
-  { key: 'tailoredAmount', label: '맞춤제안 매출액', unit: '원', defaultTarget: 1000000 },
-  { key: 'tailored', label: '맞춤제안 건수', unit: '건', defaultTarget: 15 },
+  { key: 'tailoredAmount', label: '맞춤제안 업셀 금액', unit: '원', defaultTarget: 1000000 },
+  { key: 'tailored', label: '맞춤제안 업셀 건수', unit: '건', defaultTarget: 15 },
   { key: 'points', label: '성과포인트', unit: 'P', defaultTarget: 35 },
   { key: 'kpi', label: 'KPI 생산성', unit: 'P', defaultTarget: 35 },
   { key: 'incentive', label: '인센티브', unit: '원', defaultTarget: 1500000 },
@@ -3439,7 +3446,7 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
             ? (periodMode === 'recent7' ? recentEmployeeRanked : employeeRanked)
             : storeRanked
           ).map((item, i) => {
-            const name = mode === 'employees' ? `${item.name} · ${item.branch}` : item.name;
+            const name = mode === 'employees' ? `${item.name} · ${displayStoreName(item.branch)}` : displayStoreName(item.name);
             const value = mode === 'employees'
               ? (periodMode === 'recent7' ? item.recentValue : metric.value(item))
               : item.value;
@@ -3553,7 +3560,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
                     <tr key={r.id} className="border-t border-gray-50 whitespace-nowrap">
                       <td className="px-4 py-2.5 font-medium text-gray-800">{r.name}</td>
                       <td className="px-2 py-2.5 text-gray-500">{r.position}</td>
-                      <td className="px-2 py-2.5 text-gray-500">{r.branch}</td>
+                      <td className="px-2 py-2.5 text-gray-500">{displayStoreName(r.branch)}</td>
                       <td className="px-2 py-2.5 text-right font-medium text-gray-700 tabular-nums">{hsCount(r.draft)}</td>
                       <td className="px-2 py-2.5 text-right text-gray-600">{r.pay.gradeEligible ? r.pay.grade : '-'}</td>
                       <td className="px-2 py-2.5 text-right font-semibold text-violet-700">{won(r.pay.total)}</td>
@@ -3635,7 +3642,7 @@ const COMPARE_METRICS = [
   { key: 'bundle2nd', label: '2ND 번들', unit: 'won', calc: (d, p) => p.bundle2ndTotal },
   { key: 'sono', label: '소노', unit: 'won', calc: (d, p) => p.sonoPay },
   { key: 'custReg', label: '고객등록 건수', unit: 'count', calc: (d) => d.custRegCount || 0 },
-  { key: 'tailored', label: '맞춤제안 건수', unit: 'count', calc: (d) => d.tailoredCount || 0 },
+  { key: 'tailored', label: '맞춤제안 업셀 건수', unit: 'count', calc: (d) => d.tailoredCount || 0 },
   { key: 'kpiScore', label: 'KPI 생산성 점수', unit: 'point', calc: (d, p) => p.kpiScore },
 ];
 
@@ -3676,7 +3683,7 @@ function diffDayRecords(config, oldRaw, newRaw) {
     });
   });
 
-  const EXTRA_LABELS = { custRegCount: '고객등록 건수', tailoredCount: '맞춤제안 건수', tailoredAmount: '맞춤제안 업셀금액' };
+  const EXTRA_LABELS = { custRegCount: '고객등록 건수', tailoredCount: '맞춤제안 업셀 건수', tailoredAmount: '맞춤제안 업셀금액' };
   DAILY_NUMERIC_KEYS.forEach((k) => {
     const oldVal = oldD[k] || 0;
     const newVal = newD[k] || 0;
@@ -3723,7 +3730,7 @@ function HistoryTab({ employees, month, config }) {
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <select value={empId} onChange={(e) => setEmpId(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
-          {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.branch}</option>)}
+          {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {displayStoreName(e.branch)}</option>)}
         </select>
         <span className="text-xs text-gray-400">{monthLabel(month)} · 저장할 때마다 자동으로 기록돼요</span>
       </div>
@@ -3777,7 +3784,7 @@ function ComparisonView({ rows }) {
   let data;
   if (groupBy === 'employee') {
     data = rows.map((r) => ({
-      label: `${r.name} (${r.branch})`,
+      label: `${r.name} (${displayStoreName(r.branch)})`,
       value: metric.calc(r.draft, r.pay),
       parts: metric.parts ? metric.parts.map((p) => p.calc(r.draft, r.pay)) : null,
     }));
@@ -3962,7 +3969,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                     {e.name} · {e.position}
                   </div>
                   <div className="text-[11px] text-gray-500 mt-0.5 break-words">
-                    {e.branch}
+                    {displayStoreName(e.branch)}
                   </div>
                   <div className="text-[11px] text-gray-400 mt-0.5">
                     {e.hireDate ? `입사 ${e.hireDate}` : '입사일 미등록'}
@@ -4233,7 +4240,7 @@ function PermissionsManager({ employees }) {
           {visible.map((e) => (
             <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-gray-800 truncate">{e.name} <span className="text-gray-400 font-normal">· {e.position} · {e.branch}</span></div>
+                <div className="text-sm font-medium text-gray-800 truncate">{e.name} <span className="text-gray-400 font-normal">· {e.position} · {displayStoreName(e.branch)}</span></div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <select
