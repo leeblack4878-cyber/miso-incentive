@@ -908,13 +908,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, [authUser?.id]);
   useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); } }, [month]); // eslint-disable-line
   useEffect(() => {
-    if (!scopedEmployees.length) return;
-    if (!scopedEmployees.some((e) => e.id === empId)) {
-      setEmpId(scopedEmployees[0].id);
-    }
-  }, [scopedEmployees, empId]);
-
-  useEffect(() => {
     const rec = monthRecords[empId];
     setDraft(rec ? { ...emptyDraft(), ...rec.draft } : emptyDraft());
     setDirty(false); // 서버에서 막 불러온 상태이므로 미저장 변경 아님
@@ -1101,6 +1094,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
     : isStoreLeader
       ? employees.filter((e) => e.branch === loginEmp?.branch)
       : employees.filter((e) => e.id === authUser?.id);
+
+  useEffect(() => {
+    if (!scopedEmployees.length) return;
+    if (!scopedEmployees.some((e) => e.id === empId)) {
+      setEmpId(scopedEmployees[0].id);
+    }
+  }, [scopedEmployees, empId]);
 
 
   // 홈 화면 "전월 대비" 표시용 — 본인 것만 가볍게 따로 불러옴
