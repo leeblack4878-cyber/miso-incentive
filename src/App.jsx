@@ -2682,6 +2682,38 @@ async function notifyStoreManagers({ actorId, type, title, message, payload = {}
 
 
 /* ===================== v16: 매장 목표 / 영업비용 / 스팟 정책 ===================== */
+
+const COMPANY_STORE_GOAL_BASE = [
+  { match:['삼미시장2호','삼미2'], hs:63, home:6, productivity:78.8, tvFree:5, smartHome:3 },
+  { match:['삼미시장','삼미'], hs:102, home:10, productivity:127.5, tvFree:8, smartHome:5 },
+  { match:['상록수역','상록'], hs:100, home:10, productivity:123, tvFree:8, smartHome:5 },
+  { match:['롯데마트','대야'], hs:52, home:5, productivity:65, tvFree:4, smartHome:3 },
+  { match:['주민센터','주민'], hs:70, home:7, productivity:82, tvFree:6, smartHome:4 },
+  { match:['장곡역','장곡'], hs:54, home:6, productivity:67.5, tvFree:5, smartHome:3 },
+  { match:['도일시장','거모'], hs:100, home:10, productivity:123, tvFree:8, smartHome:5 },
+  { match:['월곶'], hs:64, home:7, productivity:80, tvFree:5, smartHome:3 },
+  { match:['성포역','성포'], hs:37, home:4, productivity:46.3, tvFree:3, smartHome:2 },
+  { match:['산본'], hs:129, home:13, productivity:161.3, tvFree:9, smartHome:5 },
+  { match:['법조타운','법조','범조'], hs:39, home:4, productivity:48.8, tvFree:3, smartHome:2 },
+  { match:['은계사거리','은계'], hs:41, home:4, productivity:51.3, tvFree:3, smartHome:2 },
+  { match:['본오중학교','본오'], hs:41, home:4, productivity:51.3, tvFree:3, smartHome:2 },
+];
+
+function companyGoalDefaults(storeName){
+  const raw=String(storeName||'');
+  const shown=displayStoreName(raw);
+  const hit=COMPANY_STORE_GOAL_BASE.find(x=>x.match.some(k=>raw.includes(k)||shown.includes(k)));
+  if(!hit)return {};
+  return {
+    hs:hit.hs,
+    home:hit.home,
+    productivity:hit.productivity,
+    tvFree:hit.tvFree,
+    smartHome:hit.smartHome,
+    tailoredCount:Math.ceil(Number(hit.hs||0)*0.5),
+  };
+}
+
 const STORE_GOAL_METRICS = [
   { key:'hs', label:'HS' },
   { key:'home', label:'홈' },
@@ -2708,11 +2740,16 @@ function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
     if(!storeName)return;
     (async()=>{
       const {data}=await supabase.from('store_goals').select('*').eq('month',month).eq('store_name',storeName).maybeSingle();
-      setGoal(data||null);
+      const base=companyGoalDefaults(storeName);
+      setGoal({
+        ...(data||{}),
+        company_goals:{...base,...(data?.company_goals||{})},
+        challenge_goals:{...(data?.challenge_goals||{})}
+      });
     })();
   },[month,storeName]);
   if(!goal)return null;
-  const company=goal.company_goals||{}, challenge=goal.challenge_goals||{};
+  const company={...companyGoalDefaults(storeName),...(goal.company_goals||{})}, challenge=goal.challenge_goals||{};
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex items-center justify-between text-left">
       <div><div className="text-xs text-gray-400">🏪 우리 매장 목표</div><div className="font-bold text-gray-900 mt-0.5">{displayStoreName(storeName)} · {monthLabel(month)}</div></div>
@@ -2858,20 +2895,105 @@ function SpotClaimPanel({ userId, month, claimDate }) {
 
 function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
   const me=employees.find(e=>e.id===authUserId);
-  const stores=[...new Set(employees.map(e=>e.branch).filter(Boolean))];
-  const [selected,setSelected]=useState(me?.branch||stores[0]||'');
+  const stores=[...new Set(
+    employees
+      .map(e=>e.branch)
+      .filter(Boolean)
+      .filter(branch=>!NON_SALES_STORES.includes(branch))
+  )];
+  const canEditCompany=isFullAdmin||me?.position==='담당';
+  const [selected,setSelected]=useState(
+    !NON_SALES_STORES.includes(me?.branch) ? (me?.branch||stores[0]||'') : (stores[0]||'')
+  );
   const [goal,setGoal]=useState({company_goals:{},challenge_goals:{}});
-  const load=useCallback(async()=>{if(!selected)return;const {data}=await supabase.from('store_goals').select('*').eq('month',month).eq('store_name',selected).maybeSingle();setGoal(data||{company_goals:{},challenge_goals:{}})},[month,selected]);
+
+  const load=useCallback(async()=>{
+    if(!selected)return;
+    const {data}=await supabase.from('store_goals')
+      .select('*').eq('month',month).eq('store_name',selected).maybeSingle();
+    const base=companyGoalDefaults(selected);
+    setGoal({
+      ...(data||{}),
+      company_goals:{...base,...(data?.company_goals||{})},
+      challenge_goals:{...(data?.challenge_goals||{})}
+    });
+  },[month,selected]);
+
   useEffect(()=>{load()},[load]);
-  const setVal=(kind,key,val)=>{let n=Number(val)||0;const next={...(goal[kind]||{}),[key]:n};if(kind==='company_goals'&&key==='hs')next.tailoredCount=Math.ceil(n*.5);setGoal({...goal,[kind]:next})};
-  const save=async()=>{const payload={month,store_name:selected,company_goals:goal.company_goals||{},challenge_goals:goal.challenge_goals||{},updated_by:authUserId,updated_at:new Date().toISOString()};const {error}=await supabase.from('store_goals').upsert(payload,{onConflict:'month,store_name'});if(error)return alert(`매장 목표 저장 실패: ${friendlyError(error)}`);alert('매장 목표를 저장했어요.')};
+
+  const setVal=(kind,key,val)=>{
+    let n=Number(val)||0;
+    if(kind==='company_goals'&&!canEditCompany)return;
+    const next={...(goal[kind]||{}),[key]:n};
+    if(kind==='company_goals'&&key==='hs')next.tailoredCount=Math.ceil(n*.5);
+    setGoal({...goal,[kind]:next});
+  };
+
+  const save=async()=>{
+    if(!selected)return;
+    const payload={
+      month,
+      store_name:selected,
+      company_goals:canEditCompany ? (goal.company_goals||{}) : companyGoalDefaults(selected),
+      challenge_goals:goal.challenge_goals||{},
+      updated_by:authUserId,
+      updated_at:new Date().toISOString()
+    };
+    const {error}=await supabase.from('store_goals')
+      .upsert(payload,{onConflict:'month,store_name'});
+    if(error)return alert(`매장 목표 저장 실패: ${friendlyError(error)}`);
+    alert('매장 목표를 저장했어요.');
+    load();
+  };
+
   return <div className="space-y-3">
-    <div className="bg-white rounded-xl border p-4"><div className="font-bold">🏪 매장 목표 설정</div><div className="text-xs text-gray-400 mt-1">회사 기준 + 매장 도전 목표 · 업셀 건수는 HS의 50% 자동 추천</div>
-      <select value={selected} disabled={!isFullAdmin} onChange={e=>setSelected(e.target.value)} className="mt-3 border rounded-lg p-2 text-sm">{stores.map(s=><option key={s}>{s}</option>)}</select>
+    <div className="bg-white rounded-xl border p-4">
+      <div className="font-bold">🏪 매장 목표 설정</div>
+      <div className="text-xs text-gray-400 mt-1">
+        회사 기준 + 매장 도전 목표 · 업셀 건수는 HS의 50% 자동 기준
+      </div>
+      <select
+        value={selected}
+        disabled={!canEditCompany}
+        onChange={e=>setSelected(e.target.value)}
+        className="mt-3 border rounded-lg p-2 text-sm disabled:bg-gray-50"
+      >
+        {stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}
+      </select>
+      <div className="text-[10px] text-gray-400 mt-2">
+        회사 기준 수정: 담당 이상 · 점장/부점장은 본인 매장 도전 목표만 수정
+      </div>
     </div>
-    <div className="bg-white rounded-xl border overflow-hidden"><div className="grid grid-cols-3 text-xs font-bold bg-gray-50 p-3"><span>지표</span><span>회사 기준</span><span>매장 도전</span></div>
-      {STORE_GOAL_METRICS.map(m=><div key={m.key} className="grid grid-cols-3 gap-2 items-center p-3 border-t text-xs"><span>{m.label}</span><input disabled={!isFullAdmin} type="number" step={m.key==='productivity'?'0.1':'1'} value={goal.company_goals?.[m.key]??''} onChange={e=>setVal('company_goals',m.key,e.target.value)} className="border rounded p-2 disabled:bg-gray-50"/><input type="number" step={m.key==='productivity'?'0.1':'1'} value={goal.challenge_goals?.[m.key]??''} onChange={e=>setVal('challenge_goals',m.key,e.target.value)} className="border rounded p-2"/></div>)}
-    </div><button onClick={save} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">매장 목표 저장</button>
+
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="grid grid-cols-3 text-xs font-bold bg-gray-50 p-3">
+        <span>지표</span><span>회사 기준</span><span>매장 도전</span>
+      </div>
+      {STORE_GOAL_METRICS.map(m=>(
+        <div key={m.key} className="grid grid-cols-3 gap-2 items-center p-3 border-t text-xs">
+          <span>{m.label}</span>
+          <input
+            disabled={!canEditCompany || m.key==='tailoredCount'}
+            type="number"
+            step={m.key==='productivity'?'0.1':'1'}
+            value={goal.company_goals?.[m.key]??''}
+            onChange={e=>setVal('company_goals',m.key,e.target.value)}
+            className="border rounded p-2 disabled:bg-gray-50 disabled:text-gray-500"
+          />
+          <input
+            type="number"
+            step={m.key==='productivity'?'0.1':'1'}
+            value={goal.challenge_goals?.[m.key]??''}
+            onChange={e=>setVal('challenge_goals',m.key,e.target.value)}
+            className="border rounded p-2"
+          />
+        </div>
+      ))}
+    </div>
+
+    <button onClick={save} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">
+      매장 목표 저장
+    </button>
   </div>;
 }
 
@@ -3058,7 +3180,8 @@ async function ensureCustomer(userId, customerName, saleDate) {
 
 async function createCustomerSaleAndTasks({
   userId, customerName, saleDate, metricLabel, sourceType='daily',
-  templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null
+  templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null,
+  targetPlan=''
 }) {
   const customerId=await ensureCustomer(userId,customerName,saleDate);
   if(!customerId) throw new Error('고객 저장 실패');
@@ -3080,7 +3203,8 @@ async function createCustomerSaleAndTasks({
     rows.push({
       user_id:userId,customer_id:customerId,source_sale_id:sale.id,
       task_type:key,title:t.title,base_date:saleDate,retention_days:t.retentionDays,
-      due_date:addDaysDate(saleDate,t.retentionDays),status:'pending',note:note||null
+      due_date:addDaysDate(saleDate,t.retentionDays),status:'pending',note:note||null,
+      target_plan:(key==='plan93'||key==='plan183') ? String(targetPlan||'').trim()||null : null
     });
   });
 
@@ -3100,7 +3224,10 @@ async function createCustomerSaleAndTasks({
   return {customerId,saleId:sale.id};
 }
 
-function CareTemplatePicker({ selected, setSelected, customTitle, setCustomTitle, customDueDate, setCustomDueDate, saleDate }) {
+function CareTemplatePicker({
+  selected, setSelected, customTitle, setCustomTitle, customDueDate, setCustomDueDate, saleDate,
+  targetPlan='', setTargetPlan=()=>{}
+}) {
   const toggle=(key)=>setSelected(selected.includes(key)?selected.filter(x=>x!==key):[...selected,key]);
   return <div className="space-y-2">
     <div className="text-xs font-semibold text-gray-600">📌 고객 약속 / 유지조건 <span className="font-normal text-gray-400">(선택)</span></div>
@@ -3114,6 +3241,18 @@ function CareTemplatePicker({ selected, setSelected, customTitle, setCustomTitle
         </button>
       })}
     </div>
+    {(selected.includes('plan93')||selected.includes('plan183'))&&(
+      <div className="pt-1">
+        <div className="text-[11px] font-semibold text-gray-500 mb-1.5">변경 예정 요금제</div>
+        <input
+          value={targetPlan}
+          onChange={e=>setTargetPlan(e.target.value)}
+          placeholder="예: 유쓰 55 / 5G 슬림+"
+          className="w-full border rounded-lg px-2.5 py-2 text-xs"
+        />
+        <div className="text-[10px] text-gray-400 mt-1">요금제 종류가 많아 자유롭게 입력해요.</div>
+      </div>
+    )}
     <div className="grid grid-cols-2 gap-2 pt-1">
       <input value={customTitle} onChange={e=>setCustomTitle(e.target.value)} placeholder="직접 약속 내용" className="border rounded-lg px-2 py-2 text-xs"/>
       <input type="date" value={customDueDate} onChange={e=>setCustomDueDate(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"/>
@@ -3227,6 +3366,7 @@ function CustomerCareManager({ userId, month, homeProps }) {
                  <div className="text-[11px] text-gray-400 mt-1">
                    {t.retention_days?`${t.retention_days}일 유지 → ${t.retention_days===93?'94':'184'}일째 변경 가능 · `:''}{t.due_date}
                  </div>
+                 {t.target_plan&&<div className="text-xs text-violet-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
                <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
@@ -3544,12 +3684,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeCareKeys,setHomeCareKeys]=useState([]);
   const [homeCustomTitle,setHomeCustomTitle]=useState('');
   const [homeCustomDueDate,setHomeCustomDueDate]=useState('');
+  const [homeTargetPlan,setHomeTargetPlan]=useState('');
   const [homeOrderSaving, setHomeOrderSaving] = useState(false);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
   const [mobileCustomerName,setMobileCustomerName]=useState('');
   const [mobileCareKeys,setMobileCareKeys]=useState([]);
   const [mobileCustomTitle,setMobileCustomTitle]=useState('');
   const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
+  const [mobileTargetPlan,setMobileTargetPlan]=useState('');
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileSpotPolicies,setMobileSpotPolicies]=useState([]);
   const [mobileSpotPolicyId,setMobileSpotPolicyId]=useState('');
@@ -3754,7 +3896,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const t=CARE_TEMPLATES.find(x=>x.key===key); if(!t)return;
         taskRows.push({user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:sale.id,
           task_type:key,title:t.title,base_date:sourceWorkDate,retention_days:t.retentionDays,
-          due_date:addDaysDate(sourceWorkDate,t.retentionDays),status:'pending'});
+          due_date:addDaysDate(sourceWorkDate,t.retentionDays),status:'pending',
+          target_plan:(key==='plan93'||key==='plan183') ? homeTargetPlan.trim()||null : null});
       });
       if(homeCustomTitle.trim()&&homeCustomDueDate){
         taskRows.push({user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:sale.id,
@@ -3955,6 +4098,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCareKeys([]);
     setMobileCustomTitle('');
     setMobileCustomDueDate('');
+    setMobileTargetPlan('');
     setMobileVasKeys([]);
     setMobileSpotPolicyId('');
     setMobileSpotDirectOpen(false);
@@ -3978,6 +4122,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         userId:currentEmp.id,customerName:customer,saleDate,
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
+        targetPlan:mobileTargetPlan,
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys}
       });
 
@@ -4414,6 +4559,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 selected={mobileCareKeys} setSelected={setMobileCareKeys}
                 customTitle={mobileCustomTitle} setCustomTitle={setMobileCustomTitle}
                 customDueDate={mobileCustomDueDate} setCustomDueDate={setMobileCustomDueDate}
+                targetPlan={mobileTargetPlan} setTargetPlan={setMobileTargetPlan}
                 saleDate={`${month}-${selectedDay}`}
               />
             </div>
@@ -4498,6 +4644,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 selected={homeCareKeys} setSelected={setHomeCareKeys}
                 customTitle={homeCustomTitle} setCustomTitle={setHomeCustomTitle}
                 customDueDate={homeCustomDueDate} setCustomDueDate={setHomeCustomDueDate}
+                targetPlan={homeTargetPlan} setTargetPlan={setHomeTargetPlan}
                 saleDate={`${month}-${selectedDay}`}
               />
             </div>
@@ -5285,12 +5432,12 @@ function adminMetricValue(row,key){
   if(key==='upsell')return Number(d.tailoredCount||0);
   if(key==='upsellAmount')return Number(d.tailoredAmount||0);
   if(key==='sono')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='productivity')return Number(row?.pay?.kpiScore||0);
   return 0;
 }
 const ADMIN_MAIN_METRICS=[
-  ['hs','HS','count'],['simMnp','SIM MNP','count'],['second','2ND','count'],
-  ['home','홈 실적','count'],['free','프리','count'],['smart','스마트홈','count'],
-  ['upsell','업셀건수','count'],['upsellAmount','맞춤제안매출액','won'],['sono','소노','count']
+  ['hs','HS','count'],['simMnp','SIM MNP','count'],['home','홈 실적','count'],['free','프리','count'],['smart','스마트홈','count'],
+  ['productivity','생산성','point'],['second','2ND','count'],['upsell','업셀건수','count'],['upsellAmount','맞춤제안매출액','won'],['sono','소노','count']
 ];
 
 function AdminCustomerCareOverview({ employees, authUserId }) {
@@ -5326,7 +5473,11 @@ function AdminCustomerCareOverview({ employees, authUserId }) {
         {[...due].sort((a,b)=>a.due_date.localeCompare(b.due_date)).map(t=>{
           const emp=employeeMap[t.user_id], customer=customerMap[t.customer_id];
           return <div key={t.id} className="px-4 py-3 flex justify-between gap-3 text-xs">
-            <div><div className="font-bold text-gray-800">{emp?.name||'직원'} · {customer?.customer_name||'고객'}</div><div className="text-gray-500 mt-1">{t.title}</div></div>
+            <div>
+              <div className="font-bold text-gray-800">{emp?.name||'직원'} · {customer?.customer_name||'고객'}</div>
+              <div className="text-gray-500 mt-1">{t.title}</div>
+              {t.target_plan&&<div className="text-violet-700 mt-1">변경 예정 · {t.target_plan}</div>}
+            </div>
             <div className={`shrink-0 ${t.due_date<today?'text-red-500':t.due_date===today?'text-orange-500':'text-violet-600'}`}>{t.due_date}</div>
           </div>
         })}
@@ -5406,7 +5557,7 @@ function SettlementReview({ month, rows, employees }) {
     (homes||[]).forEach(x=>rowsCsv.push(['홈RAW',x.source_work_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.product_type,x.status,`설치예정:${x.planned_install_date||''} 완료:${x.actual_install_date||''}`]));
     (spots||[]).forEach(x=>rowsCsv.push(['스팟RAW',x.claim_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.reviewed_title||x.direct_title||x.spot_policies?.title,x.final_amount??x.direct_amount??x.spot_policies?.amount,x.status]));
     (expenses||[]).forEach(x=>rowsCsv.push(['비용RAW',x.expense_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.category,x.amount,x.memo]));
-    (tasks||[]).forEach(x=>rowsCsv.push(['약속RAW',x.base_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.title,x.status,`예정:${x.due_date} 완료:${x.completed_at||''}`]));
+    (tasks||[]).forEach(x=>rowsCsv.push(['약속RAW',x.base_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.title,x.status,`예정:${x.due_date} 변경요금제:${x.target_plan||''} 완료:${x.completed_at||''}`]));
     const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
     const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url;a.download=`정산_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
@@ -5510,12 +5661,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
               </div>
               <div className="text-xs text-gray-400">{rows.length}명</div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-5 gap-1.5">
               {ADMIN_MAIN_METRICS.map(([key,label,unit])=>{
                 const value=rows.reduce((s,r)=>s+adminMetricValue(r,key),0);
-                return <div key={key} className="rounded-xl bg-gray-50 p-3 min-w-0">
-                  <div className="text-[10px] text-gray-400 truncate">{label}</div>
-                  <div className="text-base font-bold text-gray-900 mt-0.5 truncate">{unit==='won'?won(value):`${value}건`}</div>
+                return <div key={key} className="rounded-xl bg-gray-50 px-2 py-2.5 min-w-0 text-center">
+                  <div className="text-[9px] sm:text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{label}</div>
+                  <div className="text-[12px] sm:text-base font-bold text-gray-900 mt-0.5 truncate">
+                    {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${value}건`}
+                  </div>
                 </div>
               })}
             </div>
@@ -5596,6 +5749,7 @@ const COMPARE_METRICS = [
   { key:'home', label:'홈 실적', unit:'count', calc:(d)=>Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0) },
   { key:'free', label:'프리', unit:'count', calc:(d)=>Number(d.homeFlat?.tvFree||0) },
   { key:'smart', label:'스마트홈', unit:'count', calc:(d)=>Number(d.homeFlat?.smartHome||0) },
+  { key:'productivity', label:'생산성', unit:'point', calc:(d,p)=>Number(p?.kpiScore||0) },
   { key:'upsell', label:'업셀건수', unit:'count', calc:(d)=>Number(d.tailoredCount||0) },
   { key:'upsellAmount', label:'맞춤제안매출액', unit:'won', calc:(d)=>Number(d.tailoredAmount||0) },
   { key:'sono', label:'소노', unit:'count', calc:(d)=>Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0) },
