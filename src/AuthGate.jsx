@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, LogIn, LogOut, ShieldCheck, KeyRound, Mail, CheckCircle2, UserPlus, Clock, XCircle } from 'lucide-react';
 import { supabase } from './supabase';
+import { friendlyError } from './errorMessages';
 
 // AuthGate 안에서만 쓰는 매장/직급 목록. App.jsx의 DEFAULT_STORES / POSITIONS와 같은 값으로 맞춰주세요.
 // (매장이 추가/변경되면 이 목록도 같이 업데이트해야 회원가입 폼에 반영됩니다.)
-const SIGNUP_STORES = [
+// DB(app_config)에서 불러오지 못했을 때만 쓰는 최후 fallback 목록
+const FALLBACK_STORES = [
   '신천동_삼미시장점', '신천동_삼미시장2호점', '본오3동_상록수역점', '대야동_롯데마트점',
   '본오3동_주민센터점', '장곡동_장곡역점', '거모동_도일시장점', '월곶동_월곶점',
   '월피동_성포역점', '광정동_산본점', '고잔동_법조타운점', '은행동_은계사거리점', '본오1동_본오중학교점',
@@ -30,12 +32,26 @@ export default function AuthGate({ children }) {
   const [newPassword2, setNewPassword2] = useState('');
 
   // 회원가입 전용 필드
+  const [signupStores, setSignupStores] = useState(FALLBACK_STORES);
   const [suName, setSuName] = useState('');
-  const [suStore, setSuStore] = useState(SIGNUP_STORES[0]);
+  const [suStore, setSuStore] = useState(FALLBACK_STORES[0]);
   const [suPosition, setSuPosition] = useState(SIGNUP_POSITIONS[SIGNUP_POSITIONS.length - 1]);
   const [suEmployeeCode, setSuEmployeeCode] = useState('');
   const [suHireDate, setSuHireDate] = useState('');
   const [suPassword2, setSuPassword2] = useState('');
+
+  // 로그인 전(비인증) 상태에서도 호출 가능한 함수로 매장 목록을 관리자 화면과 동일하게 실시간으로 불러옴
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_public_stores');
+        if (!error && Array.isArray(data) && data.length) {
+          setSignupStores(data);
+          setSuStore((cur) => (data.includes(cur) ? cur : data[0]));
+        }
+      } catch (e) { /* 실패하면 fallback 목록 그대로 사용 */ }
+    })();
+  }, []);
 
   async function loadProfile(userId) {
     const { data, error } = await supabase
@@ -100,7 +116,7 @@ export default function AuthGate({ children }) {
 
     if (error) {
       console.error('LOGIN ERROR:', error);
-      setError(`${error.message}${error.status ? ` (status ${error.status})` : ''}`);
+      setError(friendlyError(error));
     } else if (!data?.session) {
       setError('로그인 세션이 생성되지 않았습니다.');
     }
@@ -135,7 +151,7 @@ export default function AuthGate({ children }) {
 
     if (error) {
       console.error('SIGNUP ERROR:', error);
-      setError(error.message);
+      setError(friendlyError(error));
       setSubmitting(false);
       return;
     }
@@ -170,7 +186,7 @@ export default function AuthGate({ children }) {
 
     if (error) {
       console.error('RECOVERY MAIL ERROR:', error);
-      setError(error.message);
+      setError(friendlyError(error));
     } else {
       setInfo('비밀번호 재설정 메일을 보냈습니다. 메일의 링크를 눌러주세요.');
     }
@@ -201,7 +217,7 @@ export default function AuthGate({ children }) {
 
     if (error) {
       console.error('PASSWORD UPDATE ERROR:', error);
-      setError(error.message);
+      setError(friendlyError(error));
     } else {
       setInfo('비밀번호가 변경되었습니다. 이제 새 비밀번호로 로그인할 수 있습니다.');
       setRecoveryMode(false);
@@ -310,7 +326,7 @@ export default function AuthGate({ children }) {
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">매장</label>
                   <select value={suStore} onChange={(e) => setSuStore(e.target.value)}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-violet-200 text-sm">
-                    {SIGNUP_STORES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {signupStores.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
