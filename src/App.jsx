@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
   Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
   Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck
+  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -621,7 +621,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 
 /* ===================== 메인 앱 ===================== */
 
-export default function App({ authUser, authProfile }) {
+export default function App({ authUser, authProfile, onSignOut }) {
   const [role, setRole] = useState('employee');
   const [employees, setEmployees] = useState([]);
   const [empId, setEmpId] = useState('');
@@ -1131,10 +1131,21 @@ export default function App({ authUser, authProfile }) {
               <div className="text-[11px] text-gray-400 leading-tight">2026년 MS직군 수수료 정책 반영</div>
             </div>
           </div>
-          <div className="flex bg-gray-100 rounded-lg p-0.5">
-            <button onClick={() => setRole('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'employee' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>직원</button>
-            {['manager', 'admin'].includes(authProfile?.role) && (
-              <button onClick={() => setRole('admin')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'admin' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>관리자</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex bg-gray-100 rounded-lg p-0.5">
+              <button onClick={() => setRole('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'employee' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>직원</button>
+              {['manager', 'admin'].includes(authProfile?.role) && (
+                <button onClick={() => setRole('admin')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'admin' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>관리자</button>
+              )}
+            </div>
+            <div className="hidden sm:block text-right leading-tight">
+              <div className="text-xs font-semibold text-gray-700">{authProfile?.name || authUser?.email}</div>
+              <div className="text-[10px] text-gray-400">{ROLE_LABELS[authProfile?.role] || authProfile?.role}</div>
+            </div>
+            {onSignOut && (
+              <button onClick={onSignOut} title="로그아웃" className="text-gray-400 hover:text-red-500 p-1.5 shrink-0">
+                <LogOut size={16} />
+              </button>
             )}
           </div>
         </div>
