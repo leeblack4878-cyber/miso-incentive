@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
   Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
   Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Award
+  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -1380,7 +1380,7 @@ function WorkActivityCard({ dailyDays, month, onGoInput }) {
 
 const COMPETITION_METRICS = [
   { key: 'hs', label: 'HS', unit: '건', value: (r) => hsCount(r.draft) },
-  { key: 'home', label: '홈', unit: '건', value: (r) => Number(r.pay?.homeCaseCount || 0) },
+  { key: 'home', label: '홈', unit: '건', value: (r) => Number((r.draft?.homeBase?.homeOnly || 0) + (r.draft?.homeBase?.homeTv || 0)) },
   { key: 'tvFree', label: 'TV프리', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
   { key: 'smartHome', label: '스마트홈', unit: '건', value: (r) => Number(r.draft?.homeFlat?.smartHome || 0) },
   { key: 'kpi', label: '생산성', unit: 'P', value: (r) => Number(r.pay?.kpiScore || 0) },
@@ -2969,7 +2969,7 @@ function getPersonalGoalActuals(mergedDraft, pay) {
 
   return {
     hs,
-    home: Number(pay?.homeCaseCount || 0),
+    home: Number((mergedDraft?.homeBase?.homeOnly || 0) + (mergedDraft?.homeBase?.homeTv || 0)),
     tvFree: Number(mergedDraft?.homeFlat?.tvFree || 0),
     smartHome: Number(mergedDraft?.homeFlat?.smartHome || 0),
     tailoredAmount: Number(mergedDraft?.tailoredAmount || 0),
@@ -3619,6 +3619,16 @@ const COMPARE_METRICS = [
   { key: 'gibyeon', label: '기기변경 (전체)', unit: 'count', calc: (d) => (d.mobilePoint.gibyeon115 || 0) + (d.mobilePoint.gibyeon85 || 0) + (d.mobilePoint.gibyeonWeak || 0) + (d.mobilePoint.gibyeonLVC || 0) },
   { key: 'usedMnp', label: '중고 MNP', unit: 'count', calc: (d) => d.mobilePoint.usedMnp || 0 },
   { key: 'secondOnly', label: '2ND(단독개통포함)', unit: 'count', calc: (d) => d.mobilePoint.secondOnly || 0 },
+  {
+    key: 'home',
+    label: '홈 실적',
+    unit: 'count',
+    calc: (d) => (d.homeBase?.homeOnly || 0) + (d.homeBase?.homeTv || 0),
+    parts: [
+      { label: '홈 단독', calc: (d) => d.homeBase?.homeOnly || 0 },
+      { label: '홈+TV', calc: (d) => d.homeBase?.homeTv || 0 },
+    ],
+  },
   { key: 'homeOnly', label: '홈 단독', unit: 'count', calc: (d) => d.homeBase.homeOnly || 0 },
   { key: 'homeTv', label: '홈+TV 동시청약', unit: 'count', calc: (d) => d.homeBase.homeTv || 0 },
   { key: 'planFee', label: '요금제 유치 수수료', unit: 'won', calc: (d, p) => p.matrixTotal },
