@@ -908,6 +908,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, [authUser?.id]);
   useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); } }, [month]); // eslint-disable-line
   useEffect(() => {
+    if (!scopedEmployees.length) return;
+    if (!scopedEmployees.some((e) => e.id === empId)) {
+      setEmpId(scopedEmployees[0].id);
+    }
+  }, [scopedEmployees, empId]);
+
+  useEffect(() => {
     const rec = monthRecords[empId];
     setDraft(rec ? { ...emptyDraft(), ...rec.draft } : emptyDraft());
     setDirty(false); // 서버에서 막 불러온 상태이므로 미저장 변경 아님
@@ -1079,6 +1086,23 @@ export default function App({ authUser, authProfile, onSignOut }) {
   });
   const currentEmp = employees.find((e) => e.id === empId);
 
+  // 권한별 조회 범위
+  // - 일반 직원/매니저: 본인만
+  // - 점장/부점장: 본인 매장
+  // - 담당: 전체
+  // - 전체 관리자: 전체
+  const loginEmp = employees.find((e) => e.id === authUser?.id);
+  const isFullAdmin = authProfile?.role === 'admin';
+  const isHQManager = loginEmp?.position === '담당';
+  const isStoreLeader = ['점장', '부점장'].includes(loginEmp?.position);
+
+  const scopedEmployees = isFullAdmin || isHQManager
+    ? employees
+    : isStoreLeader
+      ? employees.filter((e) => e.branch === loginEmp?.branch)
+      : employees.filter((e) => e.id === authUser?.id);
+
+
   // 홈 화면 "전월 대비" 표시용 — 본인 것만 가볍게 따로 불러옴
   useEffect(() => {
     if (!empId || !currentEmp) { setPrevMonthTotal(null); return; }
@@ -1108,8 +1132,12 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const salesRows = rows
     .filter((r) => !NON_SALES_STORES.includes(r.branch))
     .map((r) => (r.position === '기타' ? { ...r, pay: { ...r.pay, total: 0, guaranteedComponent: 0 } } : r));
-  const totalPay = salesRows.reduce((s, r) => s + r.pay.total, 0);
-  const pendingCount = rows.filter((r) => r.status === 'pending').length;
+  const scopedIds = new Set(scopedEmployees.map((e) => e.id));
+  const scopedRows = rows.filter((r) => scopedIds.has(r.id));
+  const scopedSalesRows = salesRows.filter((r) => scopedIds.has(r.id));
+
+  const totalPay = scopedSalesRows.reduce((s, r) => s + r.pay.total, 0);
+  const pendingCount = scopedRows.filter((r) => r.status === 'pending').length;
 
   // 홈 화면 랭킹용 — 본인이 영업 조직 소속일 때만 순위 계산
   const rankedSorted = [...salesRows].sort((a, b) => b.pay.total - a.pay.total);
@@ -1152,13 +1180,17 @@ export default function App({ authUser, authProfile, onSignOut }) {
         {role === 'employee' && (
           <div className="max-w-5xl mx-auto px-4 pb-3 flex items-center gap-2">
             <span className="text-xs text-gray-400">로그인:</span>
-            <select value={empId} onChange={(e) => setEmpId(e.target.value)} disabled={!['manager', 'admin'].includes(authProfile?.role)} className="text-sm font-medium bg-violet-50 text-violet-700 px-2.5 py-1 rounded-lg border border-violet-100 disabled:opacity-80">
-              {(() => {
-                const me = employees.find((m) => m.id === authUser?.id);
-                const seeAll = authProfile?.role === 'admin' || me?.position === '담당';
-                const list = seeAll ? employees : employees.filter((e) => e.branch === me?.branch);
-                return list.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.position} · {e.branch}</option>);
-              })()}
+            <select
+              value={empId}
+              onChange={(e) => setEmpId(e.target.value)}
+              disabled={scopedEmployees.length <= 1}
+              className="text-sm font-medium bg-violet-50 text-violet-700 px-2.5 py-1 rounded-lg border border-violet-100 disabled:opacity-80"
+            >
+              {scopedEmployees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} · {e.position} · {e.branch}
+                </option>
+              ))}
             </select>
           </div>
         )}
@@ -1190,11 +1222,11 @@ export default function App({ authUser, authProfile, onSignOut }) {
       ) : (
         <AdminView
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
-          rows={salesRows} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
+          rows={scopedSalesRows} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
           config={config} persistConfig={persistConfig}
-          employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
+          employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
-          isFullAdmin={authProfile?.role === 'admin'}
+          isFullAdmin={isFullAdmin}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
         />
       )}
@@ -1315,7 +1347,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
-          <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} />
+          <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} currentEmp={currentEmp} />
         </>
       )}
 
@@ -1387,7 +1419,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   );
 }
 
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, locked }) {
+function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, locked, currentEmp }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -1396,7 +1428,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const [day, setDay] = useState(() => normalizeDay(dailyDays[todayKey]));
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
-  const [toast, setToast] = useState(null);         // { label, ri, ci }
+  const [toast, setToast] = useState(null);         // 등록 피드백 카드
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
 
   const dayMatrix = day.matrix;
@@ -1450,14 +1482,92 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const selectDay = (key) => { flush(); setSelectedDay(key); };
 
+  const FEEDBACK_MESSAGES = [
+    { title: '오늘도 실적 한 스푼!', sub: '고생했어요 😊' },
+    { title: '좋아요! 오늘도 하나 쌓였어요', sub: '차곡차곡 가고 있어요 🙌' },
+    { title: '차곡차곡 쌓이는 중이에요', sub: '오늘도 한 걸음 전진 ✨' },
+    { title: '오늘의 실적 +1!', sub: '수고했어요 👍' },
+    { title: '좋은 흐름이에요', sub: '하나 더 쌓였습니다 🔥' },
+  ];
+
   const addOne = (ri, ci) => {
-    bump(ri, ci, 1);
+    if (locked) return;
+
+    const beforeDay = normalizeDay(day);
+    const nextMatrix = beforeDay.matrix.map((row) => [...row]);
+    nextMatrix[ri][ci] = (nextMatrix[ri][ci] || 0) + 1;
+    const nextDay = { ...beforeDay, matrix: nextMatrix };
+
+    // 현재 달 전체 실적을 등록 직전/직후로 각각 계산
+    const beforeDays = { ...dailyDays, [selectedDay]: beforeDay };
+    const afterDays = { ...dailyDays, [selectedDay]: nextDay };
+
+    const beforeDraft = applyDailyToDraft(
+      draft,
+      beforeDays,
+      month,
+      config.categoryMap,
+      config.gibyeonColumnMap
+    );
+    const afterDraft = applyDailyToDraft(
+      draft,
+      afterDays,
+      month,
+      config.categoryMap,
+      config.gibyeonColumnMap
+    );
+
+    const position = currentEmp?.position || '사원';
+    const hireDate = currentEmp?.hireDate;
+
+    const beforePay = computePay(beforeDraft, position, hireDate, month, config);
+    const afterPay = computePay(afterDraft, position, hireDate, month, config);
+    const payDelta = Math.max(0, afterPay.total - beforePay.total);
+
     const rowDef = MATRIX_ROW_DEFS[ri];
     const label = rowDef.hasTiers
       ? `${rowDef.dailyLabel || rowDef.label} · ${MATRIX_COLS[ci]}`
       : (rowDef.dailyLabel || rowDef.label);
-    setToast({ label, ri, ci });
-    setTimeout(() => setToast((t) => (t && t.ri === ri && t.ci === ci ? null : t)), 2600);
+
+    // 이번 한 건으로 실제 목표를 넘었는지 확인
+    const gradeUp = beforePay.grade !== afterPay.grade && afterPay.gradeEligible;
+    const homeGateAchieved = !beforePay.gradeEligible && afterPay.gradeEligible;
+
+    let feedback;
+    if (gradeUp) {
+      feedback = {
+        kind: 'achievement',
+        title: '목표 달성! 🎉',
+        sub: `${afterPay.grade}등급에 도달했어요`,
+      };
+    } else if (homeGateAchieved) {
+      feedback = {
+        kind: 'achievement',
+        title: '목표 달성! 🎉',
+        sub: '홈 최소조건을 달성했어요',
+      };
+    } else {
+      const msg = FEEDBACK_MESSAGES[Math.floor(Math.random() * FEEDBACK_MESSAGES.length)];
+      feedback = { kind: 'normal', ...msg };
+    }
+
+    // 실제 입력 반영
+    mutate(nextDay);
+
+    const toastId = `${Date.now()}-${ri}-${ci}`;
+    setToast({
+      id: toastId,
+      label,
+      ri,
+      ci,
+      ...feedback,
+      payDelta,
+      currentTotal: afterPay.total,
+    });
+
+    setTimeout(() => {
+      setToast((t) => (t && t.id === toastId ? null : t));
+    }, 4200);
   };
   const undoToast = () => {
     if (!toast) return;
@@ -1667,9 +1777,40 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       <div className="text-[11px] text-gray-400 text-center pb-2">입력하면 자동으로 저장돼요. 날짜를 옮겨도 안전해요.</div>
 
       {toast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 bg-gray-900 text-white text-xs rounded-full pl-4 pr-1.5 py-1.5 flex items-center gap-3 shadow-lg max-w-[92vw]">
-          <span className="truncate">{toast.label} 1건 추가</span>
-          <button onClick={undoToast} className="px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 font-medium shrink-0">되돌리기</button>
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-24px)] max-w-sm">
+          <div className={`rounded-2xl shadow-xl border p-4 ${
+            toast.kind === 'achievement'
+              ? 'bg-violet-700 border-violet-600 text-white'
+              : 'bg-gray-900 border-gray-800 text-white'
+          }`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] opacity-60 mb-1">등록 완료 · {toast.label}</div>
+                <div className="text-base font-bold">{toast.title}</div>
+                <div className="text-xs opacity-75 mt-0.5">{toast.sub}</div>
+
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div>
+                    {toast.payDelta > 0 && (
+                      <div className="text-sm font-bold text-emerald-300">
+                        예상 인센티브 +{won(toast.payDelta)}
+                      </div>
+                    )}
+                    <div className="text-[11px] opacity-60 mt-0.5">
+                      현재 예상 {won(toast.currentTotal)}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={undoToast}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium"
+                  >
+                    되돌리기
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
