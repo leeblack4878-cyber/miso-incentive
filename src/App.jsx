@@ -2991,6 +2991,60 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
       ))}
     </div>
 
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-4 py-3 border-b">
+        <div className="text-sm font-bold">🎯 목표 달성 현황</div>
+        <div className="text-xs text-gray-400 mt-0.5">회사 기준과 매장 도전 목표를 함께 확인해요.</div>
+      </div>
+      <div className="p-4 space-y-4">
+        {STORE_GOAL_METRICS.map(m=>{
+          const selectedRows=(rows||[]).filter(r=>r.branch===selected);
+          const cur=storeGoalCurrent(
+            selectedRows.reduce((acc,r)=>{
+              if(!acc)return r.draft;
+              return acc;
+            },null)||emptyDraft(),
+            null,
+            m.key
+          );
+          let actual;
+          if(m.key==='hs')actual=selectedRows.reduce((s,r)=>s+hsCount(r.draft),0);
+          else if(m.key==='home')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0),0);
+          else if(m.key==='productivity')actual=selectedRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
+          else if(m.key==='tvFree')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.tvFree||0),0);
+          else if(m.key==='smartHome')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0);
+          else if(m.key==='tailoredCount')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.tailoredCount||0),0);
+          else actual=cur||0;
+
+          const companyTarget=Number(goal.company_goals?.[m.key]||0);
+          const challengeTarget=Number(goal.challenge_goals?.[m.key]||companyTarget||0);
+          const companyPct=companyTarget?actual/companyTarget*100:0;
+          const challengePct=challengeTarget?actual/challengeTarget*100:0;
+          return <div key={m.key}>
+            <div className="flex justify-between items-center text-xs gap-2">
+              <span className="font-semibold text-gray-700">{m.label}</span>
+              <span className="text-gray-500">
+                {m.key==='productivity'?Number(actual).toFixed(1):Math.round(actual)}
+                {' / '}
+                <b>{challengeTarget||'-'}</b>
+              </span>
+            </div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1.5">
+              <div className="h-full bg-violet-500 rounded-full" style={{width:`${Math.min(100,challengePct)}%`}} />
+            </div>
+            <div className="flex justify-between text-[10px] mt-1">
+              <span className={companyPct>=100?'text-emerald-600 font-semibold':'text-gray-400'}>
+                회사 {companyTarget||'-'} · {companyTarget?`${Math.round(companyPct)}%`:'-'} {companyPct>=100?'✓':''}
+              </span>
+              <span className={challengePct>=100?'text-emerald-600 font-semibold':'text-gray-400'}>
+                도전 {challengeTarget||'-'} · {challengeTarget?`${Math.round(challengePct)}%`:'-'} {challengePct>=100?'✓':''}
+              </span>
+            </div>
+          </div>
+        })}
+      </div>
+    </div>
+
     <button onClick={save} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">
       매장 목표 저장
     </button>
@@ -5436,9 +5490,146 @@ function adminMetricValue(row,key){
   return 0;
 }
 const ADMIN_MAIN_METRICS=[
-  ['hs','HS','count'],['simMnp','SIM MNP','count'],['home','홈 실적','count'],['free','프리','count'],['smart','스마트홈','count'],
-  ['productivity','생산성','point'],['second','2ND','count'],['upsell','업셀건수','count'],['upsellAmount','맞춤제안매출액','won'],['sono','소노','count']
+  ['hs','HS','count'],['simMnp','SIM MNP','count'],['second','2ND','count'],['productivity','생산성','point'],
+  ['home','홈 실적','count'],['free','프리','count'],['smart','스마트홈','count'],['sono','소노','count'],
+  ['upsellAmount','맞춤제안 매출액','won'],['upsell','업셀건','count']
 ];
+
+
+function storeMetricFromRows(storeRows,key){
+  const list=storeRows||[];
+  if(key==='productivity') return list.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
+  return list.reduce((s,r)=>s+adminMetricValue(r,key),0);
+}
+
+function storeGoalAchievement(company,storeRows){
+  const metrics=[
+    ['hs','hs'],['home','home'],['productivity','productivity'],
+    ['tvFree','free'],['smartHome','smart'],['tailoredCount','upsell']
+  ];
+  const detail=metrics.map(([goalKey,rowKey])=>{
+    const target=Number(company?.[goalKey]||0);
+    const actual=storeMetricFromRows(storeRows,rowKey);
+    const pct=target>0 ? actual/target*100 : 0;
+    return {goalKey,rowKey,target,actual,pct};
+  }).filter(x=>x.target>0);
+  const achieved=detail.filter(x=>x.pct>=100).length;
+  const score=detail.length
+    ? detail.reduce((s,x)=>s+Math.min(120,x.pct),0)/detail.length
+    : 0;
+  return {detail,achieved,total:detail.length,score};
+}
+
+function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals }) {
+  const [goalRows,setGoalRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const me=(employees||[]).find(e=>e.id===authUserId);
+
+  useEffect(()=>{
+    (async()=>{
+      setLoading(true);
+      const {data}=await supabase.from('store_goals').select('store_name,company_goals').eq('month',month);
+      setGoalRows(data||[]);
+      setLoading(false);
+    })();
+  },[month]);
+
+  const goalMap=Object.fromEntries((goalRows||[]).map(g=>[
+    g.store_name,
+    {...companyGoalDefaults(g.store_name),...(g.company_goals||{})}
+  ]));
+
+  const branches=[...new Set((allRows||[])
+    .map(r=>r.branch)
+    .filter(Boolean)
+    .filter(b=>!NON_SALES_STORES.includes(b))
+  )];
+
+  const ranked=branches.map(branch=>{
+    const branchRows=(allRows||[]).filter(r=>r.branch===branch);
+    const company=goalMap[branch]||companyGoalDefaults(branch);
+    const achievement=storeGoalAchievement(company,branchRows);
+    return {branch,...achievement};
+  }).filter(x=>x.total>0)
+    .sort((a,b)=>b.score-a.score || b.achieved-a.achieved || a.branch.localeCompare(b.branch));
+
+  const myBranch=me?.branch;
+  const myIndex=ranked.findIndex(x=>x.branch===myBranch);
+  const top3=ranked.slice(0,3);
+
+  return <div className="bg-white rounded-xl border border-amber-100 overflow-hidden">
+    <div className="px-4 py-3 border-b border-amber-50 flex items-center justify-between gap-3">
+      <div>
+        <div className="text-xs text-amber-600">🏆 매장 챌린지</div>
+        <div className="text-sm font-bold text-gray-900">회사 기준 대비 종합 달성</div>
+        <div className="text-[10px] text-gray-400 mt-0.5">HS · 홈 · 생산성 · 프리 · 스마트홈 · 업셀 기준</div>
+      </div>
+      <button onClick={onOpenGoals} className="text-xs font-semibold text-violet-600">목표 보기 ›</button>
+    </div>
+    {loading?<div className="py-7 text-center text-xs text-gray-400">순위 계산 중...</div>:
+    ranked.length===0?<div className="py-7 text-center text-xs text-gray-400">비교할 매장 데이터가 없어요.</div>:
+    <>
+      <div className="divide-y divide-gray-50">
+        {top3.map((x,i)=>(
+          <div key={x.branch} className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                i===0?'bg-amber-100 text-amber-700':i===1?'bg-gray-100 text-gray-600':'bg-orange-100 text-orange-700'
+              }`}>{i+1}</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-800 truncate">{displayStoreName(x.branch)}</div>
+                <div className="text-[10px] text-gray-400">회사기준 {x.achieved}/{x.total} 달성</div>
+              </div>
+            </div>
+            <div className="text-sm font-bold text-amber-700">{x.score.toFixed(1)}점</div>
+          </div>
+        ))}
+      </div>
+      {myIndex>=3&&<div className="px-4 py-3 bg-violet-50 flex justify-between text-xs text-violet-700">
+        <b>우리 매장 {myIndex+1}위</b>
+        <span>{ranked[myIndex].score.toFixed(1)}점 · {ranked[myIndex].achieved}/{ranked[myIndex].total} 달성</span>
+      </div>}
+    </>}
+  </div>;
+}
+
+function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) {
+  const [goal,setGoal]=useState(null);
+  const me=(employees||[]).find(e=>e.id===authUserId);
+  const branch=me?.branch || rows?.[0]?.branch;
+
+  useEffect(()=>{
+    if(!branch||NON_SALES_STORES.includes(branch)){setGoal(null);return;}
+    (async()=>{
+      const {data}=await supabase.from('store_goals').select('company_goals,challenge_goals')
+        .eq('month',month).eq('store_name',branch).maybeSingle();
+      setGoal({
+        company_goals:{...companyGoalDefaults(branch),...(data?.company_goals||{})},
+        challenge_goals:data?.challenge_goals||{}
+      });
+    })();
+  },[month,branch]);
+
+  if(!branch||NON_SALES_STORES.includes(branch)||!goal)return null;
+  const companyAch=storeGoalAchievement(goal.company_goals,rows);
+  const challengeBase={...goal.company_goals,...goal.challenge_goals};
+  const challengeAch=storeGoalAchievement(challengeBase,rows);
+
+  return <button onClick={onOpen} className="w-full text-left bg-white rounded-xl border border-gray-100 p-4">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <div className="text-xs text-gray-400">🎯 매장 목표 달성</div>
+        <div className="text-sm font-bold text-gray-900 mt-1">
+          회사 기준 <span className="text-violet-700">{companyAch.achieved}/{companyAch.total}</span> 달성
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          도전 목표 {challengeAch.achieved}/{challengeAch.total} 달성 · 종합 {companyAch.score.toFixed(1)}점
+        </div>
+      </div>
+      <span className="text-xs font-semibold text-violet-600">상세 ›</span>
+    </div>
+  </button>;
+}
 
 function AdminCustomerCareOverview({ employees, authUserId }) {
   const [tasks,setTasks]=useState([]),[customers,setCustomers]=useState([]),[loading,setLoading]=useState(true);
@@ -5585,14 +5776,16 @@ function SettlementReview({ month, rows, employees }) {
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-    { key: 'performance', label: '실적 순위', icon: Trophy },
-    { key: 'customerCareAdmin', label: '고객관리', icon: ClipboardList },
-    { key: 'homeCare', label: '홈케어', icon: Home },
     { key: 'storeGoals', label: '매장 목표', icon: Target },
+    { key: 'performance', label: '실적 순위', icon: Trophy },
+
+    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList },
+    { key: 'homeCare', label: '홈 케어', icon: Home },
+    { key: 'employees', label: '직원 관리', icon: Users },
+
     { key: 'spot', label: '스팟', icon: Zap },
     { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
-    { key: 'employees', label: '직원 관리', icon: Users },
     ...(isFullAdmin ? [
       { key: 'settlement', label: '정산 검토', icon: Wallet },
       { key: 'rates', label: '지급기준 관리', icon: Settings },
@@ -5661,18 +5854,41 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
               </div>
               <div className="text-xs text-gray-400">{rows.length}명</div>
             </div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {ADMIN_MAIN_METRICS.map(([key,label,unit])=>{
-                const value=rows.reduce((s,r)=>s+adminMetricValue(r,key),0);
-                return <div key={key} className="rounded-xl bg-gray-50 px-2 py-2.5 min-w-0 text-center">
-                  <div className="text-[9px] sm:text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{label}</div>
-                  <div className="text-[12px] sm:text-base font-bold text-gray-900 mt-0.5 truncate">
-                    {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${value}건`}
-                  </div>
+            <div className="space-y-2">
+              {[
+                ADMIN_MAIN_METRICS.slice(0,4),
+                ADMIN_MAIN_METRICS.slice(4,8),
+                ADMIN_MAIN_METRICS.slice(8,10),
+              ].map((metricRow,rowIndex)=>(
+                <div key={rowIndex} className={`grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
+                  {metricRow.map(([key,label,unit])=>{
+                    const value=rows.reduce((s,r)=>s+adminMetricValue(r,key),0);
+                    return <div key={key} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
+                      <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
+                      <div className="text-[15px] font-bold text-gray-900 mt-1 whitespace-nowrap">
+                        {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${value}건`}
+                      </div>
+                    </div>
+                  })}
                 </div>
-              })}
+              ))}
             </div>
           </div>
+
+          <StoreGoalDashboardCard
+            rows={rows}
+            employees={employees}
+            authUserId={authUserId}
+            month={month}
+            onOpen={()=>setAdminTab('storeGoals')}
+          />
+          <StoreChallengeCard
+            month={month}
+            allRows={rankingRows||rows}
+            employees={employees}
+            authUserId={authUserId}
+            onOpenGoals={()=>setAdminTab('storeGoals')}
+          />
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-50">
@@ -5684,11 +5900,18 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
                 <div key={r.id} className="px-4 py-3">
                   <div className="flex justify-between gap-3 items-center">
                     <div><div className="text-sm font-bold text-gray-900">{r.name}</div><div className="text-[10px] text-gray-400">{displayStoreName(r.branch)}</div></div>
-                    <div className="text-xs text-gray-500 text-right">
-                      HS <b className="text-gray-900">{adminMetricValue(r,'hs')}</b> ·
-                      홈 <b className="text-gray-900">{adminMetricValue(r,'home')}</b> ·
-                      업셀 <b className="text-gray-900">{adminMetricValue(r,'upsell')}</b> ·
-                      소노 <b className="text-gray-900">{adminMetricValue(r,'sono')}</b>
+                    <div className="text-[11px] text-gray-500 text-right leading-5">
+                      <div>
+                        HS <b className="text-gray-900">{adminMetricValue(r,'hs')}</b> ·
+                        SIM MNP <b className="text-gray-900">{adminMetricValue(r,'simMnp')}</b> ·
+                        홈 <b className="text-gray-900">{adminMetricValue(r,'home')}</b>
+                      </div>
+                      <div>
+                        생산성 <b className="text-gray-900">{Number(adminMetricValue(r,'productivity')||0).toFixed(1)}P</b> ·
+                        프리 <b className="text-gray-900">{adminMetricValue(r,'free')}</b> ·
+                        스홈 <b className="text-gray-900">{adminMetricValue(r,'smart')}</b> ·
+                        업셀건 <b className="text-gray-900">{adminMetricValue(r,'upsell')}</b>
+                      </div>
                     </div>
                   </div>
                 </div>
