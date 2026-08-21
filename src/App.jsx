@@ -2878,7 +2878,10 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
 function SpotAdmin({ authUserId }) {
   const [policies,setPolicies]=useState([]);
   const [claims,setClaims]=useState([]);
-  const [form,setForm]=useState({title:'',amount:'',start_date:'',end_date:'',description:''});
+  const [form,setForm]=useState({
+    title:'',amount:'',start_date:'',end_date:'',description:'',
+    rule_type:'per_unit',condition_metric:'hs',threshold:'',reward_metric:'hs',threshold_scope:'all'
+  });
   const [editingPolicyId,setEditingPolicyId]=useState(null);
   const [editPolicy,setEditPolicy]=useState({});
   const [claimEdits,setClaimEdits]=useState({});
@@ -2896,14 +2899,24 @@ function SpotAdmin({ authUserId }) {
   useEffect(()=>{load()},[load]);
 
   const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return alert('정책명, 금액, 기간을 입력해주세요.');
-    const {error}=await supabase.from('spot_policies').insert({...form,amount:Number(form.amount),created_by:authUserId});
-    if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:''});load()};
+    const {error}=await supabase.from('spot_policies').insert({
+      ...form,
+      amount:Number(form.amount),
+      threshold:form.threshold?Number(form.threshold):null,
+      created_by:authUserId
+    });
+    if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:'',rule_type:'per_unit',condition_metric:'hs',threshold:'',reward_metric:'hs',threshold_scope:'all'});load()};
 
   const savePolicy=async(id)=>{
     const p={...editPolicy,amount:Number(editPolicy.amount||0)};
     const {error}=await supabase.from('spot_policies').update({
       title:p.title,amount:p.amount,start_date:p.start_date,end_date:p.end_date,
-      description:p.description||null,active:p.active!==false
+      description:p.description||null,active:p.active!==false,
+      rule_type:p.rule_type||'per_unit',
+      condition_metric:p.condition_metric||null,
+      threshold:p.threshold?Number(p.threshold):null,
+      reward_metric:p.reward_metric||null,
+      threshold_scope:p.threshold_scope||'all'
     }).eq('id',id);
     if(error)return alert(`정책 수정 실패: ${friendlyError(error)}`);
     setEditingPolicyId(null);setEditPolicy({});load();
@@ -2930,6 +2943,26 @@ function SpotAdmin({ authUserId }) {
         <input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/>
         <input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/>
       </div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <select value={form.rule_type} onChange={e=>setForm({...form,rule_type:e.target.value})} className="border rounded p-2 text-xs">
+          <option value="per_unit">건당 지급</option>
+          <option value="threshold">몇 건 이상 달성형</option>
+          <option value="linked">A조건 → B상품 지급</option>
+          <option value="fixed">고정 보너스</option>
+          <option value="manual">직접/예외 정책</option>
+        </select>
+        <input value={form.threshold} onChange={e=>setForm({...form,threshold:e.target.value.replace(/\D/g,'')})} placeholder="기준 건수 (선택)" className="border rounded p-2 text-xs"/>
+        <select value={form.condition_metric} onChange={e=>setForm({...form,condition_metric:e.target.value})} className="border rounded p-2 text-xs">
+          {ADMIN_MAIN_METRICS.filter(x=>x[2]==='count').map(x=><option key={x[0]} value={x[0]}>조건 · {x[1]}</option>)}
+        </select>
+        <select value={form.reward_metric} onChange={e=>setForm({...form,reward_metric:e.target.value})} className="border rounded p-2 text-xs">
+          {ADMIN_MAIN_METRICS.filter(x=>x[2]==='count').map(x=><option key={x[0]} value={x[0]}>지급대상 · {x[1]}</option>)}
+        </select>
+        <select value={form.threshold_scope} onChange={e=>setForm({...form,threshold_scope:e.target.value})} className="col-span-2 border rounded p-2 text-xs">
+          <option value="all">기준 달성 시 전체 건 적용</option>
+          <option value="after">기준 달성 이후 건부터 적용</option>
+        </select>
+      </div>
       <input placeholder="설명 (선택)" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} className="mt-2 w-full border rounded p-2 text-xs"/>
       <button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button>
     </div>
@@ -2943,6 +2976,21 @@ function SpotAdmin({ authUserId }) {
             <input value={editPolicy.amount||''} onChange={e=>setEditPolicy({...editPolicy,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2"/>
             <input type="date" value={editPolicy.start_date||''} onChange={e=>setEditPolicy({...editPolicy,start_date:e.target.value})} className="border rounded p-2"/>
             <input type="date" value={editPolicy.end_date||''} onChange={e=>setEditPolicy({...editPolicy,end_date:e.target.value})} className="border rounded p-2"/>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={editPolicy.rule_type||'per_unit'} onChange={e=>setEditPolicy({...editPolicy,rule_type:e.target.value})} className="border rounded p-2">
+              <option value="per_unit">건당 지급</option><option value="threshold">몇 건 이상 달성형</option><option value="linked">A조건 → B상품 지급</option><option value="fixed">고정 보너스</option><option value="manual">직접/예외 정책</option>
+            </select>
+            <input value={editPolicy.threshold??''} onChange={e=>setEditPolicy({...editPolicy,threshold:e.target.value.replace(/\D/g,'')})} placeholder="기준 건수" className="border rounded p-2"/>
+            <select value={editPolicy.condition_metric||'hs'} onChange={e=>setEditPolicy({...editPolicy,condition_metric:e.target.value})} className="border rounded p-2">
+              {ADMIN_MAIN_METRICS.filter(x=>x[2]==='count').map(x=><option key={x[0]} value={x[0]}>조건 · {x[1]}</option>)}
+            </select>
+            <select value={editPolicy.reward_metric||'hs'} onChange={e=>setEditPolicy({...editPolicy,reward_metric:e.target.value})} className="border rounded p-2">
+              {ADMIN_MAIN_METRICS.filter(x=>x[2]==='count').map(x=><option key={x[0]} value={x[0]}>지급대상 · {x[1]}</option>)}
+            </select>
+            <select value={editPolicy.threshold_scope||'all'} onChange={e=>setEditPolicy({...editPolicy,threshold_scope:e.target.value})} className="col-span-2 border rounded p-2">
+              <option value="all">기준 달성 시 전체 건 적용</option><option value="after">기준 달성 이후 건부터 적용</option>
+            </select>
           </div>
           <label className="flex gap-2"><input type="checkbox" checked={editPolicy.active!==false} onChange={e=>setEditPolicy({...editPolicy,active:e.target.checked})}/> 활성</label>
           <div className="grid grid-cols-2 gap-2"><button onClick={()=>setEditingPolicyId(null)} className="py-2 bg-gray-100 rounded">취소</button><button onClick={()=>savePolicy(p.id)} className="py-2 bg-violet-600 text-white rounded font-bold">저장</button></div>
@@ -3010,7 +3058,7 @@ async function ensureCustomer(userId, customerName, saleDate) {
 
 async function createCustomerSaleAndTasks({
   userId, customerName, saleDate, metricLabel, sourceType='daily',
-  templateKeys=[], customTitle='', customDueDate='', note=''
+  templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null
 }) {
   const customerId=await ensureCustomer(userId,customerName,saleDate);
   if(!customerId) throw new Error('고객 저장 실패');
@@ -3019,7 +3067,7 @@ async function createCustomerSaleAndTasks({
     .from('customer_sales')
     .insert({
       user_id:userId,customer_id:customerId,sale_date:saleDate,
-      metric_label:metricLabel,source_type:sourceType
+      metric_label:metricLabel,source_type:sourceType,source_meta:sourceMeta
     })
     .select('id')
     .single();
@@ -3093,28 +3141,47 @@ function CustomerCareManager({ userId, month, homeProps }) {
   useEffect(()=>{load()},[load]);
 
   const today=new Date().toISOString().slice(0,10);
+  const visibleUntil=addDaysDate(today,7);
   const customerMap=Object.fromEntries(customers.map(c=>[c.id,c]));
   const pending=tasks.filter(t=>t.status!=='completed'&&t.status!=='cancelled');
   const overdue=pending.filter(t=>t.due_date<today);
   const todayTasks=pending.filter(t=>t.due_date===today);
-  const upcoming=pending.filter(t=>t.due_date>today);
+  const next7=pending.filter(t=>t.due_date>=today&&t.due_date<=visibleUntil);
+  const allFuture=pending.filter(t=>t.due_date>today);
 
-  const mark=async(t,status,dueDate=null)=>{
-    const patch={status,updated_at:new Date().toISOString()};
-    if(status==='completed')patch.completed_at=new Date().toISOString();
-    if(dueDate)patch.due_date=dueDate;
-    const {error}=await supabase.from('customer_tasks').update(patch).eq('id',t.id).eq('user_id',userId);
+  const updateTask=async(t,patch)=>{
+    const {error}=await supabase.from('customer_tasks')
+      .update({...patch,updated_at:new Date().toISOString()})
+      .eq('id',t.id).eq('user_id',userId);
     if(error)return alert(`고객 약속 수정 실패: ${friendlyError(error)}`);
     load();
   };
 
+  const complete=async(t)=>{
+    const name=customerMap[t.customer_id]?.customer_name||'고객';
+    if(!window.confirm(`${name} · ${t.title}\n\n정말 처리 완료할까요?\n완료 내역에서 다시 되돌릴 수 있어요.`))return;
+    await updateTask(t,{status:'completed',completed_at:new Date().toISOString()});
+  };
+
+  const undoComplete=async(t)=>{
+    if(!window.confirm('완료 처리를 취소하고 다시 할 일로 돌릴까요?'))return;
+    await updateTask(t,{status:'pending',completed_at:null});
+  };
+
   const visible=tasks.filter(t=>{
-    if(filter==='todo'&&(t.status==='completed'||t.status==='cancelled'))return false;
-    if(filter==='today'&&t.due_date!==today)return false;
-    if(filter==='overdue'&&!(t.status!=='completed'&&t.status!=='cancelled'&&t.due_date<today))return false;
-    if(filter==='done'&&t.status!=='completed')return false;
+    const isPending=t.status!=='completed'&&t.status!=='cancelled';
+    if(filter==='todo' && !(isPending && t.due_date<=visibleUntil)) return false;
+    if(filter==='today' && !(isPending && t.due_date===today)) return false;
+    if(filter==='overdue' && !(isPending && t.due_date<today)) return false;
+    if(filter==='all' && !isPending) return false;
+    if(filter==='done' && t.status!=='completed') return false;
     const name=customerMap[t.customer_id]?.customer_name||'';
     return !query.trim()||name.includes(query.trim())||String(t.title||'').includes(query.trim());
+  }).sort((a,b)=>{
+    if(filter==='done') return String(b.completed_at||'').localeCompare(String(a.completed_at||''));
+    const ao=a.due_date<today?0:a.due_date===today?1:2;
+    const bo=b.due_date<today?0:b.due_date===today?1:2;
+    return ao-bo || String(a.due_date).localeCompare(String(b.due_date));
   });
 
   const dLabel=(date)=>{
@@ -3125,7 +3192,7 @@ function CustomerCareManager({ userId, month, homeProps }) {
 
   return <div className="space-y-4">
     <div className="grid grid-cols-3 gap-2">
-      {[['오늘',todayTasks.length],['기한 경과',overdue.length],['예정',upcoming.length]].map(([l,v])=>
+      {[['오늘',todayTasks.length],['기한 경과',overdue.length],['7일 내',next7.length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
           <div className={`text-lg font-bold ${l==='기한 경과'&&v>0?'text-red-600':'text-gray-900'}`}>{v}</div>
           <div className="text-[10px] text-gray-400">{l}</div>
@@ -3135,16 +3202,18 @@ function CustomerCareManager({ userId, month, homeProps }) {
     <div className="bg-white rounded-xl border border-gray-100 p-3">
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명 또는 약속 검색"
         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
-      <div className="grid grid-cols-4 gap-1.5 mt-2">
-        {[['todo','할 일'],['today','오늘'],['overdue','경과'],['done','완료']].map(([k,l])=>
-          <button key={k} onClick={()=>setFilter(k)} className={`py-2 rounded-lg text-xs font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
+      <div className="grid grid-cols-5 gap-1 mt-2">
+        {[['todo','할 일'],['today','오늘'],['overdue','경과'],['all','전체 예정'],['done','완료']].map(([k,l])=>
+          <button key={k} onClick={()=>setFilter(k)}
+            className={`py-2 rounded-lg text-[11px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
       </div>
+      {filter==='todo'&&<div className="text-[10px] text-gray-400 mt-2">할 일에는 오늘부터 7일 이내와 기한이 지난 약속만 보여요.</div>}
     </div>
 
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50">
         <div className="font-bold text-sm">📌 고객 약속 관리</div>
-        <div className="text-xs text-gray-400 mt-0.5">앱이 변경·해지·재연락 날짜를 기억해줘요.</div>
+        <div className="text-xs text-gray-400 mt-0.5">가까운 일정부터 보여주고, 먼 일정은 전체 예정에서 확인해요.</div>
       </div>
       {loading?<div className="py-8 text-center text-xs text-gray-400">불러오는 중...</div>:
        visible.length===0?<div className="py-8 text-center text-xs text-gray-400">해당하는 고객 약속이 없어요.</div>:
@@ -3160,15 +3229,22 @@ function CustomerCareManager({ userId, month, homeProps }) {
                  </div>
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
-               <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${t.status==='completed'?'bg-emerald-50 text-emerald-600':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
-                 {t.status==='completed'?'완료':dLabel(t.due_date)}
-               </span>
+               <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
+                 t.status==='completed'?'bg-emerald-50 text-emerald-600':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'
+               }`}>{t.status==='completed'?'완료':dLabel(t.due_date)}</span>
              </div>
-             {t.status!=='completed'&&<div className="grid grid-cols-3 gap-1.5 mt-3">
-               <button onClick={()=>mark(t,'completed')} className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">처리완료</button>
-               <button onClick={()=>mark(t,'pending',addDaysDate(today,1))} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">내일 다시</button>
-               <button onClick={()=>{const d=window.prompt('다시 연락할 날짜를 YYYY-MM-DD로 입력해주세요.',t.due_date);if(d)mark(t,'pending',d)}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
-             </div>}
+
+             {t.status==='completed'?(
+               <button onClick={()=>undoComplete(t)} className="mt-3 w-full py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">
+                 완료 취소
+               </button>
+             ):(
+               <div className="grid grid-cols-3 gap-1.5 mt-3">
+                 <button onClick={()=>complete(t)} className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">처리완료</button>
+                 <button onClick={()=>updateTask(t,{status:'pending',due_date:addDaysDate(today,1)})} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">내일 다시</button>
+                 <button onClick={()=>{const d=window.prompt('다시 연락할 날짜를 YYYY-MM-DD로 입력해주세요.',t.due_date);if(d)updateTask(t,{status:'pending',due_date:d})}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
+               </div>
+             )}
            </div>
          })}
        </div>}
@@ -3486,6 +3562,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
   const [mobileExpenseMemo,setMobileExpenseMemo]=useState('');
   const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
+  const [daySales,setDaySales]=useState([]);
+  const [daySalesLoading,setDaySalesLoading]=useState(false);
+
 
   const dayMatrix = day.matrix;
   const isDayOff = !!day.dayOff;
@@ -3565,6 +3644,54 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileSpotPolicyId('');
     })();
   }, [mobileSaleDraft, month, selectedDay]);
+
+
+  const loadDaySales=useCallback(async()=>{
+    if(!currentEmp?.id)return;
+    setDaySalesLoading(true);
+    const saleDate=`${month}-${selectedDay}`;
+    const {data,error}=await supabase
+      .from('customer_sales')
+      .select('id,customer_id,sale_date,metric_label,source_type,source_meta,customers(customer_name)')
+      .eq('user_id',currentEmp.id)
+      .eq('sale_date',saleDate)
+      .order('created_at',{ascending:false});
+    if(!error)setDaySales(data||[]);
+    setDaySalesLoading(false);
+  },[currentEmp?.id,month,selectedDay]);
+
+  useEffect(()=>{loadDaySales()},[loadDaySales]);
+
+  const renameSaleCustomer=async(sale)=>{
+    const oldName=sale.customers?.customer_name||'';
+    const next=window.prompt('고객명을 수정해주세요.',oldName);
+    if(!next||!next.trim()||next.trim()===oldName)return;
+    const {error}=await supabase.from('customers').update({
+      customer_name:next.trim(),updated_at:new Date().toISOString()
+    }).eq('id',sale.customer_id).eq('user_id',currentEmp?.id);
+    if(error)return alert(`고객명 수정 실패: ${friendlyError(error)}`);
+    loadDaySales();
+  };
+
+  const deleteSale=async(sale)=>{
+    const name=sale.customers?.customer_name||'고객';
+    if(!window.confirm(`${name} · ${sale.metric_label}\n\n이 판매 건을 삭제할까요?\n연결된 고객 약속도 함께 삭제됩니다.`))return;
+
+    const meta=sale.source_meta||{};
+    if(sale.source_type==='mobile' && Number.isInteger(meta.ri) && Number.isInteger(meta.ci)){
+      const base=normalizeDay(day);
+      const matrix=base.matrix.map(r=>[...r]);
+      matrix[meta.ri][meta.ci]=Math.max(0,Number(matrix[meta.ri][meta.ci]||0)-1);
+      const vas={...(base.groups?.vas||{})};
+      (meta.vasKeys||[]).forEach(k=>{vas[k]=Math.max(0,Number(vas[k]||0)-1)});
+      mutate({...base,matrix,groups:{...base.groups,vas}});
+    }
+
+    await supabase.from('customer_tasks').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
+    const {error}=await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id);
+    if(error)return alert(`판매 삭제 실패: ${friendlyError(error)}`);
+    loadDaySales();
+  };
 
   const openHomeOrder = (groupKey, itemKey) => {
     if (locked) return;
@@ -3850,7 +3977,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const saved=await createCustomerSaleAndTasks({
         userId:currentEmp.id,customerName:customer,saleDate,
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
-        templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate
+        templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
+        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys}
       });
 
       // 선택한 스팟 정책도 같은 판매 건으로 신청
@@ -3898,6 +4026,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       );
 
       setMobileSaleDraft(null);
+      setTimeout(loadDaySales,150);
     }catch(e){
       alert(`고객/실적 등록 실패: ${friendlyError(e)}`);
     }finally{setMobileSaleSaving(false)}
@@ -3934,11 +4063,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const dayTotal = matrixSum(day) + groupSum(day);
   const monthTotal = Object.values(dailyDays).reduce((s, raw) => { const r = normalizeDay(raw); return s + matrixSum(r) + groupSum(r); }, 0);
 
-  // 오늘 등록된 건들을 목록으로 펼치기
-  const entries = [];
-  dayMatrix.forEach((row, ri) => row.forEach((v, ci) => {
-    if (v > 0) entries.push({ ri, ci, count: v, rowDef: MATRIX_ROW_DEFS[ri] });
-  }));
+  // 등록 내역은 합산 숫자보다 고객 판매 건 단위로 보여줘요.
 
   return (
     <div className="space-y-3 relative">
@@ -4082,23 +4207,38 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-2.5 text-xs font-semibold text-gray-500 border-b border-gray-50">{parseInt(selectedDay, 10)}일 등록 내역</div>
-            {entries.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-gray-400">아직 등록된 건이 없어요.<br />위에서 가입구분을 골라 등록해 주세요.</div>
+            <div className="px-4 py-2.5 text-xs font-semibold text-gray-500 border-b border-gray-50 flex justify-between">
+              <span>{parseInt(selectedDay, 10)}일 고객별 판매 내역</span>
+              <span>{daySales.length}건</span>
+            </div>
+            {daySalesLoading ? (
+              <div className="px-4 py-8 text-center text-sm text-gray-400">판매 내역 불러오는 중...</div>
+            ) : daySales.length === 0 ? (
+              <div className="px-4 py-8 text-center text-sm text-gray-400">아직 고객별 판매 기록이 없어요.<br />위에서 판매를 등록해 주세요.</div>
             ) : (
               <div className="divide-y divide-gray-50">
-                {entries.map((e) => (
-                  <div key={`${e.ri}-${e.ci}`} className="flex items-center justify-between px-4 py-2.5">
-                    <div className="min-w-0 pr-2">
-                      <div className="text-sm text-gray-800 truncate">{e.rowDef.dailyLabel || e.rowDef.label}</div>
-                      {e.rowDef.hasTiers && <div className="text-[11px] text-gray-400">{MATRIX_COLS[e.ci]}</div>}
+                {daySales.map((sale) => {
+                  const meta=sale.source_meta||{};
+                  const vasLabels=(meta.vasKeys||[]).map(k=>{
+                    if(k==='vasNone')return '미유치';
+                    return (config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k;
+                  });
+                  return (
+                    <div key={sale.id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-gray-900">{sale.customers?.customer_name||'고객'}</div>
+                          <div className="text-xs text-gray-600 mt-0.5">{sale.metric_label}</div>
+                          {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button onClick={()=>renameSaleCustomer(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">수정</button>
+                          <button onClick={()=>deleteSale(sale)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Stepper value={e.count} onChange={(v) => setCell(e.ri, e.ci, v)} />
-                      <button onClick={() => setCell(e.ri, e.ci, 0)} className="text-gray-300 hover:text-red-500 p-1"><X size={14} /></button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -5133,25 +5273,183 @@ function AdminHomeCare({ employees }) {
   </div>;
 }
 
+
+function adminMetricValue(row,key){
+  const d=row?.draft||{};
+  if(key==='hs')return hsCount(d);
+  if(key==='simMnp')return Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  if(key==='free')return Number(d.homeFlat?.tvFree||0);
+  if(key==='smart')return Number(d.homeFlat?.smartHome||0);
+  if(key==='upsell')return Number(d.tailoredCount||0);
+  if(key==='upsellAmount')return Number(d.tailoredAmount||0);
+  if(key==='sono')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
+  return 0;
+}
+const ADMIN_MAIN_METRICS=[
+  ['hs','HS','count'],['simMnp','SIM MNP','count'],['second','2ND','count'],
+  ['home','홈 실적','count'],['free','프리','count'],['smart','스마트홈','count'],
+  ['upsell','업셀건수','count'],['upsellAmount','맞춤제안매출액','won'],['sono','소노','count']
+];
+
+function AdminCustomerCareOverview({ employees, authUserId }) {
+  const [tasks,setTasks]=useState([]),[customers,setCustomers]=useState([]),[loading,setLoading]=useState(true);
+  const employeeMap=Object.fromEntries((employees||[]).map(e=>[e.id,e]));
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const [{data:t},{data:c}]=await Promise.all([
+      supabase.from('customer_tasks').select('*').order('due_date',{ascending:true}),
+      supabase.from('customers').select('id,user_id,customer_name')
+    ]);
+    setTasks(t||[]);setCustomers(c||[]);setLoading(false);
+  },[]);
+  useEffect(()=>{load()},[load]);
+  const customerMap=Object.fromEntries(customers.map(c=>[c.id,c]));
+  const today=new Date().toISOString().slice(0,10), week=addDaysDate(today,7);
+  const visible=tasks.filter(t=>employeeMap[t.user_id]);
+  const due=visible.filter(t=>t.status!=='completed'&&t.status!=='cancelled'&&t.due_date<=week);
+  const overdue=due.filter(t=>t.due_date<today);
+  const completed=visible.filter(t=>t.status==='completed');
+  const denominator=completed.length+overdue.length;
+  const rate=denominator?Math.round(completed.length/denominator*100):100;
+
+  if(loading)return <div className="bg-white rounded-xl border p-4 text-xs text-gray-400">고객 약속 현황 불러오는 중...</div>;
+  return <div className="space-y-3">
+    <div className="grid grid-cols-4 gap-2">
+      {[['오늘',due.filter(t=>t.due_date===today).length],['7일 내',due.filter(t=>t.due_date>=today).length],['기한초과',overdue.length],['이행률',`${rate}%`]].map(([l,v])=>
+        <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center"><div className={`text-lg font-bold ${l==='기한초과'&&Number(v)>0?'text-red-600':'text-gray-900'}`}>{v}</div><div className="text-[10px] text-gray-400">{l}</div></div>)}
+    </div>
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">고객 약속 상세</div><div className="text-xs text-gray-400">담당 직원과 고객명을 함께 확인해요.</div></div>
+      <div className="divide-y">
+        {[...due].sort((a,b)=>a.due_date.localeCompare(b.due_date)).map(t=>{
+          const emp=employeeMap[t.user_id], customer=customerMap[t.customer_id];
+          return <div key={t.id} className="px-4 py-3 flex justify-between gap-3 text-xs">
+            <div><div className="font-bold text-gray-800">{emp?.name||'직원'} · {customer?.customer_name||'고객'}</div><div className="text-gray-500 mt-1">{t.title}</div></div>
+            <div className={`shrink-0 ${t.due_date<today?'text-red-500':t.due_date===today?'text-orange-500':'text-violet-600'}`}>{t.due_date}</div>
+          </div>
+        })}
+        {due.length===0&&<div className="py-8 text-center text-xs text-gray-400">7일 내 확인할 고객 약속이 없어요.</div>}
+      </div>
+    </div>
+  </div>;
+}
+
+function AdminManagementAlerts({ pendingCount, employees, onGo }) {
+  const [counts,setCounts]=useState({customer:0,home:0,spot:0});
+  useEffect(()=>{
+    (async()=>{
+      const today=new Date().toISOString().slice(0,10);
+      const ids=(employees||[]).map(e=>e.id);
+      if(!ids.length)return;
+      const [{data:t},{data:h},{data:s}]=await Promise.all([
+        supabase.from('customer_tasks').select('id').in('user_id',ids).eq('status','pending').lt('due_date',today),
+        supabase.from('home_orders').select('id').in('user_id',ids).eq('status','pending').lt('planned_install_date',today),
+        supabase.from('spot_claims').select('id').in('user_id',ids).eq('status','pending')
+      ]);
+      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length});
+    })();
+  },[employees]);
+  const total=counts.customer+counts.home+counts.spot+Number(pendingCount||0);
+  return <div className="bg-white rounded-xl border border-violet-100 p-3">
+    <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${total}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
+    {total>0&&<div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+      <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
+      <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
+      <button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>
+      <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-600 rounded-lg p-2 text-left">기타 승인 <b className="float-right">{pendingCount||0}</b></button>
+    </div>}
+  </div>;
+}
+
+function SettlementReview({ month, rows, employees }) {
+  const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({});
+  useEffect(()=>{
+    (async()=>{
+      const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
+      const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+      const [{data:s},{data:e},{data:r}]=await Promise.all([
+        supabase.from('spot_claims').select('user_id,final_amount,direct_amount,spot_policies(amount)').in('user_id',ids).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to),
+        supabase.from('sales_expenses').select('user_id,amount').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
+        supabase.from('settlement_reviews').select('*').eq('month',month).in('user_id',ids)
+      ]);
+      const sm={},em={},stm={};
+      (s||[]).forEach(x=>sm[x.user_id]=(sm[x.user_id]||0)+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0));
+      (e||[]).forEach(x=>em[x.user_id]=(em[x.user_id]||0)+Number(x.amount||0));
+      (r||[]).forEach(x=>stm[x.user_id]=x.status);
+      setSpotMap(sm);setExpenseMap(em);setStatusMap(stm);
+    })();
+  },[month,rows]);
+
+  const setStatus=async(userId,status)=>{
+    const {error}=await supabase.from('settlement_reviews').upsert({
+      month,user_id:userId,status,updated_at:new Date().toISOString()
+    },{onConflict:'month,user_id'});
+    if(error)return alert(`정산 상태 저장 실패: ${friendlyError(error)}`);
+    setStatusMap({...statusMap,[userId]:status});
+  };
+
+  const exportRaw=async()=>{
+    const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
+    const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+    const [{data:sales},{data:homes},{data:spots},{data:expenses},{data:tasks}]=await Promise.all([
+      supabase.from('customer_sales').select('*, customers(customer_name), profiles:user_id(name,store_name)').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
+      supabase.from('home_orders').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('source_work_date',`${month}-01`).lt('source_work_date',to),
+      supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
+      supabase.from('sales_expenses').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
+      supabase.from('customer_tasks').select('*, customers(customer_name), profiles:user_id(name,store_name)').in('user_id',ids).gte('base_date',`${month}-01`).lt('base_date',to)
+    ]);
+    const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const rowsCsv=[['구분','일자','매장','직원','고객명','항목','값/상태','비고']];
+    (sales||[]).forEach(x=>rowsCsv.push(['판매RAW',x.sale_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.metric_label,'1',JSON.stringify(x.source_meta||{})]));
+    (homes||[]).forEach(x=>rowsCsv.push(['홈RAW',x.source_work_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.product_type,x.status,`설치예정:${x.planned_install_date||''} 완료:${x.actual_install_date||''}`]));
+    (spots||[]).forEach(x=>rowsCsv.push(['스팟RAW',x.claim_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.reviewed_title||x.direct_title||x.spot_policies?.title,x.final_amount??x.direct_amount??x.spot_policies?.amount,x.status]));
+    (expenses||[]).forEach(x=>rowsCsv.push(['비용RAW',x.expense_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.category,x.amount,x.memo]));
+    (tasks||[]).forEach(x=>rowsCsv.push(['약속RAW',x.base_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.title,x.status,`예정:${x.due_date} 완료:${x.completed_at||''}`]));
+    const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=`정산_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  };
+
+  return <div className="space-y-3">
+    <div className="bg-white rounded-xl border p-4 flex justify-between gap-3 items-center">
+      <div><div className="font-bold">💰 {monthLabel(month)} 정산 검토</div><div className="text-xs text-gray-400 mt-1">기본 인센티브 + 승인 스팟 - 영업비용을 검토해요.</div></div>
+      <button onClick={exportRaw} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">RAW CSV</button>
+    </div>
+    <div className="bg-white rounded-xl border overflow-hidden divide-y">
+      {(rows||[]).map(r=>{
+        const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense,status=statusMap[r.id]||'unreviewed';
+        return <div key={r.id} className="p-4">
+          <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div></div><div className="text-right"><div className="font-bold text-violet-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
+          <div className="grid grid-cols-4 gap-1 mt-3">
+            {[['unreviewed','미검토'],['reviewing','검토중'],['checked','확인완료'],['final','정산확정']].map(([k,l])=><button key={k} onClick={()=>setStatus(r.id,k)} className={`py-1.5 rounded text-[10px] font-semibold ${status===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
+          </div>
+        </div>
+      })}
+    </div>
+  </div>;
+}
+
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-    { key: 'compare', label: '실적 비교', icon: Layers },
-    { key: 'rankings', label: '랭킹', icon: Trophy },
-    { key: 'notifications', label: '알림', icon: Bell },
-    { key: 'homeCare', label: '홈케어', icon: ClipboardList },
+    { key: 'performance', label: '실적 순위', icon: Trophy },
+    { key: 'customerCareAdmin', label: '고객관리', icon: ClipboardList },
+    { key: 'homeCare', label: '홈케어', icon: Home },
     { key: 'storeGoals', label: '매장 목표', icon: Target },
     { key: 'spot', label: '스팟', icon: Zap },
     { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
     ...(isFullAdmin ? [
+      { key: 'settlement', label: '정산 검토', icon: Wallet },
       { key: 'rates', label: '지급기준 관리', icon: Settings },
       { key: 'permissions', label: '권한 관리', icon: ShieldCheck },
     ] : []),
   ];
   useEffect(() => {
-    if ((adminTab === 'rates' || adminTab === 'permissions') && !isFullAdmin) setAdminTab('dashboard');
+    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement') && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
 
   const downloadCSV = () => {
@@ -5170,10 +5468,6 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5">
-      <div className="fixed top-3 right-14 z-40">
-        <NotificationBell userId={authUserId} onOpen={() => setAdminTab('notifications')} />
-      </div>
-
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex bg-white border border-gray-200 rounded-lg p-0.5 flex-wrap">
           {TABS.map((n) => (
@@ -5206,58 +5500,59 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
       {adminTab === 'dashboard' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="이번 달 예상 지급 총액" value={won(totalPay)} icon={Wallet} />
-            <StatCard label="이번 달 HS 합계" value={`${rows.reduce((s, r) => s + hsCount(r.draft), 0)}건`} icon={TrendingUp} />
-            <StatCard label="전체 직원 수" value={`${rows.length}명`} icon={Users} />
-            <StatCard label="승인 대기 건수" value={`${pendingCount}건`} icon={ClipboardList} accent={pendingCount > 0} />
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 text-sm font-semibold text-gray-700 border-b border-gray-50">직원별 예상 인센티브</div>
-            <div className="overflow-x-auto">
-              <table className="text-sm min-w-max">
-                <thead>
-                  <tr className="text-left text-gray-400 text-xs whitespace-nowrap">
-                    <th className="px-4 py-2">이름</th><th className="px-2 py-2">직급</th><th className="px-2 py-2">매장</th>
-                    <th className="px-2 py-2 text-right">HS</th>
-                    <th className="px-2 py-2 text-right">등급</th><th className="px-2 py-2 text-right">총 인센티브</th>
-                    <th className="px-2 py-2">상태</th><th className="px-2 py-2">최종 저장</th><th className="px-4 py-2 text-right">관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.sort((a, b) => b.pay.total - a.pay.total).map((r) => (
-                    <tr key={r.id} className="border-t border-gray-50 whitespace-nowrap">
-                      <td className="px-4 py-2.5 font-medium text-gray-800">{r.name}</td>
-                      <td className="px-2 py-2.5 text-gray-500">{r.position}</td>
-                      <td className="px-2 py-2.5 text-gray-500">{displayStoreName(r.branch)}</td>
-                      <td className="px-2 py-2.5 text-right font-medium text-gray-700 tabular-nums">{hsCount(r.draft)}</td>
-                      <td className="px-2 py-2.5 text-right text-gray-600">{r.pay.gradeEligible ? r.pay.grade : '-'}</td>
-                      <td className="px-2 py-2.5 text-right font-semibold text-violet-700">{won(r.pay.total)}</td>
-                      <td className="px-2 py-2.5"><StatusBadge status={r.status} /></td>
-                      <td className="px-2 py-2.5"><LastSaved updatedAt={r.updatedAt} /></td>
-                      <td className="px-4 py-2.5 text-right">
-                        {r.status === 'pending' ? <button onClick={() => approve(r.id)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-violet-600 text-white">실적 승인</button> : <span className="text-xs text-gray-300">-</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={setAdminTab} />
+
+          <div className="bg-white rounded-xl border border-gray-100 p-4">
+            <div className="flex justify-between items-end gap-3 mb-3">
+              <div>
+                <div className="text-xs text-gray-400">{isFullAdmin?'전체 운영 현황':'우리 매장 현황'}</div>
+                <div className="text-base font-bold text-gray-900">{monthLabel(month)} 핵심 성과</div>
+              </div>
+              <div className="text-xs text-gray-400">{rows.length}명</div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {ADMIN_MAIN_METRICS.map(([key,label,unit])=>{
+                const value=rows.reduce((s,r)=>s+adminMetricValue(r,key),0);
+                return <div key={key} className="rounded-xl bg-gray-50 p-3 min-w-0">
+                  <div className="text-[10px] text-gray-400 truncate">{label}</div>
+                  <div className="text-base font-bold text-gray-900 mt-0.5 truncate">{unit==='won'?won(value):`${value}건`}</div>
+                </div>
+              })}
             </div>
           </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50">
+              <div className="text-sm font-bold text-gray-800">우리 매장 직원 현황</div>
+              <div className="text-xs text-gray-400 mt-0.5">핵심 실적만 빠르게 확인해요.</div>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {[...rows].sort((a,b)=>hsCount(b.draft)-hsCount(a.draft)).map(r=>(
+                <div key={r.id} className="px-4 py-3">
+                  <div className="flex justify-between gap-3 items-center">
+                    <div><div className="text-sm font-bold text-gray-900">{r.name}</div><div className="text-[10px] text-gray-400">{displayStoreName(r.branch)}</div></div>
+                    <div className="text-xs text-gray-500 text-right">
+                      HS <b className="text-gray-900">{adminMetricValue(r,'hs')}</b> ·
+                      홈 <b className="text-gray-900">{adminMetricValue(r,'home')}</b> ·
+                      업셀 <b className="text-gray-900">{adminMetricValue(r,'upsell')}</b> ·
+                      소노 <b className="text-gray-900">{adminMetricValue(r,'sono')}</b>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />
         </div>
       )}
 
-      {adminTab === 'compare' && <ComparisonView rows={rows} />}
-
-      {adminTab === 'rankings' && <RankingCenter rows={rankingRows || rows} dailyRecords={dailyRecords} month={month} config={config} />}
-
-      {adminTab === 'notifications' && (
-        <NotificationCenter userId={authUserId} />
-      )}
+      {adminTab === 'performance' && <ComparisonView rows={rows} />}
+      {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} />}
-
+      {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} />}
       {adminTab === 'recognition' && (
         <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
       )}
@@ -5292,34 +5587,18 @@ const matrixRowCount = (d, ri) => ((d && d.matrix && d.matrix[ri]) || []).reduce
 const hsCount = (d) => HS_PARTS.reduce((s, p) => s + matrixRowCount(d, p.idx), 0);
 
 const COMPARE_METRICS = [
-  { key: 'total', label: '총 인센티브', unit: 'won', calc: (d, p) => p.total },
   {
-    key: 'hs', label: 'HS 합계 (MNP·기변·신규)', unit: 'count', calc: (d) => hsCount(d),
-    parts: HS_PARTS.map((p) => ({ label: p.short, calc: (d) => matrixRowCount(d, p.idx) })),
+    key:'hs', label:'HS', unit:'count', calc:(d)=>hsCount(d),
+    parts:HS_PARTS.map((p)=>({label:p.short,calc:(d)=>matrixRowCount(d,p.idx)}))
   },
-  { key: 'mnp', label: 'MNP', unit: 'count', calc: (d) => d.mobilePoint.mnp || 0 },
-  { key: 'new010', label: '010 신규', unit: 'count', calc: (d) => d.mobilePoint.new010 || 0 },
-  { key: 'gibyeon', label: '기기변경 (전체)', unit: 'count', calc: (d) => (d.mobilePoint.gibyeon115 || 0) + (d.mobilePoint.gibyeon85 || 0) + (d.mobilePoint.gibyeonWeak || 0) + (d.mobilePoint.gibyeonLVC || 0) },
-  { key: 'usedMnp', label: '중고 MNP', unit: 'count', calc: (d) => d.mobilePoint.usedMnp || 0 },
-  { key: 'secondOnly', label: '2ND(단독개통포함)', unit: 'count', calc: (d) => d.mobilePoint.secondOnly || 0 },
-  {
-    key: 'home',
-    label: '홈 실적',
-    unit: 'count',
-    calc: (d) => (d.homeBase?.homeOnly || 0) + (d.homeBase?.homeTv || 0),
-    parts: [
-      { label: '홈 단독', calc: (d) => d.homeBase?.homeOnly || 0 },
-      { label: '홈+TV', calc: (d) => d.homeBase?.homeTv || 0 },
-    ],
-  },
-  { key: 'homeOnly', label: '홈 단독', unit: 'count', calc: (d) => d.homeBase.homeOnly || 0 },
-  { key: 'homeTv', label: '홈+TV 동시청약', unit: 'count', calc: (d) => d.homeBase.homeTv || 0 },
-  { key: 'planFee', label: '요금제 유치 수수료', unit: 'won', calc: (d, p) => p.matrixTotal },
-  { key: 'bundle2nd', label: '2ND 번들', unit: 'won', calc: (d, p) => p.bundle2ndTotal },
-  { key: 'sono', label: '소노', unit: 'won', calc: (d, p) => p.sonoPay },
-  { key: 'custReg', label: '고객등록 건수', unit: 'count', calc: (d) => d.custRegCount || 0 },
-  { key: 'tailored', label: '맞춤제안 업셀 건수', unit: 'count', calc: (d) => d.tailoredCount || 0 },
-  { key: 'kpiScore', label: 'KPI 생산성 점수', unit: 'point', calc: (d, p) => p.kpiScore },
+  { key:'simMnp', label:'SIM MNP', unit:'count', calc:(d)=>Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0) },
+  { key:'second', label:'2ND', unit:'count', calc:(d)=>Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0) },
+  { key:'home', label:'홈 실적', unit:'count', calc:(d)=>Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0) },
+  { key:'free', label:'프리', unit:'count', calc:(d)=>Number(d.homeFlat?.tvFree||0) },
+  { key:'smart', label:'스마트홈', unit:'count', calc:(d)=>Number(d.homeFlat?.smartHome||0) },
+  { key:'upsell', label:'업셀건수', unit:'count', calc:(d)=>Number(d.tailoredCount||0) },
+  { key:'upsellAmount', label:'맞춤제안매출액', unit:'won', calc:(d)=>Number(d.tailoredAmount||0) },
+  { key:'sono', label:'소노', unit:'count', calc:(d)=>Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0) },
 ];
 
 function formatDateTime(iso) {
@@ -5453,7 +5732,7 @@ function HistoryTab({ employees, month, config }) {
 
 function ComparisonView({ rows }) {
   const [groupBy, setGroupBy] = useState('employee'); // employee | branch
-  const [metricKey, setMetricKey] = useState('total');
+  const [metricKey, setMetricKey] = useState('hs');
   const metric = COMPARE_METRICS.find((m) => m.key === metricKey) || COMPARE_METRICS[0];
   const fmt = (v) => (metric.unit === 'won' ? won(v) : metric.unit === 'point' ? `${(v || 0).toFixed(1)}P` : `${v}건`);
 
