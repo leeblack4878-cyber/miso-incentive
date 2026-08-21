@@ -1642,8 +1642,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             config={config}
             userId={authUser?.id}
           />
-            </div>
-          )}
           <GradeProgress pay={pay} config={config} dailyDays={dailyDays} month={month} />
           <HomeGateCard pay={pay} config={config} onGoInput={() => setTab('daily')} />
           <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
