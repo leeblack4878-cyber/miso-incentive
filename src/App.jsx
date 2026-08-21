@@ -1248,6 +1248,12 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               )}
             </div>
           </div>
+          <NextGoalCard
+            pay={pay}
+            draft={mergedDraft}
+            config={config}
+            onGoInput={() => setTab('daily')}
+          />
           {myRank && (
             <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4">
               <div className="flex-1">
@@ -1692,6 +1698,142 @@ function ColHeader({ label }) {
 }
 
 /* ===================== 등급 진행바 · 홈 최소조건 알림 ===================== */
+
+
+function guaranteedDeltaForGradeBonus(pay, nextBonus) {
+  const withoutCurrentGrade = (pay.otherComponents || 0) - (pay.gradeBonus || 0);
+  const nextGuaranteed = Math.max(pay.positionBase || 0, withoutCurrentGrade + (nextBonus || 0));
+  return Math.max(0, nextGuaranteed - (pay.guaranteedComponent || 0));
+}
+
+function nextTierAbove(count, tiers) {
+  return [...(tiers || [])]
+    .sort((a, b) => a.min - b.min)
+    .find((t) => Number(t.min) > Number(count || 0)) || null;
+}
+
+function buildNextGoal(pay, draft, config) {
+  if (!pay || !draft || !config) return null;
+
+  const candidates = [];
+
+  // 1) 성과등급: 다음 등급 보너스가 실제 총 인센티브를 올릴 때만 후보
+  if (pay.nextGrade) {
+    const remain = Math.max(0, pay.nextGrade.min - pay.totalPoints);
+    const delta = guaranteedDeltaForGradeBonus(pay, pay.nextGrade.bonus);
+
+    if (remain > 0 && delta > 0) {
+      candidates.push({
+        key: 'grade',
+        effort: remain,
+        title: `${pay.nextGrade.grade}등급`,
+        description: `${pay.nextGrade.grade}등급까지 ${remain.toFixed(1)}P 남았어요`,
+        delta,
+      });
+    }
+  }
+
+  // 2) 홈 최소조건: 현재 성과포인트 기준 보너스가 잠겨 있고,
+  // 홈 조건 충족 시 실제 총액이 증가하는 경우
+  if (!pay.gradeEligible) {
+    const short = Math.max(0, HOME_GATE_MIN - pay.homeGatePoints);
+    const grades = [...(config.grades || DEFAULT_GRADES)].sort((a, b) => b.min - a.min);
+    const potentialGrade = grades.find((g) => pay.totalPoints >= g.min) || null;
+    const potentialBonus = potentialGrade?.bonus || 0;
+    const delta = potentialBonus > 0
+      ? guaranteedDeltaForGradeBonus(pay, potentialBonus)
+      : 0;
+
+    if (short > 0 && delta > 0) {
+      candidates.push({
+        key: 'homeGate',
+        effort: short,
+        title: '홈 최소조건',
+        description: `홈 최소조건까지 ${short.toFixed(1)}점 남았어요`,
+        delta,
+      });
+    }
+  }
+
+  // 3) 고객등록: 다음 구간 보너스 차액은 총액에 직접 더해짐
+  const custCount = Number(draft.custRegCount || 0);
+  const custNext = nextTierAbove(custCount, config.custRegTiers);
+  if (custNext) {
+    const currentBonus = tierBonus(custCount, config.custRegTiers || []);
+    const delta = Math.max(0, Number(custNext.bonus || 0) - currentBonus);
+    const remain = Math.max(0, Number(custNext.min) - custCount);
+
+    if (remain > 0 && delta > 0) {
+      candidates.push({
+        key: 'custReg',
+        effort: remain,
+        title: '고객등록',
+        description: `고객등록 다음 구간까지 ${remain}건 남았어요`,
+        delta,
+      });
+    }
+  }
+
+  // 4) 맞춤제안: 다음 구간 보너스 차액은 총액에 직접 더해짐
+  const tailoredCount = Number(draft.tailoredCount || 0);
+  const tailoredNext = nextTierAbove(tailoredCount, config.tailoredTiers);
+  if (tailoredNext) {
+    const currentBonus = tierBonus(tailoredCount, config.tailoredTiers || []);
+    const delta = Math.max(0, Number(tailoredNext.bonus || 0) - currentBonus);
+    const remain = Math.max(0, Number(tailoredNext.min) - tailoredCount);
+
+    if (remain > 0 && delta > 0) {
+      candidates.push({
+        key: 'tailored',
+        effort: remain,
+        title: '맞춤제안',
+        description: `맞춤제안 다음 구간까지 ${remain}건 남았어요`,
+        delta,
+      });
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  // 가장 가까운 목표 우선, 거리가 같으면 상승액이 큰 목표 우선
+  candidates.sort((a, b) => (a.effort - b.effort) || (b.delta - a.delta));
+  return candidates[0];
+}
+
+function NextGoalCard({ pay, draft, config, onGoInput }) {
+  const goal = useMemo(
+    () => buildNextGoal(pay, draft, config),
+    [pay, draft, config]
+  );
+
+  if (!goal) return null;
+
+  return (
+    <button
+      onClick={onGoInput}
+      className="w-full text-left bg-white rounded-xl border border-violet-200 p-4 hover:border-violet-300 transition"
+    >
+      <div className="flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+          <Target size={18} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-violet-600 mb-1">다음 목표</div>
+          <div className="text-sm font-bold text-gray-900">{goal.title}</div>
+          <div className="text-sm text-gray-600 mt-0.5">{goal.description}</div>
+
+          <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-xs text-gray-400">달성 시 예상 인센티브</span>
+            <span className="text-lg font-bold text-violet-700">+{won(goal.delta)}</span>
+          </div>
+        </div>
+
+        <ChevronRight size={17} className="text-violet-300 shrink-0 mt-1" />
+      </div>
+    </button>
+  );
+}
 
 function GrowthBadge({ current, prev }) {
   if (!prev || prev <= 0) return null;
