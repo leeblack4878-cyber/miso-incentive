@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { UserCheck, UserX, Loader2, Clock } from 'lucide-react';
 import { supabase } from './supabase';
+import { friendlyError } from './errorMessages';
 
 /*
   관리자 화면(EmployeeManager 등)에 <PendingApprovals /> 하나만 넣으면 됩니다.
@@ -28,7 +29,7 @@ export default function PendingApprovals() {
 
     if (error) {
       console.error('PENDING LOAD ERROR:', error);
-      setError(error.message);
+      setError(friendlyError(error));
     } else {
       setPending(data || []);
     }
@@ -55,7 +56,7 @@ export default function PendingApprovals() {
     const { error } = await supabase.from('profiles').update(patch).eq('id', id);
     if (error) {
       console.error('APPROVE/REJECT ERROR:', error);
-      setError(error.message);
+      setError(friendlyError(error));
     } else {
       setPending((prev) => prev.filter((p) => p.id !== id));
     }
