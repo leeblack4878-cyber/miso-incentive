@@ -2829,6 +2829,25 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [showNet,setShowNet]=useState(false);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
+  useEffect(() => {
+    if (!authUser?.id) return;
+    (async () => {
+      const [y, m] = month.split('-').map(Number);
+      const next = new Date(y, m, 1);
+      const to = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+
+      const { data, error } = await supabase
+        .from('sales_expenses')
+        .select('amount')
+        .eq('user_id', authUser.id)
+        .gte('expense_date', `${month}-01`)
+        .lt('expense_date', to);
+
+      if (!error) {
+        setExpenseTotal((data || []).reduce((s, x) => s + Number(x.amount || 0), 0));
+      }
+    })();
+  }, [authUser?.id, month]);
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -2966,6 +2985,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </div>
           )}
           <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} currentEmp={currentEmp} />
+
+          <div className="mt-4">
+            <SalesExpensePanel
+              userId={authUser?.id}
+              month={month}
+              onTotal={setExpenseTotal}
+            />
+          </div>
         </>
       )}
 
@@ -3031,9 +3058,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="KPI 생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
             <RowKV label="총 인센티브" value={won(pay.total)} bold />
           </div>
-
-          <SalesExpensePanel userId={authUser?.id} month={month} onTotal={setExpenseTotal} />
           <SpotClaimPanel userId={authUser?.id} month={month} />
+          <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+            영업비용 등록은 <b>일일입력</b>에서 할 수 있어요.
+          </div>
           {canSeeCriteria && (
             <Section title="인센티브 지급 기준 보기">
               <div className="divide-y divide-gray-50">
