@@ -8,6 +8,7 @@ import {
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
 import PendingApprovals from './PendingApprovals';
+import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 
 /* ===================== 기본 정책 상수 (관리자가 수정 가능) ===================== */
 
@@ -640,6 +641,7 @@ export default function App({ authUser, authProfile }) {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
+  const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
 
   const DEFAULT_EMPLOYEES = [
     { id: 'e01', name: '어진석', branch: '장곡동_장곡역점', position: '사원', hireDate: '2026-08' },
@@ -891,6 +893,7 @@ export default function App({ authUser, authProfile }) {
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
+
   useEffect(() => {
     if (!authUser) return;
     (async () => {
@@ -941,8 +944,15 @@ export default function App({ authUser, authProfile }) {
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   };
 
-  const removeEmployee = async () => {
-    window.alert('계정 비활성화/삭제는 현재 Supabase Authentication에서 관리해주세요. 앱 내 직원 계정 관리 기능은 다음 단계에서 추가합니다.');
+  const removeEmployee = async (id) => {
+    setDbError('');
+    const { error } = await supabase.from('profiles').update({ active: false }).eq('id', id);
+    if (error) {
+      console.error('EMPLOYEE DEACTIVATE ERROR:', error);
+      setDbError(`직원 비활성화 실패: ${friendlyError(error)}`);
+      return;
+    }
+    await loadEmployees();
   };
 
   const saveDraft = async (payload) => {
@@ -1068,6 +1078,29 @@ export default function App({ authUser, authProfile }) {
     return { ...e, status: rec.status, pay, draft: mergedDraft, updatedAt: rec.updatedAt };
   });
   const currentEmp = employees.find((e) => e.id === empId);
+
+  // 홈 화면 "전월 대비" 표시용 — 본인 것만 가볍게 따로 불러옴
+  useEffect(() => {
+    if (!empId || !currentEmp) { setPrevMonthTotal(null); return; }
+    (async () => {
+      const [yy, mm] = month.split('-').map(Number);
+      const prevD = new Date(yy, mm - 2, 1);
+      const prevMonth = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
+      const nextKey = `${month}-01`;
+
+      const [{ data: msRow }, { data: dailyRows }] = await Promise.all([
+        supabase.from('monthly_status').select('data, activity_time_met').eq('user_id', empId).eq('month', prevMonth).maybeSingle(),
+        supabase.from('daily_records').select('work_date, data').eq('user_id', empId).gte('work_date', `${prevMonth}-01`).lt('work_date', nextKey),
+      ]);
+
+      const prevDraft = { ...emptyDraft(), ...(msRow?.data?.draft || {}), activityTimeMet: msRow?.activity_time_met ?? true };
+      const prevDailyMap = {};
+      (dailyRows || []).forEach((r) => { prevDailyMap[r.work_date.slice(8, 10)] = r.data; });
+      const prevMerged = applyDailyToDraft(prevDraft, prevDailyMap, prevMonth, config.categoryMap, config.gibyeonColumnMap);
+      const prevPay = computePay(prevMerged, currentEmp.position, currentEmp.hireDate, prevMonth, config);
+      setPrevMonthTotal(prevPay.total);
+    })();
+  }, [empId, month, currentEmp?.position, currentEmp?.hireDate, config]); // eslint-disable-line
   const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config);
   // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
@@ -1077,6 +1110,15 @@ export default function App({ authUser, authProfile }) {
     .map((r) => (r.position === '기타' ? { ...r, pay: { ...r.pay, total: 0, guaranteedComponent: 0 } } : r));
   const totalPay = salesRows.reduce((s, r) => s + r.pay.total, 0);
   const pendingCount = rows.filter((r) => r.status === 'pending').length;
+
+  // 홈 화면 랭킹용 — 본인이 영업 조직 소속일 때만 순위 계산
+  const rankedSorted = [...salesRows].sort((a, b) => b.pay.total - a.pay.total);
+  const myRankIndex = rankedSorted.findIndex((r) => r.id === empId);
+  const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
+  const myRankTotal = rankedSorted.length;
+  const myBranchRanked = rankedSorted.filter((r) => r.branch === currentEmp?.branch);
+  const myBranchRankIndex = myBranchRanked.findIndex((r) => r.id === empId);
+  const myBranchRank = myBranchRankIndex >= 0 ? myBranchRankIndex + 1 : null;
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
@@ -1130,6 +1172,9 @@ export default function App({ authUser, authProfile }) {
           dailyDays={dailyRecords[empId] || {}} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
+          myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
+          prevMonthTotal={prevMonthTotal}
+          authUser={authUser} authProfile={authProfile}
         />
       ) : (
         <AdminView
@@ -1148,7 +1193,7 @@ export default function App({ authUser, authProfile }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -1185,10 +1230,30 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-5">
             <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} 예상 총 인센티브</div>
             <div className="text-3xl font-bold">{won(pay.total)}</div>
-            <div className="mt-2"><StatusBadge status={status} /></div>
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <StatusBadge status={status} />
+              {prevMonthTotal !== null && (
+                <GrowthBadge current={pay.total} prev={prevMonthTotal} />
+              )}
+            </div>
           </div>
-          <GradeProgress pay={pay} config={config} />
+          {myRank && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4">
+              <div className="flex-1">
+                <div className="text-xs text-gray-400">전체 순위</div>
+                <div className="text-lg font-bold text-gray-900">{myRank}<span className="text-sm text-gray-400 font-medium">위 / {myRankTotal}명</span></div>
+              </div>
+              {myBranchRank && myBranchTotal > 1 && (
+                <div className="flex-1 border-l border-gray-100 pl-4">
+                  <div className="text-xs text-gray-400">우리 매장 순위</div>
+                  <div className="text-lg font-bold text-gray-900">{myBranchRank}<span className="text-sm text-gray-400 font-medium">위 / {myBranchTotal}명</span></div>
+                </div>
+              )}
+            </div>
+          )}
+          <GradeProgress pay={pay} config={config} dailyDays={dailyDays} month={month} />
           <HomeGateCard pay={pay} config={config} onGoInput={() => setTab('daily')} />
+          <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
 
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-gray-100 p-3">
@@ -1617,7 +1682,20 @@ function ColHeader({ label }) {
 
 /* ===================== 등급 진행바 · 홈 최소조건 알림 ===================== */
 
-function GradeProgress({ pay, config }) {
+function GrowthBadge({ current, prev }) {
+  if (!prev || prev <= 0) return null;
+  const diff = current - prev;
+  const pct = Math.round((diff / prev) * 100);
+  if (diff === 0) return <span className="text-xs text-violet-100">전월과 동일</span>;
+  const up = diff > 0;
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-emerald-400/20 text-emerald-100' : 'bg-red-400/20 text-red-100'}`}>
+      전월 대비 {up ? '+' : ''}{pct}%
+    </span>
+  );
+}
+
+function GradeProgress({ pay, config, dailyDays, month }) {
   const grades = config.grades || DEFAULT_GRADES;
   const maxMin = Math.max(...grades.map((g) => g.min), 1);
   const pct = Math.min(100, (pay.totalPoints / maxMin) * 100);
@@ -1626,6 +1704,20 @@ function GradeProgress({ pay, config }) {
   const currentBonus = pay.gradeEligible ? pay.gradeBonus : 0;
   const jump = next ? next.bonus - currentBonus : 0;
   const ticks = grades.filter((g) => g.min > 0).sort((a, b) => a.min - b.min);
+
+  // 지금까지의 페이스로 다음 등급까지 며칠 걸릴지 추정
+  const paceLabel = (() => {
+    if (!next || remain <= 0 || !dailyDays || !month) return null;
+    const daysWithData = Object.values(dailyDays).filter((m) => dayHasData(m)).length;
+    const now = new Date();
+    const isCurrentMonth = monthKeyOf(now) === month;
+    const daysElapsed = isCurrentMonth ? now.getDate() : daysInMonth(month);
+    const activeDays = Math.max(daysWithData, 1);
+    const perDay = pay.totalPoints / Math.max(daysElapsed, activeDays, 1);
+    if (perDay <= 0) return null;
+    const daysNeeded = Math.ceil(remain / perDay);
+    return `지금 페이스(하루 평균 ${perDay.toFixed(1)}P)면 ${daysNeeded}일 후 도달 예상`;
+  })();
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4">
@@ -1663,13 +1755,16 @@ function GradeProgress({ pay, config }) {
       </div>
 
       {next ? (
-        <div className="mt-2 flex items-center gap-2 text-sm">
-          <Target size={14} className="text-violet-500 shrink-0" />
-          <span className="text-gray-600">
-            <b className="text-violet-700">{next.grade}등급</b>까지 <b className="text-gray-900 tabular-nums">{remain.toFixed(1)}P</b>
-            {jump > 0 && <span className="text-gray-400"> · 도달하면 +{won(jump)}</span>}
-          </span>
-        </div>
+        <>
+          <div className="mt-2 flex items-center gap-2 text-sm">
+            <Target size={14} className="text-violet-500 shrink-0" />
+            <span className="text-gray-600">
+              <b className="text-violet-700">{next.grade}등급</b>까지 <b className="text-gray-900 tabular-nums">{remain.toFixed(1)}P</b>
+              {jump > 0 && <span className="text-gray-400"> · 도달하면 +{won(jump)}</span>}
+            </span>
+          </div>
+          {paceLabel && <div className="mt-1 text-xs text-gray-400 pl-6">{paceLabel}</div>}
+        </>
       ) : (
         <div className="mt-2 flex items-center gap-2 text-sm text-emerald-600">
           <Award size={14} className="shrink-0" /> 최고 등급이에요. 이번 달 잘하고 있어요!
@@ -2115,6 +2210,33 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
   const [sortBy, setSortBy] = useState('hireDesc');
   const [nameQuery, setNameQuery] = useState('');
 
+  const [showInactive, setShowInactive] = useState(false);
+  const [inactiveList, setInactiveList] = useState([]);
+  const [inactiveLoading, setInactiveLoading] = useState(false);
+
+  const loadInactive = async () => {
+    setInactiveLoading(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, name, employee_code, store_name, position, hire_date')
+      .eq('active', false)
+      .order('name', { ascending: true });
+    if (!error) setInactiveList(data || []);
+    setInactiveLoading(false);
+  };
+  const toggleShowInactive = () => {
+    const next = !showInactive;
+    setShowInactive(next);
+    if (next) loadInactive();
+  };
+  const reactivate = async (id) => {
+    const { error } = await supabase.from('profiles').update({ active: true }).eq('id', id);
+    if (!error) {
+      setInactiveList((prev) => prev.filter((p) => p.id !== id));
+      window.location.reload(); // 목록 갱신을 위해 새로고침 (간단하고 확실한 방식)
+    }
+  };
+
   const visibleEmployees = employees
     .filter((e) => filterBranch === '전체' || e.branch === filterBranch)
     .filter((e) => !nameQuery.trim() || e.name.includes(nameQuery.trim()))
@@ -2130,6 +2252,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
   return (
     <div className="max-w-2xl space-y-4">
       <PendingApprovals />
+      <ProfileEditRequests />
       <Section title="매장 관리" sub={`${stores.length}개 매장`} defaultOpen>
         <div className="p-3 flex gap-2">
           <input placeholder="새 매장명 (예: 동명_매장명)" value={newStore} onChange={(e) => setNewStore(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
@@ -2139,7 +2262,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
           {stores.map((s) => (
             <span key={s} className="flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full">
               {s}
-              <button onClick={() => removeStore(s)} className="text-gray-400 hover:text-red-500">×</button>
+              <button onClick={() => { if (window.confirm(`"${s}" 매장을 정말 삭제할까요?\n이 매장으로 등록된 직원들의 실적 화면에는 영향이 없지만, 앞으로 이 매장은 새 직원 등록·회원가입 목록에서 사라져요.`)) removeStore(s); }} className="text-gray-400 hover:text-red-500">×</button>
             </span>
           ))}
         </div>
@@ -2194,7 +2317,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => startEdit(e)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 text-gray-600">수정</button>
-                  <button onClick={() => removeEmployee(e.id)} className="w-7 h-7 rounded-md bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={13} /></button>
+                  <button onClick={() => { if (window.confirm(`"${e.name}"님을 비활성화할까요?\n로그인·직원 목록에서 바로 빠지고, 실적 기록은 그대로 안전하게 남아요. 필요하면 나중에 다시 활성화할 수 있어요.`)) removeEmployee(e.id); }} className="w-7 h-7 rounded-md bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={13} /></button>
                 </div>
               </div>
             )}
@@ -2202,6 +2325,29 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
         ))}
         {visibleEmployees.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">해당 매장에 등록된 직원이 없습니다.</div>}
       </div>
+
+      <button onClick={toggleShowInactive} className="text-xs text-gray-400 underline">
+        {showInactive ? '비활성 직원 숨기기' : '비활성화된 직원 보기'}
+      </button>
+      {showInactive && (
+        <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+          {inactiveLoading ? (
+            <div className="text-xs text-gray-400 px-4 py-6 text-center">불러오는 중...</div>
+          ) : inactiveList.length === 0 ? (
+            <div className="text-xs text-gray-400 px-4 py-6 text-center">비활성화된 직원이 없어요.</div>
+          ) : (
+            inactiveList.map((p) => (
+              <div key={p.id} className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-500">{p.name} · {p.position}</div>
+                  <div className="text-[11px] text-gray-400">{p.store_name}</div>
+                </div>
+                <button onClick={() => reactivate(p.id)} className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white">다시 활성화</button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
