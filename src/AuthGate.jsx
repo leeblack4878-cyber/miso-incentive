@@ -471,16 +471,7 @@ export default function AuthGate({ children }) {
 
   return (
     <>
-      <div className="fixed top-3 right-3 z-[100] flex items-center gap-2 bg-white/95 border border-slate-200 rounded-xl shadow-sm px-3 py-2">
-        <div className="text-right leading-tight hidden sm:block">
-          <div className="text-xs font-semibold text-slate-700">{profile?.name || session.user.email}</div>
-          <div className="text-[10px] text-slate-400">{profile?.role || 'employee'}</div>
-        </div>
-        <button onClick={signOut} title="로그아웃" className="text-slate-400 hover:text-red-500">
-          <LogOut size={16} />
-        </button>
-      </div>
-      {React.isValidElement(children) ? React.cloneElement(children, { authUser: session.user, authProfile: profile }) : children}
+      {React.isValidElement(children) ? React.cloneElement(children, { authUser: session.user, authProfile: profile, onSignOut: signOut }) : children}
     </>
   );
 }
