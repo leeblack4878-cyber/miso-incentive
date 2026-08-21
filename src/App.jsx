@@ -2680,7 +2680,155 @@ async function notifyStoreManagers({ actorId, type, title, message, payload = {}
   }
 }
 
+
+/* ===================== v16: 매장 목표 / 영업비용 / 스팟 정책 ===================== */
+const STORE_GOAL_METRICS = [
+  { key:'hs', label:'HS' },
+  { key:'home', label:'홈' },
+  { key:'productivity', label:'생산성' },
+  { key:'tvFree', label:'TV프리(부)' },
+  { key:'smartHome', label:'스마트홈' },
+  { key:'tailoredCount', label:'맞춤제안 업셀 건수' },
+];
+
+function storeGoalCurrent(mergedDraft, pay, key) {
+  if (key === 'hs') return hsCount(mergedDraft);
+  if (key === 'home') return Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  if (key === 'productivity') return Number(pay?.kpiScore||0);
+  if (key === 'tvFree') return Number(mergedDraft?.homeFlat?.tvFree||0);
+  if (key === 'smartHome') return Number(mergedDraft?.homeFlat?.smartHome||0);
+  if (key === 'tailoredCount') return Number(mergedDraft?.tailoredCount||0);
+  return 0;
+}
+
+function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
+  const [goal,setGoal]=useState(null);
+  const [open,setOpen]=useState(false);
+  useEffect(()=>{
+    if(!storeName)return;
+    (async()=>{
+      const {data}=await supabase.from('store_goals').select('*').eq('month',month).eq('store_name',storeName).maybeSingle();
+      setGoal(data||null);
+    })();
+  },[month,storeName]);
+  if(!goal)return null;
+  const company=goal.company_goals||{}, challenge=goal.challenge_goals||{};
+  return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex items-center justify-between text-left">
+      <div><div className="text-xs text-gray-400">🏪 우리 매장 목표</div><div className="font-bold text-gray-900 mt-0.5">{displayStoreName(storeName)} · {monthLabel(month)}</div></div>
+      <span className="text-xs text-violet-600 font-semibold">{open?'접기':'진행률 보기'}</span>
+    </button>
+    {open&&<div className="px-4 pb-4 space-y-3">
+      {STORE_GOAL_METRICS.map(m=>{
+        const cur=storeGoalCurrent(mergedDraft,pay,m.key), c=Number(company[m.key]||0), ch=Number(challenge[m.key]||c||0);
+        if(!c&&!ch)return null;
+        const pct=ch?Math.min(100,cur/ch*100):0;
+        return <div key={m.key}>
+          <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{m.label}</span><span className="text-gray-500">{Number.isInteger(cur)?cur:cur.toFixed(1)} / <b>{ch}</b></span></div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}} /></div>
+          <div className="text-[10px] mt-1 text-gray-400">{c&&cur>=c?'✅ 회사 기준 달성':`회사 기준 ${c||'-'}`} · 도전 {ch||'-'}</div>
+        </div>
+      })}
+    </div>}
+  </div>;
+}
+
+function SalesExpensePanel({ userId, month, onTotal }) {
+  const [items,setItems]=useState([]), [open,setOpen]=useState(false);
+  const [form,setForm]=useState({amount:'',category:'케이스',customer_name:'',expense_date:`${month}-01`,memo:''});
+  const load=useCallback(async()=>{
+    if(!userId)return;
+    const {data}=await supabase.from('sales_expenses').select('*').eq('user_id',userId).gte('expense_date',`${month}-01`).lt('expense_date',(()=>{const [y,m]=month.split('-').map(Number);const d=new Date(y,m,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`})()).order('expense_date',{ascending:false});
+    const rows=data||[];setItems(rows);onTotal?.(rows.reduce((s,x)=>s+Number(x.amount||0),0));
+  },[userId,month,onTotal]);
+  useEffect(()=>{load()},[load]);
+  useEffect(()=>setForm(f=>({...f,expense_date:`${month}-${String(new Date().getDate()).padStart(2,'0')}`})),[month]);
+  const add=async()=>{
+    const amount=Number(form.amount); if(!amount||amount<=0)return alert('비용 금액을 입력해주세요.');
+    const {error}=await supabase.from('sales_expenses').insert({...form,amount,user_id:userId,customer_name:form.customer_name.trim()||null,memo:form.memo.trim()||null});
+    if(error)return alert(`비용 등록 실패: ${friendlyError(error)}`);
+    setForm(f=>({...f,amount:'',customer_name:'',memo:''}));load();
+  };
+  const remove=async(id)=>{if(!window.confirm('이 비용을 삭제할까요?'))return;await supabase.from('sales_expenses').delete().eq('id',id).eq('user_id',userId);load()};
+  const total=items.reduce((s,x)=>s+Number(x.amount||0),0);
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between items-center text-left">
+      <div><div className="text-sm font-bold text-gray-800">💳 영업비용</div><div className="text-xs text-gray-400 mt-0.5">이번 달 {won(total)} · 고객명은 선택</div></div>
+      <span className="text-xs text-violet-600">{open?'접기':'등록/내역'}</span>
+    </button>
+    {open&&<div className="px-4 pb-4 space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <input type="date" value={form.expense_date} onChange={e=>setForm({...form,expense_date:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"/>
+        <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"><option>케이스</option><option>오퍼</option><option>판촉</option><option>기타</option></select>
+        <input inputMode="numeric" placeholder="금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded-lg px-2 py-2 text-xs"/>
+        <input placeholder="고객명 (선택)" value={form.customer_name} onChange={e=>setForm({...form,customer_name:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"/>
+      </div>
+      <input placeholder="메모 (선택)" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})} className="w-full border rounded-lg px-2 py-2 text-xs"/>
+      <button onClick={add} className="w-full py-2 rounded-lg bg-violet-600 text-white text-xs font-bold">비용 등록</button>
+      <div className="divide-y">
+        {items.slice(0,20).map(x=><div key={x.id} className="py-2 flex justify-between gap-2 text-xs"><div><b>{x.category}</b> · {x.customer_name||'일반'}<div className="text-[10px] text-gray-400">{x.expense_date}{x.memo?` · ${x.memo}`:''}</div></div><div className="flex items-center gap-2"><b>{won(x.amount)}</b><button onClick={()=>remove(x.id)} className="text-gray-300">삭제</button></div></div>)}
+      </div>
+    </div>}
+  </div>;
+}
+
+function SpotClaimPanel({ userId, month }) {
+  const [policies,setPolicies]=useState([]),[claims,setClaims]=useState([]),[open,setOpen]=useState(false);
+  const [policyId,setPolicyId]=useState(''),[customer,setCustomer]=useState('');
+  const load=useCallback(async()=>{
+    const {data:p}=await supabase.from('spot_policies').select('*').lte('start_date',`${month}-31`).gte('end_date',`${month}-01`).eq('active',true).order('start_date');
+    const {data:c}=await supabase.from('spot_claims').select('*, spot_policies(title,amount)').eq('user_id',userId).gte('claim_date',`${month}-01`).lte('claim_date',`${month}-31`).order('created_at',{ascending:false});
+    setPolicies(p||[]);setClaims(c||[]);if(!policyId&&p?.[0])setPolicyId(p[0].id);
+  },[userId,month,policyId]);
+  useEffect(()=>{load()},[userId,month]); // eslint-disable-line
+  const add=async()=>{
+    if(!policyId)return alert('스팟 정책을 선택해주세요.');
+    const {error}=await supabase.from('spot_claims').insert({policy_id:policyId,user_id:userId,claim_date:new Date().toISOString().slice(0,10),customer_name:customer.trim()||null,status:'pending'});
+    if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);setCustomer('');load();
+  };
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between text-left"><div><div className="text-sm font-bold">🔥 스팟 추가 인센티브</div><div className="text-xs text-gray-400 mt-0.5">정책 선택 → 관리자 확인 후 반영</div></div><span className="text-xs text-violet-600">{open?'접기':'보기'}</span></button>
+    {open&&<div className="px-4 pb-4 space-y-2">
+      {policies.length?<><select value={policyId} onChange={e=>setPolicyId(e.target.value)} className="w-full border rounded-lg p-2 text-xs">{policies.map(p=><option key={p.id} value={p.id}>{p.title} · +{won(p.amount)}</option>)}</select><input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="고객명 (선택)" className="w-full border rounded-lg p-2 text-xs"/><button onClick={add} className="w-full py-2 rounded-lg bg-orange-500 text-white text-xs font-bold">스팟 적용 신청</button></>:<div className="text-xs text-gray-400 py-2">현재 등록된 스팟 정책이 없어요.</div>}
+      {claims.map(c=><div key={c.id} className="text-xs flex justify-between border-t pt-2"><span>{c.spot_policies?.title||'스팟'} · {c.customer_name||'일반'}</span><span className={c.status==='approved'?'text-emerald-600':c.status==='rejected'?'text-red-500':'text-orange-500'}>{c.status==='approved'?'승인':c.status==='rejected'?'반려':'확인대기'}</span></div>)}
+    </div>}
+  </div>;
+}
+
+function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
+  const me=employees.find(e=>e.id===authUserId);
+  const stores=[...new Set(employees.map(e=>e.branch).filter(Boolean))];
+  const [selected,setSelected]=useState(me?.branch||stores[0]||'');
+  const [goal,setGoal]=useState({company_goals:{},challenge_goals:{}});
+  const load=useCallback(async()=>{if(!selected)return;const {data}=await supabase.from('store_goals').select('*').eq('month',month).eq('store_name',selected).maybeSingle();setGoal(data||{company_goals:{},challenge_goals:{}})},[month,selected]);
+  useEffect(()=>{load()},[load]);
+  const setVal=(kind,key,val)=>{let n=Number(val)||0;const next={...(goal[kind]||{}),[key]:n};if(kind==='company_goals'&&key==='hs')next.tailoredCount=Math.ceil(n*.5);setGoal({...goal,[kind]:next})};
+  const save=async()=>{const payload={month,store_name:selected,company_goals:goal.company_goals||{},challenge_goals:goal.challenge_goals||{},updated_by:authUserId,updated_at:new Date().toISOString()};const {error}=await supabase.from('store_goals').upsert(payload,{onConflict:'month,store_name'});if(error)return alert(`매장 목표 저장 실패: ${friendlyError(error)}`);alert('매장 목표를 저장했어요.')};
+  return <div className="space-y-3">
+    <div className="bg-white rounded-xl border p-4"><div className="font-bold">🏪 매장 목표 설정</div><div className="text-xs text-gray-400 mt-1">회사 기준 + 매장 도전 목표 · 업셀 건수는 HS의 50% 자동 추천</div>
+      <select value={selected} disabled={!isFullAdmin} onChange={e=>setSelected(e.target.value)} className="mt-3 border rounded-lg p-2 text-sm">{stores.map(s=><option key={s}>{s}</option>)}</select>
+    </div>
+    <div className="bg-white rounded-xl border overflow-hidden"><div className="grid grid-cols-3 text-xs font-bold bg-gray-50 p-3"><span>지표</span><span>회사 기준</span><span>매장 도전</span></div>
+      {STORE_GOAL_METRICS.map(m=><div key={m.key} className="grid grid-cols-3 gap-2 items-center p-3 border-t text-xs"><span>{m.label}</span><input disabled={!isFullAdmin} type="number" step={m.key==='productivity'?'0.1':'1'} value={goal.company_goals?.[m.key]??''} onChange={e=>setVal('company_goals',m.key,e.target.value)} className="border rounded p-2 disabled:bg-gray-50"/><input type="number" step={m.key==='productivity'?'0.1':'1'} value={goal.challenge_goals?.[m.key]??''} onChange={e=>setVal('challenge_goals',m.key,e.target.value)} className="border rounded p-2"/></div>)}
+    </div><button onClick={save} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">매장 목표 저장</button>
+  </div>;
+}
+
+function SpotAdmin({ authUserId }) {
+  const [policies,setPolicies]=useState([]),[claims,setClaims]=useState([]),[form,setForm]=useState({title:'',amount:'',start_date:'',end_date:'',description:''});
+  const load=useCallback(async()=>{const {data:p}=await supabase.from('spot_policies').select('*').order('created_at',{ascending:false});const {data:c}=await supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').eq('status','pending').order('created_at',{ascending:false});setPolicies(p||[]);setClaims(c||[])},[]);
+  useEffect(()=>{load()},[load]);
+  const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return alert('정책명, 금액, 기간을 입력해주세요.');const {error}=await supabase.from('spot_policies').insert({...form,amount:Number(form.amount),created_by:authUserId});if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:''});load()};
+  const decide=async(id,status)=>{await supabase.from('spot_claims').update({status,reviewed_by:authUserId,reviewed_at:new Date().toISOString()}).eq('id',id);load()};
+  return <div className="space-y-3"><div className="bg-white border rounded-xl p-4"><div className="font-bold">🔥 스팟 정책</div><div className="grid grid-cols-2 gap-2 mt-3"><input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/><input placeholder="건당 금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button></div>
+    <div className="bg-white border rounded-xl p-4"><div className="font-bold text-sm">승인 대기 {claims.length}건</div>{claims.map(c=><div key={c.id} className="py-3 border-t mt-2 text-xs flex justify-between gap-2"><div><b>{c.profiles?.name||'직원'}</b> · {c.spot_policies?.title} · +{won(c.spot_policies?.amount||0)}<div className="text-gray-400">{c.customer_name||'고객 연결 없음'}</div></div><div className="flex gap-1"><button onClick={()=>decide(c.id,'approved')} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded">승인</button><button onClick={()=>decide(c.id,'rejected')} className="px-2 py-1 bg-red-50 text-red-500 rounded">반려</button></div></div>)}</div>
+  </div>;
+}
+
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
+  const [expenseTotal,setExpenseTotal]=useState(0);
+  const [showNet,setShowNet]=useState(false);
+  const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -2715,8 +2863,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       {tab === 'home' && (
         <div className="space-y-4">
           <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-5">
-            <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} 예상 총 인센티브</div>
-            <div className="text-3xl font-bold">{won(pay.total)}</div>
+            <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} {showNet?'비용 차감 후 예상금액':'예상 총 인센티브'}</div>
+            <div className="text-3xl font-bold">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
+            <button onClick={()=>setShowNet(v=>!v)} className="mt-2 text-[11px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
+              {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감해서 보기`}
+            </button>
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <StatusBadge status={status} />
               {prevMonthTotal !== null && (
@@ -2734,6 +2885,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               saving={goalSaving}
             />
           )}
+          <StoreGoalCard month={month} storeName={currentEmp?.branch} mergedDraft={mergedDraft} pay={pay} />
           <NextGoalCard
             pay={pay}
             draft={mergedDraft}
@@ -2741,6 +2893,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             onGoInput={() => setTab('daily')}
           />
           <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={() => setTab('daily')} />
+          <button onClick={()=>setHomeDetailOpen(v=>!v)} className="w-full bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between text-sm font-semibold text-gray-700">
+            <span>상세 실적 · 랭킹 · 배지</span><span className="text-violet-600 text-xs">{homeDetailOpen?'접기':'펼쳐보기'}</span>
+          </button>
+          {homeDetailOpen && (
+            <div className="space-y-4">
           <MyRankingCard rows={competitionRows} userId={authUser?.id} branch={displayStoreName(currentEmp?.branch)} />
           <RisingRankingCard
             rows={competitionRows}
@@ -2796,6 +2953,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <Info size={13} className="shrink-0 mt-0.5" />
             영업 활동 지원 정책(근속기간별 건당 지급액)은 성과등급 보너스·요금제 유치 수수료·2ND번들과 합산해 영업 활동 지원금(직급 보장액)과 비교되고, 둘 중 큰 금액이 지급돼요. 그래서 근속수당 자체는 표시되지만 총액에 별도로 더해지지는 않아요. 홈 최소조건(3점)은 인터넷1점·프리0.3점·스홈0.2점 기준으로, 성과등급 가점(홈단독1P·홈+TV2P 등)은 별도 배점으로 계산돼요. 모델 특판 실적은 고객 할인 재원이라 인센티브 총액에 포함하지 않았어요.
           </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2846,27 +3005,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         </div>
       )}
 
-      {tab === 'criteria' && canSeeCriteria && (
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-gray-700">지급 기준 안내</div>
-          <Section title="영업 활동 지원금" defaultOpen>
-            {POSITIONS.map((p) => <RowKV key={p} label={p} value={won(config.basePay[p])} />)}
-          </Section>
-          <Section title="직급별 직책수당">
-            {POSITIONS.map((p) => <RowKV key={p} label={p} value={won(config.positionAllowance?.[p] || 0)} />)}
-          </Section>
-          <Section title="근속기간별 건당 지급액 (한도 최대 2,300,000원)">
-            {config.tenure.map((t) => <RowKV key={t.key} label={t.label} value={t.rate ? `건당 ${won(t.rate)}` : '실적 무관'} />)}
-          </Section>
-          <Section title="월 성과등급 (홈 최소 3점 이상)">
-            {config.grades.map((g) => <RowKV key={g.grade} label={`${g.grade}등급 (${g.min}P↑)`} value={won(g.bonus)} />)}
-          </Section>
-          <Section title="홈 그레이드 (누적 건수별 건당 단가)">
-            {config.homeTiers.map((t, i) => <RowKV key={i} label={`${t.min}건 이상`} value={`건당 ${won(t.rate)}`} />)}
-          </Section>
-        </div>
-      )}
-
       {tab === 'history' && (
         <div className="space-y-3">
           <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -2893,16 +3031,27 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="KPI 생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
             <RowKV label="총 인센티브" value={won(pay.total)} bold />
           </div>
+
+          <SalesExpensePanel userId={authUser?.id} month={month} onTotal={setExpenseTotal} />
+          <SpotClaimPanel userId={authUser?.id} month={month} />
+          {canSeeCriteria && (
+            <Section title="인센티브 지급 기준 보기">
+              <div className="divide-y divide-gray-50">
+                {POSITIONS.map((p)=><RowKV key={p} label={`${p} 영업 활동 지원금`} value={won(config.basePay[p])}/>)}
+                {config.tenure.map((t)=><RowKV key={t.key} label={t.label} value={t.rate?`건당 ${won(t.rate)}`:'실적 무관'}/>)}
+                {config.grades.map((g)=><RowKV key={g.grade} label={`${g.grade}등급 (${g.min}P↑)`} value={won(g.bonus)}/>)}
+              </div>
+            </Section>
+          )}
         </div>
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className={`max-w-5xl mx-auto grid ${canSeeCriteria ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        <div className="max-w-5xl mx-auto grid grid-cols-4">
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '일일입력', icon: Calendar },
             { key: 'homeOrders', label: '홈진행', icon: ClipboardList },
-            ...(canSeeCriteria ? [{ key: 'criteria', label: '지급기준', icon: Wallet }] : []),
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
@@ -4268,6 +4417,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'rankings', label: '랭킹', icon: Trophy },
     { key: 'notifications', label: '알림', icon: Bell },
     { key: 'homeCare', label: '홈케어', icon: ClipboardList },
+    { key: 'storeGoals', label: '매장 목표', icon: Target },
+    { key: 'spot', label: '스팟', icon: Zap },
     { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
@@ -4381,6 +4532,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
         <NotificationCenter userId={authUserId} />
       )}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
+      {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
+      {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} />}
 
       {adminTab === 'recognition' && (
         <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
