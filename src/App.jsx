@@ -2772,7 +2772,7 @@ function SalesExpensePanel({ userId, month, onTotal }) {
   </div>;
 }
 
-function SpotClaimPanel({ userId, month }) {
+function SpotClaimPanel({ userId, month, claimDate }) {
   const [policies,setPolicies]=useState([]),[claims,setClaims]=useState([]),[open,setOpen]=useState(false);
   const [policyId,setPolicyId]=useState(''),[customer,setCustomer]=useState('');
   const load=useCallback(async()=>{
@@ -2783,7 +2783,13 @@ function SpotClaimPanel({ userId, month }) {
   useEffect(()=>{load()},[userId,month]); // eslint-disable-line
   const add=async()=>{
     if(!policyId)return alert('스팟 정책을 선택해주세요.');
-    const {error}=await supabase.from('spot_claims').insert({policy_id:policyId,user_id:userId,claim_date:new Date().toISOString().slice(0,10),customer_name:customer.trim()||null,status:'pending'});
+    const {error}=await supabase.from('spot_claims').insert({
+      policy_id:policyId,
+      user_id:userId,
+      claim_date:claimDate || new Date().toISOString().slice(0,10),
+      customer_name:customer.trim()||null,
+      status:'pending'
+    });
     if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);setCustomer('');load();
   };
   return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -2822,6 +2828,221 @@ function SpotAdmin({ authUserId }) {
   const decide=async(id,status)=>{await supabase.from('spot_claims').update({status,reviewed_by:authUserId,reviewed_at:new Date().toISOString()}).eq('id',id);load()};
   return <div className="space-y-3"><div className="bg-white border rounded-xl p-4"><div className="font-bold">🔥 스팟 정책</div><div className="grid grid-cols-2 gap-2 mt-3"><input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/><input placeholder="건당 금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button></div>
     <div className="bg-white border rounded-xl p-4"><div className="font-bold text-sm">승인 대기 {claims.length}건</div>{claims.map(c=><div key={c.id} className="py-3 border-t mt-2 text-xs flex justify-between gap-2"><div><b>{c.profiles?.name||'직원'}</b> · {c.spot_policies?.title} · +{won(c.spot_policies?.amount||0)}<div className="text-gray-400">{c.customer_name||'고객 연결 없음'}</div></div><div className="flex gap-1"><button onClick={()=>decide(c.id,'approved')} className="px-2 py-1 bg-emerald-50 text-emerald-600 rounded">승인</button><button onClick={()=>decide(c.id,'rejected')} className="px-2 py-1 bg-red-50 text-red-500 rounded">반려</button></div></div>)}</div>
+  </div>;
+}
+
+
+/* ===================== v17 고객관리 ===================== */
+
+const CARE_TEMPLATES = [
+  { key:'plan93', label:'📱 93일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:93 },
+  { key:'addon93', label:'🧾 93일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:93 },
+  { key:'plan183', label:'📱 183일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:183 },
+  { key:'addon183', label:'🧾 183일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:183 },
+];
+
+function addDaysDate(dateStr, days) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + Number(days || 0));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function ensureCustomer(userId, customerName, saleDate) {
+  const clean=String(customerName||'').trim();
+  if(!userId||!clean)return null;
+
+  const {data:found,error:findError}=await supabase
+    .from('customers')
+    .select('id')
+    .eq('user_id',userId)
+    .eq('customer_name',clean)
+    .maybeSingle();
+
+  if(findError) throw findError;
+  if(found?.id){
+    await supabase.from('customers').update({last_sale_date:saleDate,updated_at:new Date().toISOString()}).eq('id',found.id);
+    return found.id;
+  }
+
+  const {data,error}=await supabase
+    .from('customers')
+    .insert({user_id:userId,customer_name:clean,first_sale_date:saleDate,last_sale_date:saleDate})
+    .select('id')
+    .single();
+
+  if(error) throw error;
+  return data?.id||null;
+}
+
+async function createCustomerSaleAndTasks({
+  userId, customerName, saleDate, metricLabel, sourceType='daily',
+  templateKeys=[], customTitle='', customDueDate='', note=''
+}) {
+  const customerId=await ensureCustomer(userId,customerName,saleDate);
+  if(!customerId) throw new Error('고객 저장 실패');
+
+  const {data:sale,error:saleError}=await supabase
+    .from('customer_sales')
+    .insert({
+      user_id:userId,customer_id:customerId,sale_date:saleDate,
+      metric_label:metricLabel,source_type:sourceType
+    })
+    .select('id')
+    .single();
+  if(saleError)throw saleError;
+
+  const rows=[];
+  templateKeys.forEach(key=>{
+    const t=CARE_TEMPLATES.find(x=>x.key===key);
+    if(!t)return;
+    rows.push({
+      user_id:userId,customer_id:customerId,source_sale_id:sale.id,
+      task_type:key,title:t.title,base_date:saleDate,retention_days:t.retentionDays,
+      due_date:addDaysDate(saleDate,t.retentionDays),status:'pending',note:note||null
+    });
+  });
+
+  if(String(customTitle||'').trim() && customDueDate){
+    rows.push({
+      user_id:userId,customer_id:customerId,source_sale_id:sale.id,
+      task_type:'custom',title:String(customTitle).trim(),base_date:saleDate,
+      retention_days:null,due_date:customDueDate,status:'pending',note:note||null
+    });
+  }
+
+  if(rows.length){
+    const {error}=await supabase.from('customer_tasks').insert(rows);
+    if(error)throw error;
+  }
+
+  return {customerId,saleId:sale.id};
+}
+
+function CareTemplatePicker({ selected, setSelected, customTitle, setCustomTitle, customDueDate, setCustomDueDate, saleDate }) {
+  const toggle=(key)=>setSelected(selected.includes(key)?selected.filter(x=>x!==key):[...selected,key]);
+  return <div className="space-y-2">
+    <div className="text-xs font-semibold text-gray-600">📌 고객 약속 / 유지조건 <span className="font-normal text-gray-400">(선택)</span></div>
+    <div className="grid grid-cols-1 gap-1.5">
+      {CARE_TEMPLATES.map(t=>{
+        const on=selected.includes(t.key);
+        return <button key={t.key} type="button" onClick={()=>toggle(t.key)}
+          className={`text-left px-3 py-2 rounded-xl border text-xs ${on?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
+          <div className="font-semibold">{on?'✓ ':''}{t.label}</div>
+          {on&&<div className="text-[10px] mt-0.5 opacity-70">변경 가능일 {addDaysDate(saleDate,t.retentionDays)} · {t.retentionDays===93?'94일째':'184일째'}</div>}
+        </button>
+      })}
+    </div>
+    <div className="grid grid-cols-2 gap-2 pt-1">
+      <input value={customTitle} onChange={e=>setCustomTitle(e.target.value)} placeholder="직접 약속 내용" className="border rounded-lg px-2 py-2 text-xs"/>
+      <input type="date" value={customDueDate} onChange={e=>setCustomDueDate(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"/>
+    </div>
+  </div>;
+}
+
+function CustomerCareManager({ userId, month, homeProps }) {
+  const [tasks,setTasks]=useState([]);
+  const [customers,setCustomers]=useState([]);
+  const [filter,setFilter]=useState('todo');
+  const [query,setQuery]=useState('');
+  const [loading,setLoading]=useState(true);
+
+  const load=useCallback(async()=>{
+    if(!userId)return;
+    setLoading(true);
+    const [{data:t},{data:c}]=await Promise.all([
+      supabase.from('customer_tasks').select('*').eq('user_id',userId).order('due_date',{ascending:true}),
+      supabase.from('customers').select('*').eq('user_id',userId).order('last_sale_date',{ascending:false})
+    ]);
+    setTasks(t||[]);setCustomers(c||[]);setLoading(false);
+  },[userId]);
+
+  useEffect(()=>{load()},[load]);
+
+  const today=new Date().toISOString().slice(0,10);
+  const customerMap=Object.fromEntries(customers.map(c=>[c.id,c]));
+  const pending=tasks.filter(t=>t.status!=='completed'&&t.status!=='cancelled');
+  const overdue=pending.filter(t=>t.due_date<today);
+  const todayTasks=pending.filter(t=>t.due_date===today);
+  const upcoming=pending.filter(t=>t.due_date>today);
+
+  const mark=async(t,status,dueDate=null)=>{
+    const patch={status,updated_at:new Date().toISOString()};
+    if(status==='completed')patch.completed_at=new Date().toISOString();
+    if(dueDate)patch.due_date=dueDate;
+    const {error}=await supabase.from('customer_tasks').update(patch).eq('id',t.id).eq('user_id',userId);
+    if(error)return alert(`고객 약속 수정 실패: ${friendlyError(error)}`);
+    load();
+  };
+
+  const visible=tasks.filter(t=>{
+    if(filter==='todo'&&(t.status==='completed'||t.status==='cancelled'))return false;
+    if(filter==='today'&&t.due_date!==today)return false;
+    if(filter==='overdue'&&!(t.status!=='completed'&&t.status!=='cancelled'&&t.due_date<today))return false;
+    if(filter==='done'&&t.status!=='completed')return false;
+    const name=customerMap[t.customer_id]?.customer_name||'';
+    return !query.trim()||name.includes(query.trim())||String(t.title||'').includes(query.trim());
+  });
+
+  const dLabel=(date)=>{
+    const a=new Date(`${today}T00:00:00`),b=new Date(`${date}T00:00:00`);
+    const d=Math.round((b-a)/86400000);
+    return d===0?'오늘':d>0?`D-${d}`:`${Math.abs(d)}일 지남`;
+  };
+
+  return <div className="space-y-4">
+    <div className="grid grid-cols-3 gap-2">
+      {[['오늘',todayTasks.length],['기한 경과',overdue.length],['예정',upcoming.length]].map(([l,v])=>
+        <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+          <div className={`text-lg font-bold ${l==='기한 경과'&&v>0?'text-red-600':'text-gray-900'}`}>{v}</div>
+          <div className="text-[10px] text-gray-400">{l}</div>
+        </div>)}
+    </div>
+
+    <div className="bg-white rounded-xl border border-gray-100 p-3">
+      <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명 또는 약속 검색"
+        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
+      <div className="grid grid-cols-4 gap-1.5 mt-2">
+        {[['todo','할 일'],['today','오늘'],['overdue','경과'],['done','완료']].map(([k,l])=>
+          <button key={k} onClick={()=>setFilter(k)} className={`py-2 rounded-lg text-xs font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
+      </div>
+    </div>
+
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-50">
+        <div className="font-bold text-sm">📌 고객 약속 관리</div>
+        <div className="text-xs text-gray-400 mt-0.5">앱이 변경·해지·재연락 날짜를 기억해줘요.</div>
+      </div>
+      {loading?<div className="py-8 text-center text-xs text-gray-400">불러오는 중...</div>:
+       visible.length===0?<div className="py-8 text-center text-xs text-gray-400">해당하는 고객 약속이 없어요.</div>:
+       <div className="divide-y divide-gray-50">
+         {visible.map(t=>{
+           const c=customerMap[t.customer_id], isOver=t.status!=='completed'&&t.due_date<today;
+           return <div key={t.id} className="p-4">
+             <div className="flex justify-between gap-3">
+               <div className="min-w-0">
+                 <div className="text-sm font-bold text-gray-900">{c?.customer_name||'고객'} · {t.title}</div>
+                 <div className="text-[11px] text-gray-400 mt-1">
+                   {t.retention_days?`${t.retention_days}일 유지 → ${t.retention_days===93?'94':'184'}일째 변경 가능 · `:''}{t.due_date}
+                 </div>
+                 {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
+               </div>
+               <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${t.status==='completed'?'bg-emerald-50 text-emerald-600':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
+                 {t.status==='completed'?'완료':dLabel(t.due_date)}
+               </span>
+             </div>
+             {t.status!=='completed'&&<div className="grid grid-cols-3 gap-1.5 mt-3">
+               <button onClick={()=>mark(t,'completed')} className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">처리완료</button>
+               <button onClick={()=>mark(t,'pending',addDaysDate(today,1))} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">내일 다시</button>
+               <button onClick={()=>{const d=window.prompt('다시 연락할 날짜를 YYYY-MM-DD로 입력해주세요.',t.due_date);if(d)mark(t,'pending',d)}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
+             </div>}
+           </div>
+         })}
+       </div>}
+    </div>
+
+    <Section title="🏠 홈 설치·개통 진행관리">
+      <HomeOrderManager {...homeProps}/>
+    </Section>
   </div>;
 }
 
@@ -2984,7 +3205,21 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
-          <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} currentEmp={currentEmp} />
+
+          <div className="mb-3">
+            <SpotClaimPanel userId={authUser?.id} month={month} />
+          </div>
+
+          <DailyInputTab
+            month={month}
+            dailyDays={dailyDays}
+            saveDailyDay={saveDailyDay}
+            config={config}
+            draft={draft}
+            setDraft={setDraft}
+            locked={monthLocked}
+            currentEmp={currentEmp}
+          />
 
           <div className="mt-4">
             <SalesExpensePanel
@@ -2996,38 +3231,28 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         </>
       )}
 
-      {tab === 'homeOrders' && (
+      {tab === 'customerCare' && (
         <div className="space-y-3">
-          {monthLocked && (
-            <div className="bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
-              <Info size={13} className="shrink-0" />
-              {monthLabel(month)}은 마감되어 홈 청약 상태를 수정할 수 없어요.
-            </div>
-          )}
-
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs text-gray-400">접수부터 설치·개통까지</div>
-              <div className="text-lg font-bold text-gray-900">홈 진행관리</div>
+              <div className="text-xs text-gray-400">판매 후 약속까지 한 번에</div>
+              <div className="text-lg font-bold text-gray-900">고객관리</div>
             </div>
-
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {months.map((m) => (
-                <option key={m} value={m}>{monthLabel(m)}</option>
-              ))}
+            <select value={month} onChange={(e)=>setMonth(e.target.value)}
+              className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
+              {months.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           </div>
-
-          <HomeOrderManager
+          <CustomerCareManager
             userId={authUser?.id}
             month={month}
-            locked={monthLocked}
-            dailyDays={dailyDays}
-            saveDailyDay={saveDailyDay}
+            homeProps={{
+              userId:authUser?.id,
+              month,
+              locked:monthLocked,
+              dailyDays,
+              saveDailyDay
+            }}
           />
         </div>
       )}
@@ -3058,7 +3283,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="KPI 생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
             <RowKV label="총 인센티브" value={won(pay.total)} bold />
           </div>
-          <SpotClaimPanel userId={authUser?.id} month={month} />
           <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
             영업비용 등록은 <b>일일입력</b>에서 할 수 있어요.
           </div>
@@ -3078,8 +3302,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         <div className="max-w-5xl mx-auto grid grid-cols-4">
           {[
             { key: 'home', label: '홈', icon: Home },
-            { key: 'daily', label: '일일입력', icon: Calendar },
-            { key: 'homeOrders', label: '홈진행', icon: ClipboardList },
+            { key: 'daily', label: '실적입력', icon: Calendar },
+            { key: 'customerCare', label: '고객관리', icon: ClipboardList },
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
@@ -3107,7 +3331,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
   const [homePlannedDate, setHomePlannedDate] = useState('');
+  const [homeCareKeys,setHomeCareKeys]=useState([]);
+  const [homeCustomTitle,setHomeCustomTitle]=useState('');
+  const [homeCustomDueDate,setHomeCustomDueDate]=useState('');
   const [homeOrderSaving, setHomeOrderSaving] = useState(false);
+  const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+  const [mobileCustomerName,setMobileCustomerName]=useState('');
+  const [mobileCareKeys,setMobileCareKeys]=useState([]);
+  const [mobileCustomTitle,setMobileCustomTitle]=useState('');
+  const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
+  const [mobileVasKeys,setMobileVasKeys]=useState([]);
+  const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
 
   const dayMatrix = day.matrix;
   const isDayOff = !!day.dayOff;
@@ -3188,14 +3422,21 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       return;
     }
 
+    let linkedCustomerId=null;
+    try {
+      linkedCustomerId=await ensureCustomer(currentEmp.id,customer,`${month}-${selectedDay}`);
+    } catch(e) {
+      return alert(`고객 저장 실패: ${friendlyError(e)}`);
+    }
     setHomeOrderSaving(true);
     const sourceWorkDate = `${month}-${selectedDay}`;
     const appliedAt = new Date(`${sourceWorkDate}T12:00:00`).toISOString();
     const now = new Date().toISOString();
 
-    const { error } = await supabase.from('home_orders').insert({
+    const { data: insertedOrder, error } = await supabase.from('home_orders').insert({
       user_id: currentEmp.id,
       customer_name: customer,
+      customer_id: linkedCustomerId,
       product_type: homeOrderDraft.productType,
       status: homeDirectComplete ? 'completed' : 'pending',
       applied_at: appliedAt,
@@ -3205,12 +3446,35 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       source_key: homeOrderDraft.itemKey,
       planned_install_date: homePlannedDate || null,
       actual_install_date: homeDirectComplete ? sourceWorkDate : null,
-    });
+    }).select('id').single();
 
     if (error) {
       setHomeOrderSaving(false);
       alert(`홈 상품 등록 실패: ${friendlyError(error)}`);
       return;
+    }
+
+    try {
+      const {data:sale,error:saleError}=await supabase.from('customer_sales').insert({
+        user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
+        metric_label:homeOrderDraft.label,source_type:'home_order',source_ref:String(insertedOrder?.id||'')
+      }).select('id').single();
+      if(saleError)throw saleError;
+
+      const taskRows=[];
+      homeCareKeys.forEach(key=>{
+        const t=CARE_TEMPLATES.find(x=>x.key===key); if(!t)return;
+        taskRows.push({user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:sale.id,
+          task_type:key,title:t.title,base_date:sourceWorkDate,retention_days:t.retentionDays,
+          due_date:addDaysDate(sourceWorkDate,t.retentionDays),status:'pending'});
+      });
+      if(homeCustomTitle.trim()&&homeCustomDueDate){
+        taskRows.push({user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:sale.id,
+          task_type:'custom',title:homeCustomTitle.trim(),base_date:sourceWorkDate,due_date:homeCustomDueDate,status:'pending'});
+      }
+      if(taskRows.length)await supabase.from('customer_tasks').insert(taskRows);
+    } catch(e) {
+      console.error('CUSTOMER CARE LINK ERROR',e);
     }
 
     // 바로 완료로 등록한 경우에만 확정 실적 +1
@@ -3284,13 +3548,26 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     { title: '좋은 흐름이에요', sub: '하나 더 쌓였습니다 🔥' },
   ];
 
-  const addOne = (ri, ci) => {
+  const commitMobileOne = (ri, ci, customerMeta = {}) => {
     if (locked) return;
 
     const beforeDay = normalizeDay(day);
     const nextMatrix = beforeDay.matrix.map((row) => [...row]);
     nextMatrix[ri][ci] = (nextMatrix[ri][ci] || 0) + 1;
-    const nextDay = { ...beforeDay, matrix: nextMatrix };
+    const vasKeys = Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [];
+    const nextVas = { ...(beforeDay.groups?.vas || {}) };
+    vasKeys.forEach((key) => {
+      nextVas[key] = Number(nextVas[key] || 0) + 1;
+    });
+
+    const nextDay = {
+      ...beforeDay,
+      matrix: nextMatrix,
+      groups: {
+        ...beforeDay.groups,
+        vas: nextVas,
+      },
+    };
 
     // 현재 달 전체 실적을 등록 직전/직후로 각각 계산
     const beforeDays = { ...dailyDays, [selectedDay]: beforeDay };
@@ -3372,15 +3649,75 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       ...feedback,
       payDelta,
       currentTotal: afterPay.total,
+      customerSaleId: customerMeta.saleId || null,
+      vasKeys: Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [],
     });
 
     setTimeout(() => {
       setToast((t) => (t && t.id === toastId ? null : t));
     }, 4200);
   };
-  const undoToast = () => {
+
+  const addOne = (ri,ci) => {
+    if(locked)return;
+    const rowDef=MATRIX_ROW_DEFS[ri];
+    const label=rowDef.hasTiers?`${rowDef.dailyLabel||rowDef.label} · ${MATRIX_COLS[ci]}`:(rowDef.dailyLabel||rowDef.label);
+    setMobileSaleDraft({ri,ci,label});
+    setMobileCustomerName('');
+    setMobileCareKeys([]);
+    setMobileCustomTitle('');
+    setMobileCustomDueDate('');
+    setMobileVasKeys([]);
+  };
+
+  const submitMobileSale = async () => {
+    if(!mobileSaleDraft||!currentEmp?.id)return;
+    const customer=mobileCustomerName.trim();
+    if(!customer)return alert('고객명을 입력해야 실적을 등록할 수 있어요.');
+    const saleDate=`${month}-${selectedDay}`;
+    setMobileSaleSaving(true);
+    try{
+      const saved=await createCustomerSaleAndTasks({
+        userId:currentEmp.id,customerName:customer,saleDate,
+        metricLabel:mobileSaleDraft.label,sourceType:'mobile',
+        templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate
+      });
+
+      // 모바일 실적과 선택한 VAS를 한 번에 반영
+      commitMobileOne(
+        mobileSaleDraft.ri,
+        mobileSaleDraft.ci,
+        { saleId:saved.saleId, vasKeys:mobileVasKeys }
+      );
+
+      setMobileSaleDraft(null);
+    }catch(e){
+      alert(`고객/실적 등록 실패: ${friendlyError(e)}`);
+    }finally{setMobileSaleSaving(false)}
+  };
+
+  const undoToast = async () => {
     if (!toast) return;
-    bump(toast.ri, toast.ci, -1);
+
+    const base = normalizeDay(day);
+    const nextMatrix = base.matrix.map((row) => [...row]);
+    nextMatrix[toast.ri][toast.ci] = Math.max(0, Number(nextMatrix[toast.ri][toast.ci] || 0) - 1);
+
+    const nextVas = { ...(base.groups?.vas || {}) };
+    (toast.vasKeys || []).forEach((key) => {
+      nextVas[key] = Math.max(0, Number(nextVas[key] || 0) - 1);
+    });
+
+    mutate({
+      ...base,
+      matrix: nextMatrix,
+      groups: { ...base.groups, vas: nextVas },
+    });
+
+    if (toast.customerSaleId) {
+      await supabase.from('customer_tasks').delete().eq('source_sale_id',toast.customerSaleId).eq('user_id',currentEmp?.id);
+      await supabase.from('customer_sales').delete().eq('id',toast.customerSaleId).eq('user_id',currentEmp?.id);
+    }
     setToast(null);
   };
 
@@ -3561,7 +3898,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </>
 
       <div className="pt-1 space-y-2">
-        <div className="text-[11px] text-gray-400 px-1">홈·부가 실적도 이 날짜에 기록하면 수수료·성과포인트·KPI가 한 번에 반영돼요.</div>
+        <div className="text-[11px] text-gray-400 px-1">
+          자주 쓰는 모바일·VAS 입력은 위에서 한 번에 처리하고, 아래에는 홈·기타 실적만 정리했어요.
+        </div>
 
         {DAILY_GROUP_DEFS.filter((g) => g.bucket === 'home').map((g) => {
           const table = groupTable(config, g.key);
@@ -3604,7 +3943,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           );
         })}
 
-        {DAILY_GROUP_DEFS.filter((g) => g.bucket === 'extra').map((g) => {
+        {DAILY_GROUP_DEFS.filter((g) => g.bucket === 'extra' && g.key !== 'vas').map((g) => {
           const table = groupTable(config, g.key);
           const sum = table.reduce((s, t) => s + (day.groups[g.key]?.[t.key] || 0), 0);
           return (
@@ -3643,6 +3982,76 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </>
       )}
 
+      {mobileSaleDraft && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-xs text-violet-500 font-semibold">실적 + 고객관리</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">{mobileSaleDraft.label}</div>
+            <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">고객명 *</label>
+            <input autoFocus value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
+              placeholder="고객명을 입력해주세요" className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
+
+            <div className="mt-4">
+              <div className="text-xs font-semibold text-gray-600 mb-2">
+                3. 전략 부가서비스(VAS) <span className="font-normal text-gray-400">· 복수 선택 가능</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {[...(config.vas || DEFAULT_VAS), { key:'vasNone', label:'미유치', rate:0 }].map((v) => {
+                  const selected = mobileVasKeys.includes(v.key);
+                  return (
+                    <button
+                      key={v.key}
+                      type="button"
+                      onClick={() => {
+                        if (v.key === 'vasNone') {
+                          setMobileVasKeys(selected ? [] : ['vasNone']);
+                        } else {
+                          setMobileVasKeys((prev) => {
+                            const clean = prev.filter((k) => k !== 'vasNone');
+                            return selected ? clean.filter((k) => k !== v.key) : [...clean, v.key];
+                          });
+                        }
+                      }}
+                      className={`text-left px-3 py-2.5 rounded-xl border text-xs ${
+                        selected
+                          ? 'bg-violet-50 border-violet-200 text-violet-700'
+                          : 'bg-white border-gray-100 text-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">{selected ? '✓ ' : ''}{v.label}</span>
+                        {v.rate > 0 && <span className="text-[10px] text-gray-400">+{won(v.rate)}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1.5">
+                미유치는 기록용이며 인센티브에는 포함되지 않아요.
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <CareTemplatePicker
+                selected={mobileCareKeys} setSelected={setMobileCareKeys}
+                customTitle={mobileCustomTitle} setCustomTitle={setMobileCustomTitle}
+                customDueDate={mobileCustomDueDate} setCustomDueDate={setMobileCustomDueDate}
+                saleDate={`${month}-${selectedDay}`}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button onClick={()=>setMobileSaleDraft(null)} disabled={mobileSaleSaving}
+                className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
+              <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()}
+                className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
+                {mobileSaleSaving?'등록 중...':'실적 등록'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {homeOrderDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
@@ -3667,7 +4076,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <input type="date" value={homePlannedDate} onChange={(e)=>setHomePlannedDate(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
 
-            <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+                        <div className="mt-4">
+              <CareTemplatePicker
+                selected={homeCareKeys} setSelected={setHomeCareKeys}
+                customTitle={homeCustomTitle} setCustomTitle={setHomeCustomTitle}
+                customDueDate={homeCustomDueDate} setCustomDueDate={setHomeCustomDueDate}
+                saleDate={`${month}-${selectedDay}`}
+              />
+            </div>
+
+<label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
               <input
                 type="checkbox"
                 checked={homeDirectComplete}
