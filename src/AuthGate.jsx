@@ -56,7 +56,7 @@ export default function AuthGate({ children }) {
   async function loadProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, name, employee_code, store_name, position, role, active, status')
+      .select('id, name, employee_code, store_name, position, role, active, status, hire_date')
       .eq('id', userId)
       .single();
 
