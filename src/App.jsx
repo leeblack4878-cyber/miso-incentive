@@ -2198,6 +2198,7 @@ const HOME_ORDER_PRODUCTS = [
 function HomeOrderManager({ userId, month, locked }) {
   const [orders, setOrders] = useState([]);
   const [product, setProduct] = useState('homeOnly');
+  const [customerName, setCustomerName] = useState('');
   const [memo, setMemo] = useState('');
   const [directComplete, setDirectComplete] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2218,10 +2219,12 @@ function HomeOrderManager({ userId, month, locked }) {
 
   const addOrder = async () => {
     if (!userId || locked) return;
+    if (!customerName.trim()) return alert('고객명을 입력해주세요.');
     setSaving(true);
     const now = new Date().toISOString();
     const { error } = await supabase.from('home_orders').insert({
       user_id: userId, product_type: product,
+      customer_name: customerName.trim(),
       status: directComplete ? 'completed' : 'pending',
       applied_at: now, completed_at: directComplete ? now : null,
       memo: memo.trim() || null,
@@ -2234,7 +2237,7 @@ function HomeOrderManager({ userId, month, locked }) {
       actorId: userId,
       type: directComplete ? 'home_completed' : 'home_order',
       title: directComplete ? '홈 설치/개통 완료' : '새 홈 청약 등록',
-      message: `${productLabel}${memo.trim() ? ` · ${memo.trim()}` : ''}`,
+      message: `${customerName.trim()} · ${productLabel}${memo.trim() ? ` · ${memo.trim()}` : ''}`,
       payload: {
         product_type: product,
         status: directComplete ? 'completed' : 'pending',
@@ -2290,8 +2293,10 @@ function HomeOrderManager({ userId, month, locked }) {
             </button>
           ))}
         </div>
+        <input value={customerName} onChange={e=>setCustomerName(e.target.value)} disabled={locked}
+          placeholder="고객명" className="w-full mt-3 border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-medium" />
         <input value={memo} onChange={e=>setMemo(e.target.value)} disabled={locked}
-          placeholder="식별 메모 (선택)" className="w-full mt-3 border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
+          placeholder="메모 (선택)" className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
         <label className="mt-3 flex items-center gap-2 text-sm text-gray-600">
           <input type="checkbox" checked={directComplete} disabled={locked}
             onChange={e=>setDirectComplete(e.target.checked)} />
@@ -2309,26 +2314,49 @@ function HomeOrderManager({ userId, month, locked }) {
           진행중 {pending.length} · 완료 {completed.length} · 취소 {cancelled.length}
         </div>
         {pending.length ? (
-          <div className="mt-3 space-y-2">
-            {pending.map(o => {
-              const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
-              return <div key={o.id} className="rounded-xl bg-amber-50 border border-amber-100 p-3">
-                <div className="flex justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-gray-800">{def?.label || o.product_type}</div>
-                    <div className="text-[11px] text-gray-400">{new Date(o.applied_at).toLocaleDateString('ko-KR')} 접수</div>
-                    {o.memo && <div className="text-xs text-gray-500 mt-1 truncate">{o.memo}</div>}
+          <div className="mt-3 space-y-4">
+            {Object.entries(
+              pending.reduce((acc, o) => {
+                const day = new Date(o.applied_at).toLocaleDateString('ko-KR');
+                const customer = o.customer_name || '고객명 미입력';
+                const key = `${day}__${customer}`;
+                if (!acc[key]) acc[key] = { day, customer, items: [] };
+                acc[key].items.push(o);
+                return acc;
+              }, {})
+            ).map(([key, group]) => (
+              <div key={key}>
+                <div className="text-[11px] font-semibold text-gray-400 mb-1.5">{group.day}</div>
+                <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="text-sm font-bold text-gray-900">{group.customer} 고객</div>
+                    <span className="text-[10px] font-bold text-amber-600">{group.items.length}개 진행중</span>
                   </div>
-                  <span className="text-[10px] font-bold text-amber-600">진행중</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  <button type="button" disabled={locked} onClick={()=>changeStatus(o,'completed')}
-                    className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">설치/개통 완료</button>
-                  <button type="button" disabled={locked} onClick={()=>changeStatus(o,'cancelled')}
-                    className="py-2 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs font-semibold disabled:opacity-50">취소</button>
+                  <div className="space-y-2">
+                    {group.items.map(o => {
+                      const def = HOME_ORDER_PRODUCTS.find(p => p.key === o.product_type);
+                      return (
+                        <div key={o.id} className="bg-white/80 rounded-lg p-2.5">
+                          <div className="flex justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-semibold text-gray-800">{def?.label || o.product_type}</div>
+                              {o.memo && <div className="text-[11px] text-gray-400 mt-0.5">{o.memo}</div>}
+                            </div>
+                            <span className="text-[10px] font-bold text-amber-600">진행중</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <button type="button" disabled={locked} onClick={()=>changeStatus(o,'completed')}
+                              className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">설치/개통 완료</button>
+                            <button type="button" disabled={locked} onClick={()=>changeStatus(o,'cancelled')}
+                              className="py-2 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs font-semibold disabled:opacity-50">취소</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            })}
+            ))}
           </div>
         ) : <div className="mt-3 rounded-xl bg-gray-50 py-4 text-center text-xs text-gray-400">현재 케어할 진행중 청약이 없어요.</div>}
         {(completed.length>0 || cancelled.length>0) && (
@@ -2338,7 +2366,7 @@ function HomeOrderManager({ userId, month, locked }) {
               {[...completed,...cancelled].sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
                 const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
                 return <div key={o.id} className="flex justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
-                  <span className="text-xs font-semibold text-gray-700">{def?.label || o.product_type}</span>
+                  <span className="text-xs font-semibold text-gray-700">{o.customer_name ? `${o.customer_name} · ` : ''}{def?.label || o.product_type}</span>
                   <span className={`text-[10px] font-bold ${o.status==='completed'?'text-emerald-600':'text-gray-400'}`}>{o.status==='completed'?'완료':'취소'}</span>
                 </div>
               })}
@@ -2740,7 +2768,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-xs text-gray-400">접수부터 설치·개통까지</div>
-              <div className="text-lg font-bold text-gray-900">홈 청약관리</div>
+              <div className="text-lg font-bold text-gray-900">홈 진행관리</div>
             </div>
 
             <select
@@ -2817,7 +2845,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '일일입력', icon: Calendar },
-            { key: 'homeOrders', label: '홈청약', icon: ClipboardList },
+            { key: 'homeOrders', label: '홈진행', icon: ClipboardList },
             ...(canSeeCriteria ? [{ key: 'criteria', label: '지급기준', icon: Wallet }] : []),
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
