@@ -642,6 +642,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
   const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
+  const [personalGoal, setPersonalGoal] = useState(null); // 본인 월 목표 인센티브
+  const [goalSaving, setGoalSaving] = useState(false);
 
   const DEFAULT_EMPLOYEES = [
     { id: 'e01', name: '어진석', branch: '장곡동_장곡역점', position: '사원', hireDate: '2026-08' },
@@ -740,6 +742,53 @@ export default function App({ authUser, authProfile, onSignOut }) {
       const { error } = await supabase.from('app_config').upsert({ config_key: 'locked_months', value: next }, { onConflict: 'config_key' });
       if (error) throw error;
     } catch (e) { console.error('MONTH LOCK SAVE ERROR:', e); setDbError(`월 마감 설정 실패: ${friendlyError(e)}`); }
+  };
+
+  const loadPersonalGoal = useCallback(async () => {
+    if (!authUser?.id) return;
+    const { data, error } = await supabase
+      .from('monthly_goals')
+      .select('target_amount')
+      .eq('user_id', authUser.id)
+      .eq('month', month)
+      .maybeSingle();
+
+    if (error) {
+      console.error('MONTHLY GOAL LOAD ERROR:', error);
+      return;
+    }
+
+    setPersonalGoal(data?.target_amount ?? null);
+  }, [authUser?.id, month]);
+
+  const savePersonalGoal = async (amount) => {
+    if (!authUser?.id) return false;
+    const target = Math.max(0, Math.round(Number(amount) || 0));
+
+    setGoalSaving(true);
+
+    const { error } = await supabase
+      .from('monthly_goals')
+      .upsert(
+        {
+          user_id: authUser.id,
+          month,
+          target_amount: target,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,month' }
+      );
+
+    if (error) {
+      console.error('MONTHLY GOAL SAVE ERROR:', error);
+      setDbError(`이번 달 목표 저장 실패: ${friendlyError(error)}`);
+      setGoalSaving(false);
+      return false;
+    }
+
+    setPersonalGoal(target);
+    setGoalSaving(false);
+    return true;
   };
 
   const loadEmployees = useCallback(async () => {
@@ -893,6 +942,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
+  useEffect(() => { loadPersonalGoal(); }, [loadPersonalGoal]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -1217,6 +1267,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
           prevMonthTotal={prevMonthTotal}
+          personalGoal={personalGoal}
+          savePersonalGoal={savePersonalGoal}
+          goalSaving={goalSaving}
+          showPersonalGoal={empId === authUser?.id}
           authUser={authUser} authProfile={authProfile}
         />
       ) : (
@@ -1236,7 +1290,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, authUser, authProfile }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, personalGoal, savePersonalGoal, goalSaving, showPersonalGoal, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -1280,6 +1334,15 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               )}
             </div>
           </div>
+          {showPersonalGoal && (
+            <MonthlyGoalCard
+              month={month}
+              currentAmount={pay.total}
+              targetAmount={personalGoal}
+              onSave={savePersonalGoal}
+              saving={goalSaving}
+            />
+          )}
           <NextGoalCard
             pay={pay}
             draft={mergedDraft}
@@ -1939,6 +2002,104 @@ function buildNextGoal(pay, draft, config) {
   // 가장 가까운 목표 우선, 거리가 같으면 상승액이 큰 목표 우선
   candidates.sort((a, b) => (a.effort - b.effort) || (b.delta - a.delta));
   return candidates[0];
+}
+
+
+function MonthlyGoalCard({ month, currentAmount, targetAmount, onSave, saving }) {
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState(targetAmount ? String(targetAmount) : '');
+
+  useEffect(() => {
+    setInput(targetAmount ? String(targetAmount) : '');
+  }, [targetAmount, month]);
+
+  const target = Number(targetAmount || 0);
+  const current = Number(currentAmount || 0);
+  const pct = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
+  const remain = Math.max(0, target - current);
+  const achieved = target > 0 && current >= target;
+
+  const save = async () => {
+    const value = Math.round(Number(input) || 0);
+    if (value <= 0) return;
+    const ok = await onSave(value);
+    if (ok) setEditing(false);
+  };
+
+  if (!target || editing) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <div className="text-xs font-semibold text-violet-600">나의 {parseInt(month.split('-')[1], 10)}월</div>
+        <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="number"
+            min="0"
+            step="10000"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="예: 1500000"
+            className="min-w-0 flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+          />
+          <button
+            onClick={save}
+            disabled={saving || !(Number(input) > 0)}
+            className="shrink-0 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
+          >
+            {saving ? '저장 중' : '저장'}
+          </button>
+        </div>
+
+        <div className="text-[11px] text-gray-400 mt-2">
+          이번 달 내가 받고 싶은 예상 인센티브 금액을 정해보세요.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border p-4 ${achieved ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-100'}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold text-violet-600">나의 {parseInt(month.split('-')[1], 10)}월</div>
+          <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
+        </div>
+        <button onClick={() => setEditing(true)} className="text-xs text-gray-400 hover:text-violet-600">
+          수정
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-end justify-between gap-3">
+        <div>
+          <div className="text-2xl font-bold text-gray-900">{won(target)}</div>
+          <div className="text-xs text-gray-400 mt-0.5">
+            현재 예상 {won(current)}
+          </div>
+        </div>
+        <div className={`text-sm font-bold ${achieved ? 'text-emerald-600' : 'text-violet-700'}`}>
+          {Math.round(pct)}%
+        </div>
+      </div>
+
+      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden mt-3">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${achieved ? 'bg-emerald-500' : 'bg-violet-600'}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      <div className="mt-2 text-xs">
+        {achieved ? (
+          <span className="font-semibold text-emerald-600">이번 달 목표 달성! 🎉</span>
+        ) : (
+          <span className="text-gray-500">
+            목표까지 <b className="text-violet-700">{won(remain)}</b> 남았어요
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function NextGoalCard({ pay, draft, config, onGoInput }) {
