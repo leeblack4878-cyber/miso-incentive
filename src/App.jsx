@@ -643,8 +643,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [adminTab, setAdminTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [completeTarget, setCompleteTarget] = useState(null);
-  const [actualCompleteDate, setActualCompleteDate] = useState('');
   const [saved, setSaved] = useState(false);
   const [stores, setStores] = useState(DEFAULT_STORES);
   const [dailyRecords, setDailyRecords] = useState({}); // { empId: { "01": matrix2D, ... } }
@@ -2216,6 +2214,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
   const [memo, setMemo] = useState('');
   const [directComplete, setDirectComplete] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [homeCompletionTarget, setHomeCompletionTarget] = useState(null);
+  const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -2236,8 +2236,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
     if (locked) return;
     if (status === 'completed') {
       const t = new Date();
-      setCompleteTarget(order);
-      setActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
+      setHomeCompletionTarget(order);
+      setHomeActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
       return;
     }
     if (!window.confirm('취소 처리할까요?')) return;
@@ -2254,9 +2254,9 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
   };
 
   const confirmCompletion = async () => {
-    const order=completeTarget;
-    if (!order || !actualCompleteDate || locked) return;
-    const [y,m,d]=actualCompleteDate.split('-');
+    const order=homeCompletionTarget;
+    if (!order || !homeActualCompleteDate || locked) return;
+    const [y,m,d]=homeActualCompleteDate.split('-');
     const completionMonth=`${y}-${m}`;
     const completionDay=d;
 
@@ -2269,30 +2269,57 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
         const ok=await saveDailyDay(completionDay,next);
         if (!ok) return alert('확정 실적 반영에 실패했어요. 다시 시도해주세요.');
       } else {
-        const {data:rec}=await supabase.from('daily_records').select('data')
-          .eq('user_id',userId).eq('month',completionMonth).eq('day',completionDay).maybeSingle();
-        const base=normalizeDay(rec?.data);
-        const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
-        const next={...base,groups:{...base.groups,[order.source_group]:{
-          ...(base.groups?.[order.source_group]||{}),[order.source_key]:current+1}}};
-        const {error:de}=await supabase.from('daily_records').upsert({
-          user_id:userId,month:completionMonth,day:completionDay,data:next,updated_at:new Date().toISOString()
-        },{onConflict:'user_id,month,day'});
+        const completionWorkDate = `${completionMonth}-${completionDay}`;
+        const { data: rec, error: loadError } = await supabase
+          .from('daily_records')
+          .select('data')
+          .eq('user_id', userId)
+          .eq('work_date', completionWorkDate)
+          .maybeSingle();
+
+        if (loadError) {
+          return alert(`완료일 실적 불러오기 실패: ${friendlyError(loadError)}`);
+        }
+
+        const base = normalizeDay(rec?.data);
+        const current = Number(base.groups?.[order.source_group]?.[order.source_key] || 0);
+        const next = {
+          ...base,
+          groups: {
+            ...base.groups,
+            [order.source_group]: {
+              ...(base.groups?.[order.source_group] || {}),
+              [order.source_key]: current + 1,
+            },
+          },
+        };
+
+        const { error: de } = await supabase
+          .from('daily_records')
+          .upsert(
+            {
+              user_id: userId,
+              work_date: completionWorkDate,
+              data: next,
+            },
+            { onConflict: 'user_id,work_date' }
+          );
+
         if (de) return alert(`확정 실적 반영 실패: ${friendlyError(de)}`);
       }
     }
 
-    const completedAt=new Date(`${actualCompleteDate}T12:00:00`).toISOString();
+    const completedAt=new Date(`${homeActualCompleteDate}T12:00:00`).toISOString();
     const {error}=await supabase.from('home_orders').update({
-      status:'completed',completed_at:completedAt,actual_install_date:actualCompleteDate,updated_at:new Date().toISOString()
+      status:'completed',completed_at:completedAt,actual_install_date:homeActualCompleteDate,updated_at:new Date().toISOString()
     }).eq('id',order.id).eq('user_id',userId);
     if(error)return alert(`완료 처리 실패: ${friendlyError(error)}`);
 
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
-      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel} · ${actualCompleteDate}`,
-      payload:{order_id:order.id,product_type:order.product_type,status:'completed',actual_install_date:actualCompleteDate}});
-    setCompleteTarget(null); setActualCompleteDate(''); await load();
+      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel} · ${homeActualCompleteDate}`,
+      payload:{order_id:order.id,product_type:order.product_type,status:'completed',actual_install_date:homeActualCompleteDate}});
+    setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load();
   };
 
   const careInfo = (o) => {
@@ -2381,23 +2408,23 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
         )}
       </div>
       <div className="text-[11px] text-gray-400 px-1">
-        v11 1차에서는 진행 상태를 안전하게 별도 관리합니다. 기존 급여·랭킹 실적 숫자는 아직 자동 변경하지 않습니다.
+        확정 실적은 실제 설치/개통 완료일 기준으로 반영돼요.
       </div>
-      {completeTarget && (
+      {homeCompletionTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
             <div className="text-xs text-emerald-600 font-semibold">설치/개통 완료</div>
             <div className="text-lg font-bold text-gray-900 mt-1">
-              {completeTarget.customer_name || '고객'} · {HOME_ORDER_PRODUCTS.find(p=>p.key===completeTarget.product_type)?.label || completeTarget.product_type}
+              {homeCompletionTarget.customer_name || '고객'} · {HOME_ORDER_PRODUCTS.find(p=>p.key===homeCompletionTarget.product_type)?.label || homeCompletionTarget.product_type}
             </div>
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">실제 설치/개통 완료일 *</label>
-            <input type="date" value={actualCompleteDate} onChange={(e)=>setActualCompleteDate(e.target.value)}
+            <input type="date" value={homeActualCompleteDate} onChange={(e)=>setHomeActualCompleteDate(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
             <div className="text-[11px] text-gray-400 mt-2">선택한 실제 완료일의 확정 실적으로 반영됩니다.</div>
             <div className="grid grid-cols-2 gap-2 mt-5">
-              <button onClick={()=>{setCompleteTarget(null);setActualCompleteDate('');}}
+              <button onClick={()=>{setHomeCompletionTarget(null);setHomeActualCompleteDate('');}}
                 className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">닫기</button>
-              <button onClick={confirmCompletion} disabled={!actualCompleteDate}
+              <button onClick={confirmCompletion} disabled={!homeActualCompleteDate}
                 className="py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">완료 처리</button>
             </div>
           </div>
