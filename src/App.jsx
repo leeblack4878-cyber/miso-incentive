@@ -643,6 +643,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [adminTab, setAdminTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [completeTarget, setCompleteTarget] = useState(null);
+  const [actualCompleteDate, setActualCompleteDate] = useState('');
   const [saved, setSaved] = useState(false);
   const [stores, setStores] = useState(DEFAULT_STORES);
   const [dailyRecords, setDailyRecords] = useState({}); // { empId: { "01": matrix2D, ... } }
@@ -2232,65 +2234,78 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
 
   const changeStatus = async (order, status) => {
     if (locked) return;
-    const label = status === 'completed' ? '설치/개통 완료' : '취소';
-    if (!window.confirm(`${label} 처리할까요?`)) return;
+    if (status === 'completed') {
+      const t = new Date();
+      setCompleteTarget(order);
+      setActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
+      return;
+    }
+    if (!window.confirm('취소 처리할까요?')) return;
     const now = new Date().toISOString();
     const { error } = await supabase.from('home_orders').update({
-      status,
-      completed_at: status === 'completed' ? now : null,
-      cancelled_at: status === 'cancelled' ? now : null,
-      updated_at: now,
-    }).eq('id', order.id).eq('user_id', userId);
+      status:'cancelled', cancelled_at:now, updated_at:now
+    }).eq('id',order.id).eq('user_id',userId);
     if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
-
-    // 진행중 → 완료 시에만 실제 일일 실적 +1
-    if (status === 'completed' && order.source_group && order.source_key && order.source_work_date) {
-      const dayKey = String(order.source_work_date).slice(8, 10);
-      const baseDay = normalizeDay(dailyDays?.[dayKey]);
-      const currentValue = Number(baseDay.groups?.[order.source_group]?.[order.source_key] || 0);
-      const nextDay = {
-        ...baseDay,
-        groups: {
-          ...baseDay.groups,
-          [order.source_group]: {
-            ...(baseDay.groups?.[order.source_group] || {}),
-            [order.source_key]: currentValue + 1,
-          },
-        },
-      };
-
-      const saved = await saveDailyDay(dayKey, nextDay);
-      if (!saved) {
-        // 일일 실적 반영이 실패하면 주문 상태도 진행중으로 되돌려 불일치 방지
-        await supabase.from('home_orders').update({
-          status: 'pending',
-          completed_at: null,
-          updated_at: new Date().toISOString(),
-        }).eq('id', order.id).eq('user_id', userId);
-
-        alert('실적 반영에 실패해 진행중 상태로 되돌렸어요. 다시 시도해주세요.');
-        await load();
-        return;
-      }
-    }
-
-    const productLabel = HOME_ORDER_PRODUCTS.find((p) => p.key === order.product_type)?.label || order.product_type;
-    notifyStoreManagers({
-      actorId: userId,
-      type: status === 'completed' ? 'home_completed' : 'home_cancelled',
-      title: status === 'completed' ? '홈 설치/개통 완료' : '홈 청약 취소',
-      message: `${productLabel}${order.memo ? ` · ${order.memo}` : ''}`,
-      payload: {
-        order_id: order.id,
-        product_type: order.product_type,
-        status,
-      },
-    });
-
+    const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
+    notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
+      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel}`,
+      payload:{order_id:order.id,product_type:order.product_type,status:'cancelled'}});
     await load();
   };
 
-  const pending = orders.filter(o => o.status === 'pending');
+  const confirmCompletion = async () => {
+    const order=completeTarget;
+    if (!order || !actualCompleteDate || locked) return;
+    const [y,m,d]=actualCompleteDate.split('-');
+    const completionMonth=`${y}-${m}`;
+    const completionDay=d;
+
+    if (order.source_group && order.source_key) {
+      if (completionMonth === month) {
+        const base=normalizeDay(dailyDays?.[completionDay]);
+        const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
+        const next={...base,groups:{...base.groups,[order.source_group]:{
+          ...(base.groups?.[order.source_group]||{}),[order.source_key]:current+1}}};
+        const ok=await saveDailyDay(completionDay,next);
+        if (!ok) return alert('확정 실적 반영에 실패했어요. 다시 시도해주세요.');
+      } else {
+        const {data:rec}=await supabase.from('daily_records').select('data')
+          .eq('user_id',userId).eq('month',completionMonth).eq('day',completionDay).maybeSingle();
+        const base=normalizeDay(rec?.data);
+        const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
+        const next={...base,groups:{...base.groups,[order.source_group]:{
+          ...(base.groups?.[order.source_group]||{}),[order.source_key]:current+1}}};
+        const {error:de}=await supabase.from('daily_records').upsert({
+          user_id:userId,month:completionMonth,day:completionDay,data:next,updated_at:new Date().toISOString()
+        },{onConflict:'user_id,month,day'});
+        if (de) return alert(`확정 실적 반영 실패: ${friendlyError(de)}`);
+      }
+    }
+
+    const completedAt=new Date(`${actualCompleteDate}T12:00:00`).toISOString();
+    const {error}=await supabase.from('home_orders').update({
+      status:'completed',completed_at:completedAt,actual_install_date:actualCompleteDate,updated_at:new Date().toISOString()
+    }).eq('id',order.id).eq('user_id',userId);
+    if(error)return alert(`완료 처리 실패: ${friendlyError(error)}`);
+
+    const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
+    notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
+      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel} · ${actualCompleteDate}`,
+      payload:{order_id:order.id,product_type:order.product_type,status:'completed',actual_install_date:actualCompleteDate}});
+    setCompleteTarget(null); setActualCompleteDate(''); await load();
+  };
+
+  const careInfo = (o) => {
+    const p=o.planned_install_date ? String(o.planned_install_date).slice(0,10) : null;
+    if(!p)return {rank:3,label:'일정 미정',cls:'text-gray-500 bg-gray-50'};
+    const now=new Date(), a=new Date(now.getFullYear(),now.getMonth(),now.getDate()), b=new Date(`${p}T00:00:00`);
+    const diff=Math.round((b-a)/86400000);
+    if(diff<0)return {rank:0,label:`확인 필요 · ${Math.abs(diff)}일 경과`,cls:'text-red-600 bg-red-50'};
+    if(diff===0)return {rank:1,label:'오늘 설치 예정',cls:'text-orange-600 bg-orange-50'};
+    return {rank:2,label:`${diff}일 후 설치 예정`,cls:'text-violet-600 bg-violet-50'};
+  };
+
+  const pending = orders.filter(o => o.status === 'pending').sort((a,b)=>careInfo(a).rank-careInfo(b).rank || String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999')));
   const completed = orders.filter(o => o.status === 'completed');
   const cancelled = orders.filter(o => o.status === 'cancelled');
 
@@ -2331,8 +2346,9 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
                             <div>
                               <div className="text-xs font-semibold text-gray-800">{def?.label || o.product_type}</div>
                               {o.memo && <div className="text-[11px] text-gray-400 mt-0.5">{o.memo}</div>}
+                              <div className="text-[10px] text-gray-400 mt-1">설치예정 {o.planned_install_date ? String(o.planned_install_date).slice(0,10) : '미정'}</div>
                             </div>
-                            <span className="text-[10px] font-bold text-amber-600">진행중</span>
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${careInfo(o).cls}`}>{careInfo(o).label}</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2 mt-2">
                             <button type="button" disabled={locked} onClick={()=>changeStatus(o,'completed')}
@@ -2367,6 +2383,27 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       <div className="text-[11px] text-gray-400 px-1">
         v11 1차에서는 진행 상태를 안전하게 별도 관리합니다. 기존 급여·랭킹 실적 숫자는 아직 자동 변경하지 않습니다.
       </div>
+      {completeTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+            <div className="text-xs text-emerald-600 font-semibold">설치/개통 완료</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">
+              {completeTarget.customer_name || '고객'} · {HOME_ORDER_PRODUCTS.find(p=>p.key===completeTarget.product_type)?.label || completeTarget.product_type}
+            </div>
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">실제 설치/개통 완료일 *</label>
+            <input type="date" value={actualCompleteDate} onChange={(e)=>setActualCompleteDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
+            <div className="text-[11px] text-gray-400 mt-2">선택한 실제 완료일의 확정 실적으로 반영됩니다.</div>
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button onClick={()=>{setCompleteTarget(null);setActualCompleteDate('');}}
+                className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">닫기</button>
+              <button onClick={confirmCompletion} disabled={!actualCompleteDate}
+                className="py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">완료 처리</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -2865,6 +2902,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
+  const [homePlannedDate, setHomePlannedDate] = useState('');
   const [homeOrderSaving, setHomeOrderSaving] = useState(false);
 
   const dayMatrix = day.matrix;
@@ -2961,6 +2999,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       source_work_date: sourceWorkDate,
       source_group: homeOrderDraft.groupKey,
       source_key: homeOrderDraft.itemKey,
+      planned_install_date: homePlannedDate || null,
+      actual_install_date: homeDirectComplete ? sourceWorkDate : null,
     });
 
     if (error) {
@@ -3003,6 +3043,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeOrderDraft(null);
     setHomeCustomerName('');
     setHomeDirectComplete(false);
+    setHomePlannedDate('');
 
     const toastId = `home-${Date.now()}`;
     setToast({
@@ -3415,6 +3456,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               placeholder="고객명을 입력해주세요"
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
             />
+
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
+              설치 예정일 <span className="text-gray-400 font-normal">(미정 가능)</span>
+            </label>
+            <input type="date" value={homePlannedDate} onChange={(e)=>setHomePlannedDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
 
             <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
               <input
@@ -4141,12 +4188,59 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
 
 /* ===================== 관리자 화면 ===================== */
 
+
+function AdminHomeCare({ employees }) {
+  const [orders,setOrders]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const {data,error}=await supabase.from('home_orders').select('*').eq('status','pending')
+      .order('planned_install_date',{ascending:true,nullsFirst:false});
+    if(!error)setOrders(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const empMap=Object.fromEntries((employees||[]).map(e=>[e.id,e]));
+  const today=new Date().toISOString().slice(0,10);
+  const overdue=orders.filter(o=>o.planned_install_date && String(o.planned_install_date).slice(0,10)<today);
+  const todayList=orders.filter(o=>String(o.planned_install_date||'').slice(0,10)===today);
+  const unscheduled=orders.filter(o=>!o.planned_install_date);
+
+  if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">홈 케어 현황 불러오는 중...</div>;
+
+  return <div className="space-y-3">
+    <div className="grid grid-cols-4 gap-2">
+      {[['진행중',orders.length],['오늘 설치',todayList.length],['예정일 경과',overdue.length],['일정 미정',unscheduled.length]].map(([l,v])=>
+        <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
+          <div className="text-lg font-bold">{v}</div><div className="text-[10px] text-gray-400">{l}</div>
+        </div>)}
+    </div>
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">🏠 우리 매장 홈 케어</div>
+        <div className="text-xs text-gray-400">예정일이 지난 건부터 확인해보세요.</div></div>
+      {orders.length===0?<div className="py-10 text-center text-sm text-gray-400">진행중인 홈 청약이 없어요.</div>:
+        <div className="divide-y">{[...orders].sort((a,b)=>String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999'))).map(o=>{
+          const emp=empMap[o.user_id], p=o.planned_install_date?String(o.planned_install_date).slice(0,10):null;
+          const over=p&&p<today, isToday=p===today, prod=HOME_ORDER_PRODUCTS.find(x=>x.key===o.product_type)?.label||o.product_type;
+          return <div key={o.id} className="px-4 py-3">
+            <div className="flex justify-between gap-3"><div><div className="text-sm font-bold">{o.customer_name||'고객명 미입력'} · {prod}</div>
+              <div className="text-xs text-gray-500 mt-1">{emp?.name||'직원'} · {emp?.branch||''}</div></div>
+              <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
+                {over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
+            <div className="text-[11px] text-gray-400 mt-2">접수 {o.source_work_date||String(o.applied_at).slice(0,10)} · 설치예정 {p||'미정'}</div>
+          </div>})}</div>}
+    </div>
+  </div>;
+}
+
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'compare', label: '실적 비교', icon: Layers },
     { key: 'rankings', label: '랭킹', icon: Trophy },
     { key: 'notifications', label: '알림', icon: Bell },
+    { key: 'homeCare', label: '홈케어', icon: ClipboardList },
     { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
@@ -4259,6 +4353,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'notifications' && (
         <NotificationCenter userId={authUserId} />
       )}
+      {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
 
       {adminTab === 'recognition' && (
         <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
