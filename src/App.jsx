@@ -2321,14 +2321,41 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                 <button onClick={() => setEditingId(null)} className="text-xs text-gray-400">취소</button>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-medium text-gray-800">{e.name} · {e.position}</div>
-                  <div className="text-[11px] text-gray-400">{e.branch} {e.hireDate ? `· 입사 ${e.hireDate}` : ''} · 최종 접속 {formatLastSignIn(e.lastSignInAt)}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-800">
+                    {e.name} · {e.position}
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-0.5 break-words">
+                    {e.branch}
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5">
+                    {e.hireDate ? `입사 ${e.hireDate}` : '입사일 미등록'}
+                    {` · 최종 접속 ${formatLastSignIn(e.lastSignInAt)}`}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => startEdit(e)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-gray-100 text-gray-600">수정</button>
-                  <button onClick={() => { if (window.confirm(`"${e.name}"님을 비활성화할까요?\n로그인·직원 목록에서 바로 빠지고, 실적 기록은 그대로 안전하게 남아요. 필요하면 나중에 다시 활성화할 수 있어요.`)) removeEmployee(e.id); }} className="w-7 h-7 rounded-md bg-red-50 text-red-500 flex items-center justify-center"><Trash2 size={13} /></button>
+
+                <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                  <button
+                    onClick={() => startEdit(e)}
+                    className="shrink-0 min-w-[46px] whitespace-nowrap text-xs font-medium px-2.5 py-1.5 rounded-md bg-gray-100 text-gray-600"
+                  >
+                    수정
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `"${e.name}"님을 비활성화할까요?\n로그인·직원 목록에서 바로 빠지고, 실적 기록은 그대로 안전하게 남아요. 필요하면 나중에 다시 활성화할 수 있어요.`
+                        )
+                      ) {
+                        removeEmployee(e.id);
+                      }
+                    }}
+                    className="shrink-0 w-8 h-8 rounded-md bg-red-50 text-red-500 flex items-center justify-center"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
             )}
