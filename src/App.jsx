@@ -2186,6 +2186,146 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
   );
 }
 
+
+/* ===================== v11 홈 청약 관리 ===================== */
+const HOME_ORDER_PRODUCTS = [
+  { key: 'homeOnly', label: '홈 단독' },
+  { key: 'homeTv', label: '홈+TV 동시청약' },
+  { key: 'tvFree', label: 'TV프리(부)' },
+  { key: 'smartHome', label: '스마트홈' },
+];
+
+function HomeOrderManager({ userId, month, locked }) {
+  const [orders, setOrders] = useState([]);
+  const [product, setProduct] = useState('homeOnly');
+  const [memo, setMemo] = useState('');
+  const [directComplete, setDirectComplete] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!userId) return;
+    const start = `${month}-01T00:00:00`;
+    const d = new Date(`${month}-01T00:00:00`);
+    d.setMonth(d.getMonth() + 1);
+    const end = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01T00:00:00`;
+    const { data, error } = await supabase.from('home_orders').select('*')
+      .eq('user_id', userId).gte('applied_at', start).lt('applied_at', end)
+      .order('applied_at', { ascending: false });
+    if (!error) setOrders(data || []);
+  }, [userId, month]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addOrder = async () => {
+    if (!userId || locked) return;
+    setSaving(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('home_orders').insert({
+      user_id: userId, product_type: product,
+      status: directComplete ? 'completed' : 'pending',
+      applied_at: now, completed_at: directComplete ? now : null,
+      memo: memo.trim() || null,
+    });
+    setSaving(false);
+    if (error) return alert(`청약 등록 실패: ${friendlyError(error)}`);
+    setMemo(''); setDirectComplete(false); await load();
+  };
+
+  const changeStatus = async (order, status) => {
+    if (locked) return;
+    const label = status === 'completed' ? '설치/개통 완료' : '취소';
+    if (!window.confirm(`${label} 처리할까요?`)) return;
+    const now = new Date().toISOString();
+    const { error } = await supabase.from('home_orders').update({
+      status,
+      completed_at: status === 'completed' ? now : null,
+      cancelled_at: status === 'cancelled' ? now : null,
+      updated_at: now,
+    }).eq('id', order.id).eq('user_id', userId);
+    if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
+    await load();
+  };
+
+  const pending = orders.filter(o => o.status === 'pending');
+  const completed = orders.filter(o => o.status === 'completed');
+  const cancelled = orders.filter(o => o.status === 'cancelled');
+
+  return (
+    <div className="space-y-3 mb-4">
+      <div className="bg-white rounded-xl border border-violet-100 p-4">
+        <div className="text-xs text-violet-500">접수부터 설치·개통까지</div>
+        <div className="text-base font-bold text-gray-900 mt-0.5">🏠 홈 청약 관리</div>
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          {HOME_ORDER_PRODUCTS.map(p => (
+            <button key={p.key} type="button" onClick={() => setProduct(p.key)} disabled={locked}
+              className={`rounded-xl border px-3 py-2.5 text-sm font-semibold ${product===p.key?'border-violet-300 bg-violet-50 text-violet-700':'border-gray-100 text-gray-600'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <input value={memo} onChange={e=>setMemo(e.target.value)} disabled={locked}
+          placeholder="식별 메모 (선택)" className="w-full mt-3 border border-gray-200 rounded-xl px-3 py-2.5 text-sm" />
+        <label className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={directComplete} disabled={locked}
+            onChange={e=>setDirectComplete(e.target.checked)} />
+          지금 바로 설치/개통 완료된 건
+        </label>
+        <button type="button" onClick={addOrder} disabled={saving || locked}
+          className="w-full mt-3 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
+          {saving ? '등록 중...' : directComplete ? '완료 건으로 등록' : '청약 등록'}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <div className="text-xs text-gray-400">이번 달 진행 현황</div>
+        <div className="text-sm font-bold text-gray-900 mt-0.5">
+          진행중 {pending.length} · 완료 {completed.length} · 취소 {cancelled.length}
+        </div>
+        {pending.length ? (
+          <div className="mt-3 space-y-2">
+            {pending.map(o => {
+              const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
+              return <div key={o.id} className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                <div className="flex justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-800">{def?.label || o.product_type}</div>
+                    <div className="text-[11px] text-gray-400">{new Date(o.applied_at).toLocaleDateString('ko-KR')} 접수</div>
+                    {o.memo && <div className="text-xs text-gray-500 mt-1 truncate">{o.memo}</div>}
+                  </div>
+                  <span className="text-[10px] font-bold text-amber-600">진행중</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <button type="button" disabled={locked} onClick={()=>changeStatus(o,'completed')}
+                    className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">설치/개통 완료</button>
+                  <button type="button" disabled={locked} onClick={()=>changeStatus(o,'cancelled')}
+                    className="py-2 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs font-semibold disabled:opacity-50">취소</button>
+                </div>
+              </div>
+            })}
+          </div>
+        ) : <div className="mt-3 rounded-xl bg-gray-50 py-4 text-center text-xs text-gray-400">현재 케어할 진행중 청약이 없어요.</div>}
+        {(completed.length>0 || cancelled.length>0) && (
+          <details className="mt-3">
+            <summary className="text-xs font-semibold text-violet-600 cursor-pointer">완료·취소 내역 보기</summary>
+            <div className="mt-2 space-y-1.5">
+              {[...completed,...cancelled].sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
+                const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
+                return <div key={o.id} className="flex justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
+                  <span className="text-xs font-semibold text-gray-700">{def?.label || o.product_type}</span>
+                  <span className={`text-[10px] font-bold ${o.status==='completed'?'text-emerald-600':'text-gray-400'}`}>{o.status==='completed'?'완료':'취소'}</span>
+                </div>
+              })}
+            </div>
+          </details>
+        )}
+      </div>
+      <div className="text-[11px] text-gray-400 px-1">
+        v11 1차에서는 진행 상태를 안전하게 별도 관리합니다. 기존 급여·랭킹 실적 숫자는 아직 자동 변경하지 않습니다.
+      </div>
+    </div>
+  );
+}
+
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
@@ -2266,7 +2406,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             config={config}
             userId={authUser?.id}
           />
-          <GradeProgress pay={pay} config={config} dailyDays={dailyDays} month={month} />
           <HomeGateCard pay={pay} config={config} onGoInput={() => setTab('daily')} />
           <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
 
@@ -2313,6 +2452,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
+          <HomeOrderManager userId={authUser?.id} month={month} locked={monthLocked} />
           <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} currentEmp={currentEmp} />
         </>
       )}
