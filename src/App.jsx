@@ -642,7 +642,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
   const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
-  const [personalGoal, setPersonalGoal] = useState(null); // 본인 월 목표 인센티브
+  const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
 
   const DEFAULT_EMPLOYEES = [
@@ -744,26 +744,33 @@ export default function App({ authUser, authProfile, onSignOut }) {
     } catch (e) { console.error('MONTH LOCK SAVE ERROR:', e); setDbError(`월 마감 설정 실패: ${friendlyError(e)}`); }
   };
 
-  const loadPersonalGoal = useCallback(async () => {
+  const loadPersonalGoals = useCallback(async () => {
     if (!authUser?.id) return;
+
     const { data, error } = await supabase
       .from('monthly_goals')
-      .select('target_amount')
+      .select('goals')
       .eq('user_id', authUser.id)
       .eq('month', month)
       .maybeSingle();
 
     if (error) {
-      console.error('MONTHLY GOAL LOAD ERROR:', error);
+      console.error('MONTHLY GOALS LOAD ERROR:', error);
       return;
     }
 
-    setPersonalGoal(data?.target_amount ?? null);
+    const raw = data?.goals;
+    setPersonalGoals(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
   }, [authUser?.id, month]);
 
-  const savePersonalGoal = async (amount) => {
+  const savePersonalGoals = async (goals) => {
     if (!authUser?.id) return false;
-    const target = Math.max(0, Math.round(Number(amount) || 0));
+
+    const clean = {};
+    Object.entries(goals || {}).forEach(([key, value]) => {
+      const n = Number(value);
+      if (Number.isFinite(n) && n > 0) clean[key] = n;
+    });
 
     setGoalSaving(true);
 
@@ -773,20 +780,20 @@ export default function App({ authUser, authProfile, onSignOut }) {
         {
           user_id: authUser.id,
           month,
-          target_amount: target,
+          goals: clean,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id,month' }
       );
 
     if (error) {
-      console.error('MONTHLY GOAL SAVE ERROR:', error);
+      console.error('MONTHLY GOALS SAVE ERROR:', error);
       setDbError(`이번 달 목표 저장 실패: ${friendlyError(error)}`);
       setGoalSaving(false);
       return false;
     }
 
-    setPersonalGoal(target);
+    setPersonalGoals(clean);
     setGoalSaving(false);
     return true;
   };
@@ -942,7 +949,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
-  useEffect(() => { loadPersonalGoal(); }, [loadPersonalGoal]);
+  useEffect(() => { loadPersonalGoals(); }, [loadPersonalGoals]);
 
   useEffect(() => {
     if (!authUser) return;
@@ -1268,8 +1275,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
           prevMonthTotal={prevMonthTotal}
           currentEmp={currentEmp}
-          personalGoal={personalGoal}
-          savePersonalGoal={savePersonalGoal}
+          personalGoals={personalGoals}
+          savePersonalGoals={savePersonalGoals}
           goalSaving={goalSaving}
           showPersonalGoal={empId === authUser?.id}
           authUser={authUser} authProfile={authProfile}
@@ -1291,7 +1298,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* ===================== 직원 화면 ===================== */
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoal, savePersonalGoal, goalSaving, showPersonalGoal, authUser, authProfile }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, authUser, authProfile }) {
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -1338,9 +1345,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           {showPersonalGoal && (
             <MonthlyGoalCard
               month={month}
-              currentAmount={pay.total}
-              targetAmount={personalGoal}
-              onSave={savePersonalGoal}
+              mergedDraft={mergedDraft}
+              pay={pay}
+              goals={personalGoals}
+              onSave={savePersonalGoals}
               saving={goalSaving}
             />
           )}
@@ -2006,99 +2014,217 @@ function buildNextGoal(pay, draft, config) {
 }
 
 
-function MonthlyGoalCard({ month, currentAmount, targetAmount, onSave, saving }) {
+const PERSONAL_GOAL_DEFS = [
+  { key: 'hs', label: 'HS', unit: '건' },
+  { key: 'home', label: '홈', unit: '건' },
+  { key: 'custReg', label: '고객등록', unit: '건' },
+  { key: 'tailored', label: '맞춤제안', unit: '건' },
+  { key: 'points', label: '성과포인트', unit: 'P' },
+];
+
+function getPersonalGoalActuals(mergedDraft, pay) {
+  const matrix = mergedDraft?.matrix || [];
+
+  // HS = 신규 + MNP + 기변A/B/C 합산
+  const hs = [0, 1, 2, 3, 4].reduce((sum, ri) => {
+    const row = matrix[ri] || [];
+    return sum + row.reduce((s, v) => s + (Number(v) || 0), 0);
+  }, 0);
+
+  return {
+    hs,
+    home: Number(pay?.homeCaseCount || 0),
+    custReg: Number(mergedDraft?.custRegCount || 0),
+    tailored: Number(mergedDraft?.tailoredCount || 0),
+    points: Number(pay?.totalPoints || 0),
+  };
+}
+
+function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
   const [editing, setEditing] = useState(false);
-  const [input, setInput] = useState(targetAmount ? String(targetAmount) : '');
+  const [selected, setSelected] = useState(() => new Set(Object.keys(goals || {})));
+  const [values, setValues] = useState(goals || {});
 
   useEffect(() => {
-    setInput(targetAmount ? String(targetAmount) : '');
-  }, [targetAmount, month]);
+    setSelected(new Set(Object.keys(goals || {})));
+    setValues(goals || {});
+  }, [goals, month]);
 
-  const target = Number(targetAmount || 0);
-  const current = Number(currentAmount || 0);
-  const pct = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
-  const remain = Math.max(0, target - current);
-  const achieved = target > 0 && current >= target;
+  const actuals = useMemo(() => getPersonalGoalActuals(mergedDraft, pay), [mergedDraft, pay]);
+  const hasGoals = Object.keys(goals || {}).length > 0;
+
+  const toggle = (key) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+        if (!(Number(values[key]) > 0)) {
+          setValues((v) => ({ ...v, [key]: key === 'points' ? 35 : 10 }));
+        }
+      }
+      return next;
+    });
+  };
 
   const save = async () => {
-    const value = Math.round(Number(input) || 0);
-    if (value <= 0) return;
-    const ok = await onSave(value);
+    const payload = {};
+    PERSONAL_GOAL_DEFS.forEach((def) => {
+      if (!selected.has(def.key)) return;
+      const n = Number(values[def.key]);
+      if (Number.isFinite(n) && n > 0) payload[def.key] = n;
+    });
+
+    if (!Object.keys(payload).length) return;
+    const ok = await onSave(payload);
     if (ok) setEditing(false);
   };
 
-  if (!target || editing) {
+  if (!hasGoals || editing) {
     return (
       <div className="bg-white rounded-xl border border-gray-100 p-4">
-        <div className="text-xs font-semibold text-violet-600">나의 {parseInt(month.split('-')[1], 10)}월</div>
+        <div className="text-xs font-semibold text-violet-600">
+          나의 {parseInt(month.split('-')[1], 10)}월
+        </div>
         <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
-
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="number"
-            min="0"
-            step="10000"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="예: 1500000"
-            className="min-w-0 flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200"
-          />
-          <button
-            onClick={save}
-            disabled={saving || !(Number(input) > 0)}
-            className="shrink-0 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
-          >
-            {saving ? '저장 중' : '저장'}
-          </button>
+        <div className="text-[11px] text-gray-400 mt-1">
+          원하는 실적 항목을 선택하고 이번 달 목표를 정해보세요.
         </div>
 
-        <div className="text-[11px] text-gray-400 mt-2">
-          이번 달 내가 받고 싶은 예상 인센티브 금액을 정해보세요.
+        <div className="mt-3 space-y-2">
+          {PERSONAL_GOAL_DEFS.map((def) => {
+            const checked = selected.has(def.key);
+            return (
+              <div key={def.key} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(def.key)}
+                  className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
+                    checked
+                      ? 'bg-violet-600 border-violet-600 text-white'
+                      : 'bg-white border-gray-300 text-transparent'
+                  }`}
+                >
+                  <Check size={13} />
+                </button>
+
+                <div className="w-20 text-sm text-gray-700">{def.label}</div>
+
+                <input
+                  type="number"
+                  min="0"
+                  step={def.key === 'points' ? '0.1' : '1'}
+                  disabled={!checked}
+                  value={values[def.key] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [def.key]: e.target.value }))}
+                  className="min-w-0 flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200 disabled:bg-gray-50 disabled:text-gray-300"
+                  placeholder="목표"
+                />
+
+                <div className="w-6 text-xs text-gray-400">{def.unit}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={save}
+            disabled={saving || selected.size === 0}
+            className="flex-1 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
+          >
+            {saving ? '저장 중' : '목표 저장'}
+          </button>
+
+          {hasGoals && (
+            <button
+              onClick={() => setEditing(false)}
+              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-500 text-sm"
+            >
+              취소
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
+  const activeDefs = PERSONAL_GOAL_DEFS.filter((def) => Number(goals?.[def.key]) > 0);
+  const completeCount = activeDefs.filter((def) => {
+    const target = Number(goals[def.key]);
+    const current = Number(actuals[def.key] || 0);
+    return current >= target;
+  }).length;
+
   return (
-    <div className={`rounded-xl border p-4 ${achieved ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-gray-100'}`}>
+    <div className="bg-white rounded-xl border border-gray-100 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold text-violet-600">나의 {parseInt(month.split('-')[1], 10)}월</div>
+          <div className="text-xs font-semibold text-violet-600">
+            나의 {parseInt(month.split('-')[1], 10)}월
+          </div>
           <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
         </div>
-        <button onClick={() => setEditing(true)} className="text-xs text-gray-400 hover:text-violet-600">
+
+        <button
+          onClick={() => setEditing(true)}
+          className="text-xs text-gray-400 hover:text-violet-600"
+        >
           수정
         </button>
       </div>
 
-      <div className="mt-3 flex items-end justify-between gap-3">
-        <div>
-          <div className="text-2xl font-bold text-gray-900">{won(target)}</div>
-          <div className="text-xs text-gray-400 mt-0.5">
-            현재 예상 {won(current)}
-          </div>
-        </div>
-        <div className={`text-sm font-bold ${achieved ? 'text-emerald-600' : 'text-violet-700'}`}>
-          {Math.round(pct)}%
-        </div>
+      <div className="mt-4 space-y-4">
+        {activeDefs.map((def) => {
+          const target = Number(goals[def.key]);
+          const current = Number(actuals[def.key] || 0);
+          const pct = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
+          const achieved = current >= target;
+
+          const currentLabel = def.key === 'points'
+            ? current.toFixed(1)
+            : Math.round(current).toString();
+
+          const targetLabel = def.key === 'points'
+            ? target.toFixed(1)
+            : Math.round(target).toString();
+
+          return (
+            <div key={def.key}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium text-gray-700">{def.label}</div>
+                <div className={`text-sm font-bold ${achieved ? 'text-emerald-600' : 'text-gray-800'}`}>
+                  {currentLabel} / {targetLabel}{def.unit}
+                </div>
+              </div>
+
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    achieved ? 'bg-emerald-500' : 'bg-violet-600'
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+
+              <div className="text-[11px] mt-1.5">
+                {achieved ? (
+                  <span className="font-semibold text-emerald-600">목표 달성! 🎉</span>
+                ) : (
+                  <span className="text-gray-400">{Math.round(pct)}% 진행 중</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden mt-3">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${achieved ? 'bg-emerald-500' : 'bg-violet-600'}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      <div className="mt-2 text-xs">
-        {achieved ? (
-          <span className="font-semibold text-emerald-600">이번 달 목표 달성! 🎉</span>
-        ) : (
-          <span className="text-gray-500">
-            목표까지 <b className="text-violet-700">{won(remain)}</b> 남았어요
-          </span>
-        )}
-      </div>
+      {activeDefs.length > 1 && (
+        <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+          이번 달 목표 {completeCount} / {activeDefs.length}개 달성
+        </div>
+      )}
     </div>
   );
 }
