@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
   Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
   Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target
+  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -376,19 +376,31 @@ function aggregateDaily(daysMap, monthKey) {
 function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColumnMap) {
   const agg = aggregateDaily(dailyDaysMap, month);
   const aggMatrix = agg.matrix;
-  const autoMobilePoint = {};
-  const autoKpi = {};
   const colMap = gibyeonColumnMap || DEFAULT_GIBYEON_COLUMN_MAP;
+
+  // 이 항목들은 이제 일일입력이 유일한 입력 경로라, "0이면 옛 값 유지" 하지 않고
+  // 매번 그 달 일일 합계로 완전히 덮어씀 (삭제/정정이 그대로 반영되게)
+  const trackedMobileKeys = new Set([
+    ...(categoryMap || []).map((m) => m?.mobilePointKey).filter(Boolean),
+    ...colMap.filter(Boolean),
+  ]);
+  const trackedKpiKeys = new Set([
+    ...(categoryMap || []).map((m) => m?.kpiKey).filter(Boolean),
+    ...HOME_KPI_MAP.map((m) => m.kpiKey),
+  ]);
+
+  const autoMobilePoint = Object.fromEntries([...trackedMobileKeys].map((k) => [k, 0]));
+  const autoKpi = Object.fromEntries([...trackedKpiKeys].map((k) => [k, 0]));
+
   aggMatrix.forEach((row, ri) => {
     const rowTotal = row.reduce((s, v) => s + v, 0);
     const map = categoryMap?.[ri];
-    if (!map || rowTotal === 0) return;
+    if (!map) return;
     if (MATRIX_ROW_DEFS[ri]?.isGibyeon) {
       // 기변A/B/C 공통: 타겟과 무관하게 요금제군(열) 기준으로 성과포인트 배분
       row.forEach((cnt, ci) => {
-        if (!cnt) return;
         const key = colMap[ci];
-        if (key) autoMobilePoint[key] = (autoMobilePoint[key] || 0) + cnt;
+        if (key) autoMobilePoint[key] = (autoMobilePoint[key] || 0) + (cnt || 0);
       });
     } else if (map.mobilePointKey) {
       autoMobilePoint[map.mobilePointKey] = (autoMobilePoint[map.mobilePointKey] || 0) + rowTotal;
@@ -396,26 +408,21 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     if (map.kpiKey) autoKpi[map.kpiKey] = (autoKpi[map.kpiKey] || 0) + rowTotal;
   });
 
-  // 건수 그룹: 그 달 일일입력에 값이 있으면 그 값을 쓰고, 없으면 기존 월 단위 입력값을 유지
+  // 홈/2ND/VAS/소노 등 건수 그룹 — 이제 일일입력이 유일한 입력 경로라 그 달 합계로 완전히 교체
   const mergedGroups = {};
-  DAILY_GROUP_KEYS.forEach((gk) => {
-    const base = draft[gk] || {};
-    const daily = agg.groups[gk] || {};
-    const out = { ...base };
-    Object.entries(daily).forEach(([k, v]) => { if (v > 0) out[k] = v; });
-    mergedGroups[gk] = out;
-  });
+  DAILY_GROUP_KEYS.forEach((gk) => { mergedGroups[gk] = { ...(agg.groups[gk] || {}) }; });
+
   const pick = (path) => {
     const [gk, k] = path.split('.');
     return (mergedGroups[gk] || {})[k] || 0;
   };
   HOME_KPI_MAP.forEach((m) => {
     const total = m.sources.reduce((s, p) => s + pick(p), 0);
-    if (total > 0) autoKpi[m.kpiKey] = (autoKpi[m.kpiKey] || 0) + total;
+    autoKpi[m.kpiKey] = (autoKpi[m.kpiKey] || 0) + total;
   });
 
   const numeric = {};
-  DAILY_NUMERIC_KEYS.forEach((k) => { if (agg[k] > 0) numeric[k] = agg[k]; });
+  DAILY_NUMERIC_KEYS.forEach((k) => { numeric[k] = agg[k] || 0; });
 
   return {
     ...draft,
@@ -513,8 +520,8 @@ function computePay(draft, position, hireDate, month, config) {
 
 function StatusBadge({ status }) {
   const map = {
-    approved: { label: '승인', cls: 'bg-emerald-100 text-emerald-700' },
-    pending: { label: '승인 대기', cls: 'bg-amber-100 text-amber-700' },
+    approved: { label: '실적 승인', cls: 'bg-emerald-100 text-emerald-700' },
+    pending: { label: '실적 승인 대기', cls: 'bg-amber-100 text-amber-700' },
     none: { label: '미입력', cls: 'bg-gray-100 text-gray-500' },
   };
   const s = map[status] || map.none;
@@ -1741,10 +1748,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
     { key: 'compare', label: '실적 비교', icon: Layers },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
-    ...(isFullAdmin ? [{ key: 'rates', label: '지급기준 관리', icon: Settings }] : []),
+    ...(isFullAdmin ? [
+      { key: 'rates', label: '지급기준 관리', icon: Settings },
+      { key: 'permissions', label: '권한 관리', icon: ShieldCheck },
+    ] : []),
   ];
   useEffect(() => {
-    if (adminTab === 'rates' && !isFullAdmin) setAdminTab('dashboard');
+    if ((adminTab === 'rates' || adminTab === 'permissions') && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
 
   const downloadCSV = () => {
@@ -1825,7 +1835,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
                       <td className="px-2 py-2.5"><StatusBadge status={r.status} /></td>
                       <td className="px-2 py-2.5"><LastSaved updatedAt={r.updatedAt} /></td>
                       <td className="px-4 py-2.5 text-right">
-                        {r.status === 'pending' ? <button onClick={() => approve(r.id)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-violet-600 text-white">승인</button> : <span className="text-xs text-gray-300">-</span>}
+                        {r.status === 'pending' ? <button onClick={() => approve(r.id)} className="text-xs font-medium px-2.5 py-1 rounded-md bg-violet-600 text-white">실적 승인</button> : <span className="text-xs text-gray-300">-</span>}
                       </td>
                     </tr>
                   ))}
@@ -1846,6 +1856,10 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, total
 
       {adminTab === 'rates' && isFullAdmin && (
         <RatesManager config={config} persistConfig={persistConfig} />
+      )}
+
+      {adminTab === 'permissions' && isFullAdmin && (
+        <PermissionsManager employees={employees} />
       )}
     </div>
   );
@@ -2329,6 +2343,103 @@ function GibyeonColumnMapEditor({ colMap, mobilePointItems, onChange }) {
         ))}
       </div>
     </Section>
+  );
+}
+
+const ROLE_LABELS = { employee: '일반 직원', manager: '매니저(관리자 권한)', admin: '전체 관리자' };
+
+function PermissionsManager({ employees }) {
+  const [rolesById, setRolesById] = useState({});
+  const [savingId, setSavingId] = useState(null);
+  const [error, setError] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
+
+  const [autoPositions, setAutoPositions] = useState(['점장', '부점장', '담당']);
+  const [autoSaving, setAutoSaving] = useState(false);
+
+  useEffect(() => {
+    setRolesById(Object.fromEntries(employees.map((e) => [e.id, e.role || 'employee'])));
+  }, [employees]);
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'auto_manager_positions').maybeSingle();
+      if (!error && Array.isArray(data?.value)) setAutoPositions(data.value);
+    })();
+  }, []);
+
+  const saveRole = async (id, role) => {
+    setSavingId(id);
+    setError('');
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
+    if (error) { console.error('ROLE SAVE ERROR:', error); setError(friendlyError(error)); }
+    setSavingId(null);
+  };
+
+  const toggleAutoPosition = async (p) => {
+    const next = autoPositions.includes(p) ? autoPositions.filter((x) => x !== p) : [...autoPositions, p];
+    setAutoPositions(next);
+    setAutoSaving(true);
+    const { error } = await supabase.from('app_config').upsert({ config_key: 'auto_manager_positions', value: next }, { onConflict: 'config_key' });
+    if (error) { console.error('AUTO POSITIONS SAVE ERROR:', error); setError(friendlyError(error)); }
+    setAutoSaving(false);
+  };
+
+  const visible = employees.filter((e) => !nameQuery.trim() || e.name.includes(nameQuery.trim()));
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="text-xs text-gray-400 bg-gray-50 rounded-lg p-3 flex gap-2">
+        <Info size={13} className="shrink-0 mt-0.5" />
+        이 화면은 전체 관리자(사장님)만 볼 수 있어요. 실수로 다른 사람에게 전체 관리자 권한을 주지 않도록 주의해주세요.
+      </div>
+
+      <Section title="가입 승인시 자동으로 매니저 권한 부여할 직급" defaultOpen>
+        <div className="px-4 py-3 text-[11px] text-gray-400">체크된 직급으로 가입 신청한 사람을 승인하면, 별도 조작 없이 자동으로 매니저(관리자) 권한이 붙어요.</div>
+        <div className="px-4 pb-4 flex flex-wrap gap-2">
+          {POSITIONS.map((p) => (
+            <button key={p} onClick={() => toggleAutoPosition(p)} disabled={autoSaving}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border ${autoPositions.includes(p) ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+              {p}
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="직원별 권한 직접 변경" sub={`${employees.length}명`} defaultOpen>
+        <div className="px-4 pt-3 pb-2">
+          <input placeholder="이름 검색" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white w-32" />
+        </div>
+        <div className="divide-y divide-gray-50">
+          {visible.map((e) => (
+            <div key={e.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gray-800 truncate">{e.name} <span className="text-gray-400 font-normal">· {e.position} · {e.branch}</span></div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <select
+                  value={rolesById[e.id] || 'employee'}
+                  onChange={(ev) => setRolesById({ ...rolesById, [e.id]: ev.target.value })}
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1.5"
+                >
+                  {Object.entries(ROLE_LABELS).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                </select>
+                <button
+                  onClick={() => saveRole(e.id, rolesById[e.id])}
+                  disabled={savingId === e.id || (rolesById[e.id] || 'employee') === (e.role || 'employee')}
+                  className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white disabled:opacity-40"
+                >
+                  {savingId === e.id ? <Loader2 size={13} className="animate-spin" /> : '저장'}
+                </button>
+              </div>
+            </div>
+          ))}
+          {visible.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">검색 결과가 없어요.</div>}
+        </div>
+      </Section>
+
+      {error && <div className="text-xs text-red-600 bg-red-50 rounded-lg p-3">{error}</div>}
+    </div>
   );
 }
 
