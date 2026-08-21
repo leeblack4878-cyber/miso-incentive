@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown,
   Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet,
   Trash2, UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight,
-  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut
+  AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Award, Bell
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -2228,6 +2228,19 @@ function HomeOrderManager({ userId, month, locked }) {
     });
     setSaving(false);
     if (error) return alert(`청약 등록 실패: ${friendlyError(error)}`);
+
+    const productLabel = HOME_ORDER_PRODUCTS.find((p) => p.key === product)?.label || product;
+    notifyStoreManagers({
+      actorId: userId,
+      type: directComplete ? 'home_completed' : 'home_order',
+      title: directComplete ? '홈 설치/개통 완료' : '새 홈 청약 등록',
+      message: `${productLabel}${memo.trim() ? ` · ${memo.trim()}` : ''}`,
+      payload: {
+        product_type: product,
+        status: directComplete ? 'completed' : 'pending',
+      },
+    });
+
     setMemo(''); setDirectComplete(false); await load();
   };
 
@@ -2243,6 +2256,20 @@ function HomeOrderManager({ userId, month, locked }) {
       updated_at: now,
     }).eq('id', order.id).eq('user_id', userId);
     if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
+
+    const productLabel = HOME_ORDER_PRODUCTS.find((p) => p.key === order.product_type)?.label || order.product_type;
+    notifyStoreManagers({
+      actorId: userId,
+      type: status === 'completed' ? 'home_completed' : 'home_cancelled',
+      title: status === 'completed' ? '홈 설치/개통 완료' : '홈 청약 취소',
+      message: `${productLabel}${order.memo ? ` · ${order.memo}` : ''}`,
+      payload: {
+        order_id: order.id,
+        product_type: order.product_type,
+        status,
+      },
+    });
+
     await load();
   };
 
@@ -2324,6 +2351,251 @@ function HomeOrderManager({ userId, month, locked }) {
       </div>
     </div>
   );
+}
+
+
+/* ===================== v12 관리자 알림센터 ===================== */
+
+function NotificationBell({ userId, onOpen }) {
+  const [unread, setUnread] = useState(0);
+
+  const loadUnread = useCallback(async () => {
+    if (!userId) return;
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('recipient_id', userId)
+      .eq('read', false);
+
+    if (!error) setUnread(count || 0);
+  }, [userId]);
+
+  useEffect(() => {
+    loadUnread();
+
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        () => loadUnread()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, loadUnread]);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="relative w-9 h-9 rounded-xl bg-white border border-gray-100 flex items-center justify-center text-gray-600"
+      title="알림"
+    >
+      <Bell size={17} />
+      {unread > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function NotificationCenter({ userId }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('recipient_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (!error) setItems(data || []);
+    setLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const markRead = async (id) => {
+    const { error } = await supabase
+      .from('notifications')
+      .update({
+        read: true,
+        read_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('recipient_id', userId);
+
+    if (!error) {
+      setItems((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      );
+    }
+  };
+
+  const markAllRead = async () => {
+    const { error } = await supabase
+      .from('notifications')
+      .update({
+        read: true,
+        read_at: new Date().toISOString(),
+      })
+      .eq('recipient_id', userId)
+      .eq('read', false);
+
+    if (!error) {
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
+  };
+
+  const unreadCount = items.filter((n) => !n.read).length;
+
+  const iconFor = (type) => {
+    if (type === 'home_order') return '🏠';
+    if (type === 'home_completed') return '✅';
+    if (type === 'home_cancelled') return '⚠️';
+    if (type === 'daily_input') return '📈';
+    return '🔔';
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 p-4 text-sm text-gray-400 flex items-center gap-2">
+        <Loader2 size={14} className="animate-spin" />
+        알림 불러오는 중...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-xs text-gray-400">관리자 알림</div>
+          <div className="text-base font-bold text-gray-900 mt-0.5">
+            🔔 알림센터
+          </div>
+          <div className="text-xs text-gray-400 mt-1">
+            읽지 않은 알림 {unreadCount}개
+          </div>
+        </div>
+
+        {unreadCount > 0 && (
+          <button
+            onClick={markAllRead}
+            className="text-xs font-semibold text-violet-600"
+          >
+            모두 읽음
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        {items.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-400">
+            아직 알림이 없어요.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {items.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => !n.read && markRead(n.id)}
+                className={`w-full text-left px-4 py-3 flex gap-3 ${
+                  n.read ? 'bg-white' : 'bg-violet-50/60'
+                }`}
+              >
+                <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0 text-lg">
+                  {iconFor(n.type)}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className={`text-sm ${n.read ? 'font-medium text-gray-700' : 'font-bold text-gray-900'}`}>
+                      {n.title}
+                    </div>
+                    {!n.read && (
+                      <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0" />
+                    )}
+                  </div>
+
+                  {n.message && (
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {n.message}
+                    </div>
+                  )}
+
+                  <div className="text-[10px] text-gray-400 mt-1">
+                    {new Date(n.created_at).toLocaleString('ko-KR')}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+async function notifyStoreManagers({ actorId, type, title, message, payload = {} }) {
+  if (!actorId) return;
+
+  try {
+    const { data: actor, error: actorError } = await supabase
+      .from('profiles')
+      .select('id, name, store_name')
+      .eq('id', actorId)
+      .maybeSingle();
+
+    if (actorError || !actor?.store_name) return;
+
+    const { data: managers, error: managersError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('store_name', actor.store_name)
+      .eq('active', true)
+      .eq('status', 'approved')
+      .in('position', ['점장', '부점장']);
+
+    if (managersError || !managers?.length) return;
+
+    const rows = managers
+      .filter((m) => m.id !== actorId)
+      .map((m) => ({
+        recipient_id: m.id,
+        actor_id: actorId,
+        type,
+        title,
+        message,
+        payload,
+      }));
+
+    if (!rows.length) return;
+
+    const { error } = await supabase.from('notifications').insert(rows);
+    if (error) console.error('NOTIFICATION INSERT ERROR:', error);
+  } catch (e) {
+    console.error('NOTIFICATION ERROR:', e);
+  }
 }
 
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
@@ -2452,9 +2724,42 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
-          <HomeOrderManager userId={authUser?.id} month={month} locked={monthLocked} />
           <DailyInputTab month={month} dailyDays={dailyDays} saveDailyDay={saveDailyDay} config={config} draft={draft} setDraft={setDraft} locked={monthLocked} currentEmp={currentEmp} />
         </>
+      )}
+
+      {tab === 'homeOrders' && (
+        <div className="space-y-3">
+          {monthLocked && (
+            <div className="bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
+              <Info size={13} className="shrink-0" />
+              {monthLabel(month)}은 마감되어 홈 청약 상태를 수정할 수 없어요.
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs text-gray-400">접수부터 설치·개통까지</div>
+              <div className="text-lg font-bold text-gray-900">홈 청약관리</div>
+            </div>
+
+            <select
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2"
+            >
+              {months.map((m) => (
+                <option key={m} value={m}>{monthLabel(m)}</option>
+              ))}
+            </select>
+          </div>
+
+          <HomeOrderManager
+            userId={authUser?.id}
+            month={month}
+            locked={monthLocked}
+          />
+        </div>
       )}
 
       {tab === 'criteria' && canSeeCriteria && (
@@ -2508,10 +2813,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className={`max-w-5xl mx-auto grid ${canSeeCriteria ? 'grid-cols-4' : 'grid-cols-3'}`}>
+        <div className={`max-w-5xl mx-auto grid ${canSeeCriteria ? 'grid-cols-5' : 'grid-cols-4'}`}>
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '일일입력', icon: Calendar },
+            { key: 'homeOrders', label: '홈청약', icon: ClipboardList },
             ...(canSeeCriteria ? [{ key: 'criteria', label: '지급기준', icon: Wallet }] : []),
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
@@ -2672,6 +2978,21 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
     // 실제 입력 반영
     mutate(nextDay);
+
+    notifyStoreManagers({
+      actorId: currentEmp?.id,
+      type: 'daily_input',
+      title: `${currentEmp?.name || '직원'}님이 실적을 등록했어요`,
+      message: `${label} 1건`,
+      payload: {
+        employee_id: currentEmp?.id,
+        employee_name: currentEmp?.name,
+        store_name: currentEmp?.branch,
+        month,
+        day: selectedDay,
+        label,
+      },
+    });
 
     const toastId = `${Date.now()}-${ri}-${ci}`;
     setToast({
@@ -3617,6 +3938,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'compare', label: '실적 비교', icon: Layers },
     { key: 'rankings', label: '랭킹', icon: Trophy },
+    { key: 'notifications', label: '알림', icon: Bell },
     { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     { key: 'employees', label: '직원 관리', icon: Users },
@@ -3645,6 +3967,10 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5">
+      <div className="fixed top-3 right-14 z-40">
+        <NotificationBell userId={authUserId} onOpen={() => setAdminTab('notifications')} />
+      </div>
+
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex bg-white border border-gray-200 rounded-lg p-0.5 flex-wrap">
           {TABS.map((n) => (
@@ -3721,6 +4047,10 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'compare' && <ComparisonView rows={rows} />}
 
       {adminTab === 'rankings' && <RankingCenter rows={rankingRows || rows} dailyRecords={dailyRecords} month={month} config={config} />}
+
+      {adminTab === 'notifications' && (
+        <NotificationCenter userId={authUserId} />
+      )}
 
       {adminTab === 'recognition' && (
         <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
