@@ -15,7 +15,8 @@ import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditReques
 const POSITIONS = ['점장', '부점장', '매니저', '사원', '기타'];
 const DEFAULT_BASE_PAY = { 점장: 2800000, 부점장: 2600000, 매니저: 2500000, 사원: 2300000, 기타: 0 };
 const DEFAULT_BASE_PENALTY = 200000; // 활동시간 미충족시 차감
-const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0, 기타: 0 }; // 직책수당 — 영업활동지원금 초과여부 체크에 포함
+const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0, 기타: 0 }; // 직책수당 — 영업활동 지원금과 분리하여 최종 가산
+const DEFAULT_ACTIVITY_SUPPORT_MAX = 2300000; // 영업활동 지원 정책 공통 MAX
 
 const DEFAULT_STORES = [
   '신천동_삼미시장점', '신천동_삼미시장2호점', '본오3동_상록수역점', '대야동_롯데마트점',
@@ -499,9 +500,20 @@ function computePay(draft, position, hireDate, month, config) {
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
 
   const positionAllowance = config.positionAllowance?.[position] || 0;
-  const positionBase = (config.basePay[position] || 0) - (draft.activityTimeMet ? 0 : config.basePenalty);
-  const otherComponents = tenurePay + gradeBonus + (matrixTotal + bundle2ndTotal) * penaltyFactor + positionAllowance;
-  const guaranteedComponent = Math.max(positionBase, otherComponents);
+  // v21.16: 영업활동 지원금과 직책수당을 분리합니다.
+  // - 영업활동 지원 정책의 공통 MAX/기준선은 230만원
+  // - 직책수당은 실적으로 다시 채우는 금액이 아니라 직책 달성에 따른 별도 가산
+  // - 기존 직급별 basePay는 '최종 최저보장액'으로 유지 (점장280/부점장260/매니저250/사원230)
+  const activityPenalty = draft.activityTimeMet ? 0 : config.basePenalty;
+  const activitySupportFloor = Math.max(0, DEFAULT_ACTIVITY_SUPPORT_MAX - activityPenalty);
+  const minimumGuarantee = Math.max(0, (config.basePay[position] || 0) - activityPenalty);
+  const performanceComponents = tenurePay + gradeBonus + (matrixTotal + bundle2ndTotal) * penaltyFactor;
+  const performanceWithAllowance = Math.max(activitySupportFloor, performanceComponents) + positionAllowance;
+  const guaranteedComponent = Math.max(minimumGuarantee, performanceWithAllowance);
+
+  // 기존 화면/RAW 호환용 이름
+  const positionBase = minimumGuarantee;
+  const otherComponents = performanceComponents;
 
   const homeGradeQualCount = draft.homeBase.homeTv || 0; // "1G+TV 기준" - 그레이드 단가 지급 대상 (홈+TV 동시청약만)
   const homeTierCount = (draft.homeBase.homeOnly || 0) + (draft.homeBase.homeTv || 0)
@@ -529,7 +541,7 @@ function computePay(draft, position, hireDate, month, config) {
     months, bucket, activityCount, tenurePay,
     mobilePoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
-    matrixTotal, bundle2ndTotal, positionBase, positionAllowance, otherComponents, guaranteedComponent,
+    matrixTotal, bundle2ndTotal, positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee, performanceComponents, performanceWithAllowance, guaranteedComponent,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay, vasPay, mnpBundlePay, sonoPay,
     custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
@@ -3859,7 +3871,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
           <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg p-3 flex gap-2">
             <Info size={13} className="shrink-0 mt-0.5" />
-            영업 활동 지원 정책(근속기간별 건당 지급액)은 성과등급 보너스·요금제 유치 수수료·2ND번들과 합산해 영업 활동 지원금(직급 보장액)과 비교되고, 둘 중 큰 금액이 지급돼요. 그래서 근속수당 자체는 표시되지만 총액에 별도로 더해지지는 않아요. 홈 최소조건(3점)은 인터넷1점·프리0.3점·스홈0.2점 기준으로, 성과등급 가점(홈단독1P·홈+TV2P 등)은 별도 배점으로 계산돼요. 모델 특판 실적은 고객 할인 재원이라 인센티브 총액에 포함하지 않았어요.
+            영업 활동 지원 정책은 공통 230만원을 기준으로 성과등급 보너스·요금제 유치 수수료·2ND번들과 비교하고, 직책수당은 그 결과에 별도로 가산돼요. 이후 직급별 최저 보장금액(점장/부점장/매니저/사원)보다 낮으면 최저 보장금액을 적용해요. 그래서 근속수당 자체는 표시되지만 총액에 별도로 더해지지는 않아요. 홈 최소조건(3점)은 인터넷1점·프리0.3점·스홈0.2점 기준으로, 성과등급 가점(홈단독1P·홈+TV2P 등)은 별도 배점으로 계산돼요. 모델 특판 실적은 고객 할인 재원이라 인센티브 총액에 포함하지 않았어요.
           </div>
             </div>
           )}
@@ -3957,7 +3969,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           {canSeeCriteria && (
             <Section title="인센티브 지급 기준 보기">
               <div className="divide-y divide-gray-50">
-                {POSITIONS.map((p)=><RowKV key={p} label={`${p} 영업 활동 지원금`} value={won(config.basePay[p])}/>)}
+                {POSITIONS.map((p)=><RowKV key={p} label={`${p} 최저 보장금액`} value={won(config.basePay[p])}/>)}
+                <RowKV label="영업활동 지원 정책 공통 MAX" value={won(DEFAULT_ACTIVITY_SUPPORT_MAX)}/>
                 {config.tenure.map((t)=><RowKV key={t.key} label={t.label} value={t.rate?`건당 ${won(t.rate)}`:'실적 무관'}/>)}
                 {config.grades.map((g)=><RowKV key={g.grade} label={`${g.grade}등급 (${g.min}P↑)`} value={won(g.bonus)}/>)}
               </div>
@@ -7260,7 +7273,7 @@ function RatesManager({ config, persistConfig }) {
       <GibyeonColumnMapEditor colMap={draft.gibyeonColumnMap} mobilePointItems={draft.mobilePointItems}
         onChange={(m) => setDraftCfg({ ...draft, gibyeonColumnMap: m })} />
 
-      <Section title="영업 활동 지원금" defaultOpen>
+      <Section title="직급별 최저 보장금액" defaultOpen>
         <div className="p-3 grid grid-cols-2 gap-2">
           {POSITIONS.map((p) => (
             <div key={p} className="flex items-center justify-between gap-2">
@@ -7272,7 +7285,7 @@ function RatesManager({ config, persistConfig }) {
       </Section>
 
       <Section title="직급별 직책수당">
-        <div className="p-3 text-[11px] text-gray-400">영업 활동 지원금(직급 보장) 초과 여부 계산에 합산돼요.</div>
+        <div className="p-3 text-[11px] text-gray-400">직책수당은 영업활동 지원금과 별도로 가산돼요. 실적으로 직책수당만큼 다시 채울 필요가 없어요.</div>
         <div className="p-3 pt-0 grid grid-cols-2 gap-2">
           {POSITIONS.map((p) => (
             <div key={p} className="flex items-center justify-between gap-2">
