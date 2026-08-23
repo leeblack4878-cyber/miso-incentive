@@ -754,6 +754,11 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 /* v21.43: 구버전 집계를 '이름 없음' 판매건 단위로 분해. 모바일은 모바일 수정 UI, 홈은 홈 수정 UI로 복원하며 저장 시 구집계 1건을 정상 customer_sales/home_orders 데이터로 전환. */
 /* v21.44: 직원/관리자 달력 모든 날짜칸을 동일한 정사각형 크기로 고정하고 HS/SIM/홈 3줄 영역 높이도 항상 동일하게 예약. */
 /* v21.45: HS/SIM/홈 가독성을 위해 개인·관리자 달력 날짜칸을 동일하게 소폭 확대(모바일 58px, 큰 화면 64px 높이). 7열 폭은 유지해 가로 넘침 방지. */
+/* v21.46:
+   - 구버전 모바일 1건 복원 시 기존 집계 차감 + 신규 판매 반영을 하나의 확정 일일데이터로 즉시 저장하여 1건→2건 중복 집계 방지
+   - 구버전 홈 복원도 변환된 일일데이터를 즉시 저장
+   - home_orders 신규 product_type 허용 SQL 별도 제공
+*/
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -4634,7 +4639,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         products.forEach(product=>{ groups[product.groupKey]={...(groups[product.groupKey]||{}),[product.itemKey]:Number(groups[product.groupKey]?.[product.itemKey]||0)+1}; });
         workingDay={...base,groups};
       }
-      if(homeOrderDraft?.editing || homeOrderDraft?.legacyConversion || homeDirectComplete) mutate(workingDay);
+      if(homeOrderDraft?.legacyConversion){
+        await persistLegacyConvertedDay(workingDay);
+      }else if(homeOrderDraft?.editing || homeDirectComplete){
+        mutate(workingDay);
+      }
 
       notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,payload:{employee_id:currentEmp.id,customer_name:customer,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
@@ -5106,6 +5115,25 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     return {bundleOffset,vasOffset};
   };
 
+
+  // v21.46: 구버전 1건을 정상 판매건으로 전환할 때는
+  // 화면 상태의 느린 자동저장에 의존하지 않고 원본 일일 집계를 즉시 DB에 저장합니다.
+  const persistLegacyConvertedDay=async(nextDay)=>{
+    const normalized=normalizeDay(nextDay);
+    setDay(normalized);
+    pendingRef.current={day:selectedDay,record:normalized};
+    const {error}=await supabase.from('daily_records').upsert({
+      user_id:currentEmp.id,
+      work_date:`${month}-${selectedDay}`,
+      data:normalized
+    },{onConflict:'user_id,work_date'});
+    if(error)throw error;
+    pendingRef.current=null;
+    setSaveState('saved');
+    setTimeout(()=>setSaveState('idle'),1200);
+    return normalized;
+  };
+
   const submitMobileSale = async () => {
     if(!mobileSaleDraft||!currentEmp?.id)return;
     const customer=mobileCustomerName.trim();
@@ -5293,14 +5321,44 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
 
       const freeAmounts=bundleFreeAmounts();
-      commitMobileOne(
-        mobileSaleDraft.ri,
-        mobileSaleDraft.ci,
-        { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:mobileUsedMnpBundle,
-          specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
-          bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0,
-          baseDayOverride:legacyBaseOverride }
-      );
+
+      if(legacyConversion?.kind==='mobile' && legacyBaseOverride){
+        // 구버전 원본 1건을 먼저 뺀 상태(legacyBaseOverride)에 새 판매 1건만 정확히 다시 반영
+        const base=normalizeDay(legacyBaseOverride);
+        const matrix=base.matrix.map(r=>[...r]);
+        matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
+
+        const vas={...(base.groups?.vas||{})};
+        [...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].forEach(k=>{
+          if(k!=='vasNone')vas[k]=Number(vas[k]||0)+1;
+        });
+        const bundle2nd={...(base.groups?.bundle2nd||{})};
+        (mobileBundle2ndKeys||[]).forEach(k=>{
+          bundle2nd[k]=Number(bundle2nd[k]||0)+1;
+        });
+        const mnpBundle={...(base.groups?.mnpBundle||{})};
+        if(mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
+
+        const convertedDay={
+          ...base,
+          matrix,
+          groups:{...base.groups,vas,bundle2nd,mnpBundle},
+          specialMatrixOffset:Number(base.specialMatrixOffset||0)+Number(saved._special?.matrixFee||0),
+          specialVasOffset:Number(base.specialVasOffset||0)+Number(saved._special?.vasFee||0),
+          specialReplacementPay:Number(base.specialReplacementPay||0)+Number(saved._special?.replacement||0),
+          bundleFreeOffset:Number(base.bundleFreeOffset||0)+Number(freeAmounts.bundleOffset||0),
+          bundleFreeVasOffset:Number(base.bundleFreeVasOffset||0)+Number(freeAmounts.vasOffset||0),
+        };
+        await persistLegacyConvertedDay(convertedDay);
+      }else{
+        commitMobileOne(
+          mobileSaleDraft.ri,
+          mobileSaleDraft.ci,
+          { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:mobileUsedMnpBundle,
+            specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
+            bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
+        );
+      }
 
       setMobileSaleDraft(null);
       setLegacyConversion(null);
