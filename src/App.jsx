@@ -262,7 +262,25 @@ function emptyDraft() {
 
 /* ===================== 유틸 ===================== */
 
-function won(n) { return `${Math.round(n || 0).toLocaleString()}원`; }
+/* v21.22: 금액·건수·목표 등 일반 숫자 표시는 천 단위 콤마를 공통 적용. 날짜/요금제/속도/전화번호 등 식별자 숫자는 제외. */
+
+function fmtNum(n, maxFraction = 0) {
+  const num = Number(n || 0);
+  if (!Number.isFinite(num)) return '0';
+  return num.toLocaleString('ko-KR', { maximumFractionDigits: maxFraction, minimumFractionDigits: 0 });
+}
+function fmtCount(n) { return fmtNum(Math.round(Number(n || 0))); }
+function fmtShortDate(v) {
+  if (!v) return '';
+  const d = String(v).slice(0,10);
+  const [y,m,day] = d.split('-');
+  return y && m && day ? `${y}.${m}.${day}` : d;
+}
+function fmtInputNumber(v) {
+  const digits = String(v ?? '').replace(/\D/g, '');
+  return digits ? Number(digits).toLocaleString('ko-KR') : '';
+}
+function won(n) { return `${fmtNum(Math.round(Number(n || 0)))}원`; }
 function monthKeyOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; }
 function monthLabel(key) { const [y, m] = key.split('-'); return `${y}년 ${parseInt(m, 10)}월`; }
 function formatLastSignIn(iso) {
@@ -605,7 +623,7 @@ function Stepper({ value, onChange }) {
   return (
     <div className="flex items-center gap-2">
       <button onClick={() => onChange(Math.max(0, value - 1))} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600"><Minus size={13} /></button>
-      <span className="w-7 text-center font-semibold text-gray-800 text-sm tabular-nums">{value}</span>
+      <span className="min-w-7 text-center font-semibold text-gray-800 text-sm tabular-nums">{fmtCount(value)}</span>
       <button onClick={() => onChange(value + 1)} className="w-7 h-7 rounded-lg bg-violet-100 hover:bg-violet-200 flex items-center justify-center text-violet-700"><Plus size={13} /></button>
     </div>
   );
@@ -637,7 +655,7 @@ function CountRow({ label, sub, value, onChange, disabled }) {
       {disabled ? (
         <div className="flex items-center gap-1.5">
           <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-500">자동</span>
-          <span className="w-7 text-center font-semibold text-gray-500 text-sm tabular-nums">{value}</span>
+          <span className="min-w-7 text-center font-semibold text-gray-500 text-sm tabular-nums">{fmtCount(value)}</span>
         </div>
       ) : (
         <Stepper value={value} onChange={onChange} />
@@ -1679,7 +1697,7 @@ function RisingRankingCard({ rows, dailyRecords, month, config, userId }) {
 }
 
 function formatCompetitionValue(v, unit) {
-  return unit === 'P' ? `${Number(v || 0).toFixed(1)}P` : `${Math.round(Number(v || 0))}건`;
+  return unit === 'P' ? `${fmtNum(Number(v || 0), 1)}P` : `${fmtCount(v)}건`;
 }
 
 function MyRankingCard({ rows, userId, branch }) {
@@ -2377,6 +2395,10 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
   const [saving, setSaving] = useState(false);
   const [homeCompletionTarget, setHomeCompletionTarget] = useState(null);
   const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
+  // v21.23: 홈 케어 화면에서 설치예정일을 바로 수정
+  const [homeScheduleTarget, setHomeScheduleTarget] = useState(null);
+  const [homeScheduleDate, setHomeScheduleDate] = useState('');
+  const [homeCareActionSaving, setHomeCareActionSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -2483,6 +2505,101 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
     setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load();
   };
 
+  const openScheduleEdit = (order) => {
+    if (locked) return;
+    setHomeScheduleTarget(order);
+    setHomeScheduleDate(order.planned_install_date ? String(order.planned_install_date).slice(0,10) : '');
+  };
+
+  const saveScheduleEdit = async () => {
+    const order=homeScheduleTarget;
+    if(!order || locked) return;
+    setHomeCareActionSaving(true);
+    try{
+      // 같은 판매일/고객의 진행중 홈 구성은 한 고객 판매 묶음으로 보고 일정도 같이 변경
+      let q=supabase.from('home_orders').update({
+        planned_install_date:homeScheduleDate||null,
+        updated_at:new Date().toISOString()
+      }).eq('user_id',userId).eq('status','pending');
+
+      if(order.customer_id) q=q.eq('customer_id',order.customer_id);
+      else q=q.eq('customer_name',order.customer_name||'');
+
+      if(order.source_work_date) q=q.eq('source_work_date',order.source_work_date);
+      else q=q.eq('id',order.id);
+
+      const {error}=await q;
+      if(error)throw error;
+      setHomeScheduleTarget(null);
+      setHomeScheduleDate('');
+      await load();
+    }catch(e){
+      alert(`설치 예정일 수정 실패: ${friendlyError(e)}`);
+    }finally{
+      setHomeCareActionSaving(false);
+    }
+  };
+
+  const decrementCompletedPerformance = async (order) => {
+    if(!order?.source_group || !order?.source_key || !order?.actual_install_date) return;
+    const completedDate=String(order.actual_install_date).slice(0,10);
+    const completedMonth=completedDate.slice(0,7);
+    const completedDay=completedDate.slice(8,10);
+
+    if(completedMonth===month){
+      const base=normalizeDay(dailyDays?.[completedDay]);
+      const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
+      const next={...base,groups:{...base.groups,[order.source_group]:{
+        ...(base.groups?.[order.source_group]||{}),
+        [order.source_key]:Math.max(0,current-1)
+      }}};
+      const ok=await saveDailyDay(completedDay,next);
+      if(!ok) throw new Error('확정 실적 원복에 실패했어요.');
+      return;
+    }
+
+    const {data:rec,error:loadError}=await supabase.from('daily_records')
+      .select('data').eq('user_id',userId).eq('work_date',completedDate).maybeSingle();
+    if(loadError) throw loadError;
+    const base=normalizeDay(rec?.data);
+    const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
+    const next={...base,groups:{...base.groups,[order.source_group]:{
+      ...(base.groups?.[order.source_group]||{}),
+      [order.source_key]:Math.max(0,current-1)
+    }}};
+    const {error}=await supabase.from('daily_records').upsert({
+      user_id:userId,work_date:completedDate,data:next
+    },{onConflict:'user_id,work_date'});
+    if(error)throw error;
+  };
+
+  const undoHomeStatus = async (order) => {
+    if(locked || !order || !['completed','cancelled'].includes(order.status)) return;
+    const isCompleted=order.status==='completed';
+    const msg=isCompleted
+      ? '완료 처리를 취소하고 다시 진행중으로 돌릴까요?\n완료일에 반영된 확정 실적도 함께 원복됩니다.'
+      : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?';
+    if(!window.confirm(msg))return;
+
+    setHomeCareActionSaving(true);
+    try{
+      if(isCompleted) await decrementCompletedPerformance(order);
+      const {error}=await supabase.from('home_orders').update({
+        status:'pending',
+        completed_at:null,
+        actual_install_date:null,
+        cancelled_at:null,
+        updated_at:new Date().toISOString()
+      }).eq('id',order.id).eq('user_id',userId);
+      if(error)throw error;
+      await load();
+    }catch(e){
+      alert(`상태 되돌리기 실패: ${friendlyError(e)}`);
+    }finally{
+      setHomeCareActionSaving(false);
+    }
+  };
+
   const careInfo = (o) => {
     const p=o.planned_install_date ? String(o.planned_install_date).slice(0,10) : null;
     if(!p)return {rank:3,label:'일정 미정',cls:'text-gray-500 bg-gray-50'};
@@ -2502,7 +2619,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <div className="text-xs text-gray-400">이번 달 진행 현황</div>
         <div className="text-sm font-bold text-gray-900 mt-0.5">
-          진행중 {pending.length} · 완료 {completed.length} · 취소 {cancelled.length}
+          진행중 {fmtCount(pending.length)} · 완료 {fmtCount(completed.length)} · 취소 {fmtCount(cancelled.length)}
         </div>
         {pending.length ? (
           <div className="mt-3 space-y-4">
@@ -2523,7 +2640,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
                 <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <div className="text-sm font-bold text-gray-900">{group.customer} 고객</div>
-                    <span className="text-[10px] font-bold text-amber-600">{group.items.length}개 진행중</span>
+                    <span className="text-[10px] font-bold text-amber-600">{fmtCount(group.items.length)}개 진행중</span>
                   </div>
                   <div className="space-y-2">
                     {group.items.map(o => {
@@ -2544,10 +2661,12 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
                             </div>
                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${careInfo(o).cls}`}>{careInfo(o).label}</span>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 mt-2">
-                            <button type="button" disabled={locked} onClick={()=>changeStatus(o,'completed')}
+                          <div className="grid grid-cols-3 gap-2 mt-2">
+                            <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>openScheduleEdit(o)}
+                              className="py-2 rounded-lg bg-violet-50 border border-violet-100 text-violet-700 text-xs font-semibold disabled:opacity-50">일정 수정</button>
+                            <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>changeStatus(o,'completed')}
                               className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">설치/개통 완료</button>
-                            <button type="button" disabled={locked} onClick={()=>changeStatus(o,'cancelled')}
+                            <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>changeStatus(o,'cancelled')}
                               className="py-2 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs font-semibold disabled:opacity-50">취소</button>
                           </div>
                         </div>
@@ -2565,9 +2684,24 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
             <div className="mt-2 space-y-1.5">
               {[...completed,...cancelled].sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
                 const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
-                return <div key={o.id} className="flex justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
-                  <span className="text-xs font-semibold text-gray-700">{o.customer_name ? `${o.customer_name} · ` : ''}{homeNetworkLabel(o.network_type)} · {def?.label || o.product_type}</span>
-                  <span className={`text-[10px] font-bold ${o.status==='completed'?'text-emerald-600':'text-gray-400'}`}>{o.status==='completed'?'완료':'취소'}</span>
+                return <div key={o.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                  <div className="flex justify-between gap-2 items-start">
+                    <div>
+                      <div className="text-xs font-semibold text-gray-700">{o.customer_name ? `${o.customer_name} · ` : ''}{homeNetworkLabel(o.network_type)} · {def?.label || o.product_type}</div>
+                      {(o.status==='completed' || o.status==='cancelled')&&<div className="text-[10px] text-gray-400 mt-0.5 leading-none">
+                        {o.status==='completed'
+                          ? `완료일 ${fmtShortDate(o.actual_install_date || o.completed_at)}`
+                          : `취소일 ${fmtShortDate(o.cancelled_at) || '기록 없음'}`}
+                      </div>}
+                    </div>
+                    <span className={`text-[10px] font-bold ${o.status==='completed'?'text-emerald-600':'text-gray-400'}`}>{o.status==='completed'?'완료':'취소'}</span>
+                  </div>
+                  <div className="flex justify-end mt-2">
+                    <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>undoHomeStatus(o)}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-[10px] font-semibold text-violet-600 disabled:opacity-50">
+                      진행중으로 되돌리기
+                    </button>
+                  </div>
                 </div>
               })}
             </div>
@@ -2577,6 +2711,31 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       <div className="text-[11px] text-gray-400 px-1">
         확정 실적은 실제 설치/개통 완료일 기준으로 반영돼요.
       </div>
+      {homeScheduleTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
+            <div className="text-xs text-violet-600 font-semibold">설치 예정일 수정</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">
+              {homeScheduleTarget.customer_name || '고객'} · {homeNetworkLabel(homeScheduleTarget.network_type)}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-1">같은 고객의 같은 판매일 홈 구성 일정이 함께 변경됩니다.</div>
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">설치 예정일</label>
+            <input type="date" value={homeScheduleDate} onChange={(e)=>setHomeScheduleDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
+            <button type="button" onClick={()=>setHomeScheduleDate('')}
+              className="mt-2 text-[11px] font-semibold text-gray-400">일정 미정으로 변경</button>
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button onClick={()=>{setHomeScheduleTarget(null);setHomeScheduleDate('');}} disabled={homeCareActionSaving}
+                className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold disabled:opacity-50">닫기</button>
+              <button onClick={saveScheduleEdit} disabled={homeCareActionSaving}
+                className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
+                {homeCareActionSaving?'저장 중...':'일정 저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {homeCompletionTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
@@ -2928,7 +3087,7 @@ function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
         if(!c&&!ch)return null;
         const pct=ch?Math.min(100,cur/ch*100):0;
         return <div key={m.key}>
-          <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{m.label}</span><span className="text-gray-500">{Number.isInteger(cur)?cur:cur.toFixed(1)} / <b>{ch}</b></span></div>
+          <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{m.label}</span><span className="text-gray-500">{Number.isInteger(cur)?fmtCount(cur):fmtNum(cur,1)} / <b>{fmtNum(ch,1)}</b></span></div>
           <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}} /></div>
           <div className="text-[10px] mt-1 text-gray-400">{c&&cur>=c?'✅ 회사 기준 달성':`회사 기준 ${c||'-'}`} · 도전 {ch||'-'}</div>
         </div>
@@ -2964,7 +3123,7 @@ function SalesExpensePanel({ userId, month, onTotal }) {
       <div className="grid grid-cols-2 gap-2">
         <input type="date" value={form.expense_date} onChange={e=>setForm({...form,expense_date:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"/>
         <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"><option>케이스</option><option>오퍼</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select>
-        <input inputMode="numeric" placeholder="금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded-lg px-2 py-2 text-xs"/>
+        <input inputMode="numeric" placeholder="금액" value={fmtInputNumber(form.amount)} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded-lg px-2 py-2 text-xs"/>
         <input placeholder="고객명 (선택)" value={form.customer_name} onChange={e=>setForm({...form,customer_name:e.target.value})} className="border rounded-lg px-2 py-2 text-xs"/>
       </div>
       <input placeholder="메모 (선택)" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})} className="w-full border rounded-lg px-2 py-2 text-xs"/>
@@ -3043,7 +3202,7 @@ function SpotClaimPanel({ userId, month, claimDate }) {
       <button onClick={()=>setDirectOpen(v=>!v)} className="w-full py-2.5 rounded-xl bg-orange-50 text-orange-700 border border-orange-100 text-xs font-bold">+ 스팟 직접 입력</button>
       {directOpen&&<div className="space-y-2 bg-orange-50/40 border border-orange-100 rounded-xl p-3">
         <input value={directTitle} onChange={e=>setDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/>
-        <input value={directAmount} onChange={e=>setDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+        <input value={fmtInputNumber(directAmount)} onChange={e=>setDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
         <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="고객명 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
         <input value={directMemo} onChange={e=>setDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
         <div className="text-[10px] text-gray-400">관리자가 확인·수정 후 승인하면 반영돼요.</div>
@@ -3191,7 +3350,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
             <div className="flex justify-between items-center text-xs gap-2">
               <span className="font-semibold text-gray-700">{m.label}</span>
               <span className="text-gray-500">
-                {m.key==='productivity'?Number(actual).toFixed(1):Math.round(actual)}
+                {m.key==='productivity'?fmtNum(actual,1):fmtCount(actual)}
                 {' / '}
                 <b>{challengeTarget||'-'}</b>
               </span>
@@ -3232,7 +3391,7 @@ function SpecialSalePolicyAdmin({ authUserId }) {
   const add=async()=>{if(!form.title||!form.start_date||!form.end_date)return alert('정책명과 기간을 입력해주세요.');const {error}=await supabase.from('special_sale_policies').insert({...form,replacement_amount:Number(form.replacement_amount||0),created_by:authUserId});if(error)return alert(friendlyError(error));setForm({title:'',start_date:'',end_date:'',replacement_amount:'20000',description:''});load();};
   const toggle=async(r)=>{await supabase.from('special_sale_policies').update({active:!r.active,updated_at:new Date().toISOString()}).eq('id',r.id);load();};
   const decide=async(sale,approve)=>{const sp=sale.source_meta?.specialPolicy||{},amt=approve?Number(sp.exceptionRequestedAmount||0):Number(sp.replacementAmount||0);const {data:dr,error}=await supabase.from('daily_records').select('data').eq('user_id',sale.user_id).eq('work_date',sale.sale_date).maybeSingle();if(error)return alert(friendlyError(error));const d=normalizeDay(dr?.data);const old=Number(d.specialReplacementPay||0);const next={...d,specialReplacementPay:old+amt};const {error:uErr}=await supabase.from('daily_records').upsert({user_id:sale.user_id,work_date:sale.sale_date,data:next,updated_at:new Date().toISOString()},{onConflict:'user_id,work_date'});if(uErr)return alert(friendlyError(uErr));const meta={...sale.source_meta,specialPolicy:{...sp,exceptionStatus:approve?'approved':'rejected',exceptionApprovedAmount:amt,reviewedBy:authUserId,reviewedAt:new Date().toISOString()}};await supabase.from('customer_sales').update({source_meta:meta}).eq('id',sale.id);load();};
-  return <div className="space-y-3"><div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="font-bold text-sm">🏷️ 특판·지인판매 정책</div><div className="text-xs text-gray-500 mt-1">최고관리자만 정책을 만들어요. 실적은 인정하고 요금제/VAS 수수료 대신 대체 인센티브를 적용합니다.</div><div className="grid grid-cols-2 gap-2 mt-3"><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="정책명" className="border rounded p-2 text-xs"/><input value={form.replacement_amount} onChange={e=>setForm({...form,replacement_amount:e.target.value.replace(/\D/g,'')})} placeholder="건당 대체 지급금액" className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="설명 (선택)" className="mt-2 w-full border rounded p-2 text-xs"/><button onClick={add} className="mt-2 w-full bg-amber-500 text-white rounded-lg py-2 text-xs font-bold">정책 추가</button><div className="mt-3 divide-y">{rows.map(r=><div key={r.id} className="py-2 flex justify-between text-xs"><div><b>{r.title}</b> · {won(r.replacement_amount)}<div className="text-[10px] text-gray-400">{r.start_date}~{r.end_date}</div></div><button onClick={()=>toggle(r)} className={r.active?'text-emerald-600':'text-gray-400'}>{r.active?'활성':'비활성'}</button></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">예외 지급금액 승인 {pending.length}건</div>{pending.length===0?<div className="py-6 text-center text-xs text-gray-400">승인 대기 예외금액이 없어요.</div>:pending.map(x=><div key={x.id} className="p-3 border-b text-xs"><b>{x.profiles?.name||'직원'} · {x.customers?.customer_name||'고객'}</b><div className="mt-1 text-gray-500">{x.metric_label} · 요청 {won(x.source_meta?.specialPolicy?.exceptionRequestedAmount)}</div><div className="grid grid-cols-2 gap-2 mt-2"><button onClick={()=>decide(x,false)} className="py-2 bg-gray-100 rounded">기본금액 적용</button><button onClick={()=>decide(x,true)} className="py-2 bg-amber-500 text-white rounded font-bold">요청금액 승인</button></div></div>)}</div></div>;
+  return <div className="space-y-3"><div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="font-bold text-sm">🏷️ 특판·지인판매 정책</div><div className="text-xs text-gray-500 mt-1">최고관리자만 정책을 만들어요. 실적은 인정하고 요금제/VAS 수수료 대신 대체 인센티브를 적용합니다.</div><div className="grid grid-cols-2 gap-2 mt-3"><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="정책명" className="border rounded p-2 text-xs"/><input value={fmtInputNumber(form.replacement_amount)} onChange={e=>setForm({...form,replacement_amount:e.target.value.replace(/\D/g,'')})} placeholder="건당 대체 지급금액" className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="설명 (선택)" className="mt-2 w-full border rounded p-2 text-xs"/><button onClick={add} className="mt-2 w-full bg-amber-500 text-white rounded-lg py-2 text-xs font-bold">정책 추가</button><div className="mt-3 divide-y">{rows.map(r=><div key={r.id} className="py-2 flex justify-between text-xs"><div><b>{r.title}</b> · {won(r.replacement_amount)}<div className="text-[10px] text-gray-400">{r.start_date}~{r.end_date}</div></div><button onClick={()=>toggle(r)} className={r.active?'text-emerald-600':'text-gray-400'}>{r.active?'활성':'비활성'}</button></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">예외 지급금액 승인 {pending.length}건</div>{pending.length===0?<div className="py-6 text-center text-xs text-gray-400">승인 대기 예외금액이 없어요.</div>:pending.map(x=><div key={x.id} className="p-3 border-b text-xs"><b>{x.profiles?.name||'직원'} · {x.customers?.customer_name||'고객'}</b><div className="mt-1 text-gray-500">{x.metric_label} · 요청 {won(x.source_meta?.specialPolicy?.exceptionRequestedAmount)}</div><div className="grid grid-cols-2 gap-2 mt-2"><button onClick={()=>decide(x,false)} className="py-2 bg-gray-100 rounded">기본금액 적용</button><button onClick={()=>decide(x,true)} className="py-2 bg-amber-500 text-white rounded font-bold">요청금액 승인</button></div></div>)}</div></div>;
 }
 
 function SpotAdmin({ authUserId, isFullAdmin }) {
@@ -3305,7 +3464,7 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
       <div className="font-bold">🔥 스팟 정책 등록</div>
       <div className="grid grid-cols-2 gap-2 mt-3">
         <input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/>
-        <input placeholder="건당 금액" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/>
+        <input placeholder="건당 금액" value={fmtInputNumber(form.amount)} onChange={e=>setForm({...form,amount:e.target.value.replace(/\D/g,'')})} className="border rounded p-2 text-xs"/>
         <input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/>
         <input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/>
       </div>
@@ -3840,7 +3999,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             />
           )}
           <StoreGoalCard month={month} storeName={currentEmp?.branch} mergedDraft={mergedDraft} pay={pay} />
-          <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} />
+          <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} />
           <NextGoalCard
             pay={pay}
             draft={mergedDraft}
@@ -4048,6 +4207,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeNetworkType, setHomeNetworkType] = useState('');
   const [homeInternet,setHomeInternet]=useState(false);
+  const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
+  const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
   const [homeMainTv,setHomeMainTv]=useState(false);
   const [homeSubTv,setHomeSubTv]=useState(false);
   const [homeSubTvType,setHomeSubTvType]=useState('normal');
@@ -4264,7 +4425,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeOrderDraft({ unified:true, label:'홈 실적 입력' });
     setHomeCustomerName('');
     setHomeNetworkType('');
-    setHomeInternet(false); setHomeMainTv(false); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
     setHomeDirectComplete(false);
     setHomePlannedDate('');
     setHomeCareKeys([]); setHomeCustomTitle(''); setHomeCustomDueDate(''); setHomeTargetPlan('');
@@ -4280,6 +4441,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if (!homeNetworkType) return alert('가정망 또는 소호망을 선택해주세요.');
     if (!homeInternet && !homeMainTv && !homeSubTv && !homeSmartHome) return alert('판매한 홈 상품을 하나 이상 선택해주세요.');
     if (homeMainTv && !homeInternet) return alert('TV(주)는 인터넷 가입과 함께 선택해주세요.');
+    if (homeInternet && !homeInternetSpeed) return alert('인터넷 속도(100MB / 500MB / 1GB)를 선택해주세요.');
+    if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return alert('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.');
 
     const sourceWorkDate=`${month}-${selectedDay}`;
     let linkedCustomerId=null;
@@ -4291,7 +4454,20 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(homeInternet){
       if(homeMainTv) products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:'홈+TV 동시청약'});
       else products.push({groupKey:'homeBase',itemKey:'homeOnly',productType:'homeOnly',label:'홈 단독'});
+      const speedMap={
+        '100':{itemKey:'home100Only',productType:'internet100',label:'인터넷 100MB'},
+        '500':{itemKey:'home500Only',productType:'internet500',label:'인터넷 500MB'},
+        '1g':{itemKey:'home1GBOnly',productType:'internet1g',label:'인터넷 1GB'}
+      };
+      const speed=speedMap[homeInternetSpeed];
+      if(speed) products.push({groupKey:'homeFlat',...speed});
     }
+    const simulMap={
+      newChange:{itemKey:'addNewChange',productType:'simulNewChange',label:'신규/기변 동시판매'},
+      mnp:{itemKey:'addMnp',productType:'simulMnp',label:'MNP 동시판매'},
+      usedMnp:{itemKey:'addUsedMnp',productType:'simulUsedMnp',label:'중고MNP 동시판매 (85군↑ 선약, 가정망)'}
+    };
+    if(homeMobileSimul!=='none' && simulMap[homeMobileSimul]) products.push({groupKey:'homeAddon',...simulMap[homeMobileSimul]});
     if(homeSubTv){
       if(homeSubTvType==='free') products.push({groupKey:'homeFlat',itemKey:'tvFree',productType:'tvFree',label:'TV프리(부)'});
       else products.push({groupKey:'homeAddon',itemKey:'addSetTop',productType:'subSetTop',label:'일반 부셋탑'});
@@ -4333,7 +4509,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const {data:sale,error:saleError}=await supabase.from('customer_sales').insert({
           user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
           metric_label:product.label,source_type:'home_order',source_ref:String(order?.id||''),
-          source_meta:{networkType:homeNetworkType,unifiedHome:true,directComplete:homeDirectComplete}
+          source_meta:{networkType:homeNetworkType,internetSpeed:homeInternetSpeed||null,mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete}
         }).select('id').single();
         if(saleError)throw saleError;
         if(!primarySaleId)primarySaleId=sale.id;
@@ -4365,8 +4541,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
       if(homeOrderDraft?.editing || homeDirectComplete) mutate(workingDay);
 
-      notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,payload:{employee_id:currentEmp.id,customer_name:customer,network_type:homeNetworkType,status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
-      setHomeOrderDraft(null); setEditingHomeSales([]); setHomeCustomerName(''); setHomeNetworkType('');
+      notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,payload:{employee_id:currentEmp.id,customer_name:customer,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
+      setHomeOrderDraft(null); setEditingHomeSales([]); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
     }catch(e){ alert(`홈 상품 등록 실패: ${friendlyError(e)}`); }
     finally{ setHomeOrderSaving(false); }
@@ -4555,7 +4731,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setHomeOrderDraft({unified:true,editing:true,label:'홈 판매건 수정'});
       setHomeCustomerName(sale.customers?.customer_name||'');
       setHomeNetworkType(orders[0]?.network_type||sale.source_meta?.networkType||'');
-      setHomeInternet(orders.some(o=>['homeOnly','homeTv'].includes(o.product_type)));
+      setHomeInternet(orders.some(o=>['homeOnly','homeTv','internet100','internet500','internet1g'].includes(o.product_type)));
+      const meta0=(homeSales||[])[0]?.source_meta||sale.source_meta||{};
+      const speedFromOrders=orders.some(o=>o.product_type==='internet1g')?'1g':orders.some(o=>o.product_type==='internet500')?'500':orders.some(o=>o.product_type==='internet100')?'100':'';
+      setHomeInternetSpeed(meta0.internetSpeed||speedFromOrders||'');
+      const simulFromOrders=orders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':orders.some(o=>o.product_type==='simulMnp')?'mnp':orders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
+      setHomeMobileSimul(meta0.mobileSimul||simulFromOrders||'none');
       setHomeMainTv(orders.some(o=>o.product_type==='homeTv'));
       setHomeSubTv(orders.some(o=>['subSetTop','tvFree'].includes(o.product_type)));
       setHomeSubTvType(orders.some(o=>o.product_type==='tvFree')?'free':'normal');
@@ -5023,7 +5204,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </>
       )}
 
-      {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={extraCount} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={extraAmount} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
+      {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
 
       {mobileSaleDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
@@ -5230,7 +5411,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </button>
               {mobileSpotDirectOpen&&<div className="space-y-2 mt-2">
                 <input value={mobileSpotDirectTitle} onChange={e=>setMobileSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/>
-                <input value={mobileSpotDirectAmount} onChange={e=>setMobileSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
+                <input value={fmtInputNumber(mobileSpotDirectAmount)} onChange={e=>setMobileSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/>
                 <input value={mobileSpotDirectMemo} onChange={e=>setMobileSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/>
                 <div className="text-[10px] text-gray-400">관리자가 확인·수정 후 승인하면 반영돼요.</div>
               </div>}
@@ -5246,13 +5427,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     className="border rounded-lg px-2 py-2 text-xs bg-white">
                     <option>케이스</option><option>오퍼</option><option>판촉</option><option>기타</option>
                   </select>
-                  <input inputMode="numeric" value={mobileExpenseAmount}
+                  <input inputMode="numeric" value={fmtInputNumber(mobileExpenseAmount)}
                     onChange={e=>setMobileExpenseAmount(e.target.value.replace(/\D/g,''))}
                     placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/>
                 </div>
                 <input value={mobileExpenseMemo} onChange={e=>setMobileExpenseMemo(e.target.value)}
                   placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>
-                {mobileExtraExpenses.map((x,i)=><div key={i} className="mt-2 border-t pt-2"><div className="grid grid-cols-2 gap-2"><select value={x.category} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,category:e.target.value}:v))} className="border rounded px-2 py-2 text-xs"><option>오퍼</option><option>케이스</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select><input value={x.amount} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,amount:e.target.value.replace(/\D/g,'')}:v))} placeholder="금액" className="border rounded px-2 py-2 text-xs"/></div><input value={x.memo} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,memo:e.target.value}:v))} placeholder="메모" className="mt-1 w-full border rounded px-2 py-2 text-xs"/><button type="button" onClick={()=>setMobileExtraExpenses(a=>a.filter((_,j)=>j!==i))} className="mt-1 text-[10px] text-red-400">이 비용 삭제</button></div>)}
+                {mobileExtraExpenses.map((x,i)=><div key={i} className="mt-2 border-t pt-2"><div className="grid grid-cols-2 gap-2"><select value={x.category} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,category:e.target.value}:v))} className="border rounded px-2 py-2 text-xs"><option>오퍼</option><option>케이스</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select><input value={fmtInputNumber(x.amount)} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,amount:e.target.value.replace(/\D/g,'')}:v))} placeholder="금액" className="border rounded px-2 py-2 text-xs"/></div><input value={x.memo} onChange={e=>setMobileExtraExpenses(a=>a.map((v,j)=>j===i?{...v,memo:e.target.value}:v))} placeholder="메모" className="mt-1 w-full border rounded px-2 py-2 text-xs"/><button type="button" onClick={()=>setMobileExtraExpenses(a=>a.filter((_,j)=>j!==i))} className="mt-1 text-[10px] text-red-400">이 비용 삭제</button></div>)}
                 <button type="button" onClick={()=>setMobileExtraExpenses(a=>[...a,{category:'고객 사은품',amount:'',memo:''}])} className="mt-2 text-xs font-semibold text-emerald-700">+ 영업비용 추가</button>
                 <div className="text-[10px] text-gray-400 mt-1">고객명과 판매일은 자동으로 연결돼요.</div>
               </div>
@@ -5318,17 +5499,26 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">3. 판매 상품 <span className="font-normal text-gray-400">· 필요한 것만 선택</span></div>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet)setHomeMainTv(false)}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
+                <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
                 <button type="button" onClick={()=>{if(!homeInternet)return alert('TV(주)는 인터넷과 함께 선택해주세요.');setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
                 <button type="button" onClick={()=>setHomeSubTv(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSubTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSubTv?'✓ ':''}TV(부)</button>
                 <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSmartHome?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
+              {homeInternet&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
               {homeSubTv&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='free'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>프리 부셋탑</button></div>}
               <div className="text-[10px] text-gray-400 mt-2">TV프리(부)와 스마트홈은 인터넷 없이 단독으로도 선택할 수 있어요.</div>
             </div>
 
+            <div className="mt-4 rounded-xl border border-gray-100 p-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">4. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
+              <div className="grid grid-cols-1 gap-2">
+                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return alert('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.');setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
+              </div>
+              {homeMobileSimul==='usedMnp'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">✓ 중고 MNP 85군↑ 선약 동시판매 · 가정망에서만 적용</div>}
+            </div>
+
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
-              설치 예정일 <span className="text-gray-400 font-normal">(미정 가능)</span>
+              5. 설치 예정일 <span className="text-gray-400 font-normal">(미정 가능)</span>
             </label>
             <input type="date" value={homePlannedDate} onChange={(e)=>setHomePlannedDate(e.target.value)}
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" />
@@ -5349,9 +5539,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 홈 스팟 추가 인센티브</div>
               {homeSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setHomeSpotPolicyId(p.id);setHomeSpotDirectOpen(false)}} className={`w-full mb-1 text-left px-3 py-2 rounded-lg text-xs border ${homeSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}><b>{homeSpotPolicyId===p.id?'✓ ':''}{p.title}</b><span className="float-right">+{won(p.amount)}</span></button>)}
               <button type="button" onClick={()=>{setHomeSpotPolicyId('');setHomeSpotDirectOpen(v=>!v)}} className="w-full mt-1 px-3 py-2 rounded-lg text-left text-xs font-bold bg-orange-100/70 text-orange-700">+ 스팟 직접 입력</button>
-              {homeSpotDirectOpen&&<div className="space-y-2 mt-2"><input value={homeSpotDirectTitle} onChange={e=>setHomeSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectAmount} onChange={e=>setHomeSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectMemo} onChange={e=>setHomeSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/></div>}
+              {homeSpotDirectOpen&&<div className="space-y-2 mt-2"><input value={homeSpotDirectTitle} onChange={e=>setHomeSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={fmtInputNumber(homeSpotDirectAmount)} onChange={e=>setHomeSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectMemo} onChange={e=>setHomeSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/></div>}
             </div>
-            {homeExpenseOpen&&<div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">💳 오퍼/영업비용</div><div className="grid grid-cols-2 gap-2"><select value={homeExpenseCategory} onChange={e=>setHomeExpenseCategory(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white"><option>오퍼</option><option>케이스</option><option>판촉</option><option>기타</option></select><input inputMode="numeric" value={homeExpenseAmount} onChange={e=>setHomeExpenseAmount(e.target.value.replace(/\D/g,''))} placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/></div><input value={homeExpenseMemo} onChange={e=>setHomeExpenseMemo(e.target.value)} placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>{homeExtraExpenses.map((x,i)=><div key={i} className="mt-2 border-t pt-2"><div className="grid grid-cols-2 gap-2"><select value={x.category} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,category:e.target.value}:v))} className="border rounded px-2 py-2 text-xs"><option>오퍼</option><option>케이스</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select><input value={x.amount} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,amount:e.target.value.replace(/\D/g,'')}:v))} placeholder="금액" className="border rounded px-2 py-2 text-xs"/></div><input value={x.memo} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,memo:e.target.value}:v))} placeholder="메모" className="mt-1 w-full border rounded px-2 py-2 text-xs"/><button type="button" onClick={()=>setHomeExtraExpenses(a=>a.filter((_,j)=>j!==i))} className="mt-1 text-[10px] text-red-400">이 비용 삭제</button></div>)}<button type="button" onClick={()=>setHomeExtraExpenses(a=>[...a,{category:'고객 사은품',amount:'',memo:''}])} className="mt-2 text-xs font-semibold text-emerald-700">+ 영업비용 추가</button></div>}
+            {homeExpenseOpen&&<div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">💳 오퍼/영업비용</div><div className="grid grid-cols-2 gap-2"><select value={homeExpenseCategory} onChange={e=>setHomeExpenseCategory(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white"><option>오퍼</option><option>케이스</option><option>판촉</option><option>기타</option></select><input inputMode="numeric" value={fmtInputNumber(homeExpenseAmount)} onChange={e=>setHomeExpenseAmount(e.target.value.replace(/\D/g,''))} placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/></div><input value={homeExpenseMemo} onChange={e=>setHomeExpenseMemo(e.target.value)} placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>{homeExtraExpenses.map((x,i)=><div key={i} className="mt-2 border-t pt-2"><div className="grid grid-cols-2 gap-2"><select value={x.category} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,category:e.target.value}:v))} className="border rounded px-2 py-2 text-xs"><option>오퍼</option><option>케이스</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select><input value={fmtInputNumber(x.amount)} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,amount:e.target.value.replace(/\D/g,'')}:v))} placeholder="금액" className="border rounded px-2 py-2 text-xs"/></div><input value={x.memo} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,memo:e.target.value}:v))} placeholder="메모" className="mt-1 w-full border rounded px-2 py-2 text-xs"/><button type="button" onClick={()=>setHomeExtraExpenses(a=>a.filter((_,j)=>j!==i))} className="mt-1 text-[10px] text-red-400">이 비용 삭제</button></div>)}<button type="button" onClick={()=>setHomeExtraExpenses(a=>[...a,{category:'고객 사은품',amount:'',memo:''}])} className="mt-2 text-xs font-semibold text-emerald-700">+ 영업비용 추가</button></div>}
 
             <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
               <input
@@ -5761,13 +5951,13 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
           const achieved = current >= target;
 
           const currentLabel = def.unit === '원'
-            ? Math.round(current).toLocaleString()
+            ? fmtNum(Math.round(current))
             : def.unit === 'P'
               ? current.toFixed(1)
               : Math.round(current).toString();
 
           const targetLabel = def.unit === '원'
-            ? Math.round(target).toLocaleString()
+            ? fmtNum(Math.round(target))
             : def.unit === 'P'
               ? target.toFixed(1)
               : Math.round(target).toString();
@@ -5812,11 +6002,14 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
 }
 
 
-function MyMonthlyPerformanceCard({ draft, pay, personalGoals }) {
+function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month, config }) {
+  const simMnpTotal=(draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
+  const secondStandalone=(draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0);
+  const secondBundle=Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
   const metrics=[
     {key:'hs',label:'HS',unit:'count',value:hsCount(draft)},
-    {key:'simMnp',label:'SIM MNP',unit:'count',value:Object.values(draft?.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0)},
-    {key:'second',label:'2ND',unit:'count',value:Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)},
+    {key:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
+    {key:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
     {key:'productivity',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
     {key:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
     {key:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
@@ -5825,6 +6018,7 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals }) {
     {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',value:Number(draft?.tailoredAmount||0)},
     {key:'tailoredCount',label:'업셀건',unit:'count',value:Number(draft?.tailoredCount||0)},
   ];
+  const [detailMetric,setDetailMetric]=useState(null);
 
   const goalFor=(m)=>{
     const aliases={
@@ -5838,30 +6032,96 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals }) {
   const renderValue=(m)=>{
     if(m.unit==='won') return won(m.value);
     if(m.unit==='point') return `${Number(m.value||0).toFixed(1)}P`;
-    return `${Math.round(Number(m.value||0))}건`;
+    return `${fmtCount(m.value)}건`;
   };
 
-  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-    <div className="px-4 py-3 border-b border-gray-50">
-      <div className="text-xs text-gray-400">📊 나의 이번 달 실적</div>
-      <div className="text-sm font-bold text-gray-900 mt-0.5">당월 누적 실적</div>
+  const detailRows=useMemo(()=>{
+    if(!detailMetric)return [];
+    const out=[];
+    const days=Object.entries(dailyDays||{}).sort(([a],[b])=>Number(a)-Number(b));
+    const add=(day,label,value,unit='count',sub='')=>{
+      const n=Number(value||0); if(!n)return;
+      out.push({day,label,value:n,unit,sub});
+    };
+    days.forEach(([dd,raw])=>{
+      const d=normalizeDay(raw);
+      if(detailMetric.key==='hs'){
+        [0,1,2,3,4].forEach(ri=>{
+          (d.matrix?.[ri]||[]).forEach((cnt,ci)=>{
+            if(!cnt)return;
+            const rd=MATRIX_ROW_DEFS[ri];
+            add(dd,rd?.dailyLabel||rd?.label||'모바일',cnt,'count',rd?.hasTiers?(MATRIX_COLS[ci]||''):'');
+          });
+        });
+      } else if(detailMetric.key==='simMnp'){
+        (d.matrix?.[5]||[]).forEach((cnt,ci)=>{ if(cnt)add(dd,'SIM MNP',cnt,'count',MATRIX_COLS[ci]||''); });
+      } else if(detailMetric.key==='second'){
+        const standalone=(d.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0); add(dd,'2ND단독',standalone);
+        Object.entries(d.groups?.bundle2nd||{}).forEach(([k,cnt])=>{
+          const item=(config?.bundle2nd||DEFAULT_BUNDLE2ND).find(x=>x.key===k); add(dd,item?.label||k,cnt);
+        });
+      } else if(detailMetric.key==='productivity'){
+        const one=applyDailyToDraft(emptyDraft(),{[dd]:d},month,config?.categoryMap,config?.gibyeonColumnMap);
+        (config?.kpiItems||DEFAULT_KPI_ITEMS).forEach(item=>{
+          const cnt=Number(one.kpi?.[item.key]||0); if(cnt)add(dd,item.label,cnt*Number(item.point||0),'point',`${fmtCount(cnt)}건 × ${fmtNum(Number(item.point||0),1)}P`);
+        });
+      } else if(detailMetric.key==='home'){
+        const hb=d.groups?.homeBase||{}; add(dd,'홈 단독',hb.homeOnly); add(dd,'홈+TV',hb.homeTv);
+      } else if(detailMetric.key==='tvFree') add(dd,'TV프리(부)',d.groups?.homeFlat?.tvFree);
+      else if(detailMetric.key==='smartHome') add(dd,'스마트홈',d.groups?.homeFlat?.smartHome);
+      else if(detailMetric.key==='sono'){
+        Object.entries(d.groups?.sono||{}).forEach(([k,cnt])=>{const item=(config?.sono||DEFAULT_SONO).find(x=>x.key===k);add(dd,item?.label||k,cnt);});
+      } else if(detailMetric.key==='tailoredAmount') add(dd,'맞춤제안 매출액',d.tailoredAmount,'won');
+      else if(detailMetric.key==='tailoredCount') add(dd,'맞춤제안 업셀',d.tailoredCount);
+    });
+    return out;
+  },[detailMetric,dailyDays,month,config]);
+
+  const detailTotal=detailRows.reduce((s,r)=>s+Number(r.value||0),0);
+  const detailValue=(r)=>r.unit==='won'?won(r.value):r.unit==='point'?`${fmtNum(Number(r.value),1)}P`:`${fmtCount(r.value)}건`;
+
+  return <>
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-50">
+        <div className="text-xs text-gray-400">📊 나의 이번 달 실적</div>
+        <div className="text-sm font-bold text-gray-900 mt-0.5">당월 누적 실적</div>
+        <div className="text-[10px] text-gray-400 mt-1">숫자를 누르면 날짜별 반영 내역을 확인할 수 있어요.</div>
+      </div>
+      <div className="p-3 space-y-2">
+        {[metrics.slice(0,4),metrics.slice(4,8),metrics.slice(8,10)].map((row,ri)=>(
+          <div key={ri} className={`grid gap-2 ${ri<2?'grid-cols-4':'grid-cols-2'}`}>
+            {row.map(m=>{
+              const goal=goalFor(m);
+              const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
+              return <button type="button" onClick={()=>setDetailMetric(m)} key={m.key} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center min-w-0 hover:bg-violet-50 active:scale-[0.98] transition">
+                <div className="text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{m.label}</div>
+                <div className={`font-bold text-gray-900 mt-1 whitespace-nowrap ${m.unit==='won'?'text-[13px]':'text-[15px]'}`}>{renderValue(m)}</div>
+                {goal>0&&<div className="text-[9px] text-violet-500 mt-1">목표 {pct}%</div>}
+              </button>
+            })}
+          </div>
+        ))}
+      </div>
     </div>
-    <div className="p-3 space-y-2">
-      {[metrics.slice(0,4),metrics.slice(4,8),metrics.slice(8,10)].map((row,ri)=>(
-        <div key={ri} className={`grid gap-2 ${ri<2?'grid-cols-4':'grid-cols-2'}`}>
-          {row.map(m=>{
-            const goal=goalFor(m);
-            const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
-            return <div key={m.key} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center min-w-0">
-              <div className="text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{m.label}</div>
-              <div className={`font-bold text-gray-900 mt-1 whitespace-nowrap ${m.unit==='won'?'text-[13px]':'text-[15px]'}`}>{renderValue(m)}</div>
-              {goal>0&&<div className="text-[9px] text-violet-500 mt-1">목표 {pct}%</div>}
-            </div>
-          })}
+    {detailMetric&&<div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4" onClick={()=>setDetailMetric(null)}>
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="px-5 py-4 border-b flex justify-between gap-3 items-start">
+          <div><div className="text-xs font-semibold text-violet-600">{monthLabel(month)} 실적 상세</div><div className="text-lg font-bold text-gray-900 mt-0.5">{detailMetric.label} · {renderValue(detailMetric)}</div></div>
+          <button onClick={()=>setDetailMetric(null)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 text-lg">×</button>
         </div>
-      ))}
-    </div>
-  </div>;
+        <div className="overflow-y-auto max-h-[62vh] divide-y divide-gray-50">
+          {detailRows.length===0?<div className="py-12 text-center text-sm text-gray-400">반영된 상세 내역이 없어요.</div>:detailRows.map((r,i)=><div key={`${r.day}-${r.label}-${i}`} className="px-5 py-3 flex justify-between gap-3">
+            <div className="min-w-0"><div className="text-sm font-semibold text-gray-800">{parseInt(r.day,10)}일 · {r.label}</div>{r.sub&&<div className="text-[11px] text-gray-400 mt-0.5">{r.sub}</div>}</div>
+            <div className="text-sm font-bold text-violet-700 shrink-0">{detailValue(r)}</div>
+          </div>)}
+        </div>
+        <div className="px-5 py-4 border-t bg-gray-50 flex justify-between items-center">
+          <span className="text-xs text-gray-500">상세 합계</span>
+          <span className="font-bold text-gray-900">{detailMetric.unit==='won'?won(detailTotal):detailMetric.unit==='point'?`${fmtNum(detailTotal,1)}P`:`${fmtCount(detailTotal)}건`}</span>
+        </div>
+      </div>
+    </div>}
+  </>;
 }
 
 function NextGoalCard({ pay, draft, config, onGoInput }) {
@@ -6432,7 +6692,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo }) {
   },[employees]);
   const total=counts.customer+counts.home+counts.spot+Number(pendingCount||0);
   return <div className="bg-white rounded-xl border border-violet-100 p-3">
-    <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${total}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
+    <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${fmtCount(total)}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
     {total>0&&<div className="grid grid-cols-2 gap-2 mt-3 text-xs">
       <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
@@ -6618,7 +6878,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
                     return <div key={key} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
                       <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
                       <div className="text-[15px] font-bold text-gray-900 mt-1 whitespace-nowrap">
-                        {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${value}건`}
+                        {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${fmtCount(value)}건`}
                       </div>
                     </div>
                   })}
@@ -6863,7 +7123,7 @@ function ComparisonView({ rows }) {
   const [groupBy, setGroupBy] = useState('employee'); // employee | branch
   const [metricKey, setMetricKey] = useState('hs');
   const metric = COMPARE_METRICS.find((m) => m.key === metricKey) || COMPARE_METRICS[0];
-  const fmt = (v) => (metric.unit === 'won' ? won(v) : metric.unit === 'point' ? `${(v || 0).toFixed(1)}P` : `${v}건`);
+  const fmt = (v) => (metric.unit === 'won' ? won(v) : metric.unit === 'point' ? `${fmtNum(v || 0,1)}P` : `${fmtCount(v)}건`);
 
   let data;
   if (groupBy === 'employee') {
@@ -7387,7 +7647,7 @@ function RatesManager({ config, persistConfig }) {
           {POSITIONS.map((p) => (
             <div key={p} className="flex items-center justify-between gap-2">
               <span className="text-sm text-gray-600">{p}</span>
-              <input type="number" value={draft.basePay[p]} onChange={(e) => setDraftCfg({ ...draft, basePay: { ...draft.basePay, [p]: parseInt(e.target.value || '0', 10) } })} className="w-28 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm" />
+              <input type="text" inputMode="numeric" value={fmtInputNumber(draft.basePay[p])} onChange={(e) => setDraftCfg({ ...draft, basePay: { ...draft.basePay, [p]: parseInt(e.target.value.replace(/\D/g,'') || '0', 10) } })} className="w-28 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm" />
             </div>
           ))}
         </div>
@@ -7399,7 +7659,7 @@ function RatesManager({ config, persistConfig }) {
           {POSITIONS.map((p) => (
             <div key={p} className="flex items-center justify-between gap-2">
               <span className="text-sm text-gray-600">{p}</span>
-              <input type="number" value={draft.positionAllowance?.[p] || 0} onChange={(e) => setDraftCfg({ ...draft, positionAllowance: { ...draft.positionAllowance, [p]: parseInt(e.target.value || '0', 10) } })} className="w-28 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm" />
+              <input type="text" inputMode="numeric" value={fmtInputNumber(draft.positionAllowance?.[p] || 0)} onChange={(e) => setDraftCfg({ ...draft, positionAllowance: { ...draft.positionAllowance, [p]: parseInt(e.target.value.replace(/\D/g,'') || '0', 10) } })} className="w-28 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm" />
             </div>
           ))}
         </div>
@@ -7463,7 +7723,7 @@ function RateTable({ title, group, data, updateFlatTable, field, labelKey, label
               {extraField && (
                 <input type="number" value={t[extraField]} onChange={(e) => updateFlatTable(group, i, extraField, parseFloat(e.target.value || '0'))} className="w-16 text-right border border-gray-200 rounded px-1.5 py-1 text-xs" title={extraField} />
               )}
-              <input type="number" value={t[field]} onChange={(e) => updateFlatTable(group, i, field, parseInt(e.target.value || '0', 10))} className="w-24 text-right border border-gray-200 rounded px-1.5 py-1 text-sm" />
+              <input type="text" inputMode="numeric" value={fmtInputNumber(t[field])} onChange={(e) => updateFlatTable(group, i, field, parseInt(e.target.value.replace(/\D/g,'') || '0', 10))} className="w-24 text-right border border-gray-200 rounded px-1.5 py-1 text-sm" />
               <span className="text-xs text-gray-400">원</span>
             </div>
           </div>
@@ -7477,7 +7737,7 @@ function StatCard({ label, value, icon: Icon, accent }) {
   return (
     <div className="bg-white rounded-xl border border-gray-100 p-4">
       <div className="flex items-center gap-1.5 text-gray-400 text-xs mb-1"><Icon size={13} /> {label}</div>
-      <div className={`text-xl font-bold ${accent ? 'text-amber-600' : 'text-gray-800'}`}>{value}</div>
+      <div className={`text-xl font-bold ${accent ? 'text-amber-600' : 'text-gray-800'}`}>{typeof value==='number'?fmtNum(value,1):value}</div>
     </div>
   );
 }
