@@ -45,7 +45,7 @@ const DEFAULT_GRADES = [
 ];
 const HOME_GATE_MIN = 3; // 홈 최소조건(성과 인정 게이트)
 const ADDON_GATE = 35;   // 모바일 P가 이 값 초과일 때만 홈 가점 반영
-// 홈 최소조건(3점) 전용 배점 — 성과P 안내표와는 별개 기준 (인터넷:1점, 프리:0.3점, 스홈:0.2점)
+// 홈 최소조건(3점) 전용 배점 — 성과등급P 안내표와는 별개 기준 (인터넷:1점, 프리:0.3점, 스홈:0.2점)
 const HOME_GATE_WEIGHTS = { homeOnly: 1, homeTv: 1, tvFree: 0.3, smartHome: 0.2 };
 
 const DEFAULT_MOBILE_POINT_ITEMS = [
@@ -150,20 +150,20 @@ const DEFAULT_MATRIX = [
   [5, 0, 0, 0, 0, 0],       // 2ND — 단일 단가 (건당 5만원)
 ].map((row) => row.map((v) => v * 10000));
 
-// 가입구분(매트릭스 행) → 성과포인트 항목 / KPI 항목 기본 매핑. 관리자 화면에서 수정 가능.
-// 기변A/B/C(isGibyeon) 행은 성과포인트만은 타겟(A/B/C) 상관없이 요금제군(열) 기준으로 통일 적용 — gibyeonColumnMap 참고. KPI는 타겟별로 그대로 유지.
+// 가입구분(매트릭스 행) → 성과등급P 항목 / KPI 항목 기본 매핑. 관리자 화면에서 수정 가능.
+// 기변A/B/C(isGibyeon) 행은 성과등급P만은 타겟(A/B/C) 상관없이 요금제군(열) 기준으로 통일 적용 — gibyeonColumnMap 참고. KPI는 타겟별로 그대로 유지.
 const DEFAULT_CATEGORY_MAP = [
   { mobilePointKey: 'new010', kpiKey: 'kpiNew010' },        // 일반모델 신규
   { mobilePointKey: 'mnp', kpiKey: 'kpiMnp' },               // 일반모델 MNP
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonA' },             // 일반모델 기변A (성과포인트는 열 기준)
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonB' },             // 일반모델 기변B (성과포인트는 열 기준)
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonC' },             // 일반모델 기변C (성과포인트는 열 기준)
+  { mobilePointKey: '', kpiKey: 'kpiGibyeonA' },             // 일반모델 기변A (성과등급P는 열 기준)
+  { mobilePointKey: '', kpiKey: 'kpiGibyeonB' },             // 일반모델 기변B (성과등급P는 열 기준)
+  { mobilePointKey: '', kpiKey: 'kpiGibyeonC' },             // 일반모델 기변C (성과등급P는 열 기준)
   { mobilePointKey: 'usedMnp', kpiKey: 'kpiSimMnp' },        // SIM MNP = 중고 MNP(선약가입건)
   { mobilePointKey: '', kpiKey: 'kpiUsedNew010' },           // 중고 신규(66군↑) — 인센티브 무관, KPI만 반영
   { mobilePointKey: 'secondOnly', kpiKey: 'kpiSecond' },     // 2ND
 ];
 
-// 기변 행(A/B/C 공통) 요금제군별 성과포인트 — 115군↑ 1P / 95~105군·청소년85군 0.7P / 85군 0.7P / 약자 0.5P / 61군이상·그외 0.3P
+// 기변 행(A/B/C 공통) 요금제군별 성과등급P — 115군↑ 1P / 95~105군·청소년85군 0.7P / 85군 0.7P / 약자 0.5P / 61군이상·그외 0.3P
 const DEFAULT_GIBYEON_COLUMN_MAP = ['gibyeon115', 'gibyeon85', 'gibyeon85', 'gibyeonLVC', 'gibyeonWeak', 'gibyeonLVC'];
 
 const DEFAULT_VAS = [
@@ -352,7 +352,7 @@ function groupTable(config, key) {
   return (config && config[key]) || [];
 }
 
-// 홈·부가 실적 → KPI 생산성 항목 자동 반영 규칙
+// 홈·부가 실적 → 생산성 항목 자동 반영 규칙
 const HOME_KPI_MAP = [
   { kpiKey: 'kpiHome', sources: ['homeBase.homeOnly', 'homeBase.homeTv', 'homeFlat.home1GBOnly', 'homeFlat.home500Only', 'homeFlat.home100Only'] },
   { kpiKey: 'kpiTv', sources: ['homeBase.homeTv'] },
@@ -417,7 +417,7 @@ function aggregateDaily(daysMap, monthKey) {
   return agg;
 }
 
-// 합산된 일일입력을 성과포인트/KPI/각 건수 그룹에 자동 반영해 draft를 보강
+// 합산된 일일입력을 성과등급P/KPI/각 건수 그룹에 자동 반영해 draft를 보강
 function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColumnMap) {
   const agg = aggregateDaily(dailyDaysMap, month);
   const aggMatrix = agg.matrix;
@@ -442,7 +442,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     const map = categoryMap?.[ri];
     if (!map) return;
     if (MATRIX_ROW_DEFS[ri]?.isGibyeon) {
-      // 기변A/B/C 공통: 타겟과 무관하게 요금제군(열) 기준으로 성과포인트 배분
+      // 기변A/B/C 공통: 타겟과 무관하게 요금제군(열) 기준으로 성과등급P 배분
       row.forEach((cnt, ci) => {
         const key = colMap[ci];
         if (key) autoMobilePoint[key] = (autoMobilePoint[key] || 0) + (cnt || 0);
@@ -492,7 +492,7 @@ function computePay(draft, position, hireDate, month, config) {
   const tenurePay = Math.min((bucket.rate || 0) * activityCount, config.tenureCap);
 
   const mobilePoints = sumPoint(draft.mobilePoint, mobileItems);
-  // 총 포인트 합산에 더해지는 홈 가점 (성과P 안내표 기준: 홈단독1P, 홈+TV2P, TV프리0.5P, 스마트홈0.5P)
+  // 총 포인트 합산에 더해지는 홈 가점 (성과등급P 안내표 기준: 홈단독1P, 홈+TV2P, TV프리0.5P, 스마트홈0.5P)
   const homeAddonPoints = sumPoint(draft.homeBase, HOME_BASE_ITEMS)
     + (draft.homeFlat.tvFree || 0) * 0.5 + (draft.homeFlat.smartHome || 0) * 0.5;
   // 홈 최소조건 3점 게이트 전용 점수 (인터넷1점/프리0.3점/스홈0.2점 기준 — 별도 배점)
@@ -515,7 +515,7 @@ function computePay(draft, position, hireDate, month, config) {
     : 1;
 
   const matrixTotal = draft.matrix.reduce((s, row, ri) => s + row.reduce((rs, cnt, ci) => rs + cnt * (config.matrix[ri]?.[ci] || 0), 0), 0);
-  // v21.19 특판·지인판매: 실적/KPI/성과P는 인정하되 요금제·VAS 수수료는 제외하고 대체 인센티브를 반영
+  // v21.19 특판·지인판매: 실적/KPI/성과등급P는 인정하되 요금제·VAS 수수료는 제외하고 대체 인센티브를 반영
   const specialMatrixOffset = Number(draft.specialMatrixOffset || 0);
   const specialVasOffset = Number(draft.specialVasOffset || 0);
   const specialReplacementPay = Number(draft.specialReplacementPay || 0);
@@ -685,6 +685,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
   });
 }
 
+/* v21.28: 직원 홈 정리 - 전월대비 금액/%, 실제 승인상태, 급여상세 제거, 월누적 카테고리 랭킹, 용어 통일. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1373,7 +1374,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config);
   // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
-  // '기타' 직급(대리입력용 매장 실적 계정)은 건수·성과포인트는 유지하되 인센티브 금액은 0으로 표시(개인 지급 없음)
+  // '기타' 직급(대리입력용 매장 실적 계정)은 건수·성과등급P는 유지하되 인센티브 금액은 0으로 표시(개인 지급 없음)
   const salesRows = rows
     .filter((r) => !NON_SALES_STORES.includes(r.branch))
     .map((r) => (r.position === '기타' ? { ...r, pay: { ...r.pay, total: 0, guaranteedComponent: 0 } } : r));
@@ -1497,35 +1498,67 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* v21.27 직원 홈 재구성: 홈-개인 / 홈-매장, 월 누적 성과 랭킹 */
 
-function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='월 누적 성과 랭킹' }) {
+const MONTHLY_RANK_METRICS = [
+  { key:'hs', label:'HS', unit:'건', value:(r)=>hsCount(r.draft) },
+  { key:'home', label:'홈', unit:'건', value:(r)=>Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0) },
+  { key:'free', label:'프리', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.tvFree||0) },
+  { key:'smart', label:'스홈', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.smartHome||0) },
+  { key:'productivity', label:'생산성', unit:'P', value:(r)=>Number(r.pay?.kpiScore||0) },
+  { key:'upsell', label:'맞춤제안 업셀건', unit:'건', value:(r)=>Number(r.draft?.tailoredCount||0) },
+];
+
+function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='월 누적 순위' }) {
+  const [metricKey,setMetricKey]=useState('hs');
+  const metric=MONTHLY_RANK_METRICS.find(m=>m.key===metricKey)||MONTHLY_RANK_METRICS[0];
   const ranked=useMemo(()=>[...(rows||[])]
     .filter(r=>!NON_SALES_STORES.includes(r.branch))
     .filter(r=>!branchOnly || r.branch===branchOnly)
-    .sort((a,b)=>Number(b.pay?.totalPoints||0)-Number(a.pay?.totalPoints||0) || a.name.localeCompare(b.name)),
-    [rows,branchOnly]);
+    .sort((a,b)=>Number(metric.value(b)||0)-Number(metric.value(a)||0) || a.name.localeCompare(b.name)),
+    [rows,branchOnly,metricKey]);
+
   if(!ranked.length)return null;
   const top3=ranked.slice(0,3);
   const myIndex=ranked.findIndex(r=>r.id===userId);
   const me=myIndex>=0?ranked[myIndex]:null;
+  const fmt=(v)=>metric.unit==='P'?`${fmtNum(Number(v||0),1)}P`:`${fmtCount(v)}건`;
+
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <div className="px-4 py-3 border-b border-gray-50">
-      <div className="text-[11px] text-gray-400">{branchOnly?displayStoreName(branchOnly):'전체 직원'}</div>
-      <div className="text-sm font-bold text-gray-900">{title}</div>
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <div className="text-[11px] text-gray-400">{branchOnly?displayStoreName(branchOnly):'전체 직원'}</div>
+          <div className="text-sm font-bold text-gray-900">{title}</div>
+        </div>
+        <div className="text-[10px] text-gray-400">월 누적 기준</div>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto mt-3 pb-0.5">
+        {MONTHLY_RANK_METRICS.map(m=><button key={m.key} type="button" onClick={()=>setMetricKey(m.key)}
+          className={`shrink-0 px-2.5 py-1.5 rounded-full border text-[10px] font-semibold ${metricKey===m.key?'bg-violet-600 border-violet-600 text-white':'bg-white border-gray-200 text-gray-500'}`}>
+          {m.label}
+        </button>)}
+      </div>
     </div>
+
     <div className="divide-y divide-gray-50">
       {top3.map((r,i)=><div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${i===0?'bg-amber-100 text-amber-700':i===1?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{i+1}</span>
-          <div className="min-w-0"><div className="text-xs font-semibold text-gray-800 truncate">{r.name}</div>{!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}</div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-gray-800 truncate">{r.name}</div>
+            {!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}
+          </div>
         </div>
-        <div className="text-xs font-bold text-gray-800">{fmtNum(Number(r.pay?.totalPoints||0),1)}P</div>
+        <div className="text-xs font-bold text-gray-800">{fmt(metric.value(r))}</div>
       </div>)}
     </div>
+
     {me&&myIndex>=3&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
       <span className="text-xs font-semibold text-violet-700">나 · {fmtCount(myIndex+1)}위</span>
-      <span className="text-xs font-bold text-violet-700">{fmtNum(Number(me.pay?.totalPoints||0),1)}P</span>
+      <span className="text-xs font-bold text-violet-700">{fmt(metric.value(me))}</span>
     </div>}
-    {me&&myIndex<3&&<div className="px-4 py-2 bg-violet-50/60 text-[10px] text-violet-600 font-semibold">내 순위 · {fmtCount(myIndex+1)}위</div>}
+    {me&&myIndex<3&&<div className="px-4 py-2 bg-violet-50/60 text-[10px] text-violet-600 font-semibold">
+      내 순위 · {fmtCount(myIndex+1)}위
+    </div>}
   </div>;
 }
 
@@ -1565,7 +1598,7 @@ function StoreHomeOverview({ rows, branch, month, userId }) {
         </div>;
       })}</div>
     </div>}
-    <MonthlyPerformanceRankingCard rows={members} userId={userId} branchOnly={branch} title="매장 월 누적 성과 순위" />
+    <MonthlyPerformanceRankingCard rows={members} userId={userId} branchOnly={branch} title="매장 월 누적 순위" />
   </div>;
 }
 
@@ -3993,6 +4026,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [showNet,setShowNet]=useState(false);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
+  const [homeApprovalPending,setHomeApprovalPending]=useState(0);
+  const [homeTodayInputCount,setHomeTodayInputCount]=useState(0);
   useEffect(() => {
     if (!authUser?.id) return;
     (async () => {
@@ -4012,6 +4047,40 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       }
     })();
   }, [authUser?.id, month]);
+
+  // v21.28: '승인 대기'는 실제 승인 대상(스팟/특판 예외금액)이 있을 때만 표시
+  useEffect(()=>{
+    if(!authUser?.id)return;
+    let alive=true;
+    (async()=>{
+      try{
+        const [y,m]=month.split('-').map(Number);
+        const next=new Date(y,m,1);
+        const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+        const now=new Date();
+        const todayKey=monthKeyOf(now);
+        const todayDate=`${todayKey}-${String(now.getDate()).padStart(2,'0')}`;
+
+        const [spotRes,saleRes,todayRes]=await Promise.all([
+          supabase.from('spot_claims').select('id').eq('user_id',authUser.id).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
+          supabase.from('customer_sales').select('id,source_meta').eq('user_id',authUser.id).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
+          todayKey===month
+            ? supabase.from('customer_sales').select('id').eq('user_id',authUser.id).eq('sale_date',todayDate)
+            : Promise.resolve({data:[],error:null})
+        ]);
+
+        const specialPending=(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').length;
+        if(alive){
+          setHomeApprovalPending((spotRes.data||[]).length+specialPending);
+          setHomeTodayInputCount((todayRes.data||[]).length);
+        }
+      }catch(e){
+        if(alive){setHomeApprovalPending(0);setHomeTodayInputCount(0);}
+      }
+    })();
+    return()=>{alive=false};
+  },[authUser?.id,month,dailyDays]);
+
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -4040,6 +4109,23 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       return ((dailyAgg.groups[gk] || {})[k] || 0) > 0;
     })).map((m) => m.kpiKey),
   ]), [config.categoryMap, dailyAgg]);
+
+  const nowForHome=new Date();
+  const isCurrentHomeMonth=monthKeyOf(nowForHome)===month;
+  const todayHomeKey=String(nowForHome.getDate()).padStart(2,'0');
+  const todayHasInput=isCurrentHomeMonth && (homeTodayInputCount>0 || dayHasData(dailyDays?.[todayHomeKey]));
+  const homeInputStatus=homeApprovalPending>0
+    ? {label:`승인 대기 ${fmtCount(homeApprovalPending)}건`, cls:'bg-amber-400/20 text-amber-50 border-amber-200/30'}
+    : isCurrentHomeMonth
+      ? (todayHasInput
+          ? {label:'입력 완료', cls:'bg-emerald-400/20 text-emerald-50 border-emerald-200/30'}
+          : {label:'오늘 실적 미입력', cls:'bg-white/10 text-violet-100 border-white/15'})
+      : {label:dayHasData(dailyDays?.[todayHomeKey])?'입력 완료':'입력 없음', cls:'bg-white/10 text-violet-100 border-white/15'};
+
+  const currentPayForCompare=Number(pay.total||0);
+  const prevPayForCompare=Number(prevMonthTotal||0);
+  const prevDiff=prevMonthTotal===null?null:currentPayForCompare-prevPayForCompare;
+  const prevPct=(prevMonthTotal===null || prevPayForCompare===0)?null:(prevDiff/prevPayForCompare)*100;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
@@ -4070,27 +4156,43 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
-              <div className="text-[11px] text-violet-100">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-[11px] text-violet-100">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
+                <div className="text-right shrink-0">
+                  {prevMonthTotal===null ? (
+                    <div className="text-[9px] text-violet-100/70">전월 비교 없음</div>
+                  ) : (
+                    <>
+                      <div className={`text-[10px] font-semibold ${prevDiff>0?'text-emerald-200':prevDiff<0?'text-rose-200':'text-violet-100'}`}>
+                        전월 대비 {prevDiff>0?'+':''}{won(prevDiff)}
+                      </div>
+                      <div className="text-[9px] text-violet-100/70 mt-0.5">
+                        {prevPct===null?'비교 불가':`${prevPct>0?'+':''}${fmtNum(prevPct,1)}%`}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
               <div className="text-2xl font-bold mt-0.5">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
               <div className="mt-1 text-[9px] leading-relaxed text-violet-100/80">현재 실적 기준 가계산 금액이며 최종 정산 조건에 따라 실제 지급액이 달라질 수 있어요.</div>
               <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/15">
                 <div><div className="text-[9px] text-violet-100/75">근속</div><div className="text-[11px] font-bold mt-0.5">{fmtCount(pay.months)}개월</div></div>
                 <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay.gradeEligible?pay.grade:'D(미달)'}</div></div>
-                <div><div className="text-[9px] text-violet-100/75">성과P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.totalPoints,1)}P</div></div>
-                <div><div className="text-[9px] text-violet-100/75">KPI</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.kpiScore,1)}P</div></div>
+                <div><div className="text-[9px] text-violet-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.totalPoints,1)}P</div></div>
+                <div><div className="text-[9px] text-violet-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.kpiScore,1)}P</div></div>
               </div>
               <div className="mt-2 flex items-center justify-between gap-2">
                 <button onClick={()=>setShowNet(v=>!v)} className="text-[10px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
                   {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감`}
                 </button>
-                <div className="flex items-center gap-1.5"><StatusBadge status={status} />{prevMonthTotal!==null&&<GrowthBadge current={pay.total} prev={prevMonthTotal} />}</div>
+                <div className={`text-[9px] font-semibold px-2 py-1 rounded-full border ${homeInputStatus.cls}`}>{homeInputStatus.label}</div>
               </div>
             </div>
 
             {showPersonalGoal&&<MonthlyGoalCard month={month} mergedDraft={mergedDraft} pay={pay} goals={personalGoals} onSave={savePersonalGoals} saving={goalSaving} />}
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} />
             <NextGoalCard pay={pay} draft={mergedDraft} config={config} onGoInput={()=>setTab('daily')} />
-            <MonthlyPerformanceRankingCard rows={competitionRows} userId={authUser?.id} title={`${monthLabel(month)} 누적 성과 TOP 3`} />
+            <MonthlyPerformanceRankingCard rows={competitionRows} userId={authUser?.id} title={`${monthLabel(month)} 월 누적 순위`} />
 
             <button onClick={()=>setHomeDetailOpen(v=>!v)} className="w-full bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between text-sm font-semibold text-gray-700">
               <span>개인 상세 보기</span><span className="text-violet-600 text-xs">{homeDetailOpen?'접기':'펼쳐보기'}</span>
@@ -4100,23 +4202,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} allDailyRecords={allDailyRecords} config={config} userId={authUser?.id} />
               <HomeGateCard pay={pay} config={config} onGoInput={()=>setTab('daily')} />
               <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
-              <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-                <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
-                <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
-                <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
-                <RowKV label="홈 상품 수수료" value={won(pay.homeGradePay + (pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay) + pay.homeAddonPay + pay.renewPay)} />
-                <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
-                <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
-                <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
-                <RowKV label="2ND 번들 수수료" value={won(pay.bundle2ndTotal)} />
-                {Number(pay.bundleFreeOffset||0)>0&&<RowKV label="└ 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
-                <RowKV label="VAS 유치 수수료" value={won(pay.vasPay)} />
-                {Number(pay.bundleFreeVasOffset||0)>0&&<RowKV label="└ 2ND 무료판매 VAS 제외" value={`-${won(pay.bundleFreeVasOffset)}`} />}
-                <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
-                <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
-                <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
-                <RowKV label="맞춤제안 수수료" value={won(pay.tailoredBonus + pay.tailoredAmountBonus)} />
-              </div>
             </div>}
           </> : <>
             <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={authUser?.id} />
@@ -4208,7 +4293,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
             <RowKV label="맞춤제안 업셀 건수 수수료" value={won(pay.tailoredBonus)} />
             <RowKV label="맞춤제안 업셀금액 (100%)" value={won(pay.tailoredAmountBonus)} />
-            <RowKV label="KPI 생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
+            <RowKV label="생산성 점수" value={`${pay.kpiScore.toFixed(1)}P`} />
             <RowKV label="총 인센티브" value={won(pay.total)} bold />
           </div>
           <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
@@ -5359,7 +5444,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       {mobileSpecialPolicyId&&(
                         <div className="mt-2">
                           <div className="text-[10px] text-amber-700 leading-relaxed">
-                            실적·KPI·성과P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.
+                            실적·KPI·성과등급P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.
                           </div>
                           <input inputMode="numeric" value={fmtInputNumber(mobileSpecialExceptionAmount)}
                             onChange={e=>setMobileSpecialExceptionAmount(e.target.value.replace(/\D/g,''))}
@@ -5955,8 +6040,8 @@ const PERSONAL_GOAL_DEFS = [
   { key: 'smartHome', label: '스마트홈', unit: '건', defaultTarget: 5 },
   { key: 'tailoredAmount', label: '맞춤제안 업셀 금액', unit: '원', defaultTarget: 1000000 },
   { key: 'tailored', label: '맞춤제안 업셀 건수', unit: '건', defaultTarget: 15 },
-  { key: 'points', label: '성과포인트', unit: 'P', defaultTarget: 35 },
-  { key: 'kpi', label: 'KPI 생산성', unit: 'P', defaultTarget: 35 },
+  { key: 'points', label: '성과등급P', unit: 'P', defaultTarget: 35 },
+  { key: 'kpi', label: '생산성', unit: 'P', defaultTarget: 35 },
   { key: 'incentive', label: '인센티브', unit: '원', defaultTarget: 1500000 },
 ];
 
@@ -6376,7 +6461,7 @@ function GradeProgress({ pay, config, dailyDays, month }) {
     <div className="bg-white rounded-xl border border-gray-100 p-4">
       <div className="flex items-end justify-between mb-3">
         <div>
-          <div className="text-xs text-gray-400">이번 달 성과 포인트</div>
+          <div className="text-xs text-gray-400">이번 달 성과등급P</div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-2xl font-bold text-gray-900 tabular-nums">{pay.totalPoints.toFixed(1)}</span>
             <span className="text-sm text-gray-400">P</span>
@@ -7616,7 +7701,7 @@ function KpiItemsEditor({ items, onChange }) {
   };
 
   return (
-    <Section title="개인 KPI 생산성 항목 관리" sub={`${items.length}개 항목`}>
+    <Section title="개인 생산성 항목 관리" sub={`${items.length}개 항목`}>
       <div className="px-4 pt-3 pb-1 text-[11px] text-gray-400">인센티브 금액에는 반영되지 않는 참고용 생산성 점수예요. 항목을 직접 추가·삭제·수정할 수 있어요.</div>
       <div className="divide-y divide-gray-50">
         {items.map((it, idx) => (
@@ -7648,17 +7733,17 @@ function CategoryMapEditor({ map, mobilePointItems, kpiItems, onChange }) {
     onChange(next);
   };
   return (
-    <Section title="가입구분 ↔ 성과포인트 / KPI 매핑" sub="일일입력 자동 연결 기준" defaultOpen>
-      <div className="px-4 pt-3 pb-1 text-[11px] text-gray-400">직원이 일일입력 탭에서 이 가입구분에 건수를 넣으면, 아래 지정한 성과포인트 항목과 KPI 항목에 그 건수가 자동으로 더해져요. 기변A/B/C는 타겟 상관없이 요금제군 기준으로 성과포인트가 배분되므로 아래 "기변 요금제군별 매핑" 표를 따로 사용해요.</div>
+    <Section title="가입구분 ↔ 성과등급P / KPI 매핑" sub="일일입력 자동 연결 기준" defaultOpen>
+      <div className="px-4 pt-3 pb-1 text-[11px] text-gray-400">직원이 일일입력 탭에서 이 가입구분에 건수를 넣으면, 아래 지정한 성과등급P 항목과 KPI 항목에 그 건수가 자동으로 더해져요. 기변A/B/C는 타겟 상관없이 요금제군 기준으로 성과등급P가 배분되므로 아래 "기변 요금제군별 매핑" 표를 따로 사용해요.</div>
       <div className="divide-y divide-gray-50">
         {MATRIX_ROW_DEFS.map((rowDef, idx) => (
           <div key={rowDef.label} className="flex items-center gap-2 px-4 py-2.5 flex-wrap">
             <span className="text-sm text-gray-700 min-w-[110px]">{rowDef.label}</span>
             {rowDef.isGibyeon ? (
-              <span className="text-xs text-gray-400 flex-1 min-w-[130px]">성과포인트: 요금제군별 매핑 사용</span>
+              <span className="text-xs text-gray-400 flex-1 min-w-[130px]">성과등급P: 요금제군별 매핑 사용</span>
             ) : (
               <select value={map[idx]?.mobilePointKey || ''} onChange={(e) => update(idx, 'mobilePointKey', e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 flex-1 min-w-[130px]">
-                <option value="">성과포인트 미연결</option>
+                <option value="">성과등급P 미연결</option>
                 {mobilePointItems.map((it) => <option key={it.key} value={it.key}>{it.label}</option>)}
               </select>
             )}
@@ -7676,8 +7761,8 @@ function CategoryMapEditor({ map, mobilePointItems, kpiItems, onChange }) {
 function GibyeonColumnMapEditor({ colMap, mobilePointItems, onChange }) {
   const update = (ci, value) => onChange(colMap.map((v, i) => (i === ci ? value : v)));
   return (
-    <Section title="기변 요금제군별 성과포인트 매핑" sub="기변A/B/C 공통 적용 (타겟 무관)">
-      <div className="px-4 pt-3 pb-1 text-[11px] text-gray-400">기변A/B/C 중 어느 행에 입력해도, 고른 요금제군에 따라 여기 지정한 성과포인트 항목으로 자동 배분돼요.</div>
+    <Section title="기변 요금제군별 성과등급P 매핑" sub="기변A/B/C 공통 적용 (타겟 무관)">
+      <div className="px-4 pt-3 pb-1 text-[11px] text-gray-400">기변A/B/C 중 어느 행에 입력해도, 고른 요금제군에 따라 여기 지정한 성과등급P 항목으로 자동 배분돼요.</div>
       <div className="divide-y divide-gray-50">
         {MATRIX_COLS.map((col, ci) => (
           <div key={col} className="flex items-center gap-2 px-4 py-2.5 flex-wrap">
