@@ -10,6 +10,7 @@ import { friendlyError } from './errorMessages';
 import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 
+/* v21.26: 2ND 번들별 일반/무료판매 구분. 무료판매는 실적/KPI 인정, 번들+해당 VAS 인센티브 제외. */
 /* ===================== 기본 정책 상수 (관리자가 수정 가능) ===================== */
 
 const POSITIONS = ['점장', '부점장', '매니저', '사원', '기타'];
@@ -344,7 +345,7 @@ const DAILY_GROUP_DEFS = [
   { key: 'mnpBundle', label: '중고MNP 결합', bucket: 'extra' },
 ];
 const DAILY_GROUP_KEYS = DAILY_GROUP_DEFS.map((g) => g.key);
-const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay'];
+const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset'];
 
 function groupTable(config, key) {
   if (key === 'homeBase') return HOME_BASE_ITEMS;
@@ -365,7 +366,7 @@ function emptyDay() {
   return {
     matrix: emptyDayMatrix(),
     groups: Object.fromEntries(DAILY_GROUP_KEYS.map((k) => [k, {}])),
-    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0,
+    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0,
     dayOff: false,
   };
 }
@@ -385,6 +386,8 @@ function normalizeDay(raw) {
     specialMatrixOffset: raw.specialMatrixOffset || 0,
     specialVasOffset: raw.specialVasOffset || 0,
     specialReplacementPay: raw.specialReplacementPay || 0,
+    bundleFreeOffset: raw.bundleFreeOffset || 0,
+    bundleFreeVasOffset: raw.bundleFreeVasOffset || 0,
     dayOff: !!raw.dayOff,
   };
 }
@@ -517,7 +520,11 @@ function computePay(draft, position, hireDate, month, config) {
   const specialVasOffset = Number(draft.specialVasOffset || 0);
   const specialReplacementPay = Number(draft.specialReplacementPay || 0);
   const adjustedMatrixTotal = Math.max(0, matrixTotal - specialMatrixOffset);
-  const bundle2ndTotal = sumFlat(draft.bundle2nd, config.bundle2nd);
+  // v21.26: 2ND 무료판매는 실적/KPI는 유지하고 번들·해당 VAS 인센티브만 제외
+  const rawBundle2ndTotal = sumFlat(draft.bundle2nd, config.bundle2nd);
+  const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
+  const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
+  const bundle2ndTotal = Math.max(0, rawBundle2ndTotal - bundleFreeOffset);
   // 홈 무성과 자동 판정 — 홈 관련 실적이 한 건도 없으면 요금제 유치·2ND 50% 감액
   const homeAnyCount = (draft.homeBase.homeOnly || 0) + (draft.homeBase.homeTv || 0)
     + (draft.homeFlat.home1GBOnly || 0) + (draft.homeFlat.home500Only || 0) + (draft.homeFlat.home100Only || 0)
@@ -555,7 +562,7 @@ function computePay(draft, position, hireDate, month, config) {
   const renewPay = sumFlat(draft.renew, config.renew);
   const rawVasPay = sumFlat(draft.vas, config.vas);
   // 특판·지인판매 건의 VAS 정상 수수료만 별도 상쇄합니다.
-  const vasPay = Math.max(0, rawVasPay - specialVasOffset);
+  const vasPay = Math.max(0, rawVasPay - specialVasOffset - bundleFreeVasOffset);
   const mnpBundlePay = sumFlat(draft.mnpBundle, config.mnpBundle);
   const sonoPay = sumFlat(draft.sono, config.sono);
   const custRegBonus = tierBonus(draft.custRegCount || 0, config.custRegTiers);
@@ -569,7 +576,7 @@ function computePay(draft, position, hireDate, month, config) {
     months, bucket, activityCount, tenurePay,
     mobilePoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
-    matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay, bundle2ndTotal, positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee, performanceComponents, performanceWithAllowance, guaranteedComponent,
+    matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay, rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal, positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee, performanceComponents, performanceWithAllowance, guaranteedComponent,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay, vasPay, mnpBundlePay, sonoPay,
     custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
@@ -1487,6 +1494,82 @@ export default function App({ authUser, authProfile, onSignOut }) {
 }
 
 /* ===================== 직원 화면 ===================== */
+
+/* v21.27 직원 홈 재구성: 홈-개인 / 홈-매장, 월 누적 성과 랭킹 */
+
+function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='월 누적 성과 랭킹' }) {
+  const ranked=useMemo(()=>[...(rows||[])]
+    .filter(r=>!NON_SALES_STORES.includes(r.branch))
+    .filter(r=>!branchOnly || r.branch===branchOnly)
+    .sort((a,b)=>Number(b.pay?.totalPoints||0)-Number(a.pay?.totalPoints||0) || a.name.localeCompare(b.name)),
+    [rows,branchOnly]);
+  if(!ranked.length)return null;
+  const top3=ranked.slice(0,3);
+  const myIndex=ranked.findIndex(r=>r.id===userId);
+  const me=myIndex>=0?ranked[myIndex]:null;
+  return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-50">
+      <div className="text-[11px] text-gray-400">{branchOnly?displayStoreName(branchOnly):'전체 직원'}</div>
+      <div className="text-sm font-bold text-gray-900">{title}</div>
+    </div>
+    <div className="divide-y divide-gray-50">
+      {top3.map((r,i)=><div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${i===0?'bg-amber-100 text-amber-700':i===1?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{i+1}</span>
+          <div className="min-w-0"><div className="text-xs font-semibold text-gray-800 truncate">{r.name}</div>{!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}</div>
+        </div>
+        <div className="text-xs font-bold text-gray-800">{fmtNum(Number(r.pay?.totalPoints||0),1)}P</div>
+      </div>)}
+    </div>
+    {me&&myIndex>=3&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
+      <span className="text-xs font-semibold text-violet-700">나 · {fmtCount(myIndex+1)}위</span>
+      <span className="text-xs font-bold text-violet-700">{fmtNum(Number(me.pay?.totalPoints||0),1)}P</span>
+    </div>}
+    {me&&myIndex<3&&<div className="px-4 py-2 bg-violet-50/60 text-[10px] text-violet-600 font-semibold">내 순위 · {fmtCount(myIndex+1)}위</div>}
+  </div>;
+}
+
+function StoreHomeOverview({ rows, branch, month, userId }) {
+  const members=(rows||[]).filter(r=>r.branch===branch);
+  if(!branch || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 매장 실적을 불러올 수 없어요.</div>;
+  const sum=(fn)=>members.reduce((a,r)=>a+Number(fn(r)||0),0);
+  const metrics=[
+    ['HS',sum(r=>hsCount(r.draft)),'건'],
+    ['홈',sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),'건'],
+    ['TV프리(부)',sum(r=>r.draft?.homeFlat?.tvFree||0),'건'],
+    ['스마트홈',sum(r=>r.draft?.homeFlat?.smartHome||0),'건'],
+    ['맞춤제안',sum(r=>r.draft?.tailoredCount||0),'건'],
+    ['생산성',sum(r=>r.pay?.kpiScore||0),'P'],
+  ];
+  const goal=companyGoalDefaults(branch);
+  const hs=metrics[0][1], home=metrics[1][1], prod=metrics[5][1];
+  const goals=[['HS',hs,goal.hs],['홈',home,goal.home],['생산성',prod,goal.productivity]].filter(x=>Number(x[2]||0)>0);
+  return <div className="space-y-4">
+    <div className="bg-white rounded-2xl border border-gray-100 p-4">
+      <div className="text-[11px] text-gray-400">{monthLabel(month)}</div>
+      <div className="text-base font-bold text-gray-900 mt-0.5">{displayStoreName(branch)} 누적 현황</div>
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        {metrics.map(([label,value,unit])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center">
+          <div className="text-[10px] text-gray-400">{label}</div>
+          <div className="text-sm font-bold text-gray-800 mt-0.5">{unit==='P'?fmtNum(value,1):fmtCount(value)}{unit}</div>
+        </div>)}
+      </div>
+    </div>
+    {goals.length>0&&<div className="bg-white rounded-2xl border border-gray-100 p-4">
+      <div className="text-sm font-bold text-gray-900">매장 목표 달성률</div>
+      <div className="space-y-3 mt-3">{goals.map(([label,cur,target])=>{
+        const pct=Math.min(100,Number(target)?Number(cur)/Number(target)*100:0);
+        return <div key={label}>
+          <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{label}</span><span className="text-gray-500">{label==='생산성'?fmtNum(cur,1):fmtCount(cur)} / <b>{fmtNum(target,1)}</b></span></div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}} /></div>
+        </div>;
+      })}</div>
+    </div>}
+    <MonthlyPerformanceRankingCard rows={members} userId={userId} branchOnly={branch} title="매장 월 누적 성과 순위" />
+  </div>;
+}
+
+
 
 
 function getWorkActivityStats(dailyDays, month) {
@@ -3909,6 +3992,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [showNet,setShowNet]=useState(false);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
+  const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
   useEffect(() => {
     if (!authUser?.id) return;
     (async () => {
@@ -3961,114 +4045,82 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
       {tab === 'home' && (
         <div className="space-y-4">
-          <DailyOneLiner
-            userId={authUser?.id}
-            month={month}
-            pay={pay}
-            draft={mergedDraft}
-            config={config}
-            competitionRows={competitionRows}
-            branch={currentEmp?.branch}
-            onGoCare={()=>setTab('customerCare')}
-            onGoInput={()=>setTab('daily')}
-          />
-          <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-5">
-            <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
-            <div className="text-3xl font-bold">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
-            <div className="mt-1.5 text-[10px] leading-relaxed text-violet-100/90">
-              ※ 현재 금액은 가계산 금액이며, 최종 정산 및 중도 퇴사 등 정산 조건에 따라 실제 지급액이 달라질 수 있습니다.
-            </div>
-            <button onClick={()=>setShowNet(v=>!v)} className="mt-2 text-[11px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
-              {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감해서 보기`}
+          <div className="bg-gray-100 rounded-xl p-1 grid grid-cols-2 gap-1">
+            <button type="button" onClick={()=>setEmployeeHomeMode('personal')}
+              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
+              홈 · 개인
             </button>
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <StatusBadge status={status} />
-              {prevMonthTotal !== null && (
-                <GrowthBadge current={pay.total} prev={prevMonthTotal} />
-              )}
-            </div>
+            <button type="button" onClick={()=>setEmployeeHomeMode('store')}
+              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
+              홈 · 매장
+            </button>
           </div>
-          {showPersonalGoal && (
-            <MonthlyGoalCard
-              month={month}
-              mergedDraft={mergedDraft}
-              pay={pay}
-              goals={personalGoals}
-              onSave={savePersonalGoals}
-              saving={goalSaving}
-            />
-          )}
-          <StoreGoalCard month={month} storeName={currentEmp?.branch} mergedDraft={mergedDraft} pay={pay} />
-          <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} />
-          <NextGoalCard
-            pay={pay}
-            draft={mergedDraft}
-            config={config}
-            onGoInput={() => setTab('daily')}
-          />
-          <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={() => setTab('daily')} />
-          <button onClick={()=>setHomeDetailOpen(v=>!v)} className="w-full bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between text-sm font-semibold text-gray-700">
-            <span>상세 실적 · 랭킹 · 배지</span><span className="text-violet-600 text-xs">{homeDetailOpen?'접기':'펼쳐보기'}</span>
-          </button>
-          {homeDetailOpen && (
-            <div className="space-y-4">
-          <MyRankingCard rows={competitionRows} userId={authUser?.id} branch={displayStoreName(currentEmp?.branch)} />
-          <RisingRankingCard
-            rows={competitionRows}
-            dailyRecords={allDailyRecords}
-            month={month}
-            config={config}
-            userId={authUser?.id}
-          />
-          <GamificationHub
-            dailyDays={dailyDays}
-            month={month}
-            personalGoals={personalGoals}
-            mergedDraft={mergedDraft}
-            pay={pay}
-            competitionRows={competitionRows}
-            allDailyRecords={allDailyRecords}
-            config={config}
-            userId={authUser?.id}
-          />
-          <HomeGateCard pay={pay} config={config} onGoInput={() => setTab('daily')} />
-          <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white rounded-xl border border-gray-100 p-3">
-              <div className="text-xs text-gray-400">근속 개월 / 등급</div>
-              <div className="text-sm font-bold text-gray-800">{pay.months}개월 · {pay.gradeEligible ? pay.grade : 'D(미달)'}등급</div>
+          {employeeHomeMode==='personal' ? <>
+            <DailyOneLiner
+              userId={authUser?.id}
+              month={month}
+              pay={pay}
+              draft={mergedDraft}
+              config={config}
+              competitionRows={competitionRows}
+              branch={currentEmp?.branch}
+              onGoCare={()=>setTab('customerCare')}
+              onGoInput={()=>setTab('daily')}
+            />
+
+            <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
+              <div className="text-[11px] text-violet-100">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
+              <div className="text-2xl font-bold mt-0.5">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
+              <div className="mt-1 text-[9px] leading-relaxed text-violet-100/80">현재 실적 기준 가계산 금액이며 최종 정산 조건에 따라 실제 지급액이 달라질 수 있어요.</div>
+              <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/15">
+                <div><div className="text-[9px] text-violet-100/75">근속</div><div className="text-[11px] font-bold mt-0.5">{fmtCount(pay.months)}개월</div></div>
+                <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay.gradeEligible?pay.grade:'D(미달)'}</div></div>
+                <div><div className="text-[9px] text-violet-100/75">성과P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.totalPoints,1)}P</div></div>
+                <div><div className="text-[9px] text-violet-100/75">KPI</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.kpiScore,1)}P</div></div>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <button onClick={()=>setShowNet(v=>!v)} className="text-[10px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
+                  {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감`}
+                </button>
+                <div className="flex items-center gap-1.5"><StatusBadge status={status} />{prevMonthTotal!==null&&<GrowthBadge current={pay.total} prev={prevMonthTotal} />}</div>
+              </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-100 p-3">
-              <div className="text-xs text-gray-400">성과 포인트</div>
-              <div className="text-sm font-bold text-gray-800">{pay.totalPoints.toFixed(1)}P</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-100 p-3">
-              <div className="text-xs text-gray-400">KPI 생산성</div>
-              <div className="text-sm font-bold text-gray-800">{pay.kpiScore.toFixed(1)}P</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-            <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
-            <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
-            <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
-            <RowKV label="홈 상품 수수료" value={won(pay.homeGradePay + (pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay) + pay.homeAddonPay + pay.renewPay)} />
-            <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
-            <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
-            <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
-            <RowKV label="2ND 번들 수수료" value={won(pay.bundle2ndTotal)} />
-            <RowKV label="VAS 유치 수수료" value={won(pay.vasPay)} />
-            <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
-            <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
-            <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
-            <RowKV label="맞춤제안 수수료" value={won(pay.tailoredBonus + pay.tailoredAmountBonus)} />
-          </div>
-          <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg p-3 flex gap-2">
-            <Info size={13} className="shrink-0 mt-0.5" />
-            영업 활동 지원 정책은 공통 230만원을 기준으로 성과등급 보너스·요금제 유치 수수료·2ND번들과 비교하고, 직책수당은 그 결과에 별도로 가산돼요. 이후 직급별 최저 보장금액(점장/부점장/매니저/사원)보다 낮으면 최저 보장금액을 적용해요. 그래서 근속수당 자체는 표시되지만 총액에 별도로 더해지지는 않아요. 홈 최소조건(3점)은 인터넷1점·프리0.3점·스홈0.2점 기준으로, 성과등급 가점(홈단독1P·홈+TV2P 등)은 별도 배점으로 계산돼요. 모델 특판 실적은 고객 할인 재원이라 인센티브 총액에 포함하지 않았어요.
-          </div>
-            </div>
-          )}
+
+            {showPersonalGoal&&<MonthlyGoalCard month={month} mergedDraft={mergedDraft} pay={pay} goals={personalGoals} onSave={savePersonalGoals} saving={goalSaving} />}
+            <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} />
+            <NextGoalCard pay={pay} draft={mergedDraft} config={config} onGoInput={()=>setTab('daily')} />
+            <MonthlyPerformanceRankingCard rows={competitionRows} userId={authUser?.id} title={`${monthLabel(month)} 누적 성과 TOP 3`} />
+
+            <button onClick={()=>setHomeDetailOpen(v=>!v)} className="w-full bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between text-sm font-semibold text-gray-700">
+              <span>개인 상세 보기</span><span className="text-violet-600 text-xs">{homeDetailOpen?'접기':'펼쳐보기'}</span>
+            </button>
+            {homeDetailOpen&&<div className="space-y-4">
+              <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={()=>setTab('daily')} />
+              <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} allDailyRecords={allDailyRecords} config={config} userId={authUser?.id} />
+              <HomeGateCard pay={pay} config={config} onGoInput={()=>setTab('daily')} />
+              <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
+              <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
+                <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
+                <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
+                <RowKV label="홈 상품 수수료" value={won(pay.homeGradePay + (pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay) + pay.homeAddonPay + pay.renewPay)} />
+                <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
+                <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
+                <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
+                <RowKV label="2ND 번들 수수료" value={won(pay.bundle2ndTotal)} />
+                {Number(pay.bundleFreeOffset||0)>0&&<RowKV label="└ 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
+                <RowKV label="VAS 유치 수수료" value={won(pay.vasPay)} />
+                {Number(pay.bundleFreeVasOffset||0)>0&&<RowKV label="└ 2ND 무료판매 VAS 제외" value={`-${won(pay.bundleFreeVasOffset)}`} />}
+                <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
+                <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
+                <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
+                <RowKV label="맞춤제안 수수료" value={won(pay.tailoredBonus + pay.tailoredAmountBonus)} />
+              </div>
+            </div>}
+          </> : <>
+            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={authUser?.id} />
+          </>}
         </div>
       )}
 
@@ -4148,7 +4200,9 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="홈 재약정" value={won(pay.renewPay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
             <RowKV label="2ND 번들 유치 수수료" value={won(pay.bundle2ndTotal)} />
+            {Number(pay.bundleFreeOffset||0)>0&&<RowKV label="└ 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
             <RowKV label="VAS 유치 수수료" value={won(pay.vasPay)} />
+            {Number(pay.bundleFreeVasOffset||0)>0&&<RowKV label="└ 2ND 무료판매 VAS 제외" value={`-${won(pay.bundleFreeVasOffset)}`} />}
             <RowKV label="소노 유치 수수료" value={won(pay.sonoPay)} />
             <RowKV label="중고MNP 결합" value={won(pay.mnpBundlePay)} />
             <RowKV label="우리매장 고객등록 수수료" value={won(pay.custRegBonus)} />
@@ -4245,6 +4299,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
   // v21.18: 2ND 번들 회선별 VAS를 따로 기록합니다. { [bundleKey]: [vasKey, ...] }
   const [mobileBundleVasMap,setMobileBundleVasMap]=useState({});
+  const [mobileBundleSaleTypeMap,setMobileBundleSaleTypeMap]=useState({}); // {bundleKey:'normal'|'free'}
   const [mobileUsedMnpBundle,setMobileUsedMnpBundle]=useState(false);
   const [mobileSpotPolicies,setMobileSpotPolicies]=useState([]);
   const [mobileSpotPolicyId,setMobileSpotPolicyId]=useState('');
@@ -4259,6 +4314,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileExtraPromises,setMobileExtraPromises]=useState([]);
   const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
   const [specialPolicies,setSpecialPolicies]=useState([]);
+  // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
+  const [mobileSaleKind,setMobileSaleKind]=useState('normal'); // normal | special
   const [mobileSpecialPolicyId,setMobileSpecialPolicyId]=useState('');
   const [mobileSpecialExceptionAmount,setMobileSpecialExceptionAmount]=useState('');
   const [extraInput,setExtraInput]=useState(null); // sono | tailored | customerReg
@@ -4413,7 +4470,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const bundle2nd={...(base.groups?.bundle2nd||{})};(meta.bundle2ndKeys||[]).forEach(k=>bundle2nd[k]=Math.max(0,Number(bundle2nd[k]||0)-1));
       const mnpBundle={...(base.groups?.mnpBundle||{})};if(meta.usedMnpBundle)mnpBundle.usedMnpBundle=Math.max(0,Number(mnpBundle.usedMnpBundle||0)-1);
       const sp=meta.specialPolicy||{};
-      mutate({...base,matrix,groups:{...base.groups,vas,bundle2nd,mnpBundle},specialMatrixOffset:Math.max(0,Number(base.specialMatrixOffset||0)-Number(sp.normalMatrixFee||0)),specialVasOffset:Math.max(0,Number(base.specialVasOffset||0)-Number(sp.normalVasFee||0)),specialReplacementPay:Math.max(0,Number(base.specialReplacementPay||0)-Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.exceptionStatus==='pending'?0:sp.replacementAmount||0))});
+      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{});
+      mutate({...base,matrix,groups:{...base.groups,vas,bundle2nd,mnpBundle},
+        bundleFreeOffset:Math.max(0,Number(base.bundleFreeOffset||0)-Number(free.bundleOffset||0)),
+        bundleFreeVasOffset:Math.max(0,Number(base.bundleFreeVasOffset||0)-Number(free.vasOffset||0)),
+        specialMatrixOffset:Math.max(0,Number(base.specialMatrixOffset||0)-Number(sp.normalMatrixFee||0)),specialVasOffset:Math.max(0,Number(base.specialVasOffset||0)-Number(sp.normalVasFee||0)),specialReplacementPay:Math.max(0,Number(base.specialReplacementPay||0)-Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.exceptionStatus==='pending'?0:sp.replacementAmount||0))});
     }
     await supabase.from('customer_tasks').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
     await supabase.from('sales_expenses').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
@@ -4592,6 +4653,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       specialMatrixOffset: Number(beforeDay.specialMatrixOffset||0)+Number(customerMeta.specialMatrixOffset||0),
       specialVasOffset: Number(beforeDay.specialVasOffset||0)+Number(customerMeta.specialVasOffset||0),
       specialReplacementPay: Number(beforeDay.specialReplacementPay||0)+Number(customerMeta.specialReplacementPay||0),
+      bundleFreeOffset: Number(beforeDay.bundleFreeOffset||0)+Number(customerMeta.bundleFreeOffset||0),
+      bundleFreeVasOffset: Number(beforeDay.bundleFreeVasOffset||0)+Number(customerMeta.bundleFreeVasOffset||0),
       matrix: nextMatrix,
       groups: {
         ...beforeDay.groups,
@@ -4684,6 +4747,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       customerSaleId: customerMeta.saleId || null,
       vasKeys: Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [],
       specialMatrixOffset:Number(customerMeta.specialMatrixOffset||0),specialVasOffset:Number(customerMeta.specialVasOffset||0),specialReplacementPay:Number(customerMeta.specialReplacementPay||0),
+      bundleFreeOffset:Number(customerMeta.bundleFreeOffset||0),bundleFreeVasOffset:Number(customerMeta.bundleFreeVasOffset||0),
+      bundle2ndKeys:Array.isArray(customerMeta.bundle2ndKeys)?customerMeta.bundle2ndKeys:[],
     });
 
     setTimeout(() => {
@@ -4702,7 +4767,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const inferMobileMeta=(sale)=>{
     const meta=sale?.source_meta||{};
-    if(Number.isInteger(meta.ri)&&Number.isInteger(meta.ci))return {ri:meta.ri,ci:meta.ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},usedMnpBundle:!!meta.usedMnpBundle};
+    if(Number.isInteger(meta.ri)&&Number.isInteger(meta.ci))return {ri:meta.ri,ci:meta.ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},bundleSaleTypeMap:meta.bundleSaleTypeMap||{},usedMnpBundle:!!meta.usedMnpBundle};
 
     const label=String(sale?.metric_label||'');
     let ri=MATRIX_ROW_DEFS.findIndex(r=>label.startsWith(r.dailyLabel||r.label));
@@ -4714,7 +4779,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const found=MATRIX_COLS.findIndex(c=>label.includes(c));
       if(found>=0)ci=found;
     }
-    return {ri,ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},usedMnpBundle:!!meta.usedMnpBundle};
+    return {ri,ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},bundleSaleTypeMap:meta.bundleSaleTypeMap||{},usedMnpBundle:!!meta.usedMnpBundle};
   };
 
   const openEditSale=async(sale)=>{
@@ -4765,7 +4830,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileVasKeys(Array.isArray(meta.vasKeys)?meta.vasKeys:[]);
     setMobileBundle2ndKeys(Array.isArray(sale?.source_meta?.bundle2ndKeys)?sale.source_meta.bundle2ndKeys:[]);
     setMobileBundleVasMap(sale?.source_meta?.bundleVasMap && typeof sale.source_meta.bundleVasMap==='object' ? sale.source_meta.bundleVasMap : {});
+    setMobileBundleSaleTypeMap(sale?.source_meta?.bundleSaleTypeMap && typeof sale.source_meta.bundleSaleTypeMap==='object' ? sale.source_meta.bundleSaleTypeMap : {});
     setMobileUsedMnpBundle(!!sale?.source_meta?.usedMnpBundle);
+    setMobileSaleKind(sale?.source_meta?.specialPolicy?.policyId ? 'special' : 'normal');
     setMobileSpecialPolicyId(sale?.source_meta?.specialPolicy?.policyId||'');
     setMobileSpecialExceptionAmount(sale?.source_meta?.specialPolicy?.exceptionRequestedAmount?String(sale.source_meta.specialPolicy.exceptionRequestedAmount):'');
     setMobileSpotPolicyId('');
@@ -4819,6 +4886,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileVasKeys([]);
     setMobileBundle2ndKeys([]);
     setMobileBundleVasMap({});
+    setMobileBundleSaleTypeMap({});
     setMobileUsedMnpBundle(false);
     setMobileSpotPolicyId('');
     setMobileSpotDirectOpen(false);
@@ -4829,13 +4897,32 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileExpenseCategory('케이스');
     setMobileExpenseAmount('');
     setMobileExpenseMemo('');
-    setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
+    setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSaleKind('normal'); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
+  };
+
+  const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap) => {
+    const bundleTable=config.bundle2nd||DEFAULT_BUNDLE2ND;
+    const vasTable=config.vas||DEFAULT_VAS;
+    let bundleOffset=0, vasOffset=0;
+    (bundleKeys||[]).forEach(k=>{
+      if((saleTypeMap?.[k]||'normal')!=='free')return;
+      bundleOffset += Number(bundleTable.find(x=>x.key===k)?.rate||0);
+      (vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
+        vasOffset += Number(vasTable.find(x=>x.key===v)?.rate||0);
+      });
+    });
+    return {bundleOffset,vasOffset};
   };
 
   const submitMobileSale = async () => {
     if(!mobileSaleDraft||!currentEmp?.id)return;
     const customer=mobileCustomerName.trim();
     if(!customer)return alert('고객명을 입력해야 실적을 등록할 수 있어요.');
+    if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
+      return alert(specialPolicies.length
+        ? '특판·지인판매에 적용할 정책을 선택해주세요.'
+        : '현재 적용 가능한 특판·지인판매 정책이 없어요. 관리자에게 정책 등록을 요청해주세요.');
+    }
     const saleDate=`${month}-${selectedDay}`;
     setMobileSaleSaving(true);
 
@@ -4870,16 +4957,21 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         if(mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
 
         const oldSp=oldMeta.specialPolicy||editingSale.source_meta?.specialPolicy||{};
+        const oldFree=bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{});
+        const newFree=bundleFreeAmounts();
         const newPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
         const newMatrixFee=mobileSpecialPolicyId?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
-        const editAllVas=[...(mobileVasKeys||[]),...Object.values(mobileBundleVasMap||{}).flat()].filter(k=>k!=='vasNone');
+        const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
+          (mobileBundleSaleTypeMap?.[bk]||'normal')==='free' ? [] : (keys||[])
+        );
+        const editAllVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
         const newVasFee=mobileSpecialPolicyId?editAllVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0;
         const req=Number(mobileSpecialExceptionAmount||0);
         const newReplacement=mobileSpecialPolicyId?(req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
         const nextMeta={
-          ...(editingSale.source_meta||{}),ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,usedMnpBundle:mobileUsedMnpBundle,
-          specialPolicy: mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
+          ...(editingSale.source_meta||{}),ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
         };
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
@@ -4929,7 +5021,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         await supabase.from('sales_expenses').delete().eq('source_sale_id',editingSale.id).eq('user_id',currentEmp.id);
         if(mobileExpenseOpen){ const expRows=[{category:mobileExpenseCategory,amount:mobileExpenseAmount,memo:mobileExpenseMemo},...(mobileExtraExpenses||[])].filter(x=>Number(x.amount)>0); if(expRows.length){ const {error:exErr}=await supabase.from('sales_expenses').insert(expRows.map(x=>({user_id:currentEmp.id,source_sale_id:editingSale.id,expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null}))); if(exErr)throw exErr; } }
 
-        mutate({...base,matrix,groups:{...base.groups,vas,bundle2nd,mnpBundle},specialMatrixOffset:Math.max(0,Number(base.specialMatrixOffset||0)-Number(oldSp.normalMatrixFee||0)+newMatrixFee),specialVasOffset:Math.max(0,Number(base.specialVasOffset||0)-Number(oldSp.normalVasFee||0)+newVasFee),specialReplacementPay:Math.max(0,Number(base.specialReplacementPay||0)-oldReplacement+newReplacement)});
+        mutate({...base,matrix,groups:{...base.groups,vas,bundle2nd,mnpBundle},specialMatrixOffset:Math.max(0,Number(base.specialMatrixOffset||0)-Number(oldSp.normalMatrixFee||0)+newMatrixFee),specialVasOffset:Math.max(0,Number(base.specialVasOffset||0)-Number(oldSp.normalVasFee||0)+newVasFee),specialReplacementPay:Math.max(0,Number(base.specialReplacementPay||0)-oldReplacement+newReplacement),
+          bundleFreeOffset:Math.max(0,Number(base.bundleFreeOffset||0)-Number(oldFree.bundleOffset||0)+Number(newFree.bundleOffset||0)),
+          bundleFreeVasOffset:Math.max(0,Number(base.bundleFreeVasOffset||0)-Number(oldFree.vasOffset||0)+Number(newFree.vasOffset||0))
+        });
         setMobileSaleDraft(null);
         setEditingSale(null);
         setEditingCompletedTaskCount(0);
@@ -4944,8 +5039,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
-        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,usedMnpBundle:mobileUsedMnpBundle,
-          specialPolicy: mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,exceptionRequestedAmount:Number(mobileSpecialExceptionAmount||0)||null,exceptionStatus:Number(mobileSpecialExceptionAmount||0)>0?'pending':null} : null}
+        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,exceptionRequestedAmount:Number(mobileSpecialExceptionAmount||0)||null,exceptionStatus:Number(mobileSpecialExceptionAmount||0)>0?'pending':null} : null}
       });
       if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending'})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
 
@@ -4978,25 +5073,33 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
 
       // 특판·지인판매 적용: 정상 실적은 그대로 올리고 요금제/VAS 수수료만 상쇄, 대체 인센티브 지급
-      if(mobileSpecialPolicyId){
+      if(mobileSaleKind==='special' && mobileSpecialPolicyId){
         const policy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
         const matrixFee=Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0);
-        const allVas=[...(mobileVasKeys||[]),...Object.values(mobileBundleVasMap||{}).flat()].filter(k=>k!=='vasNone');
+        const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
+          (mobileBundleSaleTypeMap?.[bk]||'normal')==='free' ? [] : (keys||[])
+        );
+        const allVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
         const vasFee=allVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0);
         const requested=Number(mobileSpecialExceptionAmount||0);
         const replacement=requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
-        await supabase.from('customer_sales').update({source_meta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,usedMnpBundle:mobileUsedMnpBundle,specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}}}).eq('id',saved.saleId);
+        await supabase.from('customer_sales').update({source_meta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}}}).eq('id',saved.saleId);
         saved._special={matrixFee,vasFee,replacement};
       }
 
+      const freeAmounts=bundleFreeAmounts();
       commitMobileOne(
         mobileSaleDraft.ri,
         mobileSaleDraft.ci,
         { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:mobileUsedMnpBundle,
-          specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0 }
+          specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
+          bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
       );
 
       setMobileSaleDraft(null);
+      setMobileSaleKind('normal');
+      setMobileSpecialPolicyId('');
+      setMobileSpecialExceptionAmount('');
       setTimeout(loadDaySales,150);
     }catch(e){
       alert(`${editingSale?'판매건 수정':'고객/실적 등록'} 실패: ${friendlyError(e)}`);
@@ -5017,10 +5120,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       nextVas[key] = Math.max(0, Number(nextVas[key] || 0) - 1);
     });
 
+    const nextBundle2nd={...(base.groups?.bundle2nd||{})};
+    (toast.bundle2ndKeys||[]).forEach(k=>{nextBundle2nd[k]=Math.max(0,Number(nextBundle2nd[k]||0)-1)});
     mutate({
       ...base,
       matrix: nextMatrix,
-      groups: { ...base.groups, vas: nextVas },
+      groups: { ...base.groups, vas: nextVas, bundle2nd: nextBundle2nd },
+      bundleFreeOffset:Math.max(0,Number(base.bundleFreeOffset||0)-Number(toast.bundleFreeOffset||0)),
+      bundleFreeVasOffset:Math.max(0,Number(base.bundleFreeVasOffset||0)-Number(toast.bundleFreeVasOffset||0)),
       specialMatrixOffset:Math.max(0,Number(base.specialMatrixOffset||0)-Number(toast.specialMatrixOffset||0)),
       specialVasOffset:Math.max(0,Number(base.specialVasOffset||0)-Number(toast.specialVasOffset||0)),
       specialReplacementPay:Math.max(0,Number(base.specialReplacementPay||0)-Number(toast.specialReplacementPay||0)),
@@ -5159,6 +5266,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                           <div className="text-sm font-bold text-gray-900">{sale.customers?.customer_name||'고객'}</div>
                           <div className="text-xs text-gray-600 mt-0.5">{sale.metric_label}</div>
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
+                          {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&
+                            <div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <button onClick={()=>openEditSale(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
@@ -5212,13 +5321,70 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':'한 번에 판매 등록'}</div>
             <div className="text-lg font-bold text-gray-900 mt-1">모바일 실적 입력</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
-            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">1. 고객명 *</label>
-            <input autoFocus value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
+
+            <div className="mt-4">
+              <div className="text-xs font-semibold text-gray-600 mb-2">1. 판매 구분 *</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button"
+                  onClick={()=>{setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileSpecialExceptionAmount('')}}
+                  className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>
+                  {mobileSaleKind==='normal'?'✓ ':''}일반 판매
+                </button>
+                <button type="button"
+                  onClick={()=>setMobileSaleKind('special')}
+                  className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='special'?'bg-amber-50 border-amber-300 text-amber-700':'bg-white border-gray-200 text-gray-500'}`}>
+                  {mobileSaleKind==='special'?'✓ ':''}특판·지인판매
+                </button>
+              </div>
+
+              {mobileSaleKind==='special'&&(
+                <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/30 p-3">
+                  <div className="text-[11px] font-semibold text-gray-700">적용 정책 *</div>
+                  {specialPolicies.length>0 ? (
+                    <>
+                      <div className="grid grid-cols-1 gap-1.5 mt-2">
+                        {specialPolicies.map(p=>{
+                          const selected=mobileSpecialPolicyId===p.id;
+                          return <button key={p.id} type="button"
+                            onClick={()=>{setMobileSpecialPolicyId(p.id);setMobileSpecialExceptionAmount('')}}
+                            className={`w-full text-left rounded-lg border px-3 py-2.5 text-xs ${selected?'bg-white border-amber-300 text-amber-800':'bg-white/80 border-gray-100 text-gray-600'}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
+                              <span className="text-[10px] text-amber-600">대체 {won(p.replacement_amount)}</span>
+                            </div>
+                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.end_date||''}</div>}
+                          </button>
+                        })}
+                      </div>
+                      {mobileSpecialPolicyId&&(
+                        <div className="mt-2">
+                          <div className="text-[10px] text-amber-700 leading-relaxed">
+                            실적·KPI·성과P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.
+                          </div>
+                          <input inputMode="numeric" value={fmtInputNumber(mobileSpecialExceptionAmount)}
+                            onChange={e=>setMobileSpecialExceptionAmount(e.target.value.replace(/\D/g,''))}
+                            placeholder="예외 지급금액 요청 (선택)"
+                            className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mt-2 rounded-lg bg-white px-3 py-3 text-[11px] text-gray-500">
+                      현재 적용 가능한 정책이 없어요.<br/>
+                      관리자에게 특판·지인판매 정책 등록을 요청해주세요.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">2. 고객명 *</label>
+            <input value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
               placeholder="고객명을 입력해주세요" className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">2. 가입구분</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">3. 가입구분</label>
                 <select
                   value={mobileSaleDraft.ri}
                   onChange={e=>{
@@ -5302,7 +5468,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             )}
 
             <div className="mt-4">
-              <div className="text-xs font-semibold text-gray-600 mb-2">4. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
+              <div className="text-xs font-semibold text-gray-600 mb-2">5. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
               <div className="grid grid-cols-1 gap-1.5">
                 {(config.bundle2nd || DEFAULT_BUNDLE2ND).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
@@ -5311,14 +5477,32 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     <button type="button" onClick={()=>setMobileBundle2ndKeys(prev=>{
                       if(prev.includes(v.key)){
                         setMobileBundleVasMap(m=>{const n={...m};delete n[v.key];return n;});
+                        setMobileBundleSaleTypeMap(m=>{const n={...m};delete n[v.key];return n;});
                         return prev.filter(k=>k!==v.key);
                       }
                       if(prev.length>=2){ alert('2ND 번들판매는 최대 2개까지 선택할 수 있어요.'); return prev; }
+                      setMobileBundleSaleTypeMap(m=>({...m,[v.key]:m[v.key]||'normal'}));
                       return [...prev,v.key];
                     })} className={`w-full text-left px-3 py-2.5 text-xs ${selected?'text-violet-700':'text-gray-600'}`}>
                       <span className="font-semibold">{selected?'✓ ':''}{v.label.replace('2ND · ','')}</span><span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>
                     </button>
                     {selected&&<div className="px-3 pb-3">
+                      <div className="mb-2">
+                        <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {[['normal','일반판매'],['free','무료판매']].map(([kind,label])=>{
+                            const current=mobileBundleSaleTypeMap[v.key]||'normal';
+                            return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
+                              className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'?'bg-amber-50 border-amber-300 text-amber-700':'bg-violet-50 border-violet-200 text-violet-700'):'bg-white border-gray-100 text-gray-500'}`}>
+                              {current===kind?'✓ ':''}{label}
+                            </button>
+                          })}
+                        </div>
+                        {(mobileBundleSaleTypeMap[v.key]||'normal')==='free'&&
+                          <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
+                            무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.
+                          </div>}
+                      </div>
                       <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
                       <div className="grid grid-cols-1 gap-1">
                         {[...(config.vas || DEFAULT_VAS),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
@@ -5341,15 +5525,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   </div>
                 })}
               </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/30 p-3">
-              <div className="text-xs font-semibold text-gray-700">특판·지인판매 정책 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
-              <select value={mobileSpecialPolicyId} onChange={e=>{setMobileSpecialPolicyId(e.target.value);setMobileSpecialExceptionAmount('')}} className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white">
-                <option value="">일반 판매</option>
-                {specialPolicies.map(p=><option key={p.id} value={p.id}>{p.title} · 대체 {won(p.replacement_amount)}</option>)}
-              </select>
-              {mobileSpecialPolicyId&&<div className="mt-2"><div className="text-[10px] text-amber-700">실적·KPI·성과P는 정상 인정하고, 요금제/VAS 수수료 대신 정책 대체 인센티브를 적용해요.</div><input value={mobileSpecialExceptionAmount} onChange={e=>setMobileSpecialExceptionAmount(e.target.value.replace(/\D/g,''))} placeholder="예외 지급금액 요청 (없으면 비워두기)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/></div>}
             </div>
 
             <div className={`mt-4 grid gap-2 ${editingSale?'grid-cols-2':'grid-cols-3'}`}>
@@ -6750,13 +6925,15 @@ function SettlementReview({ month, rows, employees, config }) {
         if(Number(r.pay.specialMatrixOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','요금제 수수료 제외','',1,-Number(r.pay.specialMatrixOffset||0),'참고','보장/기본 계산에 이미 반영']);
         if(Number(r.pay.specialVasOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','VAS 수수료 제외','',1,-Number(r.pay.specialVasOffset||0),'참고','VAS 지급액에 이미 반영']);
         if(Number(r.pay.specialReplacementPay||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','대체 인센티브','',1,Number(r.pay.specialReplacementPay||0),'참고','보장/기본 계산에 이미 반영']);
+        if(Number(r.pay.bundleFreeOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'2ND 무료판매','2ND 번들 수수료 제외','',1,-Number(r.pay.bundleFreeOffset||0),'참고','실적/KPI 인정 · 지급액에서 제외']);
+        if(Number(r.pay.bundleFreeVasOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'2ND 무료판매','2ND VAS 수수료 제외','',1,-Number(r.pay.bundleFreeVasOffset||0),'참고','VAS 실적 기록 · 지급액에서 제외']);
         rowsCsv.push(['정산합계',month,'',r.branch,r.name,'최종지급액','', '',1,net,'실지급 검토',`기본계산 ${r.pay.total} + 스팟 ${spot} - 비용 ${expense}`]);
       });
       (daily||[]).forEach(x=>{
         const d=normalizeDay(x.data);
         d.matrix.forEach((arr,ri)=>arr.forEach((cnt,ci)=>{if(!cnt)return;const rd=MATRIX_ROW_DEFS[ri];rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'모바일',rd?.dailyLabel||rd?.label||`행${ri+1}`,rd?.hasTiers?MATRIX_COLS[ci]:'',cnt,config.matrix?.[ri]?.[ci]||0,'계산대상',`원천 일일입력`])}));
         DAILY_GROUP_DEFS.forEach(g=>{const table=groupTable(config,g.key);Object.entries(d.groups?.[g.key]||{}).forEach(([key,cnt])=>{if(!cnt)return;const item=table.find(t=>t.key===key);rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,g.bucket==='home'?'홈':'기타',g.label,item?.label||key,cnt,item?.rate||item?.point||0,'계산대상','원천 일일입력'])})});
-        [['custRegCount','고객등록'],['tailoredCount','맞춤제안 건수'],['tailoredAmount','맞춤제안 금액'],['specialMatrixOffset','특판 요금제수수료 제외'],['specialVasOffset','특판 VAS수수료 제외'],['specialReplacementPay','특판 대체 인센티브']].forEach(([k,l])=>{if(Number(d[k]||0)>0)rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'기타',l,'',d[k],k==='tailoredAmount'?d[k]:0,'계산대상','원천 일일입력'])});
+        [['custRegCount','고객등록'],['tailoredCount','맞춤제안 건수'],['tailoredAmount','맞춤제안 금액'],['specialMatrixOffset','특판 요금제수수료 제외'],['specialVasOffset','특판 VAS수수료 제외'],['specialReplacementPay','특판 대체 인센티브'],['bundleFreeOffset','2ND 무료판매 수수료 제외'],['bundleFreeVasOffset','2ND 무료판매 VAS 제외']].forEach(([k,l])=>{if(Number(d[k]||0)>0)rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'기타',l,'',d[k],k==='tailoredAmount'?d[k]:0,'계산대상','원천 일일입력'])});
       });
       (spots||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.claim_date,x.profiles?.store_name,x.profiles?.name,'스팟',x.reviewed_title||x.direct_title||x.spot_policies?.title||'',x.customer_name||'',1,x.final_amount??x.direct_amount??x.spot_policies?.amount??0,x.status==='approved'?'반영':'미반영',x.status]));
       (expenses||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.expense_date,x.profiles?.store_name,x.profiles?.name,'영업비용',x.category,x.customer_name||'',1,-Number(x.amount||0),'차감',x.memo||'']));
