@@ -79,6 +79,16 @@ const HOME_BASE_ITEMS = [
   { key: 'homeTv', label: '홈+TV 동시청약', point: 2 },
 ];
 
+// v21.14: 홈 청약을 가정망/소호망으로 분리 저장.
+// 현재 월 인센티브 계산식은 기존 정책을 유지하고, 다음달 정책 확정 시 망별 단가를 별도 적용할 수 있게 데이터부터 분리합니다.
+const HOME_NETWORK_TYPES = [
+  { key: 'household', label: '가정망' },
+  { key: 'soho', label: '소호망' },
+];
+function homeNetworkLabel(value) {
+  return HOME_NETWORK_TYPES.find(x=>x.key===value)?.label || '망 미지정';
+}
+
 const DEFAULT_HOME_TIERS = [
   { min: 1, rate: 500000 },
   { min: 2, rate: 600000 },
@@ -130,9 +140,9 @@ const MATRIX_COLS = ['115군↑', '95~105군·청소년85군', '85군', '61군�
 const DEFAULT_MATRIX = [
   [5, 3, 2, 1, 1, 0],       // 일반모델 신규
   [9, 6, 5, 4, 4, 2],       // 일반모델 MNP
-  [20, 17, 14, 10, 10, 7],  // 일반모델 기변A
-  [15, 13, 12, 4, 4, 2],    // 일반모델 기변B
-  [8, 7, 6, 3, 3, 2],       // 일반모델 기변C
+  [5, 3, 2, 1, 1, 0],       // 일반모델 기변A
+  [5, 3, 2, 1, 1, 0],       // 일반모델 기변B (A와 동일)
+  [2.5, 1.5, 1, 0.5, 0.5, 0], // 일반모델 기변C (A/B의 50%)
   [10, 10, 10, 7, 5, 5],    // SIM MNP
   [0, 0, 0, 0, 0, 0],       // 중고 신규(66군↑) — 인센티브 무관, 항상 0
   [5, 0, 0, 0, 0, 0],       // 2ND — 단일 단가 (건당 5만원)
@@ -654,6 +664,17 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
 
+  // 모바일 웹앱 뒤로가기 제어
+  const [exitHint, setExitHint] = useState(false);
+  const navInitializedRef = useRef(false);
+  const suppressHistoryPushRef = useRef(false);
+  const skipNextPopRef = useRef(false);
+  const lastExitBackRef = useRef(0);
+  const exitHintTimerRef = useRef(null);
+  const roleRef = useRef(role);
+  const tabRef = useRef(tab);
+  const adminTabRef = useRef(adminTab);
+
   const DEFAULT_EMPLOYEES = [
     { id: 'e01', name: '어진석', branch: '장곡동_장곡역점', position: '사원', hireDate: '2026-08' },
     { id: 'e02', name: '정준희', branch: '본오3동_상록수역점', position: '사원', hireDate: '2026-08' },
@@ -698,6 +719,117 @@ export default function App({ authUser, authProfile, onSignOut }) {
     { id: 'e40', name: '전민혁', branch: '은행동_은계사거리점', position: '부점장', hireDate: '2017-06' },
     { id: 'e41', name: '황성휘', branch: '월곶동_월곶점', position: '점장', hireDate: '2017-06' },
   ];
+
+  useEffect(() => {
+    roleRef.current = role;
+    tabRef.current = tab;
+    adminTabRef.current = adminTab;
+
+    if (typeof window === 'undefined') return;
+
+    const currentState = {
+      misoApp: true,
+      role,
+      tab,
+      adminTab,
+    };
+
+    if (!navInitializedRef.current) {
+      // 현재 진입점을 앱의 루트 상태로 만들고, 루트 앞에 한 칸의 보호 히스토리를 둡니다.
+      window.history.replaceState({ ...currentState, appRoot: true }, '');
+      window.history.pushState({ ...currentState, appGuard: true }, '');
+      navInitializedRef.current = true;
+      return;
+    }
+
+    if (suppressHistoryPushRef.current) {
+      suppressHistoryPushRef.current = false;
+      return;
+    }
+
+    window.history.pushState(currentState, '');
+  }, [role, tab, adminTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const isRootScreen = (r, employeeTab, managerTab) =>
+      r === 'employee' ? employeeTab === 'home' : managerTab === 'dashboard';
+
+    const showExitHint = () => {
+      setExitHint(true);
+      if (exitHintTimerRef.current) clearTimeout(exitHintTimerRef.current);
+      exitHintTimerRef.current = setTimeout(() => setExitHint(false), 2000);
+    };
+
+    const onPopState = (event) => {
+      if (skipNextPopRef.current) {
+        skipNextPopRef.current = false;
+        return;
+      }
+
+      const now = Date.now();
+      const currentIsRoot = isRootScreen(roleRef.current, tabRef.current, adminTabRef.current);
+      const state = event.state;
+
+      if (state?.misoApp) {
+        const targetRole = state.role || 'employee';
+        const targetTab = state.tab || 'home';
+        const targetAdminTab = state.adminTab || 'dashboard';
+        const targetIsRoot = isRootScreen(targetRole, targetTab, targetAdminTab);
+
+        // 루트 화면에서 뒤로가기를 누른 경우: 첫 번은 안내, 2초 안에 다시 누르면 앱/페이지를 나갑니다.
+        if (currentIsRoot && targetIsRoot) {
+          if (now - lastExitBackRef.current < 2000) {
+            lastExitBackRef.current = 0;
+            setExitHint(false);
+            skipNextPopRef.current = true;
+            window.history.back();
+            return;
+          }
+
+          lastExitBackRef.current = now;
+          showExitHint();
+          window.history.pushState({
+            misoApp: true,
+            role: roleRef.current,
+            tab: tabRef.current,
+            adminTab: adminTabRef.current,
+            appGuard: true,
+          }, '');
+          return;
+        }
+
+        suppressHistoryPushRef.current = true;
+        roleRef.current = targetRole;
+        tabRef.current = targetTab;
+        adminTabRef.current = targetAdminTab;
+        setRole(targetRole);
+        setTab(targetTab);
+        setAdminTab(targetAdminTab);
+        return;
+      }
+
+      // 예외적으로 앱 히스토리 바깥까지 이동한 경우에도 첫 뒤로가기는 보호합니다.
+      if (currentIsRoot && now - lastExitBackRef.current >= 2000) {
+        lastExitBackRef.current = now;
+        showExitHint();
+        window.history.pushState({
+          misoApp: true,
+          role: roleRef.current,
+          tab: tabRef.current,
+          adminTab: adminTabRef.current,
+          appGuard: true,
+        }, '');
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      if (exitHintTimerRef.current) clearTimeout(exitHintTimerRef.current);
+    };
+  }, []);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -1216,6 +1348,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
+      {exitHint && (
+        <div className="fixed left-1/2 bottom-6 -translate-x-1/2 z-[100] w-[calc(100%-32px)] max-w-sm">
+          <div className="bg-gray-900/95 text-white text-sm font-medium text-center rounded-xl px-4 py-3 shadow-xl">
+            앱을 나가려면 뒤로가기를 한 번 더 눌러주세요
+          </div>
+        </div>
+      )}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -2248,8 +2387,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
     if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
-      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel}`,
-      payload:{order_id:order.id,product_type:order.product_type,status:'cancelled'}});
+      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel}`,
+      payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}});
     await load();
   };
 
@@ -2317,8 +2456,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
 
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
-      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${productLabel} · ${homeActualCompleteDate}`,
-      payload:{order_id:order.id,product_type:order.product_type,status:'completed',actual_install_date:homeActualCompleteDate}});
+      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel} · ${homeActualCompleteDate}`,
+      payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'completed',actual_install_date:homeActualCompleteDate}});
     setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load();
   };
 
@@ -2371,7 +2510,13 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
                         <div key={o.id} className="bg-white/80 rounded-lg p-2.5">
                           <div className="flex justify-between gap-2">
                             <div>
-                              <div className="text-xs font-semibold text-gray-800">{def?.label || o.product_type}</div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="text-xs font-semibold text-gray-800">{def?.label || o.product_type}</div>
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                  o.network_type==='soho'?'bg-blue-50 text-blue-600':
+                                  o.network_type==='household'?'bg-violet-50 text-violet-600':'bg-gray-100 text-gray-400'
+                                }`}>{homeNetworkLabel(o.network_type)}</span>
+                              </div>
                               {o.memo && <div className="text-[11px] text-gray-400 mt-0.5">{o.memo}</div>}
                               <div className="text-[10px] text-gray-400 mt-1">설치예정 {o.planned_install_date ? String(o.planned_install_date).slice(0,10) : '미정'}</div>
                             </div>
@@ -2399,7 +2544,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
               {[...completed,...cancelled].sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
                 const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
                 return <div key={o.id} className="flex justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
-                  <span className="text-xs font-semibold text-gray-700">{o.customer_name ? `${o.customer_name} · ` : ''}{def?.label || o.product_type}</span>
+                  <span className="text-xs font-semibold text-gray-700">{o.customer_name ? `${o.customer_name} · ` : ''}{homeNetworkLabel(o.network_type)} · {def?.label || o.product_type}</span>
                   <span className={`text-[10px] font-bold ${o.status==='completed'?'text-emerald-600':'text-gray-400'}`}>{o.status==='completed'?'완료':'취소'}</span>
                 </div>
               })}
@@ -2415,7 +2560,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
             <div className="text-xs text-emerald-600 font-semibold">설치/개통 완료</div>
             <div className="text-lg font-bold text-gray-900 mt-1">
-              {homeCompletionTarget.customer_name || '고객'} · {HOME_ORDER_PRODUCTS.find(p=>p.key===homeCompletionTarget.product_type)?.label || homeCompletionTarget.product_type}
+              {homeCompletionTarget.customer_name || '고객'} · {homeNetworkLabel(homeCompletionTarget.network_type)} · {HOME_ORDER_PRODUCTS.find(p=>p.key===homeCompletionTarget.product_type)?.label || homeCompletionTarget.product_type}
             </div>
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">실제 설치/개통 완료일 *</label>
             <input type="date" value={homeActualCompleteDate} onChange={(e)=>setHomeActualCompleteDate(e.target.value)}
@@ -3450,6 +3595,110 @@ function CustomerCareManager({ userId, month, homeProps }) {
   </div>;
 }
 
+
+function DailyOneLiner({ userId, month, pay, draft, config, competitionRows, branch, onGoCare, onGoInput }) {
+  const [todayTasks,setTodayTasks]=useState(0);
+  const [messageIndex,setMessageIndex]=useState(0);
+
+  useEffect(()=>{
+    if(!userId)return;
+    (async()=>{
+      const today=new Date().toISOString().slice(0,10);
+      const {count}=await supabase.from('customer_tasks')
+        .select('id',{count:'exact',head:true})
+        .eq('user_id',userId)
+        .eq('status','pending')
+        .lte('due_date',today);
+      setTodayTasks(Number(count||0));
+    })();
+  },[userId,month]);
+
+  const messages=useMemo(()=>{
+    const out=[];
+
+    // 1순위: 오늘/지연 고객 약속
+    if(todayTasks>0){
+      out.push({
+        icon:'🔔',
+        text:`오늘 확인할 고객 약속 ${todayTasks}건이 있어요`,
+        action:'확인',
+        onClick:onGoCare,
+        priority:100,
+      });
+    }
+
+    // 2순위: 가장 유리한 다음 행동
+    const next=buildNextGoal(pay,draft,config);
+    if(next){
+      out.push({
+        icon:'🎯',
+        text:`${next.title} · ${next.remain}${next.unit} 더하면 예상 +${won(next.delta)}`,
+        action:'입력',
+        onClick:onGoInput,
+        priority:80,
+      });
+    }
+
+    // 3순위: 개인 실적 흐름
+    const hs=hsCount(draft);
+    const productivity=Number(pay?.kpiScore||0);
+    if(hs>0){
+      out.push({icon:'🔥',text:`이번 달 HS ${hs}건 기록 중`,priority:50});
+    }
+    if(productivity>0){
+      out.push({icon:'📈',text:`이번 달 생산성 ${productivity.toFixed(1)}P 기록 중`,priority:45});
+    }
+
+    // 4순위: 우리 매장 내 현재 위치
+    const branchRows=(competitionRows||[]).filter(r=>r.branch===branch);
+    if(branchRows.length>1){
+      const sorted=[...branchRows].sort((a,b)=>Number(b.pay?.total||0)-Number(a.pay?.total||0));
+      const rank=sorted.findIndex(r=>r.id===userId)+1;
+      if(rank>0){
+        out.push({icon:'🏪',text:`우리 매장 예상 인센티브 현재 ${rank}/${sorted.length}위`,priority:30});
+      }
+    }
+
+    if(!out.length){
+      out.push({icon:'✨',text:'오늘 실적을 입력하면 맞춤 한 줄이 시작돼요',action:'입력',onClick:onGoInput,priority:1});
+    }
+
+    return out.sort((a,b)=>b.priority-a.priority);
+  },[todayTasks,pay,draft,config,competitionRows,branch,userId,onGoCare,onGoInput]);
+
+  useEffect(()=>{
+    if(messageIndex>=messages.length)setMessageIndex(0);
+  },[messages.length,messageIndex]);
+
+  const item=messages[messageIndex]||messages[0];
+  if(!item)return null;
+
+  const nextMessage=()=>{
+    if(messages.length>1)setMessageIndex(i=>(i+1)%messages.length);
+  };
+
+  return <div className="bg-white border border-gray-100 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 min-w-0">
+    <span className="text-base shrink-0">{item.icon}</span>
+    <button
+      type="button"
+      onClick={item.onClick||nextMessage}
+      className="flex-1 min-w-0 text-left text-xs font-medium text-gray-700 truncate"
+    >
+      {item.text}
+    </button>
+    {item.action&&(
+      <button type="button" onClick={item.onClick} className="text-[11px] font-bold text-violet-600 shrink-0">
+        {item.action}
+      </button>
+    )}
+    {messages.length>1&&(
+      <button type="button" onClick={nextMessage} className="text-[11px] text-gray-400 shrink-0" aria-label="다음 한 줄">
+        {messageIndex+1}/{messages.length} ›
+      </button>
+    )}
+  </div>;
+}
+
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [showNet,setShowNet]=useState(false);
@@ -3506,9 +3755,23 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
       {tab === 'home' && (
         <div className="space-y-4">
+          <DailyOneLiner
+            userId={authUser?.id}
+            month={month}
+            pay={pay}
+            draft={mergedDraft}
+            config={config}
+            competitionRows={competitionRows}
+            branch={currentEmp?.branch}
+            onGoCare={()=>setTab('customerCare')}
+            onGoInput={()=>setTab('daily')}
+          />
           <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-5">
-            <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} {showNet?'비용 차감 후 예상금액':'예상 총 인센티브'}</div>
+            <div className="text-xs text-violet-100 mb-1">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
             <div className="text-3xl font-bold">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
+            <div className="mt-1.5 text-[10px] leading-relaxed text-violet-100/90">
+              ※ 현재 금액은 가계산 금액이며, 최종 정산 및 중도 퇴사 등 정산 조건에 따라 실제 지급액이 달라질 수 있습니다.
+            </div>
             <button onClick={()=>setShowNet(v=>!v)} className="mt-2 text-[11px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
               {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감해서 보기`}
             </button>
@@ -3530,6 +3793,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             />
           )}
           <StoreGoalCard month={month} storeName={currentEmp?.branch} mergedDraft={mergedDraft} pay={pay} />
+          <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} />
           <NextGoalCard
             pay={pay}
             draft={mergedDraft}
@@ -3733,6 +3997,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
   const [homeCustomerName, setHomeCustomerName] = useState('');
+  const [homeNetworkType, setHomeNetworkType] = useState('');
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
   const [homePlannedDate, setHomePlannedDate] = useState('');
   const [homeCareKeys,setHomeCareKeys]=useState([]);
@@ -3741,6 +4006,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeTargetPlan,setHomeTargetPlan]=useState('');
   const [homeOrderSaving, setHomeOrderSaving] = useState(false);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+  const [editingSale,setEditingSale]=useState(null);
+  const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
   const [mobileCustomerName,setMobileCustomerName]=useState('');
   const [mobileCareKeys,setMobileCareKeys]=useState([]);
   const [mobileCustomTitle,setMobileCustomTitle]=useState('');
@@ -3858,17 +4125,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   useEffect(()=>{loadDaySales()},[loadDaySales]);
 
-  const renameSaleCustomer=async(sale)=>{
-    const oldName=sale.customers?.customer_name||'';
-    const next=window.prompt('고객명을 수정해주세요.',oldName);
-    if(!next||!next.trim()||next.trim()===oldName)return;
-    const {error}=await supabase.from('customers').update({
-      customer_name:next.trim(),updated_at:new Date().toISOString()
-    }).eq('id',sale.customer_id).eq('user_id',currentEmp?.id);
-    if(error)return alert(`고객명 수정 실패: ${friendlyError(error)}`);
-    loadDaySales();
-  };
-
   const deleteSale=async(sale)=>{
     const name=sale.customers?.customer_name||'고객';
     if(!window.confirm(`${name} · ${sale.metric_label}\n\n이 판매 건을 삭제할까요?\n연결된 고객 약속도 함께 삭제됩니다.`))return;
@@ -3895,6 +4151,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if (!meta) return;
     setHomeOrderDraft({ groupKey, itemKey, ...meta });
     setHomeCustomerName('');
+    setHomeNetworkType('');
     setHomeDirectComplete(false);
   };
 
@@ -3903,6 +4160,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const customer = homeCustomerName.trim();
     if (!customer) {
       alert('고객명을 입력해야 등록할 수 있어요.');
+      return;
+    }
+    if (!homeNetworkType) {
+      alert('가정망 또는 소호망을 선택해주세요.');
       return;
     }
 
@@ -3922,6 +4183,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       customer_name: customer,
       customer_id: linkedCustomerId,
       product_type: homeOrderDraft.productType,
+      network_type: homeNetworkType,
       status: homeDirectComplete ? 'completed' : 'pending',
       applied_at: appliedAt,
       completed_at: homeDirectComplete ? now : null,
@@ -3941,7 +4203,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     try {
       const {data:sale,error:saleError}=await supabase.from('customer_sales').insert({
         user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
-        metric_label:homeOrderDraft.label,source_type:'home_order',source_ref:String(insertedOrder?.id||'')
+        metric_label:homeOrderDraft.label,source_type:'home_order',source_ref:String(insertedOrder?.id||''),
+        source_meta:{networkType:homeNetworkType}
       }).select('id').single();
       if(saleError)throw saleError;
 
@@ -3982,11 +4245,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       actorId: currentEmp.id,
       type: homeDirectComplete ? 'home_completed' : 'home_order',
       title: homeDirectComplete ? '홈 설치/개통 완료' : '새 홈 청약 등록',
-      message: `${customer} · ${homeOrderDraft.label}`,
+      message: `${customer} · ${homeNetworkLabel(homeNetworkType)} · ${homeOrderDraft.label}`,
       payload: {
         employee_id: currentEmp.id,
         customer_name: customer,
         product_type: homeOrderDraft.productType,
+        network_type: homeNetworkType,
         status: homeDirectComplete ? 'completed' : 'pending',
         source_work_date: sourceWorkDate,
       },
@@ -3995,6 +4259,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeOrderSaving(false);
     setHomeOrderDraft(null);
     setHomeCustomerName('');
+    setHomeNetworkType('');
     setHomeDirectComplete(false);
     setHomePlannedDate('');
 
@@ -4143,10 +4408,79 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     }, 4200);
   };
 
+
+  const mobileLabelFor=(ri,ci)=>{
+    const rowDef=MATRIX_ROW_DEFS[ri];
+    if(!rowDef)return '';
+    return rowDef.hasTiers
+      ? `${rowDef.dailyLabel||rowDef.label} · ${MATRIX_COLS[ci]}`
+      : (rowDef.dailyLabel||rowDef.label);
+  };
+
+  const inferMobileMeta=(sale)=>{
+    const meta=sale?.source_meta||{};
+    if(Number.isInteger(meta.ri)&&Number.isInteger(meta.ci))return {ri:meta.ri,ci:meta.ci,vasKeys:meta.vasKeys||[]};
+
+    const label=String(sale?.metric_label||'');
+    let ri=MATRIX_ROW_DEFS.findIndex(r=>label.startsWith(r.dailyLabel||r.label));
+    if(ri<0)ri=MATRIX_ROW_DEFS.findIndex(r=>label.includes(r.dailyLabel||r.label));
+    if(ri<0)return null;
+    const rowDef=MATRIX_ROW_DEFS[ri];
+    let ci=0;
+    if(rowDef.hasTiers){
+      const found=MATRIX_COLS.findIndex(c=>label.includes(c));
+      if(found>=0)ci=found;
+    }
+    return {ri,ci,vasKeys:meta.vasKeys||[]};
+  };
+
+  const openEditSale=async(sale)=>{
+    if(sale.source_type!=='mobile')return alert('현재 판매건 수정은 모바일 판매부터 지원해요.');
+    const meta=inferMobileMeta(sale);
+    if(!meta)return alert('이전 버전 판매건이라 가입구분을 확인할 수 없어요.');
+
+    setEditingSale(sale);
+    setMobileSaleDraft({ri:meta.ri,ci:meta.ci,label:mobileLabelFor(meta.ri,meta.ci)});
+    setMobileCustomerName(sale.customers?.customer_name||'');
+    setMobileVasKeys(Array.isArray(meta.vasKeys)?meta.vasKeys:[]);
+    setMobileSpotPolicyId('');
+    setMobileSpotDirectOpen(false);
+    setMobileExpenseOpen(false);
+
+    const {data:tasks,error}=await supabase.from('customer_tasks')
+      .select('*')
+      .eq('source_sale_id',sale.id)
+      .eq('user_id',currentEmp?.id)
+      .order('created_at',{ascending:true});
+
+    if(error){
+      console.error('EDIT SALE TASK LOAD ERROR',error);
+      setMobileCareKeys([]);
+      setMobileCustomTitle('');
+      setMobileCustomDueDate('');
+      setMobileTargetPlan('');
+      setEditingCompletedTaskCount(0);
+      return;
+    }
+
+    const completed=(tasks||[]).filter(t=>t.status==='completed');
+    const editable=(tasks||[]).filter(t=>t.status!=='completed');
+    setEditingCompletedTaskCount(completed.length);
+    setMobileCareKeys(editable
+      .map(t=>t.task_type)
+      .filter(k=>CARE_TEMPLATES.some(x=>x.key===k)));
+    const custom=editable.find(t=>t.task_type==='custom');
+    setMobileCustomTitle(custom?.title||'');
+    setMobileCustomDueDate(custom?.due_date||'');
+    const plan=editable.find(t=>t.task_type==='plan93'||t.task_type==='plan183');
+    setMobileTargetPlan(plan?.target_plan||'');
+  };
+
   const addOne = (ri,ci) => {
     if(locked)return;
-    const rowDef=MATRIX_ROW_DEFS[ri];
-    const label=rowDef.hasTiers?`${rowDef.dailyLabel||rowDef.label} · ${MATRIX_COLS[ci]}`:(rowDef.dailyLabel||rowDef.label);
+    setEditingSale(null);
+    setEditingCompletedTaskCount(0);
+    const label=mobileLabelFor(ri,ci);
     setMobileSaleDraft({ri,ci,label});
     setMobileCustomerName('');
     setMobileCareKeys([]);
@@ -4171,7 +4505,103 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!customer)return alert('고객명을 입력해야 실적을 등록할 수 있어요.');
     const saleDate=`${month}-${selectedDay}`;
     setMobileSaleSaving(true);
+
     try{
+      // 기존 판매건 수정
+      if(editingSale){
+        const oldMeta=inferMobileMeta(editingSale);
+        if(!oldMeta)throw new Error('기존 판매정보를 확인할 수 없습니다.');
+
+        const linkedCustomerId=await ensureCustomer(currentEmp.id,customer,saleDate);
+        if(!linkedCustomerId)throw new Error('고객 저장 실패');
+
+        // 일일 실적: 기존 1건 차감 → 수정값 1건 추가
+        const base=normalizeDay(day);
+        const matrix=base.matrix.map(r=>[...r]);
+        matrix[oldMeta.ri][oldMeta.ci]=Math.max(0,Number(matrix[oldMeta.ri][oldMeta.ci]||0)-1);
+        matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
+
+        const vas={...(base.groups?.vas||{})};
+        (oldMeta.vasKeys||[]).forEach(k=>{vas[k]=Math.max(0,Number(vas[k]||0)-1)});
+        (mobileVasKeys||[]).forEach(k=>{
+          if(k!=='vasNone')vas[k]=Number(vas[k]||0)+1;
+        });
+
+        const nextMeta={
+          ...(editingSale.source_meta||{}),
+          ri:mobileSaleDraft.ri,
+          ci:mobileSaleDraft.ci,
+          vasKeys:mobileVasKeys
+        };
+
+        const {error:saleUpdateError}=await supabase.from('customer_sales')
+          .update({
+            customer_id:linkedCustomerId,
+            metric_label:mobileSaleDraft.label,
+            source_meta:nextMeta
+          })
+          .eq('id',editingSale.id)
+          .eq('user_id',currentEmp.id);
+        if(saleUpdateError)throw saleUpdateError;
+
+        // 완료 약속은 보존하고, 미완료 약속만 현재 입력값으로 다시 구성
+        await supabase.from('customer_tasks')
+          .update({customer_id:linkedCustomerId,updated_at:new Date().toISOString()})
+          .eq('source_sale_id',editingSale.id)
+          .eq('user_id',currentEmp.id);
+
+        const {error:deleteTaskError}=await supabase.from('customer_tasks')
+          .delete()
+          .eq('source_sale_id',editingSale.id)
+          .eq('user_id',currentEmp.id)
+          .neq('status','completed');
+        if(deleteTaskError)throw deleteTaskError;
+
+        const taskRows=[];
+        mobileCareKeys.forEach(key=>{
+          const t=CARE_TEMPLATES.find(x=>x.key===key);
+          if(!t)return;
+          taskRows.push({
+            user_id:currentEmp.id,
+            customer_id:linkedCustomerId,
+            source_sale_id:editingSale.id,
+            task_type:key,
+            title:t.title,
+            base_date:saleDate,
+            retention_days:t.retentionDays,
+            due_date:addDaysDate(saleDate,t.retentionDays),
+            status:'pending',
+            target_plan:(key==='plan93'||key==='plan183') ? mobileTargetPlan.trim()||null : null
+          });
+        });
+        if(mobileCustomTitle.trim()&&mobileCustomDueDate){
+          taskRows.push({
+            user_id:currentEmp.id,
+            customer_id:linkedCustomerId,
+            source_sale_id:editingSale.id,
+            task_type:'custom',
+            title:mobileCustomTitle.trim(),
+            base_date:saleDate,
+            retention_days:null,
+            due_date:mobileCustomDueDate,
+            status:'pending'
+          });
+        }
+        if(taskRows.length){
+          const {error:taskInsertError}=await supabase.from('customer_tasks').insert(taskRows);
+          if(taskInsertError)throw taskInsertError;
+        }
+
+        mutate({...base,matrix,groups:{...base.groups,vas}});
+        setMobileSaleDraft(null);
+        setEditingSale(null);
+        setEditingCompletedTaskCount(0);
+        setTimeout(loadDaySales,150);
+        alert('판매건과 고객 약속을 수정했어요.');
+        return;
+      }
+
+      // 신규 판매 등록
       const saved=await createCustomerSaleAndTasks({
         userId:currentEmp.id,customerName:customer,saleDate,
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
@@ -4180,7 +4610,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys}
       });
 
-      // 선택한 스팟 정책도 같은 판매 건으로 신청
       if (mobileSpotPolicyId) {
         const {error:spotError}=await supabase.from('spot_claims').insert({
           policy_id:mobileSpotPolicyId,
@@ -4204,7 +4633,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         if (spotDirectError) throw spotDirectError;
       }
 
-      // 고객에게 사용한 영업비용도 같은 판매 건에서 바로 등록
       if (mobileExpenseOpen && Number(mobileExpenseAmount)>0) {
         const {error:expenseError}=await supabase.from('sales_expenses').insert({
           user_id:currentEmp.id,
@@ -4217,7 +4645,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         if (expenseError) throw expenseError;
       }
 
-      // 모바일 실적과 선택한 VAS를 한 번에 반영
       commitMobileOne(
         mobileSaleDraft.ri,
         mobileSaleDraft.ci,
@@ -4227,8 +4654,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileSaleDraft(null);
       setTimeout(loadDaySales,150);
     }catch(e){
-      alert(`고객/실적 등록 실패: ${friendlyError(e)}`);
-    }finally{setMobileSaleSaving(false)}
+      alert(`${editingSale?'판매건 수정':'고객/실적 등록'} 실패: ${friendlyError(e)}`);
+    }finally{
+      setMobileSaleSaving(false);
+    }
   };
 
   const undoToast = async () => {
@@ -4431,7 +4860,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
                         </div>
                         <div className="flex gap-1 shrink-0">
-                          <button onClick={()=>renameSaleCustomer(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">수정</button>
+                          <button onClick={()=>openEditSale(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
                           <button onClick={()=>deleteSale(sale)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
                         </div>
                       </div>
@@ -4531,12 +4960,46 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       {mobileSaleDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">한 번에 판매 등록</div>
+            <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':'한 번에 판매 등록'}</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{mobileSaleDraft.label}</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">고객명 *</label>
             <input autoFocus value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
               placeholder="고객명을 입력해주세요" className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">가입구분</label>
+                <select
+                  value={mobileSaleDraft.ri}
+                  onChange={e=>{
+                    const ri=Number(e.target.value);
+                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? Math.min(mobileSaleDraft.ci||0,MATRIX_COLS.length-1) : 0;
+                    setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
+                  }}
+                  className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
+                >
+                  {MATRIX_ROW_DEFS.map((r,ri)=><option key={r.label} value={ri}>{r.dailyLabel||r.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">요금제군</label>
+                {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers ? (
+                  <select
+                    value={mobileSaleDraft.ci}
+                    onChange={e=>{
+                      const ci=Number(e.target.value),ri=mobileSaleDraft.ri;
+                      setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
+                    }}
+                    className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
+                  >
+                    {MATRIX_COLS.map((c,ci)=><option key={c} value={ci}>{c}</option>)}
+                  </select>
+                ):(
+                  <div className="w-full rounded-xl px-2.5 py-2.5 text-xs bg-gray-50 text-gray-400">해당 없음</div>
+                )}
+              </div>
+            </div>
 
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">
@@ -4578,7 +5041,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className={`mt-4 grid gap-2 ${editingSale?'grid-cols-1':'grid-cols-3'}`}>
               <button
                 type="button"
                 onClick={() => {
@@ -4589,6 +5052,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               >
                 + 고객 약속{mobileCareKeys.length?` ${mobileCareKeys.length}`:''}
               </button>
+{!editingSale&&(<>
               <button
                 type="button"
                 onClick={() => {
@@ -4606,7 +5070,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               >
                 + 영업비용
               </button>
-            </div>
+
+</>)}            </div>
 
             <div id="mobile-care-options" className="hidden mt-4">
               <CareTemplatePicker
@@ -4618,7 +5083,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               />
             </div>
 
-            <div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+            {!editingSale&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 스팟 추가 인센티브</div>
               {mobileSpotPolicies.length>0&&<div className="space-y-1.5">
                 {mobileSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setMobileSpotPolicyId(p.id);setMobileSpotDirectOpen(false)}}
@@ -4637,9 +5102,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-[10px] text-gray-400">관리자가 확인·수정 후 승인하면 반영돼요.</div>
               </div>}
               {mobileSpotPolicies.length===0&&!mobileSpotDirectOpen&&<div className="text-xs text-gray-400 mt-2">등록된 정책이 없어요. 직접 입력해주세요.</div>}
-            </div>
+            </div>}
 
-            {mobileExpenseOpen && (
+
+            {!editingSale && mobileExpenseOpen && (
               <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3">
                 <div className="text-xs font-semibold text-gray-700 mb-2">💳 이 고객에게 사용한 영업비용</div>
                 <div className="grid grid-cols-2 gap-2">
@@ -4657,12 +5123,20 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             )}
 
+            {editingSale&&(
+              <div className="mt-4 rounded-xl bg-violet-50 px-3 py-2.5 text-[11px] text-violet-700">
+                가입구분·요금제군·VAS·고객 약속을 함께 수정해요.
+                {editingCompletedTaskCount>0&&<div className="mt-1 font-semibold">이미 완료된 약속 {editingCompletedTaskCount}건은 그대로 유지됩니다.</div>}
+                <div className="mt-1 text-violet-500">기존 스팟·영업비용 기록은 이 수정에서 변경되지 않아요.</div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2 mt-5">
-              <button onClick={()=>setMobileSaleDraft(null)} disabled={mobileSaleSaving}
+              <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
                 className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
               <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()}
                 className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
-                {mobileSaleSaving?'등록 중...':'실적 등록'}
+                {mobileSaleSaving?(editingSale?'수정 중...':'등록 중...'):(editingSale?'수정 저장':'실적 등록')}
               </button>
             </div>
           </div>
@@ -4686,6 +5160,25 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               placeholder="고객명을 입력해주세요"
               className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
             />
+
+            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
+              망 구분 <span className="text-red-500">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {HOME_NETWORK_TYPES.map(n=>(
+                <button key={n.key} type="button" onClick={()=>setHomeNetworkType(n.key)}
+                  className={`py-3 rounded-xl border text-sm font-bold ${
+                    homeNetworkType===n.key
+                      ? 'bg-violet-50 border-violet-300 text-violet-700'
+                      : 'bg-white border-gray-200 text-gray-500'
+                  }`}>
+                  {homeNetworkType===n.key?'✓ ':''}{n.label}
+                </button>
+              ))}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-1.5">
+              다음달부터 가정망과 소호망 인센티브를 분리할 수 있도록 판매 시점부터 구분해서 저장해요.
+            </div>
 
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
               설치 예정일 <span className="text-gray-400 font-normal">(미정 가능)</span>
@@ -4723,6 +5216,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 onClick={() => {
                   setHomeOrderDraft(null);
                   setHomeCustomerName('');
+                  setHomeNetworkType('');
                   setHomeDirectComplete(false);
                 }}
                 disabled={homeOrderSaving}
@@ -4733,7 +5227,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <button
                 type="button"
                 onClick={submitHomeOrder}
-                disabled={homeOrderSaving || !homeCustomerName.trim()}
+                disabled={homeOrderSaving || !homeCustomerName.trim() || !homeNetworkType}
                 className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
               >
                 {homeOrderSaving ? '등록 중...' : '등록'}
@@ -4825,24 +5319,43 @@ function buildNextGoal(pay, draft, config) {
 
   const candidates = [];
 
-  // 1) 성과등급: 다음 등급 보너스가 실제 총 인센티브를 올릴 때만 후보
+  const pushCandidate = ({
+    key,title,description,delta,remain,current,target,unit,effortWeight=1
+  }) => {
+    if (!(remain > 0) || !(delta > 0) || !(target > 0)) return;
+    const progress = Math.max(0, Math.min(1, Number(current||0) / Number(target||1)));
+    const weightedEffort = Math.max(0.25, Number(remain||0) * effortWeight);
+
+    // "유리한 다음 행동" 점수:
+    // 남은 행동 1단위당 예상 인센티브 상승액을 기본으로 하고,
+    // 이미 목표에 가까울수록 약간 더 우선해요.
+    const valuePerStep = delta / weightedEffort;
+    const score = valuePerStep * (0.7 + progress * 0.3);
+
+    candidates.push({
+      key,title,description,delta,remain,current,target,unit,progress,score,
+      recommendation: `남은 ${remain}${unit} 대비 +${won(delta)} 효과`,
+    });
+  };
+
+  // 1) 성과등급
   if (pay.nextGrade) {
     const remain = Math.max(0, pay.nextGrade.min - pay.totalPoints);
     const delta = guaranteedDeltaForGradeBonus(pay, pay.nextGrade.bonus);
-
-    if (remain > 0 && delta > 0) {
-      candidates.push({
-        key: 'grade',
-        effort: remain,
-        title: `${pay.nextGrade.grade}등급`,
-        description: `${pay.nextGrade.grade}등급까지 ${remain.toFixed(1)}P 남았어요`,
-        delta,
-      });
-    }
+    pushCandidate({
+      key:'grade',
+      title:`${pay.nextGrade.grade}등급`,
+      description:`${pay.nextGrade.grade}등급까지 ${remain.toFixed(1)}P 남았어요`,
+      delta,
+      remain:Number(remain.toFixed(1)),
+      current:pay.totalPoints,
+      target:pay.nextGrade.min,
+      unit:'P',
+      effortWeight:1,
+    });
   }
 
-  // 2) 홈 최소조건: 현재 성과포인트 기준 보너스가 잠겨 있고,
-  // 홈 조건 충족 시 실제 총액이 증가하는 경우
+  // 2) 홈 최소조건
   if (!pay.gradeEligible) {
     const short = Math.max(0, HOME_GATE_MIN - pay.homeGatePoints);
     const grades = [...(config.grades || DEFAULT_GRADES)].sort((a, b) => b.min - a.min);
@@ -4852,59 +5365,63 @@ function buildNextGoal(pay, draft, config) {
       ? guaranteedDeltaForGradeBonus(pay, potentialBonus)
       : 0;
 
-    if (short > 0 && delta > 0) {
-      candidates.push({
-        key: 'homeGate',
-        effort: short,
-        title: '홈 최소조건',
-        description: `홈 최소조건까지 ${short.toFixed(1)}점 남았어요`,
-        delta,
-      });
-    }
+    pushCandidate({
+      key:'homeGate',
+      title:'홈 최소조건',
+      description:`홈 최소조건까지 ${short.toFixed(1)}점 남았어요`,
+      delta,
+      remain:Number(short.toFixed(1)),
+      current:pay.homeGatePoints,
+      target:HOME_GATE_MIN,
+      unit:'점',
+      effortWeight:1,
+    });
   }
 
-  // 3) 고객등록: 다음 구간 보너스 차액은 총액에 직접 더해짐
+  // 3) 고객등록
   const custCount = Number(draft.custRegCount || 0);
   const custNext = nextTierAbove(custCount, config.custRegTiers);
   if (custNext) {
     const currentBonus = tierBonus(custCount, config.custRegTiers || []);
     const delta = Math.max(0, Number(custNext.bonus || 0) - currentBonus);
     const remain = Math.max(0, Number(custNext.min) - custCount);
-
-    if (remain > 0 && delta > 0) {
-      candidates.push({
-        key: 'custReg',
-        effort: remain,
-        title: '고객등록',
-        description: `고객등록 다음 구간까지 ${remain}건 남았어요`,
-        delta,
-      });
-    }
+    pushCandidate({
+      key:'custReg',
+      title:'고객등록',
+      description:`고객등록 다음 구간까지 ${remain}건 남았어요`,
+      delta,
+      remain,
+      current:custCount,
+      target:Number(custNext.min),
+      unit:'건',
+      effortWeight:1,
+    });
   }
 
-  // 4) 맞춤제안: 다음 구간 보너스 차액은 총액에 직접 더해짐
+  // 4) 맞춤제안
   const tailoredCount = Number(draft.tailoredCount || 0);
   const tailoredNext = nextTierAbove(tailoredCount, config.tailoredTiers);
   if (tailoredNext) {
     const currentBonus = tierBonus(tailoredCount, config.tailoredTiers || []);
     const delta = Math.max(0, Number(tailoredNext.bonus || 0) - currentBonus);
     const remain = Math.max(0, Number(tailoredNext.min) - tailoredCount);
-
-    if (remain > 0 && delta > 0) {
-      candidates.push({
-        key: 'tailored',
-        effort: remain,
-        title: '맞춤제안',
-        description: `맞춤제안 다음 구간까지 ${remain}건 남았어요`,
-        delta,
-      });
-    }
+    pushCandidate({
+      key:'tailored',
+      title:'맞춤제안',
+      description:`맞춤제안 다음 구간까지 ${remain}건 남았어요`,
+      delta,
+      remain,
+      current:tailoredCount,
+      target:Number(tailoredNext.min),
+      unit:'건',
+      effortWeight:1,
+    });
   }
 
   if (!candidates.length) return null;
 
-  // 가장 가까운 목표 우선, 거리가 같으면 상승액이 큰 목표 우선
-  candidates.sort((a, b) => (a.effort - b.effort) || (b.delta - a.delta));
+  // 예상 인센티브 효율 + 현재 달성 접근도를 함께 고려
+  candidates.sort((a,b)=>b.score-a.score || b.delta-a.delta || a.remain-b.remain);
   return candidates[0];
 }
 
@@ -5137,6 +5654,59 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
   );
 }
 
+
+function MyMonthlyPerformanceCard({ draft, pay, personalGoals }) {
+  const metrics=[
+    {key:'hs',label:'HS',unit:'count',value:hsCount(draft)},
+    {key:'simMnp',label:'SIM MNP',unit:'count',value:Object.values(draft?.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0)},
+    {key:'second',label:'2ND',unit:'count',value:Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)},
+    {key:'productivity',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
+    {key:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
+    {key:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
+    {key:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
+    {key:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
+    {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',value:Number(draft?.tailoredAmount||0)},
+    {key:'tailoredCount',label:'업셀건',unit:'count',value:Number(draft?.tailoredCount||0)},
+  ];
+
+  const goalFor=(m)=>{
+    const aliases={
+      hs:'hs', home:'home', tvFree:'tvFree', smartHome:'smartHome',
+      tailoredAmount:'tailoredAmount', tailoredCount:'tailoredCount'
+    };
+    const k=aliases[m.key];
+    return k ? Number(personalGoals?.[k]||0) : 0;
+  };
+
+  const renderValue=(m)=>{
+    if(m.unit==='won') return won(m.value);
+    if(m.unit==='point') return `${Number(m.value||0).toFixed(1)}P`;
+    return `${Math.round(Number(m.value||0))}건`;
+  };
+
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-50">
+      <div className="text-xs text-gray-400">📊 나의 이번 달 실적</div>
+      <div className="text-sm font-bold text-gray-900 mt-0.5">당월 누적 실적</div>
+    </div>
+    <div className="p-3 space-y-2">
+      {[metrics.slice(0,4),metrics.slice(4,8),metrics.slice(8,10)].map((row,ri)=>(
+        <div key={ri} className={`grid gap-2 ${ri<2?'grid-cols-4':'grid-cols-2'}`}>
+          {row.map(m=>{
+            const goal=goalFor(m);
+            const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
+            return <div key={m.key} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center min-w-0">
+              <div className="text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{m.label}</div>
+              <div className={`font-bold text-gray-900 mt-1 whitespace-nowrap ${m.unit==='won'?'text-[13px]':'text-[15px]'}`}>{renderValue(m)}</div>
+              {goal>0&&<div className="text-[9px] text-violet-500 mt-1">목표 {pct}%</div>}
+            </div>
+          })}
+        </div>
+      ))}
+    </div>
+  </div>;
+}
+
 function NextGoalCard({ pay, draft, config, onGoInput }) {
   const goal = useMemo(
     () => buildNextGoal(pay, draft, config),
@@ -5156,9 +5726,10 @@ function NextGoalCard({ pay, draft, config, onGoInput }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-violet-600 mb-1">다음 목표</div>
+          <div className="text-xs font-semibold text-violet-600 mb-1">추천 다음 행동</div>
           <div className="text-sm font-bold text-gray-900">{goal.title}</div>
           <div className="text-sm text-gray-600 mt-0.5">{goal.description}</div>
+          <div className="text-[11px] text-violet-500 mt-1">{goal.recommendation}</div>
 
           <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
             <span className="text-xs text-gray-400">달성 시 예상 인센티브</span>
@@ -5446,12 +6017,14 @@ function AdminHomeCare({ employees }) {
   const overdue=orders.filter(o=>o.planned_install_date && String(o.planned_install_date).slice(0,10)<today);
   const todayList=orders.filter(o=>String(o.planned_install_date||'').slice(0,10)===today);
   const unscheduled=orders.filter(o=>!o.planned_install_date);
+  const householdCount=orders.filter(o=>o.network_type==='household').length;
+  const sohoCount=orders.filter(o=>o.network_type==='soho').length;
 
   if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">홈 케어 현황 불러오는 중...</div>;
 
   return <div className="space-y-3">
-    <div className="grid grid-cols-4 gap-2">
-      {[['진행중',orders.length],['오늘 설치',todayList.length],['예정일 경과',overdue.length],['일정 미정',unscheduled.length]].map(([l,v])=>
+    <div className="grid grid-cols-3 gap-2">
+      {[['진행중',orders.length],['가정망',householdCount],['소호망',sohoCount],['오늘 설치',todayList.length],['예정일 경과',overdue.length],['일정 미정',unscheduled.length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
           <div className="text-lg font-bold">{v}</div><div className="text-[10px] text-gray-400">{l}</div>
         </div>)}
@@ -5464,7 +6037,14 @@ function AdminHomeCare({ employees }) {
           const emp=empMap[o.user_id], p=o.planned_install_date?String(o.planned_install_date).slice(0,10):null;
           const over=p&&p<today, isToday=p===today, prod=HOME_ORDER_PRODUCTS.find(x=>x.key===o.product_type)?.label||o.product_type;
           return <div key={o.id} className="px-4 py-3">
-            <div className="flex justify-between gap-3"><div><div className="text-sm font-bold">{o.customer_name||'고객명 미입력'} · {prod}</div>
+            <div className="flex justify-between gap-3"><div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="text-sm font-bold">{o.customer_name||'고객명 미입력'} · {prod}</div>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  o.network_type==='soho'?'bg-blue-50 text-blue-600':
+                  o.network_type==='household'?'bg-violet-50 text-violet-600':'bg-gray-100 text-gray-400'
+                }`}>{homeNetworkLabel(o.network_type)}</span>
+              </div>
               <div className="text-xs text-gray-500 mt-1">{emp?.name||'직원'} · {emp?.branch||''}</div></div>
               <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
                 {over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
@@ -5745,7 +6325,7 @@ function SettlementReview({ month, rows, employees }) {
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
     const rowsCsv=[['구분','일자','매장','직원','고객명','항목','값/상태','비고']];
     (sales||[]).forEach(x=>rowsCsv.push(['판매RAW',x.sale_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.metric_label,'1',JSON.stringify(x.source_meta||{})]));
-    (homes||[]).forEach(x=>rowsCsv.push(['홈RAW',x.source_work_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.product_type,x.status,`설치예정:${x.planned_install_date||''} 완료:${x.actual_install_date||''}`]));
+    (homes||[]).forEach(x=>rowsCsv.push(['홈RAW',x.source_work_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,`${homeNetworkLabel(x.network_type)} · ${x.product_type}`,x.status,`망:${homeNetworkLabel(x.network_type)} 설치예정:${x.planned_install_date||''} 완료:${x.actual_install_date||''}`]));
     (spots||[]).forEach(x=>rowsCsv.push(['스팟RAW',x.claim_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.reviewed_title||x.direct_title||x.spot_policies?.title,x.final_amount??x.direct_amount??x.spot_policies?.amount,x.status]));
     (expenses||[]).forEach(x=>rowsCsv.push(['비용RAW',x.expense_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.category,x.amount,x.memo]));
     (tasks||[]).forEach(x=>rowsCsv.push(['약속RAW',x.base_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.title,x.status,`예정:${x.due_date} 변경요금제:${x.target_plan||''} 완료:${x.completed_at||''}`]));
