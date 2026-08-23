@@ -79,7 +79,7 @@ const HOME_BASE_ITEMS = [
   { key: 'homeTv', label: '홈+TV 동시청약', point: 2 },
 ];
 
-// v21.14: 홈 청약을 가정망/소호망으로 분리 저장.
+// v21.15: 홈 청약을 가정망/소호망으로 분리 저장.
 // 현재 월 인센티브 계산식은 기존 정책을 유지하고, 다음달 정책 확정 시 망별 단가를 별도 적용할 수 있게 데이터부터 분리합니다.
 const HOME_NETWORK_TYPES = [
   { key: 'household', label: '가정망' },
@@ -3993,6 +3993,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [selectedDay, setSelectedDay] = useState(todayKey);
   const [day, setDay] = useState(() => normalizeDay(dailyDays[todayKey]));
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
+  const [inputCategory, setInputCategory] = useState(null); // mobile | home | extra
   const [toast, setToast] = useState(null);         // 등록 피드백 카드
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
@@ -4005,6 +4006,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeCustomDueDate,setHomeCustomDueDate]=useState('');
   const [homeTargetPlan,setHomeTargetPlan]=useState('');
   const [homeOrderSaving, setHomeOrderSaving] = useState(false);
+  const [homeSpotPolicies,setHomeSpotPolicies]=useState([]);
+  const [homeSpotPolicyId,setHomeSpotPolicyId]=useState('');
+  const [homeSpotDirectOpen,setHomeSpotDirectOpen]=useState(false);
+  const [homeSpotDirectTitle,setHomeSpotDirectTitle]=useState('');
+  const [homeSpotDirectAmount,setHomeSpotDirectAmount]=useState('');
+  const [homeSpotDirectMemo,setHomeSpotDirectMemo]=useState('');
+  const [homeExpenseOpen,setHomeExpenseOpen]=useState(false);
+  const [homeExpenseCategory,setHomeExpenseCategory]=useState('오퍼');
+  const [homeExpenseAmount,setHomeExpenseAmount]=useState('');
+  const [homeExpenseMemo,setHomeExpenseMemo]=useState('');
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
   const [editingSale,setEditingSale]=useState(null);
   const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
@@ -4093,6 +4104,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
 
   useEffect(() => {
+    if (!homeOrderDraft) return;
+    const saleDate=`${month}-${selectedDay}`;
+    (async()=>{
+      const {data}=await supabase.from('spot_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
+      setHomeSpotPolicies(data||[]);
+      setHomeSpotPolicyId('');
+    })();
+  }, [homeOrderDraft, month, selectedDay]);
+
+  useEffect(() => {
     if (!mobileSaleDraft) return;
     const saleDate=`${month}-${selectedDay}`;
     (async()=>{
@@ -4153,6 +4174,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeCustomerName('');
     setHomeNetworkType('');
     setHomeDirectComplete(false);
+    setHomeSpotPolicyId(''); setHomeSpotDirectOpen(false); setHomeSpotDirectTitle(''); setHomeSpotDirectAmount(''); setHomeSpotDirectMemo('');
+    setHomeExpenseOpen(false); setHomeExpenseCategory('오퍼'); setHomeExpenseAmount(''); setHomeExpenseMemo('');
   };
 
   const submitHomeOrder = async () => {
@@ -4223,6 +4246,19 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       if(taskRows.length)await supabase.from('customer_tasks').insert(taskRows);
     } catch(e) {
       console.error('CUSTOMER CARE LINK ERROR',e);
+    }
+
+    // 홈 판매에도 스팟/오퍼(영업비용)를 고객·접수일 기준으로 함께 기록
+    if (homeSpotPolicyId) {
+      const {error:spotError}=await supabase.from('spot_claims').insert({policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending'});
+      if(spotError) alert(`홈 스팟 등록 실패: ${friendlyError(spotError)}`);
+    } else if (homeSpotDirectOpen && homeSpotDirectTitle.trim() && Number(homeSpotDirectAmount)>0) {
+      const {error:spotError}=await supabase.from('spot_claims').insert({policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null});
+      if(spotError) alert(`홈 스팟 등록 실패: ${friendlyError(spotError)}`);
+    }
+    if (homeExpenseOpen && Number(homeExpenseAmount)>0) {
+      const {error:expenseError}=await supabase.from('sales_expenses').insert({user_id:currentEmp.id,expense_date:sourceWorkDate,amount:Number(homeExpenseAmount),category:homeExpenseCategory,customer_name:customer,memo:homeExpenseMemo.trim()||null});
+      if(expenseError) alert(`홈 오퍼/영업비용 등록 실패: ${friendlyError(expenseError)}`);
     }
 
     // 바로 완료로 등록한 경우에만 확정 실적 +1
@@ -4788,48 +4824,38 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       <>
           <div className="bg-white rounded-xl border border-gray-100 p-3">
-            <div className="text-[11px] text-gray-400 mb-2">1. 가입구분</div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {MATRIX_ROW_DEFS.map((rowDef, ri) => {
-                const rowSum = dayMatrix[ri].reduce((s, v) => s + v, 0);
-                const on = pickedRow === ri;
-                return (
-                  <button key={rowDef.label} onClick={() => setPickedRow(on ? null : ri)}
-                    className={`px-3 py-2.5 rounded-lg text-sm font-medium text-left flex items-center justify-between gap-1
-                      ${on ? 'bg-violet-600 text-white' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}>
-                    <span className="truncate">{rowDef.dailyLabel || rowDef.label}</span>
-                    {rowSum > 0 && (
-                      <span className={`shrink-0 text-[11px] px-1.5 rounded-full tabular-nums ${on ? 'bg-white/25' : 'bg-violet-100 text-violet-700'}`}>{rowSum}</span>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={()=>{setInputCategory('mobile');setPickedRow(null);}}
+                className={`p-4 rounded-2xl border text-left ${inputCategory==='mobile'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
+                <div className="text-xl">📱</div><div className="text-sm font-bold text-gray-800 mt-1">모바일 실적 입력</div>
+                <div className="text-[10px] text-gray-400 mt-1">고객명 · 가입구분 · 요금제 · VAS · 스팟 · 오퍼</div>
+              </button>
+              <button type="button" onClick={()=>{setInputCategory('home');setPickedRow(null);}}
+                className={`p-4 rounded-2xl border text-left ${inputCategory==='home'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
+                <div className="text-xl">🏠</div><div className="text-sm font-bold text-gray-800 mt-1">홈 실적 입력</div>
+                <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
+              </button>
             </div>
 
-            {pickedRow !== null && (
+            {inputCategory==='mobile' && (
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="text-[11px] text-gray-400 mb-2">
-                  {MATRIX_ROW_DEFS[pickedRow].hasTiers ? '2. 요금제군을 누르면 1건 등록돼요' : '2. 눌러서 1건 등록'}
+                <div className="text-[11px] text-gray-400 mb-2">가입구분을 선택하면 고객별 판매 등록창이 열려요.</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {MATRIX_ROW_DEFS.map((rowDef,ri)=><button key={rowDef.label} type="button" onClick={()=>addOne(ri,0)}
+                    className="px-3 py-2.5 rounded-lg text-sm font-medium text-left bg-gray-50 text-gray-700 hover:bg-violet-50">{rowDef.dailyLabel||rowDef.label}</button>)}
                 </div>
-                {MATRIX_ROW_DEFS[pickedRow].hasTiers ? (
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {MATRIX_COLS.map((c, ci) => {
-                      const cnt = dayMatrix[pickedRow][ci] || 0;
-                      return (
-                        <button key={c} onClick={() => addOne(pickedRow, ci)}
-                          className="px-2 py-3 rounded-lg bg-violet-50 hover:bg-violet-100 active:bg-violet-200 text-violet-800 text-xs font-medium leading-tight relative">
-                          {c}
-                          {cnt > 0 && <span className="absolute top-1 right-1 text-[10px] bg-violet-600 text-white rounded-full w-4 h-4 flex items-center justify-center tabular-nums">{cnt}</span>}
-                        </button>
-                      );
-                    })}
+              </div>
+            )}
+
+            {inputCategory==='home' && (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                {DAILY_GROUP_DEFS.filter(g=>g.bucket==='home').map(g=><div key={g.key}>
+                  <div className="text-xs font-bold text-gray-600 mb-1.5">{g.label}</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {groupTable(config,g.key).map(t=>{const hm=homeOrderMeta(g.key,t.key); if(!hm)return null; return <button key={t.key} type="button" onClick={()=>openHomeOrder(g.key,t.key)} className="px-3 py-2.5 rounded-lg bg-gray-50 hover:bg-violet-50 text-left text-xs font-semibold text-gray-700">{t.label}</button>})}
                   </div>
-                ) : (
-                  <button onClick={() => addOne(pickedRow, 0)}
-                    className="w-full py-3 rounded-lg bg-violet-50 hover:bg-violet-100 active:bg-violet-200 text-violet-800 text-sm font-semibold flex items-center justify-center gap-1.5">
-                    <Plus size={15} />1건 등록 <span className="text-violet-400 font-normal">(현재 {dayMatrix[pickedRow][0] || 0}건)</span>
-                  </button>
-                )}
+                </div>)}
               </div>
             )}
           </div>
@@ -4877,7 +4903,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           자주 쓰는 모바일·VAS 입력은 위에서 한 번에 처리하고, 아래에는 홈·기타 실적만 정리했어요.
         </div>
 
-        {DAILY_GROUP_DEFS.filter((g) => g.bucket === 'home').map((g) => {
+        {false && DAILY_GROUP_DEFS.filter((g) => g.bucket === 'home').map((g) => {
           const table = groupTable(config, g.key);
           const sum = table.reduce((s, t) => s + (day.groups[g.key]?.[t.key] || 0), 0);
           return (
@@ -5196,7 +5222,19 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               />
             </div>
 
-<label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
+<div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={()=>{const el=document.getElementById('home-spot-options');if(el)el.classList.toggle('hidden')}} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSpotPolicyId||homeSpotDirectOpen?'bg-orange-50 border-orange-200 text-orange-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 스팟 정책</button>
+              <button type="button" onClick={()=>setHomeExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 오퍼/영업비용</button>
+            </div>
+            <div id="home-spot-options" className="hidden mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+              <div className="text-xs font-semibold text-gray-700 mb-2">🔥 홈 스팟 추가 인센티브</div>
+              {homeSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setHomeSpotPolicyId(p.id);setHomeSpotDirectOpen(false)}} className={`w-full mb-1 text-left px-3 py-2 rounded-lg text-xs border ${homeSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}><b>{homeSpotPolicyId===p.id?'✓ ':''}{p.title}</b><span className="float-right">+{won(p.amount)}</span></button>)}
+              <button type="button" onClick={()=>{setHomeSpotPolicyId('');setHomeSpotDirectOpen(v=>!v)}} className="w-full mt-1 px-3 py-2 rounded-lg text-left text-xs font-bold bg-orange-100/70 text-orange-700">+ 스팟 직접 입력</button>
+              {homeSpotDirectOpen&&<div className="space-y-2 mt-2"><input value={homeSpotDirectTitle} onChange={e=>setHomeSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectAmount} onChange={e=>setHomeSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectMemo} onChange={e=>setHomeSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/></div>}
+            </div>
+            {homeExpenseOpen&&<div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">💳 오퍼/영업비용</div><div className="grid grid-cols-2 gap-2"><select value={homeExpenseCategory} onChange={e=>setHomeExpenseCategory(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white"><option>오퍼</option><option>케이스</option><option>판촉</option><option>기타</option></select><input inputMode="numeric" value={homeExpenseAmount} onChange={e=>setHomeExpenseAmount(e.target.value.replace(/\D/g,''))} placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/></div><input value={homeExpenseMemo} onChange={e=>setHomeExpenseMemo(e.target.value)} placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/></div>}
+
+            <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
               <input
                 type="checkbox"
                 checked={homeDirectComplete}
@@ -6285,7 +6323,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo }) {
   </div>;
 }
 
-function SettlementReview({ month, rows, employees }) {
+function SettlementReview({ month, rows, employees, config }) {
   const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({});
   useEffect(()=>{
     (async()=>{
@@ -6313,30 +6351,42 @@ function SettlementReview({ month, rows, employees }) {
   };
 
   const exportRaw=async()=>{
-    const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
+    const ids=(rows||[]).map(r=>r.id);if(!ids.length)return alert('정산 대상 직원이 없어요.');
     const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-    const [{data:sales},{data:homes},{data:spots},{data:expenses},{data:tasks}]=await Promise.all([
-      supabase.from('customer_sales').select('*, customers(customer_name), profiles:user_id(name,store_name)').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
-      supabase.from('home_orders').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('source_work_date',`${month}-01`).lt('source_work_date',to),
-      supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
-      supabase.from('sales_expenses').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
-      supabase.from('customer_tasks').select('*, customers(customer_name), profiles:user_id(name,store_name)').in('user_id',ids).gte('base_date',`${month}-01`).lt('base_date',to)
-    ]);
-    const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    const rowsCsv=[['구분','일자','매장','직원','고객명','항목','값/상태','비고']];
-    (sales||[]).forEach(x=>rowsCsv.push(['판매RAW',x.sale_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.metric_label,'1',JSON.stringify(x.source_meta||{})]));
-    (homes||[]).forEach(x=>rowsCsv.push(['홈RAW',x.source_work_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,`${homeNetworkLabel(x.network_type)} · ${x.product_type}`,x.status,`망:${homeNetworkLabel(x.network_type)} 설치예정:${x.planned_install_date||''} 완료:${x.actual_install_date||''}`]));
-    (spots||[]).forEach(x=>rowsCsv.push(['스팟RAW',x.claim_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.reviewed_title||x.direct_title||x.spot_policies?.title,x.final_amount??x.direct_amount??x.spot_policies?.amount,x.status]));
-    (expenses||[]).forEach(x=>rowsCsv.push(['비용RAW',x.expense_date,x.profiles?.store_name,x.profiles?.name,x.customer_name,x.category,x.amount,x.memo]));
-    (tasks||[]).forEach(x=>rowsCsv.push(['약속RAW',x.base_date,x.profiles?.store_name,x.profiles?.name,x.customers?.customer_name,x.title,x.status,`예정:${x.due_date} 변경요금제:${x.target_plan||''} 완료:${x.completed_at||''}`]));
-    const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
-    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=`정산_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    try {
+      const results=await Promise.all([
+        supabase.from('daily_records').select('user_id,work_date,data,profiles:user_id(name,store_name)').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to).order('work_date'),
+        supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
+        supabase.from('sales_expenses').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to)
+      ]);
+      const firstError=results.find(x=>x.error)?.error;if(firstError)throw firstError;
+      const [daily,spots,expenses]=results.map(x=>x.data||[]);
+      const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+      const rowsCsv=[['구분','기준월','일자','매장','직원','대분류','세부항목','세부구분','건수/값','적용금액','지급반영','비고']];
+      // 화면의 최종 예상지급액을 먼저 기록해 CSV 합계와 화면을 대조하기 쉽게 함
+      (rows||[]).forEach(r=>{
+        const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense;
+        const parts=[['보장/기본',r.pay.guaranteedComponent],['홈 그레이드',r.pay.homeGradePay],['홈 정액',r.pay.homeFlatPay],['홈 부가',r.pay.homeAddonPay],['재약정',r.pay.renewPay],['VAS',r.pay.vasPay],['MNP번들',r.pay.mnpBundlePay],['소노',r.pay.sonoPay],['고객등록 보너스',r.pay.custRegBonus],['맞춤제안 보너스',r.pay.tailoredBonus],['맞춤제안 금액',r.pay.tailoredAmountBonus],['승인 스팟',spot],['영업비용 차감',-expense]];
+        parts.filter(([,v])=>Number(v||0)!==0).forEach(([label,v])=>rowsCsv.push(['정산요약',month,'',r.branch,r.name,'지급구성',label,'',1,v,'반영','']));
+        rowsCsv.push(['정산합계',month,'',r.branch,r.name,'최종지급액','', '',1,net,'실지급 검토',`기본계산 ${r.pay.total} + 스팟 ${spot} - 비용 ${expense}`]);
+      });
+      (daily||[]).forEach(x=>{
+        const d=normalizeDay(x.data);
+        d.matrix.forEach((arr,ri)=>arr.forEach((cnt,ci)=>{if(!cnt)return;const rd=MATRIX_ROW_DEFS[ri];rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'모바일',rd?.dailyLabel||rd?.label||`행${ri+1}`,rd?.hasTiers?MATRIX_COLS[ci]:'',cnt,config.matrix?.[ri]?.[ci]||0,'계산대상',`원천 일일입력`])}));
+        DAILY_GROUP_DEFS.forEach(g=>{const table=groupTable(config,g.key);Object.entries(d.groups?.[g.key]||{}).forEach(([key,cnt])=>{if(!cnt)return;const item=table.find(t=>t.key===key);rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,g.bucket==='home'?'홈':'기타',g.label,item?.label||key,cnt,item?.rate||item?.point||0,'계산대상','원천 일일입력'])})});
+        [['custRegCount','고객등록'],['tailoredCount','맞춤제안 건수'],['tailoredAmount','맞춤제안 금액']].forEach(([k,l])=>{if(Number(d[k]||0)>0)rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'기타',l,'',d[k],k==='tailoredAmount'?d[k]:0,'계산대상','원천 일일입력'])});
+      });
+      (spots||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.claim_date,x.profiles?.store_name,x.profiles?.name,'스팟',x.reviewed_title||x.direct_title||x.spot_policies?.title||'',x.customer_name||'',1,x.final_amount??x.direct_amount??x.spot_policies?.amount??0,x.status==='approved'?'반영':'미반영',x.status]));
+      (expenses||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.expense_date,x.profiles?.store_name,x.profiles?.name,'영업비용',x.category,x.customer_name||'',1,-Number(x.amount||0),'차감',x.memo||'']));
+      const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=`정산_검증_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    } catch(e) { alert(`정산 RAW 생성 실패: ${friendlyError(e)}`); }
   };
 
   return <div className="space-y-3">
     <div className="bg-white rounded-xl border p-4 flex justify-between gap-3 items-center">
-      <div><div className="font-bold">💰 {monthLabel(month)} 정산 검토</div><div className="text-xs text-gray-400 mt-1">기본 인센티브 + 승인 스팟 - 영업비용을 검토해요.</div></div>
+      <div><div className="font-bold">💰 {monthLabel(month)} 정산 검토</div><div className="text-xs text-gray-400 mt-1">기본 인센티브 + 승인 스팟 - 영업비용을 검토해요. RAW는 마감 전에도 통신사 자료와 대조할 수 있어요.</div></div>
       <button onClick={exportRaw} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">RAW CSV</button>
     </div>
     <div className="bg-white rounded-xl border overflow-hidden divide-y">
@@ -6508,7 +6558,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} />}
-      {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} />}
+      {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
       {adminTab === 'recognition' && (
         <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
       )}
