@@ -11,6 +11,53 @@ import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 
 /* v21.26: 2ND 번들별 일반/무료판매 구분. 무료판매는 실적/KPI 인정, 번들+해당 VAS 인센티브 제외. */
+
+/* v21.32 DATA SAFETY
+   - UI 버전과 저장 데이터 버전을 분리
+   - 구버전 source_meta를 현재 UI 형식으로 읽음
+   - 수정 시 기존 source_meta 필드를 보존한 채 현재 필드만 병합
+   - DB audit trigger와 함께 원본 변경 이력을 보존
+*/
+const CURRENT_SALE_SCHEMA_VERSION = 3;
+
+function saleSchemaVersion(sale){
+  return Number(sale?.schema_version || sale?.source_meta?.schemaVersion || 1);
+}
+function withCurrentSaleSchema(meta={}){
+  return {...(meta||{}), schemaVersion:CURRENT_SALE_SCHEMA_VERSION};
+}
+function legacySaleBadge(sale){
+  return saleSchemaVersion(sale) < CURRENT_SALE_SCHEMA_VERSION;
+}
+function inferHomeProductTypeFromLabel(label=''){
+  const t=String(label||'').replace(/\s+/g,' ');
+  if(t.includes('TV프리')) return 'tvFree';
+  if(t.includes('스마트홈')) return 'smartHome';
+  if(t.includes('일반 부셋탑') || t.includes('부셋탑')) return 'subSetTop';
+  if(t.includes('중고MNP') || t.includes('중고 MNP')) return 'simulUsedMnp';
+  if(t.includes('MNP 동시')) return 'simulMnp';
+  if(t.includes('신규/기변') || t.includes('신규·기변')) return 'simulNewChange';
+  if(t.includes('1GB') || t.includes('1G')) return 'internet1g';
+  if(t.includes('500MB') || t.includes('500M')) return 'internet500';
+  if(t.includes('100MB') || t.includes('100M')) return 'internet100';
+  if(t.includes('홈+TV') || t.includes('홈 + TV')) return 'homeTv';
+  if(t.includes('홈 단독') || t==='홈') return 'homeOnly';
+  return '';
+}
+function compatHomeRows(homeSales=[], orders=[]){
+  if((orders||[]).length) return orders;
+  return (homeSales||[]).map(sale=>({
+    id:sale.source_ref||sale.id,
+    product_type:inferHomeProductTypeFromLabel(sale.metric_label),
+    network_type:sale.source_meta?.networkType||'',
+    status:sale.source_meta?.directComplete?'completed':'pending',
+    planned_install_date:null,
+    source_group:null,
+    source_key:null,
+    _legacy:true,
+  })).filter(x=>x.product_type);
+}
+
 /* ===================== 기본 정책 상수 (관리자가 수정 가능) ===================== */
 
 const POSITIONS = ['점장', '부점장', '매니저', '사원', '기타'];
@@ -689,6 +736,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 /* v21.29: 직원 홈-개인 하단 '홈 최소조건 충족 안내' 카드 제거. */
 /* v21.30: '내 정보가 잘못됐나요?'를 개인 상세 하단에서 홈-개인 상단 로그인 정보 아래 영역으로 이동. */
 /* v21.31: 하단 메뉴가 이미 '홈'이므로 홈 내부 탭 명칭을 '개인 / 매장'으로 간소화. */
+/* v21.32: 실적 데이터 하위호환/버전관리. 구버전 판매건을 현재 UI로 복원하고 수정 시 기존 source_meta 보존. DB audit SQL과 함께 사용. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -3714,7 +3762,8 @@ async function createCustomerSaleAndTasks({
     .from('customer_sales')
     .insert({
       user_id:userId,customer_id:customerId,sale_date:saleDate,
-      metric_label:metricLabel,source_type:sourceType,source_meta:sourceMeta
+      metric_label:metricLabel,source_type:sourceType,schema_version:CURRENT_SALE_SCHEMA_VERSION,
+      source_meta:withCurrentSaleSchema(sourceMeta)
     })
     .select('id')
     .single();
@@ -4517,7 +4566,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const saleDate=`${month}-${selectedDay}`;
     const {data,error}=await supabase
       .from('customer_sales')
-      .select('id,customer_id,sale_date,metric_label,source_type,source_meta,customers(customer_name)')
+      .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
       .eq('user_id',currentEmp.id)
       .eq('sale_date',saleDate)
       .order('created_at',{ascending:false});
@@ -4655,12 +4704,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           completed_at:homeDirectComplete?now:null,source_work_date:sourceWorkDate,
           source_group:product.groupKey,source_key:product.itemKey,
           planned_install_date:homePlannedDate||null,actual_install_date:homeDirectComplete?sourceWorkDate:null,
+          schema_version:CURRENT_SALE_SCHEMA_VERSION,
         }).select('id').single();
         if(error)throw error;
         const {data:sale,error:saleError}=await supabase.from('customer_sales').insert({
           user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
           metric_label:product.label,source_type:'home_order',source_ref:String(order?.id||''),
-          source_meta:{networkType:homeNetworkType,internetSpeed:homeInternetSpeed||null,mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete}
+          schema_version:CURRENT_SALE_SCHEMA_VERSION,
+          source_meta:withCurrentSaleSchema({networkType:homeNetworkType,internetSpeed:homeInternetSpeed||null,mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete})
         }).select('id').single();
         if(saleError)throw saleError;
         if(!primarySaleId)primarySaleId=sale.id;
@@ -4707,7 +4758,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     } else if(extraInput==='tailored') mutate({...base,tailoredCount:Number(base.tailoredCount||0)+count,tailoredAmount:Number(base.tailoredAmount||0)+Number(extraAmount||0)});
     else if(extraInput==='customerReg') mutate({...base,custRegCount:Number(base.custRegCount||0)+count});
     if(extraCustomer.trim()){
-      try{const cid=await ensureCustomer(currentEmp.id,extraCustomer.trim(),`${month}-${selectedDay}`);await supabase.from('customer_sales').insert({user_id:currentEmp.id,customer_id:cid,sale_date:`${month}-${selectedDay}`,metric_label:extraInput==='sono'?(config.sono||DEFAULT_SONO).find(x=>x.key===extraSonoKey)?.label||'소노':extraInput==='tailored'?`맞춤제안 ${count}건 · ${won(Number(extraAmount||0))}`:`고객등록 ${count}건`,source_type:'extra',source_meta:{extraType:extraInput,count,amount:Number(extraAmount||0),sonoKey:extraSonoKey}});}catch(e){console.error(e)}
+      try{const cid=await ensureCustomer(currentEmp.id,extraCustomer.trim(),`${month}-${selectedDay}`);await supabase.from('customer_sales').insert({user_id:currentEmp.id,customer_id:cid,sale_date:`${month}-${selectedDay}`,metric_label:extraInput==='sono'?(config.sono||DEFAULT_SONO).find(x=>x.key===extraSonoKey)?.label||'소노':extraInput==='tailored'?`맞춤제안 ${count}건 · ${won(Number(extraAmount||0))}`:`고객등록 ${count}건`,source_type:'extra',schema_version:CURRENT_SALE_SCHEMA_VERSION,source_meta:withCurrentSaleSchema({extraType:extraInput,count,amount:Number(extraAmount||0),sonoKey:extraSonoKey})});}catch(e){console.error(e)}
     }
     setExtraInput(null);setExtraCustomer('');setExtraCount('1');setExtraAmount('');setTimeout(loadDaySales,100);
   };
@@ -4856,48 +4907,70 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   };
 
   const inferMobileMeta=(sale)=>{
-    const meta=sale?.source_meta||{};
-    if(Number.isInteger(meta.ri)&&Number.isInteger(meta.ci))return {ri:meta.ri,ci:meta.ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},bundleSaleTypeMap:meta.bundleSaleTypeMap||{},usedMnpBundle:!!meta.usedMnpBundle};
+    const meta=sale?.source_meta&&typeof sale.source_meta==='object'?sale.source_meta:{};
+    const cleanArray=(v)=>Array.isArray(v)?v:[];
+    const cleanObj=(v)=>v&&typeof v==='object'&&!Array.isArray(v)?v:{};
+    let ri=Number.isInteger(meta.ri)?meta.ri:null;
+    let ci=Number.isInteger(meta.ci)?meta.ci:null;
 
-    const label=String(sale?.metric_label||'');
-    let ri=MATRIX_ROW_DEFS.findIndex(r=>label.startsWith(r.dailyLabel||r.label));
-    if(ri<0)ri=MATRIX_ROW_DEFS.findIndex(r=>label.includes(r.dailyLabel||r.label));
-    if(ri<0)return null;
-    const rowDef=MATRIX_ROW_DEFS[ri];
-    let ci=0;
-    if(rowDef.hasTiers){
-      const found=MATRIX_COLS.findIndex(c=>label.includes(c));
-      if(found>=0)ci=found;
+    // 구버전은 ri/ci가 없을 수 있으므로 사람이 읽는 metric_label에서 복원
+    if(ri===null){
+      const label=String(sale?.metric_label||'')
+        .replace(/기변\s*A/gi,'기기변경 A')
+        .replace(/기변\s*B/gi,'기기변경 B')
+        .replace(/기변\s*C/gi,'기기변경 C');
+      ri=MATRIX_ROW_DEFS.findIndex(r=>label.startsWith(r.dailyLabel||r.label));
+      if(ri<0)ri=MATRIX_ROW_DEFS.findIndex(r=>label.includes(r.dailyLabel||r.label));
+      if(ri<0)return null;
+      const rowDef=MATRIX_ROW_DEFS[ri];
+      ci=0;
+      if(rowDef?.hasTiers){
+        const found=MATRIX_COLS.findIndex(c=>label.includes(c));
+        if(found>=0)ci=found;
+      }
     }
-    return {ri,ci,vasKeys:meta.vasKeys||[],bundle2ndKeys:meta.bundle2ndKeys||[],bundleVasMap:meta.bundleVasMap||{},bundleSaleTypeMap:meta.bundleSaleTypeMap||{},usedMnpBundle:!!meta.usedMnpBundle};
+    if(ci===null || ci<0)ci=0;
+
+    return {
+      ri,ci,
+      vasKeys:cleanArray(meta.vasKeys),
+      bundle2ndKeys:cleanArray(meta.bundle2ndKeys),
+      bundleVasMap:cleanObj(meta.bundleVasMap),
+      bundleSaleTypeMap:cleanObj(meta.bundleSaleTypeMap),
+      usedMnpBundle:!!meta.usedMnpBundle,
+      specialPolicy:cleanObj(meta.specialPolicy),
+      schemaVersion:saleSchemaVersion(sale),
+      rawMeta:meta,
+    };
   };
 
   const openEditSale=async(sale)=>{
     if(sale.source_type==='home_order'){
       const saleDate=sale.sale_date;
       const {data:homeSales,error:hsErr}=await supabase.from('customer_sales')
-        .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)')
+        .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
         .eq('user_id',currentEmp?.id).eq('sale_date',saleDate).eq('customer_id',sale.customer_id).eq('source_type','home_order');
       if(hsErr)return alert(`홈 판매정보 조회 실패: ${friendlyError(hsErr)}`);
       const refs=(homeSales||[]).map(x=>x.source_ref).filter(Boolean);
       let orders=[];
       if(refs.length){ const {data:o,error:oErr}=await supabase.from('home_orders').select('*').in('id',refs); if(oErr)return alert(`홈 주문 조회 실패: ${friendlyError(oErr)}`); orders=o||[]; }
       setEditingHomeSales(homeSales||[]);
-      setHomeOrderDraft({unified:true,editing:true,label:'홈 판매건 수정'});
+      setHomeOrderDraft({unified:true,editing:true,label:'홈 판매건 수정',legacy:(homeSales||[]).some(legacySaleBadge)});
       setHomeCustomerName(sale.customers?.customer_name||'');
-      setHomeNetworkType(orders[0]?.network_type||sale.source_meta?.networkType||'');
-      setHomeInternet(orders.some(o=>['homeOnly','homeTv','internet100','internet500','internet1g'].includes(o.product_type)));
       const meta0=(homeSales||[])[0]?.source_meta||sale.source_meta||{};
-      const speedFromOrders=orders.some(o=>o.product_type==='internet1g')?'1g':orders.some(o=>o.product_type==='internet500')?'500':orders.some(o=>o.product_type==='internet100')?'100':'';
+      const compatOrders=compatHomeRows(homeSales||[],orders||[]);
+      setHomeNetworkType(compatOrders[0]?.network_type||meta0.networkType||'');
+      setHomeInternet(compatOrders.some(o=>['homeOnly','homeTv','internet100','internet500','internet1g'].includes(o.product_type)));
+      const speedFromOrders=compatOrders.some(o=>o.product_type==='internet1g')?'1g':compatOrders.some(o=>o.product_type==='internet500')?'500':compatOrders.some(o=>o.product_type==='internet100')?'100':'';
       setHomeInternetSpeed(meta0.internetSpeed||speedFromOrders||'');
-      const simulFromOrders=orders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':orders.some(o=>o.product_type==='simulMnp')?'mnp':orders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
+      const simulFromOrders=compatOrders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':compatOrders.some(o=>o.product_type==='simulMnp')?'mnp':compatOrders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
       setHomeMobileSimul(meta0.mobileSimul||simulFromOrders||'none');
-      setHomeMainTv(orders.some(o=>o.product_type==='homeTv'));
-      setHomeSubTv(orders.some(o=>['subSetTop','tvFree'].includes(o.product_type)));
-      setHomeSubTvType(orders.some(o=>o.product_type==='tvFree')?'free':'normal');
-      setHomeSmartHome(orders.some(o=>o.product_type==='smartHome'));
-      setHomeDirectComplete(orders.length>0 && orders.every(o=>o.status==='completed'));
-      setHomePlannedDate(orders.find(o=>o.planned_install_date)?.planned_install_date?.slice?.(0,10)||'');
+      setHomeMainTv(compatOrders.some(o=>o.product_type==='homeTv'));
+      setHomeSubTv(compatOrders.some(o=>['subSetTop','tvFree'].includes(o.product_type)));
+      setHomeSubTvType(compatOrders.some(o=>o.product_type==='tvFree')?'free':'normal');
+      setHomeSmartHome(compatOrders.some(o=>o.product_type==='smartHome'));
+      setHomeDirectComplete(compatOrders.length>0 && compatOrders.every(o=>o.status==='completed'));
+      setHomePlannedDate(compatOrders.find(o=>o.planned_install_date)?.planned_install_date?.slice?.(0,10)||'');
       const primary=(homeSales||[])[0];
       if(primary){
         const {data:tasks}=await supabase.from('customer_tasks').select('*').eq('source_sale_id',primary.id).eq('user_id',currentEmp?.id).neq('status','completed').order('created_at');
@@ -4910,21 +4983,22 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
       return;
     }
-    if(sale.source_type!=='mobile')return alert('이 판매유형은 아직 수정할 수 없어요.');
-    const meta=inferMobileMeta(sale);
+    const inferredLegacyMobile=inferMobileMeta(sale);
+    if(sale.source_type!=='mobile' && !inferredLegacyMobile)return alert('이 판매유형은 아직 수정할 수 없어요.');
+    const meta=inferredLegacyMobile;
     if(!meta)return alert('이전 버전 판매건이라 가입구분을 확인할 수 없어요.');
 
     setEditingSale(sale);
     setMobileSaleDraft({ri:meta.ri,ci:meta.ci,label:mobileLabelFor(meta.ri,meta.ci)});
     setMobileCustomerName(sale.customers?.customer_name||'');
     setMobileVasKeys(Array.isArray(meta.vasKeys)?meta.vasKeys:[]);
-    setMobileBundle2ndKeys(Array.isArray(sale?.source_meta?.bundle2ndKeys)?sale.source_meta.bundle2ndKeys:[]);
-    setMobileBundleVasMap(sale?.source_meta?.bundleVasMap && typeof sale.source_meta.bundleVasMap==='object' ? sale.source_meta.bundleVasMap : {});
-    setMobileBundleSaleTypeMap(sale?.source_meta?.bundleSaleTypeMap && typeof sale.source_meta.bundleSaleTypeMap==='object' ? sale.source_meta.bundleSaleTypeMap : {});
-    setMobileUsedMnpBundle(!!sale?.source_meta?.usedMnpBundle);
-    setMobileSaleKind(sale?.source_meta?.specialPolicy?.policyId ? 'special' : 'normal');
-    setMobileSpecialPolicyId(sale?.source_meta?.specialPolicy?.policyId||'');
-    setMobileSpecialExceptionAmount(sale?.source_meta?.specialPolicy?.exceptionRequestedAmount?String(sale.source_meta.specialPolicy.exceptionRequestedAmount):'');
+    setMobileBundle2ndKeys(meta.bundle2ndKeys);
+    setMobileBundleVasMap(meta.bundleVasMap);
+    setMobileBundleSaleTypeMap(meta.bundleSaleTypeMap);
+    setMobileUsedMnpBundle(meta.usedMnpBundle);
+    setMobileSaleKind(meta.specialPolicy?.policyId ? 'special' : 'normal');
+    setMobileSpecialPolicyId(meta.specialPolicy?.policyId||'');
+    setMobileSpecialExceptionAmount(meta.specialPolicy?.exceptionRequestedAmount?String(meta.specialPolicy.exceptionRequestedAmount):'');
     setMobileSpotPolicyId('');
     setMobileSpotDirectOpen(false);
     setMobileExpenseOpen(false);
@@ -5059,15 +5133,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const req=Number(mobileSpecialExceptionAmount||0);
         const newReplacement=mobileSpecialPolicyId?(req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
-        const nextMeta={
-          ...(editingSale.source_meta||{}),ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
+        const nextMeta=withCurrentSaleSchema({
+          ...(editingSale.source_meta||{}),
+          legacySchemaVersion:saleSchemaVersion(editingSale),
+          ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
-        };
+        });
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
           .update({
             customer_id:linkedCustomerId,
             metric_label:mobileSaleDraft.label,
+            schema_version:CURRENT_SALE_SCHEMA_VERSION,
             source_meta:nextMeta
           })
           .eq('id',editingSale.id)
@@ -5173,7 +5250,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const vasFee=allVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0);
         const requested=Number(mobileSpecialExceptionAmount||0);
         const replacement=requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
-        await supabase.from('customer_sales').update({source_meta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}}}).eq('id',saved.saleId);
+        await supabase.from('customer_sales').update({
+          schema_version:CURRENT_SALE_SCHEMA_VERSION,
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
+        }).eq('id',saved.saleId);
         saved._special={matrixFee,vasFee,replacement};
       }
 
@@ -5354,7 +5434,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-sm font-bold text-gray-900">{sale.customers?.customer_name||'고객'}</div>
-                          <div className="text-xs text-gray-600 mt-0.5">{sale.metric_label}</div>
+                          <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span>{sale.metric_label}</span>
+                            {legacySaleBadge(sale)&&<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
+                          </div>
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
                           {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&
                             <div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
@@ -7307,6 +7390,8 @@ function diffDayRecords(config, oldRaw, newRaw) {
 function HistoryTab({ employees, month, config }) {
   const [empId, setEmpId] = useState('');
   const [logs, setLogs] = useState([]);
+  const [saleAuditLogs,setSaleAuditLogs]=useState([]);
+  const [homeAuditLogs,setHomeAuditLogs]=useState([]);
   const [loading, setLoading] = useState(false);
   const [nameMap, setNameMap] = useState({});
 
@@ -7324,15 +7409,35 @@ function HistoryTab({ employees, month, config }) {
       setLoading(true);
       const [y, m] = month.split('-').map(Number);
       const from = `${month}-01`;
-      const to = `${y}-${String(m + 1).padStart(2, '0')}-01`;
-      const { data, error } = await supabase
-        .from('daily_records_audit')
-        .select('id, work_date, action, old_data, new_data, changed_by, changed_at')
-        .eq('user_id', empId)
-        .gte('work_date', from)
-        .lt('work_date', to)
-        .order('changed_at', { ascending: false });
-      if (!error) setLogs(data || []);
+      const nextDate=new Date(y,m,1);
+      const to = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}-01`;
+
+      const [dailyRes,saleRes,homeRes]=await Promise.all([
+        supabase.from('daily_records_audit')
+          .select('id, work_date, action, old_data, new_data, changed_by, changed_at')
+          .eq('user_id', empId).gte('work_date', from).lt('work_date', to)
+          .order('changed_at', { ascending: false }),
+        supabase.from('customer_sales_audit')
+          .select('id,sale_id,action,old_row,new_row,changed_by,changed_at')
+          .eq('user_id',empId).order('changed_at',{ascending:false}).limit(500),
+        supabase.from('home_orders_audit')
+          .select('id,order_id,action,old_row,new_row,changed_by,changed_at')
+          .eq('user_id',empId).order('changed_at',{ascending:false}).limit(500),
+      ]);
+
+      if(!dailyRes.error)setLogs(dailyRes.data||[]);
+      else setLogs([]);
+
+      const inSaleMonth=(x)=>{
+        const d=String(x?.new_row?.sale_date||x?.old_row?.sale_date||'');
+        return d.startsWith(month);
+      };
+      const inHomeMonth=(x)=>{
+        const d=String(x?.new_row?.source_work_date||x?.old_row?.source_work_date||'');
+        return d.startsWith(month);
+      };
+      setSaleAuditLogs(saleRes.error?[]:(saleRes.data||[]).filter(inSaleMonth));
+      setHomeAuditLogs(homeRes.error?[]:(homeRes.data||[]).filter(inHomeMonth));
       setLoading(false);
     })();
   }, [empId, month]);
@@ -7379,6 +7484,42 @@ function HistoryTab({ employees, month, config }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {(saleAuditLogs.length>0||homeAuditLogs.length>0)&&(
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-50">
+            <div className="text-sm font-bold text-gray-800">고객별 판매 · 홈 변경 이력</div>
+            <div className="text-[10px] text-gray-400 mt-0.5">v21.32부터 판매/홈 원본 변경도 DB에서 자동 보관해요.</div>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {[...saleAuditLogs.map(x=>({...x,_kind:'sale'})),...homeAuditLogs.map(x=>({...x,_kind:'home'}))]
+              .sort((a,b)=>new Date(b.changed_at)-new Date(a.changed_at))
+              .slice(0,100)
+              .map((l)=>{
+                const before=l.old_row||{},after=l.new_row||{};
+                const isSale=l._kind==='sale';
+                const date=isSale?(after.sale_date||before.sale_date):(after.source_work_date||before.source_work_date);
+                const beforeLabel=isSale?(before.metric_label||''):(before.product_type||'');
+                const afterLabel=isSale?(after.metric_label||''):(after.product_type||'');
+                const actionLabel=l.action==='insert'?'등록':l.action==='delete'?'삭제':'수정';
+                const versionBefore=Number(before.schema_version||before.source_meta?.schemaVersion||1);
+                const versionAfter=Number(after.schema_version||after.source_meta?.schemaVersion||versionBefore||1);
+                return <div key={`${l._kind}-${l.id}`} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-gray-700">{date||'-'} · {isSale?'판매':'홈'} {actionLabel}</div>
+                      <div className="text-[11px] text-gray-500 mt-0.5 break-words">
+                        {l.action==='update'&&beforeLabel!==afterLabel?`${beforeLabel||'-'} → ${afterLabel||'-'}`:(afterLabel||beforeLabel||'원본 데이터')}
+                      </div>
+                      {versionBefore!==versionAfter&&<div className="text-[10px] text-violet-600 mt-1">데이터 형식 v{versionBefore} → v{versionAfter}</div>}
+                    </div>
+                    <div className="text-[10px] text-gray-400 shrink-0">{formatDateTime(l.changed_at)}</div>
+                  </div>
+                </div>;
+              })}
+          </div>
         </div>
       )}
     </div>
