@@ -686,6 +686,9 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 }
 
 /* v21.28: 직원 홈 정리 - 전월대비 금액/%, 실제 승인상태, 급여상세 제거, 월누적 카테고리 랭킹, 용어 통일. */
+/* v21.29: 직원 홈-개인 하단 '홈 최소조건 충족 안내' 카드 제거. */
+/* v21.30: '내 정보가 잘못됐나요?'를 개인 상세 하단에서 홈-개인 상단 로그인 정보 아래 영역으로 이동. */
+/* v21.31: 하단 메뉴가 이미 '홈'이므로 홈 내부 탭 명칭을 '개인 / 매장'으로 간소화. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -4134,13 +4137,17 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <div className="bg-gray-100 rounded-xl p-1 grid grid-cols-2 gap-1">
             <button type="button" onClick={()=>setEmployeeHomeMode('personal')}
               className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
-              홈 · 개인
+              개인
             </button>
             <button type="button" onClick={()=>setEmployeeHomeMode('store')}
               className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
-              홈 · 매장
+              매장
             </button>
           </div>
+
+          {employeeHomeMode==='personal'&&
+            <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
+          }
 
           {employeeHomeMode==='personal' ? <>
             <DailyOneLiner
@@ -4200,8 +4207,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {homeDetailOpen&&<div className="space-y-4">
               <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={()=>setTab('daily')} />
               <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} allDailyRecords={allDailyRecords} config={config} userId={authUser?.id} />
-              <HomeGateCard pay={pay} config={config} onGoInput={()=>setTab('daily')} />
-              <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
             </div>}
           </> : <>
             <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={authUser?.id} />
