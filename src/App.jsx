@@ -439,6 +439,37 @@ function normalizeDay(raw) {
   };
 }
 
+
+// 달력용 핵심 실적 요약.
+// 현재 daily_records 형식뿐 아니라 예전 top-level 그룹 저장 형식도 함께 읽습니다.
+function calendarCoreMetrics(raw){
+  const d=normalizeDay(raw);
+  const rawObj=(raw && !Array.isArray(raw) && typeof raw==='object')?raw:{};
+
+  const matrix=Array.isArray(raw)?raw:(rawObj.matrix||d.matrix||[]);
+  const hs=[0,1,2,3,4].reduce((sum,ri)=>sum+(matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
+  const sim=(matrix?.[5]||[]).reduce((a,v)=>a+Number(v||0),0);
+
+  // 현행 groups.homeBase / 구형 top-level homeBase 모두 호환
+  const groupedHome={
+    ...(rawObj.homeBase||{}),
+    ...(rawObj.groups?.homeBase||{}),
+    ...(d.groups?.homeBase||{}),
+  };
+  const flatHome={
+    ...(rawObj.homeFlat||{}),
+    ...(rawObj.groups?.homeFlat||{}),
+    ...(d.groups?.homeFlat||{}),
+  };
+
+  // 홈은 본 판매 기준. 구형 데이터 중 본상품 키 없이 속도 단독키만 남은 경우도 1건으로 인식.
+  const baseHome=Number(groupedHome.homeOnly||0)+Number(groupedHome.homeTv||0);
+  const speedHome=Number(flatHome.home100Only||0)+Number(flatHome.home500Only||0)+Number(flatHome.home1GBOnly||0);
+  const home=baseHome>0?baseHome:speedHome;
+
+  return {hs,sim,home};
+}
+
 function dayHasData(raw) {
   if (!raw) return false;
   const d = normalizeDay(raw);
@@ -759,6 +790,8 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
    - 구버전 홈 복원도 변환된 일일데이터를 즉시 저장
    - home_orders 신규 product_type 허용 SQL 별도 제공
 */
+/* v21.47: 개인/관리자 달력 HS·SIM MNP·홈 요약을 현행 daily_records + 구형 top-level 저장 형식까지 호환해 계산. SIM 표기를 SIM MNP로 통일. */
+/* v21.48: 관리알림 '기타 승인'을 '실적 승인 대기'로 변경하고 실제 pending 월 실적 목록/승인/반려 화면 연결. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1390,6 +1423,30 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setMonthRecords((prev) => ({ ...prev, [id]: next }));
   };
 
+  const rejectApproval = async (id) => {
+    const cur = monthRecords[id] || { draft: emptyDraft(), status: 'none' };
+    const next = { ...cur, status: 'rejected' };
+
+    const { error } = await supabase
+      .from('monthly_status')
+      .upsert(
+        {
+          user_id: id,
+          month,
+          activity_time_met: cur.draft?.activityTimeMet ?? true,
+          data: { draft: cur.draft || emptyDraft(), status: 'rejected' },
+        },
+        { onConflict: 'user_id,month' }
+      );
+
+    if (error) {
+      setDbError(`반려 저장 실패: ${friendlyError(error)}`);
+      return;
+    }
+
+    setMonthRecords((prev) => ({ ...prev, [id]: next }));
+  };
+
   const rows = employees.map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
     const mergedDraft = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
@@ -1554,7 +1611,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       ) : (
         <AdminView
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
-          rows={scopedSalesRows} rankingRows={salesRows} dailyRecords={dailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve}
+          rows={scopedSalesRows} rankingRows={salesRows} dailyRecords={dailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve} rejectApproval={rejectApproval}
           config={config} persistConfig={persistConfig}
           employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
@@ -5462,9 +5519,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             const has = dayHasData(rec);
             const off = !!rec.dayOff;
             const isSel = key === selectedDay;
-            const calHs=[0,1,2,3,4].reduce((sum,ri)=>sum+(rec.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
-            const calSim=(rec.matrix?.[5]||[]).reduce((a,v)=>a+Number(v||0),0);
-            const calHome=Number(rec.groups?.homeBase?.homeOnly||0)+Number(rec.groups?.homeBase?.homeTv||0);
+            const coreMetrics=calendarCoreMetrics(key===selectedDay?day:dailyDays[key]);
+            const calHs=coreMetrics.hs;
+            const calSim=coreMetrics.sim;
+            const calHome=coreMetrics.home;
             const hasCalSummary=calHs>0||calSim>0||calHome>0;
             const dow = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, d).getDay();
             return (
@@ -5476,9 +5534,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   {off ? (
                     <span className={`text-[8px] leading-[10px] ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>
                   ) : (
-                    <div className={`text-[7px] leading-[9px] font-semibold text-center ${isSel?'text-white/85':'text-gray-500'}`}>
+                    <div className={`text-[6.5px] sm:text-[7px] leading-[9px] font-semibold text-center whitespace-nowrap ${isSel?'text-white/90':'text-gray-600'}`}>
                       <div className={calHs>0?'':'invisible'}>HS {fmtCount(calHs)}</div>
-                      <div className={calSim>0?'':'invisible'}>SIM {fmtCount(calSim)}</div>
+                      <div className={calSim>0?'':'invisible'}>SIM MNP {fmtCount(calSim)}</div>
                       <div className={calHome>0?'':'invisible'}>홈 {fmtCount(calHome)}</div>
                     </div>
                   )}
@@ -7185,7 +7243,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo }) {
       <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
       <button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>
-      <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-600 rounded-lg p-2 text-left">기타 승인 <b className="float-right">{pendingCount||0}</b></button>
+      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount||0}</b></button>
     </div>}
   </div>;
 }
@@ -7278,9 +7336,10 @@ function SettlementReview({ month, rows, employees, config }) {
 
 function dailyCalendarMetrics(raw){
   const d=normalizeDay(raw);
-  const hs=[0,1,2,3,4].reduce((sum,ri)=>sum+(d.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
-  const sim=(d.matrix?.[5]||[]).reduce((a,v)=>a+Number(v||0),0);
-  const home=Number(d.groups?.homeBase?.homeOnly||0)+Number(d.groups?.homeBase?.homeTv||0);
+  const core=calendarCoreMetrics(raw);
+  const hs=core.hs;
+  const sim=core.sim;
+  const home=core.home;
   const second=(d.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(d.groups?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
   const free=Number(d.groups?.homeFlat?.tvFree||0);
   const smart=Number(d.groups?.homeFlat?.smartHome||0);
@@ -7360,9 +7419,9 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
           return <button key={d} type="button" onClick={()=>setSelectedDay(key)}
             className={`min-w-0 h-[58px] sm:h-[64px] rounded-lg flex flex-col items-center justify-start pt-2.5 px-0.5 overflow-hidden ${sel?'bg-violet-600 text-white':active?'bg-violet-50 text-violet-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
             <div className="text-[10px] font-semibold leading-none shrink-0">{d}</div>
-            <div className={`h-[32px] mt-1.5 text-[7px] leading-[9px] font-semibold text-center shrink-0 ${sel?'text-white/85':'text-gray-500'}`}>
+            <div className={`h-[32px] mt-1.5 text-[6.5px] sm:text-[7px] leading-[9px] font-semibold text-center whitespace-nowrap shrink-0 ${sel?'text-white/90':'text-gray-600'}`}>
               <div className={x.hs>0?'':'invisible'}>HS {fmtCount(x.hs)}</div>
-              <div className={x.sim>0?'':'invisible'}>SIM {fmtCount(x.sim)}</div>
+              <div className={x.sim>0?'':'invisible'}>SIM MNP {fmtCount(x.sim)}</div>
               <div className={x.home>0?'':'invisible'}>홈 {fmtCount(x.home)}</div>
             </div>
           </button>;
@@ -7383,14 +7442,55 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
       <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
         {employeeDetails.map(({emp,hs,sim,home,has,off})=><div key={emp.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
           <div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{emp.name}</div><div className="text-[9px] text-gray-400">{off?'휴무':has?'입력 완료':'미입력'}</div></div>
-          <div className="text-[10px] text-gray-500 text-right shrink-0">{off?'—':`HS ${fmtCount(hs)} · SIM ${fmtCount(sim)} · 홈 ${fmtCount(home)}`}</div>
+          <div className="text-[10px] text-gray-500 text-right shrink-0">{off?'—':`HS ${fmtCount(hs)} · SIM MNP ${fmtCount(sim)} · 홈 ${fmtCount(home)}`}</div>
         </div>)}
       </div>
     </div>
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
+
+function PerformanceApprovalQueue({ month, rows, approve, rejectApproval }) {
+  const pending=(rows||[]).filter(r=>r.status==='pending');
+
+  if(!pending.length){
+    return <div className="bg-white rounded-xl border border-gray-100 p-8 text-center">
+      <div className="text-2xl mb-2">✅</div>
+      <div className="text-sm font-bold text-gray-800">실적 승인 대기건이 없어요</div>
+      <div className="text-xs text-gray-400 mt-1">{monthLabel(month)} 기준</div>
+    </div>;
+  }
+
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-50">
+      <div className="text-xs text-violet-500">실적 승인</div>
+      <div className="text-base font-bold text-gray-900 mt-0.5">{monthLabel(month)} 승인 대기 · {fmtCount(pending.length)}명</div>
+      <div className="text-[10px] text-gray-400 mt-1">직원이 저장한 월 실적을 확인하고 승인하거나 반려할 수 있어요.</div>
+    </div>
+    <div className="divide-y divide-gray-50">
+      {pending.map(r=><div key={r.id} className="px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-gray-900">{r.name}</div>
+            <div className="text-[11px] text-gray-500 mt-0.5">{displayStoreName(r.branch)} · {r.position}</div>
+            <div className="text-[10px] text-gray-400 mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              <span>HS <b className="text-gray-700">{fmtCount(hsCount(r.draft))}</b></span>
+              <span>홈 <b className="text-gray-700">{fmtCount(Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0))}</b></span>
+              <span>생산성 <b className="text-gray-700">{fmtNum(r.pay?.kpiScore||0,1)}P</b></span>
+              <span>예상지급 <b className="text-gray-700">{won(r.pay?.total||0)}</b></span>
+            </div>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <button onClick={()=>rejectApproval?.(r.id)} className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-xs font-semibold">반려</button>
+            <button onClick={()=>approve?.(r.id)} className="px-3 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold">승인</button>
+          </div>
+        </div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'storeGoals', label: '매장 목표', icon: Target },
@@ -7399,6 +7499,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList },
     { key: 'homeCare', label: '홈 케어', icon: Home },
     { key: 'employees', label: '직원 관리', icon: Users },
+    { key: 'performanceApproval', label: '실적 승인', icon: ClipboardCheck },
 
     { key: 'spot', label: '스팟', icon: Zap },
     { key: 'recognition', label: '인정', icon: Award },
@@ -7551,6 +7652,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
+      {adminTab === 'performanceApproval' && <PerformanceApprovalQueue month={month} rows={rows} approve={approve} rejectApproval={rejectApproval} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
