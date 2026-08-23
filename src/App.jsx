@@ -737,6 +737,8 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 /* v21.30: '내 정보가 잘못됐나요?'를 개인 상세 하단에서 홈-개인 상단 로그인 정보 아래 영역으로 이동. */
 /* v21.31: 하단 메뉴가 이미 '홈'이므로 홈 내부 탭 명칭을 '개인 / 매장'으로 간소화. */
 /* v21.32: 실적 데이터 하위호환/버전관리. 구버전 판매건을 현재 UI로 복원하고 수정 시 기존 source_meta 보존. DB audit SQL과 함께 사용. */
+/* v21.33: 직원 홈 상단 '내 정보가 잘못됐나요? / 수정 요청하기' 제거. 관리자 직접 수정 기능은 유지. */
+/* v21.34: 홈 게임요소는 배지만 유지. 100개 배지/대표배지 프로필화, 목표+누적실적 통합, 월 순위 0건도 내 순위 및 공동순위 표시. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1568,9 +1570,15 @@ function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='�
     [rows,branchOnly,metricKey]);
 
   if(!ranked.length)return null;
-  const top3=ranked.slice(0,3);
+  const rankOf=(row)=>{
+    const v=Number(metric.value(row)||0);
+    return 1+ranked.filter(r=>Number(metric.value(r)||0)>v).length;
+  };
+  const top3=ranked.filter(r=>rankOf(r)<=3);
   const myIndex=ranked.findIndex(r=>r.id===userId);
   const me=myIndex>=0?ranked[myIndex]:null;
+  const myRank=me?rankOf(me):null;
+  const myTied=me?ranked.filter(r=>Number(metric.value(r)||0)===Number(metric.value(me)||0)).length>1:false;
   const fmt=(v)=>metric.unit==='P'?`${fmtNum(Number(v||0),1)}P`:`${fmtCount(v)}건`;
 
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -1591,24 +1599,23 @@ function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='�
     </div>
 
     <div className="divide-y divide-gray-50">
-      {top3.map((r,i)=><div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+      {top3.map((r)=>{
+        const rr=rankOf(r);
+        return <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${i===0?'bg-amber-100 text-amber-700':i===1?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{i+1}</span>
+          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${rr===1?'bg-amber-100 text-amber-700':rr===2?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{rr}</span>
           <div className="min-w-0">
             <div className="text-xs font-semibold text-gray-800 truncate">{r.name}</div>
             {!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}
           </div>
         </div>
         <div className="text-xs font-bold text-gray-800">{fmt(metric.value(r))}</div>
-      </div>)}
+      </div>})}
     </div>
 
-    {me&&myIndex>=3&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
-      <span className="text-xs font-semibold text-violet-700">나 · {fmtCount(myIndex+1)}위</span>
+    {me&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
+      <span className="text-xs font-semibold text-violet-700">나 · {myTied?'공동 ':''}{fmtCount(myRank)}위</span>
       <span className="text-xs font-bold text-violet-700">{fmt(metric.value(me))}</span>
-    </div>}
-    {me&&myIndex<3&&<div className="px-4 py-2 bg-violet-50/60 text-[10px] text-violet-600 font-semibold">
-      내 순위 · {fmtCount(myIndex+1)}위
     </div>}
   </div>;
 }
@@ -1931,83 +1938,158 @@ function MyRankingCard({ rows, userId, branch }) {
 /* ===================== 게임화 2차: 배지 · 퀘스트 · 칭호 · 인정 ===================== */
 
 const BADGE_DEFS = [
-  { key: 'first_step', icon: '🌱', name: '첫 발자국', rarity: 'COMMON', hidden: false, desc: '첫 실적 기록을 남겼어요.', auto: true },
-  { key: 'streak5', icon: '🔥', name: '폼 올라오는 중', rarity: 'RARE', hidden: false, desc: '5근무일 연속 기록을 달성했어요.', auto: true },
-  { key: 'streak10', icon: '🔥', name: '꾸준함이 실력', rarity: 'EPIC', hidden: true, desc: '10근무일 연속 기록을 달성했어요.', auto: true },
-  { key: 'rising3', icon: '⚡', name: '요즘 좀 치는데?', rarity: 'RARE', hidden: false, desc: '최근 7일 핵심지표 TOP3에 진입했어요.', auto: true },
-  { key: 'top3', icon: '🥉', name: '순위권 입성', rarity: 'EPIC', hidden: false, desc: '핵심지표 전체 TOP3에 진입했어요.', auto: true },
-  { key: 'number1', icon: '👑', name: '오늘은 내가 1등', rarity: 'LEGEND', hidden: true, desc: '핵심지표 전체 1위를 달성했어요.', auto: true },
-  { key: 'goal_one', icon: '🎯', name: '말보다 결과', rarity: 'RARE', hidden: false, desc: '내가 정한 월 목표를 하나 달성했어요.', auto: true },
-  { key: 'goal_all', icon: '🏆', name: '싹쓸이', rarity: 'LEGEND', hidden: true, desc: '이번 달에 설정한 목표를 모두 달성했어요.', auto: true },
-
-  // 관리자/점장 특별 배지
-  { key: 'special_growth', icon: '⭐', name: '이달의 성장', rarity: 'SPECIAL', hidden: false, desc: '관리자가 직접 인정한 성장 배지예요.', auto: false },
-  { key: 'special_team', icon: '🤝', name: '팀플레이어', rarity: 'SPECIAL', hidden: false, desc: '동료와 매장에 좋은 영향을 준 사람에게 주는 배지예요.', auto: false },
-  { key: 'special_pick', icon: '💎', name: '점장 PICK', rarity: 'SPECIAL', hidden: false, desc: '관리자가 직접 선정한 특별 배지예요.', auto: false },
+  { key: 'first_step', icon: '🌱', name: '첫 발자국', rarity: 'COMMON', hidden: false, desc: '첫 HS 판매', auto: true },
+  { key: 'hs_y10', icon: '🔟', name: '스타트 텐', rarity: 'COMMON', hidden: false, desc: '올해 HS 10건', auto: true },
+  { key: 'hs_y30', icon: '🏃', name: '페이스 업', rarity: 'COMMON', hidden: false, desc: '올해 HS 30건', auto: true },
+  { key: 'hs_y50', icon: '🎯', name: '하프 센추리', rarity: 'RARE', hidden: false, desc: '올해 HS 50건', auto: true },
+  { key: 'hs_y100', icon: '💯', name: '백전백승', rarity: 'RARE', hidden: false, desc: '올해 HS 100건', auto: true },
+  { key: 'hs_y150', icon: '🚀', name: '150 클럽', rarity: 'RARE', hidden: false, desc: '올해 HS 150건', auto: true },
+  { key: 'hs_y200', icon: '🔥', name: '200 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 200건', auto: true },
+  { key: 'hs_y250', icon: '⚡', name: '250 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 250건', auto: true },
+  { key: 'hs_y300', icon: '💎', name: '300 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 300건', auto: true },
+  { key: 'hs_y500', icon: '👑', name: '500 클럽', rarity: 'LEGEND', hidden: false, desc: '올해 HS 500건', auto: true },
+  { key: 'hs_m20', icon: '📦', name: '월간 20', rarity: 'COMMON', hidden: false, desc: '한 달 HS 20건', auto: true },
+  { key: 'hs_m30', icon: '📈', name: '월간 30', rarity: 'RARE', hidden: false, desc: '한 달 HS 30건', auto: true },
+  { key: 'hs_m40', icon: '🔥', name: '월간 40', rarity: 'RARE', hidden: false, desc: '한 달 HS 40건', auto: true },
+  { key: 'hs_m50', icon: '🦁', name: '50의 벽', rarity: 'EPIC', hidden: false, desc: '한 달 HS 50건', auto: true },
+  { key: 'hs_m60', icon: '🚀', name: '월간 폭주', rarity: 'EPIC', hidden: false, desc: '한 달 HS 60건', auto: true },
+  { key: 'hs_m70', icon: '💥', name: '브레이크 아웃', rarity: 'EPIC', hidden: false, desc: '한 달 HS 70건', auto: true },
+  { key: 'hs_m80', icon: '🏆', name: '80 클럽', rarity: 'LEGEND', hidden: false, desc: '한 달 HS 80건', auto: true },
+  { key: 'hs_m100', icon: '💯', name: '월간 센추리', rarity: 'LEGEND', hidden: false, desc: '한 달 HS 100건', auto: true },
+  { key: 'hs_personal_record', icon: '🌋', name: '한계 돌파', rarity: 'RARE', hidden: false, desc: '자신의 월 HS 최고기록 경신', auto: true },
+  { key: 'hs_guinness', icon: '🐐', name: '미소 기네스 · HS', rarity: 'LEGEND', hidden: false, desc: '회사 역대 월 HS 최고기록 경신', auto: true },
+  { key: 'hs_rank3', icon: '🥉', name: '포디움', rarity: 'RARE', hidden: false, desc: '월 HS 전체 3위', auto: true },
+  { key: 'hs_rank2', icon: '🥈', name: '실버 러시', rarity: 'EPIC', hidden: false, desc: '월 HS 전체 2위', auto: true },
+  { key: 'hs_rank1', icon: '🥇', name: '이번 달 주인공', rarity: 'EPIC', hidden: false, desc: '월 HS 전체 1위', auto: true },
+  { key: 'hs_year1', icon: '👑', name: '올해의 HS KING', rarity: 'LEGEND', hidden: false, desc: '올해 누적 HS 전체 1위', auto: true },
+  { key: 'hs_store1', icon: '🏠', name: '우리 매장 ACE', rarity: 'RARE', hidden: false, desc: '월 HS 매장 1위', auto: true },
+  { key: 'hs_back2back', icon: '🔥', name: '백투백', rarity: 'LEGEND', hidden: false, desc: '월 HS 1위 2개월 연속', auto: true },
+  { key: 'hs_triple', icon: '🏆', name: '트리플 크라운', rarity: 'LEGEND', hidden: false, desc: '월 HS 1위 3회', auto: true },
+  { key: 'hs_top10', icon: '🎖', name: 'TOP10', rarity: 'COMMON', hidden: false, desc: '월 HS 전체 10위 이내', auto: true },
+  { key: 'hs_top5', icon: '⭐', name: 'TOP5', rarity: 'RARE', hidden: false, desc: '월 HS 전체 5위 이내', auto: true },
+  { key: 'hs_top10_3m', icon: '🧱', name: '자리 지킴이', rarity: 'EPIC', hidden: false, desc: '3개월 연속 HS TOP10', auto: true },
+  { key: 'home_first', icon: '🏠', name: '첫 홈', rarity: 'COMMON', hidden: false, desc: '첫 홈 판매', auto: true },
+  { key: 'home_m5', icon: '🏡', name: '홈 스타터', rarity: 'COMMON', hidden: false, desc: '월 홈 5건', auto: true },
+  { key: 'home_m10', icon: '🏘', name: '홈 러너', rarity: 'RARE', hidden: false, desc: '월 홈 10건', auto: true },
+  { key: 'home_m15', icon: '🏢', name: '홈 프로', rarity: 'RARE', hidden: false, desc: '월 홈 15건', auto: true },
+  { key: 'home_m20', icon: '🏰', name: '홈 마스터', rarity: 'EPIC', hidden: false, desc: '월 홈 20건', auto: true },
+  { key: 'home_y100', icon: '💯', name: '홈 센추리', rarity: 'EPIC', hidden: false, desc: '올해 홈 100건', auto: true },
+  { key: 'home_rank1', icon: '👑', name: '홈 KING', rarity: 'EPIC', hidden: false, desc: '월 홈 전체 1위', auto: true },
+  { key: 'home_year1', icon: '🏆', name: '올해의 홈 KING', rarity: 'LEGEND', hidden: false, desc: '올해 홈 누적 1위', auto: true },
+  { key: 'home_day3', icon: '🔥', name: '홈 올인', rarity: 'RARE', hidden: false, desc: '하루 홈 3건 이상', auto: true },
+  { key: 'internet_y50', icon: '📡', name: '인터넷 전문가', rarity: 'RARE', hidden: false, desc: '인터넷 연간 50건', auto: true },
+  { key: 'hometv_m10', icon: '📺', name: 'TV 콤보', rarity: 'RARE', hidden: false, desc: '홈+TV 월 10건', auto: true },
+  { key: 'home_guinness', icon: '🐐', name: '미소 기네스 · 홈', rarity: 'LEGEND', hidden: false, desc: '회사 역대 월 홈 최고기록', auto: true },
+  { key: 'free_first', icon: '📺', name: '프리 스타트', rarity: 'COMMON', hidden: false, desc: '첫 TV프리', auto: true },
+  { key: 'free_m5', icon: '🪽', name: '프리 러너', rarity: 'COMMON', hidden: false, desc: '월 프리 5건', auto: true },
+  { key: 'free_m10', icon: '📺', name: '프리 마스터', rarity: 'RARE', hidden: false, desc: '월 프리 10건', auto: true },
+  { key: 'free_rank1', icon: '👑', name: '프리 KING', rarity: 'EPIC', hidden: false, desc: '월 프리 전체 1위', auto: true },
+  { key: 'free_y100', icon: '💯', name: '프리 센추리', rarity: 'EPIC', hidden: false, desc: '올해 프리 100건', auto: true },
+  { key: 'smart_first', icon: '💡', name: '스마트 스타트', rarity: 'COMMON', hidden: false, desc: '첫 스마트홈', auto: true },
+  { key: 'smart_m5', icon: '🏡', name: '스마트 라이프', rarity: 'COMMON', hidden: false, desc: '월 스마트홈 5건', auto: true },
+  { key: 'smart_m10', icon: '💡', name: '스마트 마스터', rarity: 'RARE', hidden: false, desc: '월 스마트홈 10건', auto: true },
+  { key: 'smart_rank1', icon: '👑', name: '스홈 KING', rarity: 'EPIC', hidden: false, desc: '월 스마트홈 전체 1위', auto: true },
+  { key: 'smart_y50', icon: '🧠', name: '스마트 컬렉터', rarity: 'EPIC', hidden: false, desc: '올해 스마트홈 50건', auto: true },
+  { key: 'upsell_first', icon: '🎯', name: '첫 적중', rarity: 'COMMON', hidden: false, desc: '첫 맞춤제안 업셀', auto: true },
+  { key: 'upsell_m5', icon: '🎯', name: '취향저격', rarity: 'COMMON', hidden: false, desc: '월 맞춤제안 업셀 5건', auto: true },
+  { key: 'upsell_m10', icon: '📈', name: '업셀러', rarity: 'RARE', hidden: false, desc: '월 맞춤제안 업셀 10건', auto: true },
+  { key: 'upsell_m20', icon: '🚀', name: '업셀 마스터', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 업셀 20건', auto: true },
+  { key: 'upsell_rank1', icon: '👑', name: '업셀 KING', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 업셀 전체 1위', auto: true },
+  { key: 'upsell_y100', icon: '💯', name: '업셀 센추리', rarity: 'EPIC', hidden: false, desc: '올해 맞춤제안 업셀 100건', auto: true },
+  { key: 'upsell_day3', icon: '🦅', name: '기회 포착', rarity: 'RARE', hidden: false, desc: '하루 맞춤제안 업셀 3건', auto: true },
+  { key: 'upsell_day5', icon: '🔥', name: '업셀 폭주', rarity: 'EPIC', hidden: false, desc: '하루 맞춤제안 업셀 5건', auto: true },
+  { key: 'upsell_year1', icon: '🏆', name: '올해의 업셀 KING', rarity: 'LEGEND', hidden: false, desc: '올해 누적 업셀 1위', auto: true },
+  { key: 'upsell_guinness', icon: '🐐', name: '미소 기네스 · 업셀', rarity: 'LEGEND', hidden: false, desc: '역대 월 업셀 최고기록', auto: true },
+  { key: 'upsell_goal100', icon: '🎯', name: '정조준', rarity: 'RARE', hidden: false, desc: '월 맞춤제안 목표 100%', auto: true },
+  { key: 'upsell_goal150', icon: '💥', name: '오버클럭', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 목표 150%', auto: true },
+  { key: 'second_first', icon: '📱', name: '하나 더', rarity: 'COMMON', hidden: false, desc: '첫 2ND 번들', auto: true },
+  { key: 'second_m5', icon: '✌️', name: '투게더', rarity: 'COMMON', hidden: false, desc: '월 2ND 5건', auto: true },
+  { key: 'second_m10', icon: '📦', name: '번들러', rarity: 'RARE', hidden: false, desc: '월 2ND 10건', auto: true },
+  { key: 'second_m20', icon: '🚀', name: '번들 마스터', rarity: 'EPIC', hidden: false, desc: '월 2ND 20건', auto: true },
+  { key: 'second_rank1', icon: '👑', name: '2ND KING', rarity: 'EPIC', hidden: false, desc: '월 2ND 전체 1위', auto: true },
+  { key: 'second_y100', icon: '💯', name: '2ND 센추리', rarity: 'EPIC', hidden: false, desc: '올해 2ND 100건', auto: true },
+  { key: 'second_day3', icon: '🛒', name: '장바구니 가득', rarity: 'RARE', hidden: false, desc: '하루 2ND 번들 3건', auto: true },
+  { key: 'second_guinness', icon: '🐐', name: '미소 기네스 · 2ND', rarity: 'LEGEND', hidden: false, desc: '역대 월 2ND 최고기록', auto: true },
+  { key: 'prod_base', icon: '⚙️', name: '시동 완료', rarity: 'COMMON', hidden: false, desc: '월 생산성 기준 달성', auto: true },
+  { key: 'prod_100', icon: '📈', name: '생산성 100', rarity: 'RARE', hidden: false, desc: '월 생산성 100P', auto: true },
+  { key: 'prod_120', icon: '⚡', name: '생산성 120', rarity: 'RARE', hidden: false, desc: '월 생산성 120P', auto: true },
+  { key: 'prod_150', icon: '🔥', name: '생산성 150', rarity: 'EPIC', hidden: false, desc: '월 생산성 150P', auto: true },
+  { key: 'prod_200', icon: '🚀', name: '생산성 200', rarity: 'LEGEND', hidden: false, desc: '월 생산성 200P', auto: true },
+  { key: 'prod_rank1', icon: '👑', name: '생산성 KING', rarity: 'EPIC', hidden: false, desc: '월 생산성 전체 1위', auto: true },
+  { key: 'prod_year1', icon: '🏆', name: '올해의 생산성 KING', rarity: 'LEGEND', hidden: false, desc: '연간 평균 생산성 1위', auto: true },
+  { key: 'grade_s', icon: '💎', name: 'S CLASS', rarity: 'EPIC', hidden: false, desc: '성과등급 S 달성', auto: true },
+  { key: 'grade_s3', icon: '🔥', name: 'S STREAK', rarity: 'LEGEND', hidden: false, desc: 'S등급 3개월 연속', auto: true },
+  { key: 'all_top3', icon: '🐐', name: '완전체', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 모두 월 TOP3', auto: true },
+  { key: 'day_hs5', icon: '🔥', name: '불타는 하루', rarity: 'RARE', hidden: false, desc: '하루 HS 5건', auto: true },
+  { key: 'day_hs8', icon: '💥', name: '미친 하루', rarity: 'EPIC', hidden: false, desc: '하루 HS 8건', auto: true },
+  { key: 'day_hs10', icon: '☄️', name: '레코드 데이', rarity: 'LEGEND', hidden: false, desc: '하루 HS 10건', auto: true },
+  { key: 'full_set', icon: '🛍', name: '풀세트', rarity: 'RARE', hidden: false, desc: '하루 HS+홈+2ND 모두 판매', auto: true },
+  { key: 'allrounder', icon: '🎯', name: '올라운더', rarity: 'RARE', hidden: false, desc: '한 달 핵심 5개 카테고리 모두 실적', auto: true },
+  { key: 'balance_master', icon: '🌈', name: '밸런스 마스터', rarity: 'EPIC', hidden: false, desc: '핵심 5개 카테고리 모두 월 목표 달성', auto: true },
+  { key: 'sweep_day', icon: '🧹', name: '싹쓸이', rarity: 'EPIC', hidden: false, desc: '하루 5개 이상 판매 카테고리 실적', auto: true },
+  { key: 'perfect_month', icon: '💎', name: '퍼펙트 먼스', rarity: 'LEGEND', hidden: false, desc: '해당 월 핵심 KPI 전부 목표 달성', auto: true },
+  { key: 'grand_slam', icon: '👑', name: '그랜드슬램', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 월간 1위 동시 달성', auto: true },
+  { key: 'goat', icon: '🐐', name: 'GOAT', rarity: 'LEGEND', hidden: false, desc: '연간 HS·홈·생산성 모두 전체 TOP3', auto: true },
+  { key: 'tenure3', icon: '🌱', name: '미소 새싹', rarity: 'COMMON', hidden: false, desc: '입사 3개월', auto: true },
+  { key: 'tenure12', icon: '🎂', name: '첫 돌', rarity: 'COMMON', hidden: false, desc: '근속 12개월', auto: true },
+  { key: 'tenure24', icon: '🌳', name: '뿌리내림', rarity: 'RARE', hidden: false, desc: '근속 24개월', auto: true },
+  { key: 'tenure36', icon: '🌲', name: '뿌리 깊은 미소', rarity: 'EPIC', hidden: false, desc: '근속 36개월', auto: true },
+  { key: 'tenure60', icon: '🏛', name: '미소 베테랑', rarity: 'LEGEND', hidden: false, desc: '근속 60개월', auto: true },
+  { key: 'special_pick', icon: '⭐', name: '점장 PICK', rarity: 'RARE', hidden: false, desc: '점장이 특별 수여', auto: false },
+  { key: 'special_team', icon: '🤝', name: '팀플레이어', rarity: 'EPIC', hidden: false, desc: '협업·지원 공로로 관리자 수여', auto: false },
+  { key: 'special_mvp', icon: '🏆', name: '미소 MVP', rarity: 'LEGEND', hidden: false, desc: '회사 차원의 특별 MVP 선정', auto: false }
 ];
 
-const SPECIAL_BADGE_KEYS = ['special_growth', 'special_team', 'special_pick'];
+const SPECIAL_BADGE_KEYS = ['special_pick', 'special_team', 'special_mvp'];
 
 function badgeDefOf(key) {
   return BADGE_DEFS.find((b) => b.key === key) || null;
 }
 
 function evaluateAutomaticBadges({
-  dailyDays,
-  month,
-  personalGoals,
-  mergedDraft,
-  pay,
-  competitionRows,
-  allDailyRecords,
-  config,
-  userId,
+  dailyDays, month, personalGoals, mergedDraft, pay, competitionRows, userId,
 }) {
-  const earned = new Set();
-  const stats = getWorkActivityStats(dailyDays, month);
+  const earned=new Set();
+  const hs=hsCount(mergedDraft);
+  const home=Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  const free=Number(mergedDraft?.homeFlat?.tvFree||0);
+  const smart=Number(mergedDraft?.homeFlat?.smartHome||0);
+  const upsell=Number(mergedDraft?.tailoredCount||0);
+  const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
+  const prod=Number(pay?.kpiScore||0);
+  if(hs>0)earned.add('first_step');
+  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m80'],[100,'hs_m100']].forEach(([v,k])=>{if(hs>=v)earned.add(k)});
+  [[1,'home_first'],[5,'home_m5'],[10,'home_m10'],[15,'home_m15'],[20,'home_m20']].forEach(([v,k])=>{if(home>=v)earned.add(k)});
+  [[1,'free_first'],[5,'free_m5'],[10,'free_m10']].forEach(([v,k])=>{if(free>=v)earned.add(k)});
+  [[1,'smart_first'],[5,'smart_m5'],[10,'smart_m10']].forEach(([v,k])=>{if(smart>=v)earned.add(k)});
+  [[1,'upsell_first'],[5,'upsell_m5'],[10,'upsell_m10'],[20,'upsell_m20']].forEach(([v,k])=>{if(upsell>=v)earned.add(k)});
+  [[1,'second_first'],[5,'second_m5'],[10,'second_m10'],[20,'second_m20']].forEach(([v,k])=>{if(second>=v)earned.add(k)});
+  [[100,'prod_100'],[120,'prod_120'],[150,'prod_150'],[200,'prod_200']].forEach(([v,k])=>{if(prod>=v)earned.add(k)});
+  if(pay?.grade==='S'&&pay?.gradeEligible)earned.add('grade_s');
 
-  if (stats.activeDays > 0) earned.add('first_step');
-  if (stats.streak >= 5) earned.add('streak5');
-  if (stats.streak >= 10) earned.add('streak10');
+  const rank=(key)=>{
+    const m=MONTHLY_RANK_METRICS.find(x=>x.key===key); if(!m)return null;
+    const rows=[...(competitionRows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch));
+    const me=rows.find(r=>r.id===userId); if(!me||Number(m.value(me)||0)<=0)return null;
+    return 1+rows.filter(r=>Number(m.value(r)||0)>Number(m.value(me)||0)).length;
+  };
+  const hr=rank('hs'), homer=rank('home'), freer=rank('free'), smartr=rank('smart'), pr=rank('productivity'), ur=rank('upsell');
+  if(hr&&hr<=10)earned.add('hs_top10'); if(hr&&hr<=5)earned.add('hs_top5');
+  if(hr===3)earned.add('hs_rank3'); if(hr===2)earned.add('hs_rank2'); if(hr===1)earned.add('hs_rank1');
+  if(homer===1)earned.add('home_rank1'); if(freer===1)earned.add('free_rank1'); if(smartr===1)earned.add('smart_rank1');
+  if(pr===1)earned.add('prod_rank1'); if(ur===1)earned.add('upsell_rank1');
+  if(hr&&hr<=3&&homer&&homer<=3&&pr&&pr<=3)earned.add('all_top3');
+  if(hr===1&&homer===1&&pr===1)earned.add('grand_slam');
 
-  const actuals = getPersonalGoalActuals(mergedDraft, pay);
-  const goals = Object.entries(personalGoals || {}).filter(([, value]) => Number(value) > 0);
-  const completed = goals.filter(([key, value]) => Number(actuals[key] || 0) >= Number(value));
-
-  if (completed.length > 0) earned.add('goal_one');
-  if (goals.length > 0 && completed.length === goals.length) earned.add('goal_all');
-
-  let bestMonthlyRank = Infinity;
-  COMPETITION_METRICS.forEach((metric) => {
-    const ranked = [...(competitionRows || [])]
-      .filter((r) => !NON_SALES_STORES.includes(r.branch))
-      .sort((a, b) => metric.value(b) - metric.value(a) || a.name.localeCompare(b.name));
-    const idx = ranked.findIndex((r) => r.id === userId);
-    if (idx >= 0 && Number(metric.value(ranked[idx]) || 0) > 0) {
-      bestMonthlyRank = Math.min(bestMonthlyRank, idx + 1);
-    }
+  Object.entries(dailyDays||{}).forEach(([,raw])=>{
+    const d=normalizeDay(raw);
+    const dhs=[0,1,2,3,4].reduce((z,ri)=>z+(d.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
+    if(dhs>=5)earned.add('day_hs5'); if(dhs>=8)earned.add('day_hs8'); if(dhs>=10)earned.add('day_hs10');
   });
-
-  if (bestMonthlyRank <= 3) earned.add('top3');
-  if (bestMonthlyRank === 1) earned.add('number1');
-
-  let bestRecentRank = Infinity;
-  COMPETITION_METRICS.forEach((metric) => {
-    const ranked = buildRisingRanking(
-      competitionRows,
-      allDailyRecords,
-      month,
-      config,
-      metric.key
-    );
-    const idx = ranked.findIndex((r) => r.id === userId);
-    if (idx >= 0 && Number(ranked[idx]?.recentValue || 0) > 0) {
-      bestRecentRank = Math.min(bestRecentRank, idx + 1);
-    }
-  });
-
-  if (bestRecentRank <= 3) earned.add('rising3');
-
+  const actuals=getPersonalGoalActuals(mergedDraft,pay);
+  const tg=Number(personalGoals?.tailored||0);
+  if(tg>0&&actuals.tailored>=tg)earned.add('upsell_goal100');
+  if(tg>0&&actuals.tailored>=tg*1.5)earned.add('upsell_goal150');
   return earned;
 }
 
@@ -2082,343 +2164,67 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
   );
 }
 
-function GamificationHub({
-  dailyDays,
-  month,
-  personalGoals,
-  mergedDraft,
-  pay,
-  competitionRows,
-  allDailyRecords,
-  config,
-  userId,
-}) {
-  const [storedBadges, setStoredBadges] = useState([]);
-  const [titleKey, setTitleKey] = useState('');
-  const [loadingBadges, setLoadingBadges] = useState(true);
-  const [showCollection, setShowCollection] = useState(false);
-  const [newBadge, setNewBadge] = useState(null);
-  const [specialFeed, setSpecialFeed] = useState([]);
-
-  const autoEarned = useMemo(
-    () => evaluateAutomaticBadges({
-      dailyDays,
-      month,
-      personalGoals,
-      mergedDraft,
-      pay,
-      competitionRows,
-      allDailyRecords,
-      config,
-      userId,
-    }),
-    [
-      dailyDays,
-      month,
-      personalGoals,
-      mergedDraft,
-      pay,
-      competitionRows,
-      allDailyRecords,
-      config,
-      userId,
-    ]
-  );
-
-  const earnedKeys = useMemo(() => {
-    const set = new Set(storedBadges.map((r) => r.badge_key));
-    autoEarned.forEach((key) => set.add(key));
-    return set;
-  }, [storedBadges, autoEarned]);
-
-  const actuals = useMemo(() => getPersonalGoalActuals(mergedDraft, pay), [mergedDraft, pay]);
-  const quests = PERSONAL_GOAL_DEFS.filter((def) => Number(personalGoals?.[def.key]) > 0);
-
-  const loadBadges = useCallback(async () => {
-    if (!userId) return;
-
-    setLoadingBadges(true);
-
-    const [{ data: badgeRows, error: badgeError }, { data: titleRow }] = await Promise.all([
-      supabase
-        .from('user_achievements')
-        .select('badge_key, earned_at, awarded_by, note')
-        .eq('user_id', userId)
-        .order('earned_at', { ascending: true }),
-      supabase
-        .from('user_titles')
-        .select('badge_key')
-        .eq('user_id', userId)
-        .maybeSingle(),
+function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}) {
+  const [storedBadges,setStoredBadges]=useState([]);
+  const [titleKey,setTitleKey]=useState('');
+  const [loadingBadges,setLoadingBadges]=useState(true);
+  const [showCollection,setShowCollection]=useState(false);
+  const [filter,setFilter]=useState('all');
+  const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId]);
+  const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
+  const loadBadges=useCallback(async()=>{
+    if(!userId)return; setLoadingBadges(true);
+    const [{data:rows},{data:title}]=await Promise.all([
+      supabase.from('user_achievements').select('badge_key,earned_at,awarded_by,note').eq('user_id',userId).order('earned_at'),
+      supabase.from('user_titles').select('badge_key').eq('user_id',userId).maybeSingle()
     ]);
+    setStoredBadges(rows||[]); setTitleKey(title?.badge_key||''); setLoadingBadges(false);
+  },[userId]);
+  useEffect(()=>{loadBadges()},[loadBadges]);
+  useEffect(()=>{
+    if(!userId||loadingBadges)return;
+    const have=new Set(storedBadges.map(r=>r.badge_key)); const missing=[...autoEarned].filter(k=>!have.has(k));
+    if(!missing.length)return;
+    (async()=>{for(const key of missing)await supabase.from('user_achievements').insert({user_id:userId,badge_key:key,awarded_by:null});await loadBadges()})();
+  },[autoEarned,storedBadges,loadingBadges,userId,loadBadges]);
+  const saveTitle=async(key)=>{if(!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(!error)setTitleKey(key)};
+  const titleDef=badgeDefOf(titleKey);
+  const visible=BADGE_DEFS.filter(b=>filter==='earned'?earnedKeys.has(b.key):filter==='locked'?!earnedKeys.has(b.key):filter==='legend'?b.rarity==='LEGEND':true);
+  const earnedRow=storedBadges.find(r=>r.badge_key===titleKey);
 
-    if (!badgeError) setStoredBadges(badgeRows || []);
-    setTitleKey(titleRow?.badge_key || '');
-
-    // 최근 특별 인정 피드
-    try {
-      const { data: recentAwards } = await supabase
-        .from('user_achievements')
-        .select('id, user_id, badge_key, earned_at, note')
-        .not('awarded_by', 'is', null)
-        .order('earned_at', { ascending: false })
-        .limit(6);
-
-      const ids = [...new Set((recentAwards || []).map((r) => r.user_id))];
-      let names = {};
-      if (ids.length) {
-        const { data: profs } = await supabase
-          .from('profiles')
-          .select('id, name, store_name')
-          .in('id', ids);
-        names = Object.fromEntries((profs || []).map((p) => [p.id, p]));
-      }
-
-      setSpecialFeed(
-        (recentAwards || []).map((r) => {
-          const def = badgeDefOf(r.badge_key);
-          const profile = names[r.user_id] || {};
-          return {
-            id: `award-${r.id}`,
-            icon: def?.icon || '⭐',
-            title: def?.name || '특별 인정',
-            name: profile.name || '직원',
-            branch: profile.store_name || '',
-          };
-        })
-      );
-    } catch (e) {
-      // 공개 인정 피드가 실패해도 본인 배지 기능은 유지
-    }
-
-    setLoadingBadges(false);
-  }, [userId]);
-
-  useEffect(() => {
-    loadBadges();
-  }, [loadBadges]);
-
-  // 자동 달성 배지를 DB에 영구 보관
-  useEffect(() => {
-    if (!userId || loadingBadges) return;
-
-    const stored = new Set(storedBadges.map((r) => r.badge_key));
-    const missing = [...autoEarned].filter((key) => !stored.has(key));
-
-    if (!missing.length) return;
-
-    (async () => {
-      for (const key of missing) {
-        const { error } = await supabase
-          .from('user_achievements')
-          .insert({
-            user_id: userId,
-            badge_key: key,
-            awarded_by: null,
-          });
-
-        if (!error) {
-          const def = badgeDefOf(key);
-          if (def) setNewBadge(def);
-        } else if (error.code !== '23505') {
-          console.error('ACHIEVEMENT SAVE ERROR:', error);
-        }
-      }
-
-      await loadBadges();
-    })();
-  }, [autoEarned, storedBadges, loadingBadges, userId, loadBadges]);
-
-  const saveTitle = async (key) => {
-    if (!userId || !earnedKeys.has(key)) return;
-
-    const { error } = await supabase
-      .from('user_titles')
-      .upsert(
-        {
-          user_id: userId,
-          badge_key: key,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
-
-    if (!error) setTitleKey(key);
-  };
-
-  const titleDef = badgeDefOf(titleKey);
-
-  return (
-    <>
-      {quests.length > 0 && (
-        <div className="bg-white rounded-xl border border-violet-100 p-4">
-          <div className="text-xs text-violet-500">이번 달 뭐 노려볼까?</div>
-          <div className="text-sm font-bold text-gray-900 mt-0.5">🎯 나의 퀘스트</div>
-
-          <div className="mt-3 space-y-3">
-            {quests.map((def) => {
-              const target = Number(personalGoals[def.key]);
-              const current = Number(actuals[def.key] || 0);
-              const pct = Math.max(0, Math.min(100, target ? (current / target) * 100 : 0));
-              const done = current >= target;
-
-              const fmt = (value) => {
-                if (def.unit === '원') return Math.round(value).toLocaleString();
-                if (def.unit === 'P') return Number(value).toFixed(1);
-                return Math.round(value);
-              };
-
-              return (
-                <div key={def.key}>
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <span className="font-semibold text-gray-700">{def.label}</span>
-                    <span className={done ? 'font-bold text-emerald-600' : 'text-gray-500'}>
-                      {done ? '완료 ✨' : `${fmt(current)} / ${fmt(target)}${def.unit}`}
-                    </span>
-                  </div>
-
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1.5">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        done ? 'bg-emerald-500' : 'bg-violet-600'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-
-                  {!done && pct >= 80 && (
-                    <div className="text-[10px] text-violet-500 mt-1">거의 다 왔는데? 👀</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-gray-100 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs text-gray-400">나의 기록 컬렉션</div>
-            <div className="text-sm font-bold text-gray-900 mt-0.5">
-              🏅 내 배지 <span className="text-violet-600">{earnedKeys.size}</span>
-            </div>
-            {titleDef && (
-              <div className="text-xs text-violet-600 mt-1">
-                대표 칭호 · {titleDef.icon} {titleDef.name}
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={() => setShowCollection((v) => !v)}
-            className="text-xs text-violet-600 font-semibold"
-          >
-            {showCollection ? '접기' : '전체 보기'}
-          </button>
-        </div>
-
-        <div className={`grid ${showCollection ? 'grid-cols-2' : 'grid-cols-4'} gap-2 mt-3`}>
-          {(showCollection
-            ? BADGE_DEFS
-            : BADGE_DEFS.filter((b) => earnedKeys.has(b.key)).slice(0, 4)
-          ).map((badge) => {
-            const got = earnedKeys.has(badge.key);
-
-            return (
-              <button
-                key={badge.key}
-                disabled={!got}
-                onClick={() => got && saveTitle(badge.key)}
-                className={`rounded-xl border p-3 text-center ${
-                  got
-                    ? titleKey === badge.key
-                      ? 'bg-violet-100 border-violet-300 ring-1 ring-violet-200'
-                      : 'bg-violet-50 border-violet-100'
-                    : 'bg-gray-50 border-gray-100 opacity-55'
-                }`}
-              >
-                <div className="text-2xl">
-                  {got ? badge.icon : badge.hidden ? '❓' : '🔒'}
-                </div>
-                <div className="text-[11px] font-bold text-gray-800 mt-1">
-                  {got ? badge.name : badge.hidden ? '???' : badge.name}
-                </div>
-
-                {showCollection && (
-                  <>
-                    <div className="text-[9px] text-gray-400 mt-0.5">
-                      {got ? badge.rarity : badge.hidden ? 'HIDDEN' : badge.rarity}
-                    </div>
-                    {got && (
-                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">
-                        {badge.desc}
-                      </div>
-                    )}
-                    {got && (
-                      <div className="text-[9px] text-violet-500 mt-1.5">
-                        {titleKey === badge.key ? '대표 칭호 사용 중' : '눌러서 대표 칭호로 설정'}
-                      </div>
-                    )}
-                  </>
-                )}
-              </button>
-            );
-          })}
-
-          {!showCollection && earnedKeys.size === 0 && (
-            <div className="col-span-4 text-xs text-gray-400 py-3 text-center">
-              첫 기록을 남기면 첫 배지가 열려요 🌱
-            </div>
-          )}
+  return <>
+    <button type="button" onClick={()=>setShowCollection(true)} className="w-full bg-white rounded-xl border border-gray-100 p-3.5 flex items-center justify-between text-left">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-xl">{titleDef?.icon||'🏅'}</div>
+        <div className="min-w-0">
+          <div className="text-[10px] text-gray-400">대표 배지</div>
+          <div className="text-sm font-bold text-gray-800 truncate">{titleDef?.name||'대표 배지를 선택해보세요'}</div>
+          {titleDef&&earnedRow?.earned_at&&<div className="text-[9px] text-gray-400 mt-0.5">{fmtShortDate(earnedRow.earned_at)} 획득</div>}
         </div>
       </div>
+      <div className="text-right shrink-0"><div className="text-xs font-bold text-violet-600">{fmtCount(earnedKeys.size)} / 100</div><div className="text-[9px] text-gray-400">배지 〉</div></div>
+    </button>
 
-      <RecognitionSpotlight
-        rows={competitionRows}
-        dailyRecords={allDailyRecords}
-        month={month}
-        config={config}
-        specialFeed={specialFeed}
-      />
-
-      {newBadge && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-5">
-          <div className="w-full max-w-xs bg-white rounded-3xl p-6 shadow-2xl text-center">
-            <div className="text-[11px] tracking-[0.25em] text-violet-500 font-bold">NEW BADGE</div>
-            <div className="text-5xl mt-4">{newBadge.icon}</div>
-            <div className="text-xl font-bold text-gray-900 mt-3">{newBadge.name}</div>
-            <div className="text-xs font-semibold text-violet-500 mt-1">{newBadge.rarity}</div>
-            <div className="text-sm text-gray-500 mt-3">{newBadge.desc}</div>
-            <div className="text-xs text-gray-400 mt-2">잘한 건 티 내도 돼요 ✨</div>
-
-            <div className="mt-5 space-y-2">
-              <button
-                onClick={async () => {
-                  await saveTitle(newBadge.key);
-                  setNewBadge(null);
-                }}
-                className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold"
-              >
-                대표 칭호로 설정
-              </button>
-              <button
-                onClick={() => setNewBadge(null)}
-                className="w-full py-2 text-sm text-gray-400"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
+    {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
+      <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / 100</div><div className="text-[10px] text-gray-400">획득한 배지를 대표 배지로 선택할 수 있어요.</div></div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
+          <div className="flex gap-1.5 mt-3 overflow-x-auto">{[['all','전체'],['earned','획득'],['locked','미획득'],['legend','LEGEND']].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-100 text-gray-500'}`}>{l}</button>)}</div>
         </div>
-      )}
-    </>
-  );
+        <div className="p-3 grid grid-cols-2 gap-2 overflow-y-auto max-h-[70vh]">
+          {visible.map(b=>{const got=earnedKeys.has(b.key);const row=storedBadges.find(r=>r.badge_key===b.key);return <button key={b.key} disabled={!got} onClick={()=>got&&saveTitle(b.key)} className={`rounded-2xl border p-3 text-left ${got?(titleKey===b.key?'border-violet-300 bg-violet-50 ring-1 ring-violet-100':'border-gray-100 bg-white'):'border-gray-100 bg-gray-50 opacity-55'}`}>
+            <div className="flex justify-between"><span className="text-2xl">{got?b.icon:'🔒'}</span><span className="text-[8px] font-bold text-gray-400">{b.rarity}</span></div>
+            <div className="text-xs font-bold text-gray-800 mt-2">{b.name}</div><div className="text-[10px] text-gray-500 mt-1 leading-tight">{b.desc}</div>
+            {got&&<div className="text-[9px] text-violet-500 mt-2">{titleKey===b.key?'대표 배지 사용 중':row?.earned_at?`${fmtShortDate(row.earned_at)} 획득 · 대표로 설정`:'대표로 설정'}</div>}
+          </button>})}
+        </div>
+      </div>
+    </div>}
+  </>;
 }
 
 function SpecialBadgeAwardPanel({ employees, authUserId }) {
   const [employeeId, setEmployeeId] = useState(employees?.[0]?.id || '');
-  const [badgeKey, setBadgeKey] = useState('special_growth');
+  const [badgeKey, setBadgeKey] = useState('special_pick');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -4194,22 +4000,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </button>
           </div>
 
-          {employeeHomeMode==='personal'&&
-            <ProfileEditRequestForm authUser={authUser} profile={authProfile} />
-          }
-
           {employeeHomeMode==='personal' ? <>
-            <DailyOneLiner
-              userId={authUser?.id}
-              month={month}
-              pay={pay}
-              draft={mergedDraft}
-              config={config}
-              competitionRows={competitionRows}
-              branch={currentEmp?.branch}
-              onGoCare={()=>setTab('customerCare')}
-              onGoInput={()=>setTab('daily')}
-            />
+            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
               <div className="flex items-start justify-between gap-3">
@@ -4245,18 +4037,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               </div>
             </div>
 
-            {showPersonalGoal&&<MonthlyGoalCard month={month} mergedDraft={mergedDraft} pay={pay} goals={personalGoals} onSave={savePersonalGoals} saving={goalSaving} />}
-            <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} />
-            <NextGoalCard pay={pay} draft={mergedDraft} config={config} onGoInput={()=>setTab('daily')} />
+            <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <MonthlyPerformanceRankingCard rows={competitionRows} userId={authUser?.id} title={`${monthLabel(month)} 월 누적 순위`} />
-
-            <button onClick={()=>setHomeDetailOpen(v=>!v)} className="w-full bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between text-sm font-semibold text-gray-700">
-              <span>개인 상세 보기</span><span className="text-violet-600 text-xs">{homeDetailOpen?'접기':'펼쳐보기'}</span>
-            </button>
-            {homeDetailOpen&&<div className="space-y-4">
-              <WorkActivityCard dailyDays={dailyDays} month={month} onGoInput={()=>setTab('daily')} />
-              <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} allDailyRecords={allDailyRecords} config={config} userId={authUser?.id} />
-            </div>}
           </> : <>
             <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={authUser?.id} />
           </>}
@@ -6350,7 +6132,10 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
 }
 
 
-function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month, config }) {
+function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month, config, onSaveGoals, goalSaving }) {
+  const [goalEditing,setGoalEditing]=useState(false);
+  const [goalValues,setGoalValues]=useState(personalGoals||{});
+  useEffect(()=>setGoalValues(personalGoals||{}),[personalGoals,month]);
   const simMnpTotal=(draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
   const secondStandalone=(draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0);
   const secondBundle=Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
@@ -6431,9 +6216,15 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
   return <>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50">
-        <div className="text-xs text-gray-400">📊 나의 이번 달 실적</div>
-        <div className="text-sm font-bold text-gray-900 mt-0.5">당월 누적 실적</div>
-        <div className="text-[10px] text-gray-400 mt-1">숫자를 누르면 날짜별 반영 내역을 확인할 수 있어요.</div>
+        <div className="flex items-start justify-between gap-2">
+          <div><div className="text-xs text-gray-400">📊 {monthLabel(month)}</div><div className="text-sm font-bold text-gray-900 mt-0.5">이번 달 목표 현황</div></div>
+          <button onClick={()=>setGoalEditing(v=>!v)} className="text-[10px] font-semibold text-violet-600">{goalEditing?'닫기':'목표 설정'}</button>
+        </div>
+        <div className="text-[10px] text-gray-400 mt-1">현재 누적 실적과 내 목표를 한 번에 확인해요. 숫자를 누르면 날짜별 내역이 열려요.</div>
+        {goalEditing&&<div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-2">
+          {PERSONAL_GOAL_DEFS.map(def=><div key={def.key} className="flex items-center gap-2"><span className="text-[10px] text-gray-500 w-24 truncate">{def.label}</span><input type="number" value={goalValues[def.key]??''} onChange={e=>setGoalValues(v=>({...v,[def.key]:e.target.value}))} placeholder="미설정" className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-xs"/><span className="text-[9px] text-gray-400">{def.unit}</span></div>)}
+          <button disabled={goalSaving} onClick={async()=>{const ok=await onSaveGoals?.(goalValues);if(ok)setGoalEditing(false)}} className="w-full mt-1 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{goalSaving?'저장 중':'목표 저장'}</button>
+        </div>}
       </div>
       <div className="p-3 space-y-2">
         {[metrics.slice(0,4),metrics.slice(4,8),metrics.slice(8,10)].map((row,ri)=>(
@@ -6444,7 +6235,7 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
               return <button type="button" onClick={()=>setDetailMetric(m)} key={m.key} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center min-w-0 hover:bg-violet-50 active:scale-[0.98] transition">
                 <div className="text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{m.label}</div>
                 <div className={`font-bold text-gray-900 mt-1 whitespace-nowrap ${m.unit==='won'?'text-[13px]':'text-[15px]'}`}>{renderValue(m)}</div>
-                {goal>0&&<div className="text-[9px] text-violet-500 mt-1">목표 {pct}%</div>}
+                {goal>0?<div className="text-[9px] text-violet-500 mt-1">목표 {m.unit==='won'?won(goal):m.unit==='point'?`${fmtNum(goal,1)}P`:`${fmtCount(goal)}건`} · {pct}%</div>:<div className="text-[9px] text-gray-300 mt-1">목표 미설정</div>}
               </button>
             })}
           </div>
