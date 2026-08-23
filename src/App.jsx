@@ -739,6 +739,18 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 /* v21.32: 실적 데이터 하위호환/버전관리. 구버전 판매건을 현재 UI로 복원하고 수정 시 기존 source_meta 보존. DB audit SQL과 함께 사용. */
 /* v21.33: 직원 홈 상단 '내 정보가 잘못됐나요? / 수정 요청하기' 제거. 관리자 직접 수정 기능은 유지. */
 /* v21.34: 홈 게임요소는 배지만 유지. 100개 배지/대표배지 프로필화, 목표+누적실적 통합, 월 순위 0건도 내 순위 및 공동순위 표시. */
+/* v21.35: 월 누적 순위에서 로그인 ID/직원 ID 불일치 또는 경쟁행 누락 시에도 현재 직원의 '나' 행을 항상 표시. */
+/* v21.36: 홈-매장의 누적 현황/목표 달성률을 '매장 목표 현황' 단일 카드로 통합. */
+/* v21.37: 홈-매장 월 누적 순위는 선택 카테고리 기준으로 매장 전체 인원을 모두 표시. 현재 직원은 행 강조. */
+/* v21.38: 구 UI에서 customer_sales 없이 daily_records 집계로만 남은 모바일 실적을 감지해 '이전 방식 입력 실적'로 별도 표시/수정. 현재 고객별 판매는 보존. */
+/* v21.39: 고객별 판매 0건인데 일일 합계가 존재하는 구버전 날짜를 모바일 외 홈/2ND/VAS/소노 포함 전체 레거시 실적으로 감지·노출. */
+/* v21.42 FINAL INTEGRATION
+   - v21.39 안전본 기준 재통합 (v21.40/41 손상본 미사용)
+   - 일일 달력: 날짜별 HS / SIM MNP / 홈 표시
+   - 빠른 등록 및 저장방식과 맞지 않는 안내문 제거
+   - 관리자 대시보드: 매장 성과 달력 + 날짜별 직원 상세
+   - 점장/부점장: 자기 매장 고정, 담당/팀장/대표/실장/전체관리자: 전체 매장 및 매장 선택
+*/
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1385,7 +1397,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   // - 전체 관리자: 전체
   const loginEmp = employees.find((e) => e.id === authUser?.id);
   const isFullAdmin = authProfile?.role === 'admin';
-  const isHQManager = loginEmp?.position === '담당';
+  const isHQManager = ['담당','팀장','대표','실장'].includes(loginEmp?.position);
   const isStoreLeader = ['점장', '부점장'].includes(loginEmp?.position);
 
   const scopedEmployees = isFullAdmin || isHQManager
@@ -1540,6 +1552,9 @@ export default function App({ authUser, authProfile, onSignOut }) {
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={isFullAdmin}
           authUserId={authUser?.id}
+          loginPosition={loginEmp?.position||''}
+          loginBranch={loginEmp?.branch||''}
+          canSwitchStores={isFullAdmin||isHQManager}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
         />
       )}
@@ -1560,7 +1575,7 @@ const MONTHLY_RANK_METRICS = [
   { key:'upsell', label:'맞춤제안 업셀건', unit:'건', value:(r)=>Number(r.draft?.tailoredCount||0) },
 ];
 
-function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='월 누적 순위' }) {
+function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='', branchOnly=null, title='월 누적 순위', showAll=false }) {
   const [metricKey,setMetricKey]=useState('hs');
   const metric=MONTHLY_RANK_METRICS.find(m=>m.key===metricKey)||MONTHLY_RANK_METRICS[0];
   const ranked=useMemo(()=>[...(rows||[])]
@@ -1575,10 +1590,31 @@ function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='�
     return 1+ranked.filter(r=>Number(metric.value(r)||0)>v).length;
   };
   const top3=ranked.filter(r=>rankOf(r)<=3);
-  const myIndex=ranked.findIndex(r=>r.id===userId);
-  const me=myIndex>=0?ranked[myIndex]:null;
-  const myRank=me?rankOf(me):null;
-  const myTied=me?ranked.filter(r=>Number(metric.value(r)||0)===Number(metric.value(me)||0)).length>1:false;
+  const displayRows=showAll?ranked:top3;
+  // v21.35: 로그인 auth id와 직원 row id가 다른 환경도 있어 현재 직원 정보로 한 번 더 찾음
+  let myIndex=ranked.findIndex(r=>String(r.id||'')===String(userId||''));
+  if(myIndex<0 && userName){
+    myIndex=ranked.findIndex(r=>
+      String(r.name||'').trim()===String(userName||'').trim() &&
+      (!userBranch || String(r.branch||'')===String(userBranch||''))
+    );
+  }
+  let me=myIndex>=0?ranked[myIndex]:null;
+
+  // 경쟁행에 현재 직원 자체가 빠진 경우에도 0 실적으로 '나' 행을 항상 만들어 줌
+  const fallbackMe=!me && (userId||userName) ? {
+    id:userId||'current-user',
+    name:userName||'나',
+    branch:userBranch||branchOnly||'',
+    draft:{},
+    pay:{kpiScore:0}
+  } : null;
+  me=me||fallbackMe;
+
+  const myValue=Number(metric.value(me)||0);
+  const myRank=me ? 1+ranked.filter(r=>Number(metric.value(r)||0)>myValue).length : null;
+  const sameValueCount=me ? ranked.filter(r=>Number(metric.value(r)||0)===myValue).length + (fallbackMe?1:0) : 0;
+  const myTied=sameValueCount>1;
   const fmt=(v)=>metric.unit==='P'?`${fmtNum(Number(v||0),1)}P`:`${fmtCount(v)}건`;
 
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -1599,13 +1635,14 @@ function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='�
     </div>
 
     <div className="divide-y divide-gray-50">
-      {top3.map((r)=>{
+      {displayRows.map((r)=>{
         const rr=rankOf(r);
-        return <div key={r.id} className="flex items-center justify-between px-4 py-2.5 gap-3">
+        const isMe=String(r.id||'')===String(userId||'') || (userName&&String(r.name||'').trim()===String(userName||'').trim()&&(!userBranch||String(r.branch||'')===String(userBranch||'')));
+        return <div key={r.id} className={`flex items-center justify-between px-4 py-2.5 gap-3 ${showAll&&isMe?'bg-violet-50':''}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${rr===1?'bg-amber-100 text-amber-700':rr===2?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{rr}</span>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-gray-800 truncate">{r.name}</div>
+            <div className="text-xs font-semibold text-gray-800 truncate">{r.name}{showAll&&isMe&&<span className="ml-1 text-[9px] text-violet-600">나</span>}</div>
             {!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}
           </div>
         </div>
@@ -1613,53 +1650,105 @@ function MonthlyPerformanceRankingCard({ rows, userId, branchOnly=null, title='�
       </div>})}
     </div>
 
-    {me&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
+    {!showAll&&me&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
       <span className="text-xs font-semibold text-violet-700">나 · {myTied?'공동 ':''}{fmtCount(myRank)}위</span>
       <span className="text-xs font-bold text-violet-700">{fmt(metric.value(me))}</span>
     </div>}
   </div>;
 }
 
-function StoreHomeOverview({ rows, branch, month, userId }) {
+function StoreHomeOverview({ rows, branch, month, userId, userName='' }) {
   const members=(rows||[]).filter(r=>r.branch===branch);
   if(!branch || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 매장 실적을 불러올 수 없어요.</div>;
+
   const sum=(fn)=>members.reduce((a,r)=>a+Number(fn(r)||0),0);
-  const metrics=[
-    ['HS',sum(r=>hsCount(r.draft)),'건'],
-    ['홈',sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),'건'],
-    ['TV프리(부)',sum(r=>r.draft?.homeFlat?.tvFree||0),'건'],
-    ['스마트홈',sum(r=>r.draft?.homeFlat?.smartHome||0),'건'],
-    ['맞춤제안',sum(r=>r.draft?.tailoredCount||0),'건'],
-    ['생산성',sum(r=>r.pay?.kpiScore||0),'P'],
-  ];
   const goal=companyGoalDefaults(branch);
-  const hs=metrics[0][1], home=metrics[1][1], prod=metrics[5][1];
-  const goals=[['HS',hs,goal.hs],['홈',home,goal.home],['생산성',prod,goal.productivity]].filter(x=>Number(x[2]||0)>0);
+
+  const metrics=[
+    {
+      key:'hs', label:'HS', unit:'건',
+      current:sum(r=>hsCount(r.draft)),
+      target:Number(goal.hs||0)
+    },
+    {
+      key:'home', label:'홈', unit:'건',
+      current:sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),
+      target:Number(goal.home||0)
+    },
+    {
+      key:'free', label:'프리', unit:'건',
+      current:sum(r=>r.draft?.homeFlat?.tvFree||0),
+      target:Number(goal.tvFree||goal.free||0)
+    },
+    {
+      key:'smart', label:'스홈', unit:'건',
+      current:sum(r=>r.draft?.homeFlat?.smartHome||0),
+      target:Number(goal.smartHome||goal.smart||0)
+    },
+    {
+      key:'tailored', label:'맞춤제안', unit:'건',
+      current:sum(r=>r.draft?.tailoredCount||0),
+      target:Number(goal.tailoredCount||goal.tailored||0)
+    },
+    {
+      key:'productivity', label:'생산성', unit:'P',
+      current:sum(r=>r.pay?.kpiScore||0),
+      target:Number(goal.productivity||0)
+    },
+  ];
+
+  const fmtValue=(m,v)=>{
+    if(m.unit==='P')return `${fmtNum(Number(v||0),1)}P`;
+    return `${fmtCount(v)}건`;
+  };
+
   return <div className="space-y-4">
-    <div className="bg-white rounded-2xl border border-gray-100 p-4">
-      <div className="text-[11px] text-gray-400">{monthLabel(month)}</div>
-      <div className="text-base font-bold text-gray-900 mt-0.5">{displayStoreName(branch)} 누적 현황</div>
-      <div className="grid grid-cols-3 gap-2 mt-3">
-        {metrics.map(([label,value,unit])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center">
-          <div className="text-[10px] text-gray-400">{label}</div>
-          <div className="text-sm font-bold text-gray-800 mt-0.5">{unit==='P'?fmtNum(value,1):fmtCount(value)}{unit}</div>
-        </div>)}
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-50">
+        <div className="text-xs text-gray-400">📊 {monthLabel(month)}</div>
+        <div className="text-sm font-bold text-gray-900 mt-0.5">{displayStoreName(branch)} 매장 목표 현황</div>
+        <div className="text-[10px] text-gray-400 mt-1">매장 누적 실적과 목표 달성률을 한 번에 확인해요.</div>
+      </div>
+
+      <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {metrics.map(m=>{
+          const hasGoal=Number(m.target||0)>0;
+          const pct=hasGoal?Math.max(0,Math.round(Number(m.current||0)/Number(m.target||1)*100)):null;
+          const barPct=hasGoal?Math.min(100,pct):0;
+          const achieved=hasGoal&&Number(m.current||0)>=Number(m.target||0);
+
+          return <div key={m.key} className="rounded-xl bg-gray-50 p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-[10px] text-gray-500">{m.label}</div>
+              {hasGoal&&<div className={`text-[9px] font-semibold ${achieved?'text-emerald-600':'text-violet-600'}`}>{pct}%</div>}
+            </div>
+
+            <div className="text-base font-bold text-gray-900 mt-1">{fmtValue(m,m.current)}</div>
+
+            {hasGoal ? <>
+              <div className="text-[9px] text-gray-400 mt-0.5">목표 {fmtValue(m,m.target)}</div>
+              <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden mt-2">
+                <div className={`h-full rounded-full ${achieved?'bg-emerald-500':'bg-violet-500'}`} style={{width:`${barPct}%`}} />
+              </div>
+            </> : (
+              <div className="text-[9px] text-gray-300 mt-1">목표 미설정</div>
+            )}
+          </div>;
+        })}
       </div>
     </div>
-    {goals.length>0&&<div className="bg-white rounded-2xl border border-gray-100 p-4">
-      <div className="text-sm font-bold text-gray-900">매장 목표 달성률</div>
-      <div className="space-y-3 mt-3">{goals.map(([label,cur,target])=>{
-        const pct=Math.min(100,Number(target)?Number(cur)/Number(target)*100:0);
-        return <div key={label}>
-          <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{label}</span><span className="text-gray-500">{label==='생산성'?fmtNum(cur,1):fmtCount(cur)} / <b>{fmtNum(target,1)}</b></span></div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}} /></div>
-        </div>;
-      })}</div>
-    </div>}
-    <MonthlyPerformanceRankingCard rows={members} userId={userId} branchOnly={branch} title="매장 월 누적 순위" />
+
+    <MonthlyPerformanceRankingCard
+      rows={members}
+      userId={userId}
+      userName={userName}
+      userBranch={branch}
+      branchOnly={branch}
+      title="매장 월 누적 순위"
+      showAll
+    />
   </div>;
 }
-
 
 
 
@@ -4038,9 +4127,15 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </div>
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
-            <MonthlyPerformanceRankingCard rows={competitionRows} userId={authUser?.id} title={`${monthLabel(month)} 월 누적 순위`} />
+            <MonthlyPerformanceRankingCard
+              rows={competitionRows}
+              userId={currentEmp?.id||authUser?.id}
+              userName={currentEmp?.name||authProfile?.name||''}
+              userBranch={currentEmp?.branch||''}
+              title={`${monthLabel(month)} 월 누적 순위`}
+            />
           </> : <>
-            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={authUser?.id} />
+            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} />
           </>}
         </div>
       )}
@@ -4247,6 +4342,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
   const [daySales,setDaySales]=useState([]);
   const [daySalesLoading,setDaySalesLoading]=useState(false);
+  const [legacyEditorOpen,setLegacyEditorOpen]=useState(false);
+  const [legacyMatrixDraft,setLegacyMatrixDraft]=useState(null);
 
 
   const dayMatrix = day.matrix;
@@ -4726,6 +4823,51 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     };
   };
 
+  // v21.38: 구 UI에서 customer_sales 없이 daily_records에만 저장된 모바일 실적을 분리
+  const representedMobileMatrix=useMemo(()=>{
+    const matrix=emptyDayMatrix();
+    (daySales||[]).forEach(sale=>{
+      if(sale.source_type==='home_order' || sale.source_type==='extra')return;
+      const meta=inferMobileMeta(sale);
+      if(!meta)return;
+      if(matrix[meta.ri] && Number.isInteger(meta.ci)){
+        matrix[meta.ri][meta.ci]=Number(matrix[meta.ri][meta.ci]||0)+1;
+      }
+    });
+    return matrix;
+  },[daySales,config]);
+
+  const legacyMobileMatrix=useMemo(()=>{
+    const d=normalizeDay(day);
+    return d.matrix.map((row,ri)=>row.map((cnt,ci)=>
+      Math.max(0,Number(cnt||0)-Number(representedMobileMatrix?.[ri]?.[ci]||0))
+    ));
+  },[day,representedMobileMatrix]);
+
+  const legacyMobileCount=useMemo(()=>
+    legacyMobileMatrix.reduce((sum,row)=>sum+row.reduce((a,v)=>a+Number(v||0),0),0)
+  ,[legacyMobileMatrix]);
+
+  const openLegacyEditor=()=>{
+    setLegacyMatrixDraft(legacyMobileMatrix.map(row=>[...row]));
+    setLegacyEditorOpen(true);
+  };
+
+  const saveLegacyEditor=async()=>{
+    if(locked || !legacyMatrixDraft)return;
+    const base=normalizeDay(day);
+    const nextMatrix=base.matrix.map((row,ri)=>row.map((_,ci)=>
+      Number(representedMobileMatrix?.[ri]?.[ci]||0)+Math.max(0,Number(legacyMatrixDraft?.[ri]?.[ci]||0))
+    ));
+    const next={...base,matrix:nextMatrix};
+    setDay(next);
+    const ok=await saveDailyDay(selectedDay,next);
+    if(ok){
+      setLegacyEditorOpen(false);
+      setLegacyMatrixDraft(null);
+    }
+  };
+
   const openEditSale=async(sale)=>{
     if(sale.source_type==='home_order'){
       const saleDate=sale.sale_date;
@@ -5096,6 +5238,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     + (rec.custRegCount || 0) + (rec.tailoredCount || 0);
   const matrixSum = (rec) => rec.matrix.reduce((s, row) => s + row.reduce((rs, v) => rs + v, 0), 0);
   const dayTotal = matrixSum(day) + groupSum(day);
+  // v21.39: 예전 UI는 모바일뿐 아니라 홈/2ND/VAS/소노 등도 daily_records 집계만 남을 수 있음.
+  // 고객별 원본이 0건인데 일일 합계가 있으면 해당 날짜 전체를 '이전 방식 입력 실적'로 취급해 반드시 노출.
+  const legacyWholeDay = !daySalesLoading && daySales.length===0 && dayTotal>0;
+  const legacyWholeDayCount = legacyWholeDay ? dayTotal : 0;
   const monthTotal = Object.values(dailyDays).reduce((s, raw) => { const r = normalizeDay(raw); return s + matrixSum(r) + groupSum(r); }, 0);
 
   // 등록 내역은 합산 숫자보다 고객 판매 건 단위로 보여줘요.
@@ -5145,14 +5291,27 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             const has = dayHasData(rec);
             const off = !!rec.dayOff;
             const isSel = key === selectedDay;
+            const calHs=[0,1,2,3,4].reduce((sum,ri)=>sum+(rec.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
+            const calSim=(rec.matrix?.[5]||[]).reduce((a,v)=>a+Number(v||0),0);
+            const calHome=Number(rec.groups?.homeBase?.homeOnly||0)+Number(rec.groups?.homeBase?.homeTv||0);
+            const hasCalSummary=calHs>0||calSim>0||calHome>0;
             const dow = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, d).getDay();
             return (
               <button key={d} onClick={() => selectDay(key)}
                 className={`relative aspect-square rounded-lg text-xs font-medium flex flex-col items-center justify-center
                   ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
-                <span>{d}</span>
-                {off && <span className={`text-[8px] leading-none mt-0.5 ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>}
-                {has && !off && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />}
+                <span className={hasCalSummary&&!off?'leading-none mb-0.5':''}>{d}</span>
+                {off ? (
+                  <span className={`text-[8px] leading-none mt-0.5 ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>
+                ) : hasCalSummary ? (
+                  <div className={`text-[7px] leading-[9px] font-semibold text-center ${isSel?'text-white/85':'text-gray-500'}`}>
+                    {calHs>0&&<div>HS {fmtCount(calHs)}</div>}
+                    {calSim>0&&<div>SIM {fmtCount(calSim)}</div>}
+                    {calHome>0&&<div>홈 {fmtCount(calHome)}</div>}
+                  </div>
+                ) : (
+                  has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />
+                )}
               </button>
             );
           })}
@@ -5188,9 +5347,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-800">{parseInt(selectedDay, 10)}일 · {dayTotal}건</div>
-        <div className="px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1 bg-violet-50 text-violet-700">
-          <Zap size={12} />빠른 등록
-        </div>
       </div>
 
       <>
@@ -5202,7 +5358,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             {daySalesLoading ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">판매 내역 불러오는 중...</div>
             ) : daySales.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-gray-400">아직 고객별 판매 기록이 없어요.<br />아래 판매 카테고리에서 등록해 주세요.</div>
+              legacyWholeDay ? (
+                <div className="px-4 py-6 text-center">
+                  <div className="text-sm font-semibold text-gray-700">이전 방식으로 입력된 실적이 {fmtCount(legacyWholeDayCount)}건 있어요.</div>
+                  <div className="text-[11px] text-gray-400 mt-1">당시 고객별 원본이 저장되지 않아 아래 ‘이전 방식 입력 실적’에서 수정할 수 있어요.</div>
+                </div>
+              ) : (
+                <div className="px-4 py-8 text-center text-sm text-gray-400">아직 고객별 판매 기록이 없어요.<br />아래 판매 카테고리에서 등록해 주세요.</div>
+              )
             ) : (
               <div className="divide-y divide-gray-50">
                 {daySales.map((sale) => {
@@ -5236,6 +5399,24 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             )}
           </div>
 
+          {(legacyMobileCount>0||legacyWholeDay)&&(
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold text-amber-700">이전 방식 입력 실적</div>
+                  <div className="text-sm font-bold text-gray-800 mt-0.5">{legacyWholeDay?`총 ${fmtCount(legacyWholeDayCount)}건`:`모바일 ${fmtCount(legacyMobileCount)}건`}</div>
+                  <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                    고객별 입력 기능이 생기기 전에 저장된 집계 실적이에요. 데이터는 남아 있지만 당시 고객명은 저장되지 않았어요.
+                    {legacyWholeDay&&legacyMobileCount===0?' 홈·부가 실적 등 비모바일 집계도 포함되어 있어요.':''}
+                  </div>
+                </div>
+                <button type="button" onClick={openLegacyEditor}
+                  className="shrink-0 px-3 py-2 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-700">
+                  {legacyMobileCount>0?'수정':'내역 보기'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-xl border border-gray-100 p-3">
             <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
@@ -5260,12 +5441,65 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       </>
 
-      <div className="pt-1 text-[11px] text-gray-400 px-1">
-        2ND 번들·중고MNP 결합은 모바일 입력에서, 소노·맞춤제안·고객등록은 위 판매 카테고리에서 입력해요.
-      </div>
-
-      <div className="text-[11px] text-gray-400 text-center pb-2">입력하면 자동으로 저장돼요. 날짜를 옮겨도 안전해요.</div>
       </>
+      )}
+
+      {legacyEditorOpen&&legacyMatrixDraft&&(
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4" onClick={()=>setLegacyEditorOpen(false)}>
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100">
+              <div className="text-[11px] font-semibold text-amber-600">구버전 데이터</div>
+              <div className="text-lg font-bold text-gray-900">이전 방식 입력 실적 수정</div>
+              <div className="text-[10px] text-gray-400 mt-1">{month}-{selectedDay} · 고객별 원본이 없는 집계 실적만 수정해요.</div>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[65vh] space-y-3">
+              {legacyWholeDay&&DAILY_GROUP_KEYS.map(gk=>{
+                const entries=Object.entries(normalizeDay(day).groups?.[gk]||{}).filter(([,v])=>Number(v||0)>0);
+                if(!entries.length)return null;
+                return <div key={gk} className="rounded-xl border border-amber-100 bg-amber-50/40 p-3">
+                  <div className="text-xs font-bold text-gray-700 mb-2">{gk==='homeBase'?'홈':gk==='homeFlat'?'홈 부가':gk==='bundle2nd'?'2ND':gk==='vas'?'VAS':gk==='sono'?'소노':gk}</div>
+                  <div className="space-y-1.5">
+                    {entries.map(([k,v])=><div key={k} className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-gray-500 truncate">{k}</span>
+                      <span className="text-xs font-semibold text-gray-700">{fmtCount(v)}건</span>
+                    </div>)}
+                  </div>
+                  <div className="text-[9px] text-amber-600 mt-2">이 항목은 구버전 집계값입니다. 현재 화면에서는 원본 확인용으로 표시됩니다.</div>
+                </div>;
+              })}
+              {MATRIX_ROW_DEFS.map((rowDef,ri)=>{
+                const vals=legacyMatrixDraft[ri]||[];
+                const rowTotal=vals.reduce((a,v)=>a+Number(v||0),0);
+                if(!rowDef.hasTiers){
+                  return <div key={ri} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
+                    <div className="text-xs font-semibold text-gray-700">{rowDef.dailyLabel||rowDef.label}</div>
+                    <input type="number" min="0" value={vals[0]||0}
+                      onChange={e=>setLegacyMatrixDraft(prev=>prev.map((r,ridx)=>ridx===ri?r.map((v,cidx)=>cidx===0?Math.max(0,Number(e.target.value||0)):v):r))}
+                      className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right"/>
+                  </div>;
+                }
+                return <div key={ri} className="rounded-xl border border-gray-100 p-3">
+                  <div className="flex justify-between items-center">
+                    <div className="text-xs font-semibold text-gray-700">{rowDef.dailyLabel||rowDef.label}</div>
+                    <div className="text-[10px] text-gray-400">{fmtCount(rowTotal)}건</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {MATRIX_COLS.map((col,ci)=><label key={ci} className="text-[10px] text-gray-500">
+                      <span className="block mb-1 truncate">{col}</span>
+                      <input type="number" min="0" value={vals[ci]||0}
+                        onChange={e=>setLegacyMatrixDraft(prev=>prev.map((r,ridx)=>ridx===ri?r.map((v,cidx)=>cidx===ci?Math.max(0,Number(e.target.value||0)):v):r))}
+                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right"/>
+                    </label>)}
+                  </div>
+                </div>;
+              })}
+            </div>
+            <div className="p-4 border-t grid grid-cols-2 gap-2">
+              <button onClick={()=>setLegacyEditorOpen(false)} className="py-2.5 rounded-xl bg-gray-100 text-sm text-gray-600">취소</button>
+              <button onClick={saveLegacyEditor} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">저장</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
@@ -6926,7 +7160,122 @@ function SettlementReview({ month, rows, employees, config }) {
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId }) {
+
+function dailyCalendarMetrics(raw){
+  const d=normalizeDay(raw);
+  const hs=[0,1,2,3,4].reduce((sum,ri)=>sum+(d.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
+  const sim=(d.matrix?.[5]||[]).reduce((a,v)=>a+Number(v||0),0);
+  const home=Number(d.groups?.homeBase?.homeOnly||0)+Number(d.groups?.homeBase?.homeTv||0);
+  const second=(d.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(d.groups?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
+  const free=Number(d.groups?.homeFlat?.tvFree||0);
+  const smart=Number(d.groups?.homeFlat?.smartHome||0);
+  const tailored=Number(d.tailoredCount||0);
+  return {hs,sim,home,second,free,smart,tailored,has:dayHasData(d),off:!!d.dayOff};
+}
+
+function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch='', canSwitchStores=false }) {
+  const availableStores=useMemo(()=>[...new Set((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b)))].sort((a,b)=>displayStoreName(a).localeCompare(displayStoreName(b))),[employees]);
+  const defaultStore=canSwitchStores?'all':(loginBranch||availableStores[0]||'all');
+  const [storeKey,setStoreKey]=useState(defaultStore);
+  const [selectedDay,setSelectedDay]=useState(()=>{
+    const now=new Date();
+    return monthKeyOf(now)===month?String(now.getDate()).padStart(2,'0'):'01';
+  });
+
+  useEffect(()=>{
+    if(canSwitchStores){
+      if(storeKey!=='all'&&!availableStores.includes(storeKey))setStoreKey('all');
+    }else{
+      setStoreKey(loginBranch||availableStores[0]||'all');
+    }
+  },[canSwitchStores,loginBranch,availableStores.join('|')]);
+
+  useEffect(()=>{
+    const now=new Date();
+    setSelectedDay(monthKeyOf(now)===month?String(now.getDate()).padStart(2,'0'):'01');
+  },[month]);
+
+  const scoped=(employees||[]).filter(e=>(storeKey==='all'||e.branch===storeKey)&&!NON_SALES_STORES.includes(e.branch));
+  const n=daysInMonth(month);
+
+  const daySummary=(dayKey)=>{
+    const total={hs:0,sim:0,home:0,second:0,free:0,smart:0,tailored:0,input:0,off:0};
+    scoped.forEach(emp=>{
+      const m=dailyCalendarMetrics(dailyRecords?.[emp.id]?.[dayKey]);
+      total.hs+=m.hs; total.sim+=m.sim; total.home+=m.home; total.second+=m.second; total.free+=m.free; total.smart+=m.smart; total.tailored+=m.tailored;
+      if(m.has)total.input+=1;
+      if(m.off)total.off+=1;
+    });
+    return total;
+  };
+
+  const selected=daySummary(selectedDay);
+  const employeeDetails=scoped.map(emp=>({emp,...dailyCalendarMetrics(dailyRecords?.[emp.id]?.[selectedDay])}))
+    .sort((a,b)=>(b.hs+b.sim+b.home)-(a.hs+a.sim+a.home)||a.emp.name.localeCompare(b.emp.name));
+
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div className="px-4 py-3 border-b border-gray-50 flex items-start justify-between gap-3">
+      <div>
+        <div className="text-xs text-gray-400">날짜별 매장 성과</div>
+        <div className="text-base font-bold text-gray-900">{monthLabel(month)} 성과 달력</div>
+        <div className="text-[10px] text-gray-400 mt-1">달력에는 HS · SIM MNP · 홈만 간단히 표시해요.</div>
+      </div>
+      {canSwitchStores ? (
+        <select value={storeKey} onChange={e=>setStoreKey(e.target.value)} className="max-w-[150px] text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-2">
+          <option value="all">전체 매장</option>
+          {availableStores.map(b=><option key={b} value={b}>{displayStoreName(b)}</option>)}
+        </select>
+      ) : (
+        <div className="text-xs font-semibold text-violet-700 bg-violet-50 rounded-lg px-2.5 py-2">{displayStoreName(storeKey)}</div>
+      )}
+    </div>
+
+    <div className="p-3">
+      <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+        {['일','월','화','수','목','금','토'].map((w,i)=><div key={w} className={`text-center text-[10px] font-semibold py-1 ${i===0?'text-red-400':i===6?'text-blue-400':'text-gray-400'}`}>{w}</div>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
+        {Array.from({length:new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1).getDay()}).map((_,i)=><div key={`blank-${i}`} className="aspect-square"/>)}
+        {Array.from({length:n},(_,i)=>i+1).map(d=>{
+          const key=String(d).padStart(2,'0');
+          const x=daySummary(key);
+          const active=x.hs>0||x.sim>0||x.home>0;
+          const sel=key===selectedDay;
+          const dow=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d).getDay();
+          return <button key={d} type="button" onClick={()=>setSelectedDay(key)}
+            className={`aspect-square rounded-lg flex flex-col items-center justify-center px-0.5 ${sel?'bg-violet-600 text-white':active?'bg-violet-50 text-violet-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
+            <div className="text-[10px] font-semibold leading-none mb-0.5">{d}</div>
+            {active&&<div className={`text-[7px] leading-[9px] font-semibold ${sel?'text-white/85':'text-gray-500'}`}>
+              {x.hs>0&&<div>HS {fmtCount(x.hs)}</div>}
+              {x.sim>0&&<div>SIM {fmtCount(x.sim)}</div>}
+              {x.home>0&&<div>홈 {fmtCount(x.home)}</div>}
+            </div>}
+          </button>;
+        })}
+      </div>
+    </div>
+
+    <div className="border-t border-gray-100">
+      <div className="px-4 py-3 bg-gray-50/70">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold text-gray-800">{parseInt(selectedDay,10)}일 상세</div>
+          <div className="text-[10px] text-gray-400">입력 {fmtCount(selected.input)}명 · 미입력 {fmtCount(Math.max(0,scoped.length-selected.input-selected.off))}명 · 휴무 {fmtCount(selected.off)}명</div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 mt-2">
+          {[['HS',selected.hs],['SIM MNP',selected.sim],['홈',selected.home],['2ND',selected.second],['프리',selected.free],['스홈',selected.smart]].map(([label,value])=><div key={label} className="rounded-lg bg-white border border-gray-100 px-2 py-2 text-center"><div className="text-[9px] text-gray-400">{label}</div><div className="text-xs font-bold text-gray-800 mt-0.5">{fmtCount(value)}건</div></div>)}
+        </div>
+      </div>
+      <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+        {employeeDetails.map(({emp,hs,sim,home,has,off})=><div key={emp.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{emp.name}</div><div className="text-[9px] text-gray-400">{off?'휴무':has?'입력 완료':'미입력'}</div></div>
+          <div className="text-[10px] text-gray-500 text-right shrink-0">{off?'—':`HS ${fmtCount(hs)} · SIM ${fmtCount(sim)} · 홈 ${fmtCount(home)}`}</div>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'storeGoals', label: '매장 목표', icon: Target },
@@ -6998,6 +7347,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'dashboard' && (
         <div className="space-y-4">
           <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={setAdminTab} />
+
+          <AdminPerformanceCalendar
+            month={month}
+            employees={employees}
+            dailyRecords={dailyRecords}
+            loginBranch={loginBranch}
+            canSwitchStores={canSwitchStores}
+          />
 
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="flex justify-between items-end gap-3 mb-3">
