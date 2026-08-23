@@ -751,6 +751,9 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
    - 관리자 대시보드: 매장 성과 달력 + 날짜별 직원 상세
    - 점장/부점장: 자기 매장 고정, 담당/팀장/대표/실장/전체관리자: 전체 매장 및 매장 선택
 */
+/* v21.43: 구버전 집계를 '이름 없음' 판매건 단위로 분해. 모바일은 모바일 수정 UI, 홈은 홈 수정 UI로 복원하며 저장 시 구집계 1건을 정상 customer_sales/home_orders 데이터로 전환. */
+/* v21.44: 직원/관리자 달력 모든 날짜칸을 동일한 정사각형 크기로 고정하고 HS/SIM/홈 3줄 영역 높이도 항상 동일하게 예약. */
+/* v21.45: HS/SIM/홈 가독성을 위해 개인·관리자 달력 날짜칸을 동일하게 소폭 확대(모바일 58px, 큰 화면 64px 높이). 7열 폭은 유지해 가로 넘침 방지. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -4344,6 +4347,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [daySalesLoading,setDaySalesLoading]=useState(false);
   const [legacyEditorOpen,setLegacyEditorOpen]=useState(false);
   const [legacyMatrixDraft,setLegacyMatrixDraft]=useState(null);
+  // 구버전 집계 1건을 현재 모바일/홈 입력 UI로 복원하는 동안 원본 위치를 기억
+  const [legacyConversion,setLegacyConversion]=useState(null);
 
 
   const dayMatrix = day.matrix;
@@ -4557,6 +4562,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     try{
       const appliedAt=new Date(`${sourceWorkDate}T12:00:00`).toISOString();
       let workingDay=normalizeDay(day);
+      // 구버전 홈 집계 1건을 정상 고객별 홈 판매로 전환: 원본 집계 1건을 먼저 차감
+      if(homeOrderDraft?.legacyConversion && legacyConversion?.kind==='home'){
+        const base=workingDay;
+        const groups={...base.groups,[legacyConversion.groupKey]:{...(base.groups?.[legacyConversion.groupKey]||{})}};
+        groups[legacyConversion.groupKey][legacyConversion.itemKey]=Math.max(
+          0,Number(groups[legacyConversion.groupKey][legacyConversion.itemKey]||0)-1
+        );
+        workingDay={...base,groups};
+      }
       // v21.19 홈 수정: 기존 묶음의 원천 실적/주문/판매건을 제거한 뒤 수정값으로 재구성
       if(homeOrderDraft?.editing && editingHomeSales.length){
         const base=workingDay; const groups={...base.groups};
@@ -4620,10 +4634,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         products.forEach(product=>{ groups[product.groupKey]={...(groups[product.groupKey]||{}),[product.itemKey]:Number(groups[product.groupKey]?.[product.itemKey]||0)+1}; });
         workingDay={...base,groups};
       }
-      if(homeOrderDraft?.editing || homeDirectComplete) mutate(workingDay);
+      if(homeOrderDraft?.editing || homeOrderDraft?.legacyConversion || homeDirectComplete) mutate(workingDay);
 
       notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,payload:{employee_id:currentEmp.id,customer_name:customer,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
-      setHomeOrderDraft(null); setEditingHomeSales([]); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
+      setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
     }catch(e){ alert(`홈 상품 등록 실패: ${friendlyError(e)}`); }
     finally{ setHomeOrderSaving(false); }
@@ -4655,7 +4669,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const commitMobileOne = (ri, ci, customerMeta = {}) => {
     if (locked) return;
 
-    const beforeDay = normalizeDay(day);
+    const beforeDay = normalizeDay(customerMeta.baseDayOverride || day);
     const nextMatrix = beforeDay.matrix.map((row) => [...row]);
     nextMatrix[ri][ci] = (nextMatrix[ri][ci] || 0) + 1;
     const vasKeys = Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [];
@@ -4847,6 +4861,96 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const legacyMobileCount=useMemo(()=>
     legacyMobileMatrix.reduce((sum,row)=>sum+row.reduce((a,v)=>a+Number(v||0),0),0)
   ,[legacyMobileMatrix]);
+
+
+  const legacySaleRows=useMemo(()=>{
+    const rows=[];
+    // 모바일: 현재 customer_sales로 설명되지 않는 matrix 잔여분을 1건씩 풀어서 표시
+    (legacyMobileMatrix||[]).forEach((row,ri)=>(row||[]).forEach((cnt,ci)=>{
+      const n=Math.max(0,Math.floor(Number(cnt||0)));
+      const rd=MATRIX_ROW_DEFS[ri];
+      for(let i=0;i<n;i++){
+        rows.push({
+          id:`legacy-mobile-${ri}-${ci}-${i}`,
+          kind:'mobile',ri,ci,
+          title:rd?.dailyLabel||rd?.label||'모바일',
+          detail:rd?.hasTiers?(MATRIX_COLS[ci]||''):'',
+        });
+      }
+    }));
+
+    // 홈: 현재 customer_sales로 설명되는 홈 건수를 빼고 남은 집계만 '이름 없음'으로 표시
+    const d=normalizeDay(day);
+    const representedHome={};
+    const addRep=(g,k)=>{const key=`${g}.${k}`;representedHome[key]=Number(representedHome[key]||0)+1};
+    (daySales||[]).filter(x=>x.source_type==='home_order').forEach(sale=>{
+      const pt=inferHomeProductTypeFromLabel(sale.metric_label);
+      if(pt==='homeOnly')addRep('homeBase','homeOnly');
+      else if(pt==='homeTv')addRep('homeBase','homeTv');
+      else if(pt==='tvFree')addRep('homeFlat','tvFree');
+      else if(pt==='smartHome')addRep('homeFlat','smartHome');
+      else if(pt==='internet100')addRep('homeFlat','home100Only');
+      else if(pt==='internet500')addRep('homeFlat','home500Only');
+      else if(pt==='internet1g')addRep('homeFlat','home1GBOnly');
+    });
+    const left=(g,k)=>Math.max(0,Math.floor(Number(d.groups?.[g]?.[k]||0)-Number(representedHome[`${g}.${k}`]||0)));
+    const homeDefs=[
+      {g:'homeBase',k:'homeOnly',title:'홈 단독',preset:'homeOnly'},
+      {g:'homeBase',k:'homeTv',title:'홈+TV',preset:'homeTv'},
+      {g:'homeFlat',k:'tvFree',title:'TV프리(부)',preset:'tvFree'},
+      {g:'homeFlat',k:'smartHome',title:'스마트홈',preset:'smartHome'},
+    ];
+    homeDefs.forEach(def=>{
+      const n=left(def.g,def.k);
+      for(let i=0;i<n;i++)rows.push({
+        id:`legacy-home-${def.g}-${def.k}-${i}`,
+        kind:'home',groupKey:def.g,itemKey:def.k,title:def.title,preset:def.preset
+      });
+    });
+
+    // 본상품 잔여가 없는데 속도 집계만 남은 경우만 별도 판매건으로 보여 과거 중복 구성 추정을 피함
+    const leftoverHomeBase=left('homeBase','homeOnly')+left('homeBase','homeTv');
+    if(leftoverHomeBase===0){
+      [
+        ['home100Only','인터넷 100MB','100'],
+        ['home500Only','인터넷 500MB','500'],
+        ['home1GBOnly','인터넷 1GB','1g'],
+      ].forEach(([k,title,speed])=>{
+        const n=left('homeFlat',k);
+        for(let i=0;i<n;i++)rows.push({
+          id:`legacy-home-homeFlat-${k}-${i}`,
+          kind:'home',groupKey:'homeFlat',itemKey:k,title,preset:'internet',speed
+        });
+      });
+    }
+    return rows;
+  },[legacyMobileMatrix,day,daySales]);
+
+  const openLegacySaleRow=(row)=>{
+    if(locked)return;
+    setLegacyConversion(row);
+    if(row.kind==='mobile'){
+      addOne(row.ri,row.ci);
+      return;
+    }
+
+    // 홈 구버전은 기존 홈 입력 UI를 그대로 사용하고, 과거에 확인되는 항목만 미리 선택
+    openHomeOrder();
+    setHomeOrderDraft({unified:true,label:'홈 실적 수정',legacyConversion:true});
+    setHomeCustomerName('');
+    setHomeDirectComplete(true); // 이미 실적으로 집계돼 있던 건이므로 완료 실적으로 복원
+    if(row.preset==='homeOnly'){
+      setHomeInternet(true); setHomeMainTv(false);
+    }else if(row.preset==='homeTv'){
+      setHomeInternet(true); setHomeMainTv(true);
+    }else if(row.preset==='tvFree'){
+      setHomeSubTv(true); setHomeSubTvType('free');
+    }else if(row.preset==='smartHome'){
+      setHomeSmartHome(true);
+    }else if(row.preset==='internet'){
+      setHomeInternet(true); setHomeInternetSpeed(row.speed||'');
+    }
+  };
 
   const openLegacyEditor=()=>{
     setLegacyMatrixDraft(legacyMobileMatrix.map(row=>[...row]));
@@ -5124,7 +5228,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         return;
       }
 
-      // 신규 판매 등록
+      // 신규 판매 등록 / 구버전 1건 복원
+      let legacyBaseOverride=null;
+      if(legacyConversion?.kind==='mobile'){
+        const base=normalizeDay(day);
+        const matrix=base.matrix.map(r=>[...r]);
+        matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);
+        legacyBaseOverride={...base,matrix};
+      }
       const saved=await createCustomerSaleAndTasks({
         userId:currentEmp.id,customerName:customer,saleDate,
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
@@ -5187,10 +5298,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         mobileSaleDraft.ci,
         { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:mobileUsedMnpBundle,
           specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
-          bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
+          bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0,
+          baseDayOverride:legacyBaseOverride }
       );
 
       setMobileSaleDraft(null);
+      setLegacyConversion(null);
       setMobileSaleKind('normal');
       setMobileSpecialPolicyId('');
       setMobileSpecialExceptionAmount('');
@@ -5298,20 +5411,21 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             const dow = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, d).getDay();
             return (
               <button key={d} onClick={() => selectDay(key)}
-                className={`relative aspect-square rounded-lg text-xs font-medium flex flex-col items-center justify-center
+                className={`relative min-w-0 h-[58px] sm:h-[64px] rounded-lg text-xs font-medium flex flex-col items-center justify-start pt-2.5 overflow-hidden
                   ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
-                <span className={hasCalSummary&&!off?'leading-none mb-0.5':''}>{d}</span>
-                {off ? (
-                  <span className={`text-[8px] leading-none mt-0.5 ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>
-                ) : hasCalSummary ? (
-                  <div className={`text-[7px] leading-[9px] font-semibold text-center ${isSel?'text-white/85':'text-gray-500'}`}>
-                    {calHs>0&&<div>HS {fmtCount(calHs)}</div>}
-                    {calSim>0&&<div>SIM {fmtCount(calSim)}</div>}
-                    {calHome>0&&<div>홈 {fmtCount(calHome)}</div>}
-                  </div>
-                ) : (
-                  has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />
-                )}
+                <span className="leading-none shrink-0">{d}</span>
+                <div className="h-[32px] mt-1.5 flex flex-col items-center justify-start shrink-0">
+                  {off ? (
+                    <span className={`text-[8px] leading-[10px] ${isSel ? 'text-white/80' : 'text-emerald-600'}`}>휴무</span>
+                  ) : (
+                    <div className={`text-[7px] leading-[9px] font-semibold text-center ${isSel?'text-white/85':'text-gray-500'}`}>
+                      <div className={calHs>0?'':'invisible'}>HS {fmtCount(calHs)}</div>
+                      <div className={calSim>0?'':'invisible'}>SIM {fmtCount(calSim)}</div>
+                      <div className={calHome>0?'':'invisible'}>홈 {fmtCount(calHome)}</div>
+                    </div>
+                  )}
+                </div>
+                {!off && !hasCalSummary && has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />}
               </button>
             );
           })}
@@ -5358,14 +5472,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             {daySalesLoading ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">판매 내역 불러오는 중...</div>
             ) : daySales.length === 0 ? (
-              legacyWholeDay ? (
-                <div className="px-4 py-6 text-center">
-                  <div className="text-sm font-semibold text-gray-700">이전 방식으로 입력된 실적이 {fmtCount(legacyWholeDayCount)}건 있어요.</div>
-                  <div className="text-[11px] text-gray-400 mt-1">당시 고객별 원본이 저장되지 않아 아래 ‘이전 방식 입력 실적’에서 수정할 수 있어요.</div>
-                </div>
-              ) : (
-                <div className="px-4 py-8 text-center text-sm text-gray-400">아직 고객별 판매 기록이 없어요.<br />아래 판매 카테고리에서 등록해 주세요.</div>
-              )
+              <div className="px-4 py-6 text-center text-sm text-gray-400">
+                {legacySaleRows.length>0?'고객별 원본이 없는 이전 판매건은 아래에서 수정할 수 있어요.':<>아직 고객별 판매 기록이 없어요.<br />아래 판매 카테고리에서 등록해 주세요.</>}
+              </div>
             ) : (
               <div className="divide-y divide-gray-50">
                 {daySales.map((sale) => {
@@ -5399,21 +5508,23 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             )}
           </div>
 
-          {(legacyMobileCount>0||legacyWholeDay)&&(
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[10px] font-semibold text-amber-700">이전 방식 입력 실적</div>
-                  <div className="text-sm font-bold text-gray-800 mt-0.5">{legacyWholeDay?`총 ${fmtCount(legacyWholeDayCount)}건`:`모바일 ${fmtCount(legacyMobileCount)}건`}</div>
-                  <div className="text-[10px] text-gray-500 mt-1 leading-relaxed">
-                    고객별 입력 기능이 생기기 전에 저장된 집계 실적이에요. 데이터는 남아 있지만 당시 고객명은 저장되지 않았어요.
-                    {legacyWholeDay&&legacyMobileCount===0?' 홈·부가 실적 등 비모바일 집계도 포함되어 있어요.':''}
+          {legacySaleRows.length>0&&(
+            <div className="bg-amber-50/70 border border-amber-100 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-amber-100/70">
+                <div className="text-[10px] font-semibold text-amber-700">이전 방식 입력 실적 · {fmtCount(legacySaleRows.length)}건</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">고객명이 저장되지 않았던 판매건입니다. 각 건을 눌러 현재 입력 화면으로 복원할 수 있어요.</div>
+              </div>
+              <div className="divide-y divide-amber-100/70">
+                {legacySaleRows.map(row=><div key={row.id} className="px-4 py-3 flex items-center justify-between gap-3 bg-white/50">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-gray-800">이름 없음</div>
+                    <div className="text-[11px] text-gray-600 mt-0.5 truncate">{row.title}{row.detail?` · ${row.detail}`:''}</div>
                   </div>
-                </div>
-                <button type="button" onClick={openLegacyEditor}
-                  className="shrink-0 px-3 py-2 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-700">
-                  {legacyMobileCount>0?'수정':'내역 보기'}
-                </button>
+                  <button type="button" onClick={()=>openLegacySaleRow(row)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white border border-amber-200 text-[11px] font-bold text-amber-700">
+                    수정
+                  </button>
+                </div>)}
               </div>
             </div>
           )}
@@ -5444,72 +5555,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </>
       )}
 
-      {legacyEditorOpen&&legacyMatrixDraft&&(
-        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4" onClick={()=>setLegacyEditorOpen(false)}>
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-gray-100">
-              <div className="text-[11px] font-semibold text-amber-600">구버전 데이터</div>
-              <div className="text-lg font-bold text-gray-900">이전 방식 입력 실적 수정</div>
-              <div className="text-[10px] text-gray-400 mt-1">{month}-{selectedDay} · 고객별 원본이 없는 집계 실적만 수정해요.</div>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[65vh] space-y-3">
-              {legacyWholeDay&&DAILY_GROUP_KEYS.map(gk=>{
-                const entries=Object.entries(normalizeDay(day).groups?.[gk]||{}).filter(([,v])=>Number(v||0)>0);
-                if(!entries.length)return null;
-                return <div key={gk} className="rounded-xl border border-amber-100 bg-amber-50/40 p-3">
-                  <div className="text-xs font-bold text-gray-700 mb-2">{gk==='homeBase'?'홈':gk==='homeFlat'?'홈 부가':gk==='bundle2nd'?'2ND':gk==='vas'?'VAS':gk==='sono'?'소노':gk}</div>
-                  <div className="space-y-1.5">
-                    {entries.map(([k,v])=><div key={k} className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-gray-500 truncate">{k}</span>
-                      <span className="text-xs font-semibold text-gray-700">{fmtCount(v)}건</span>
-                    </div>)}
-                  </div>
-                  <div className="text-[9px] text-amber-600 mt-2">이 항목은 구버전 집계값입니다. 현재 화면에서는 원본 확인용으로 표시됩니다.</div>
-                </div>;
-              })}
-              {MATRIX_ROW_DEFS.map((rowDef,ri)=>{
-                const vals=legacyMatrixDraft[ri]||[];
-                const rowTotal=vals.reduce((a,v)=>a+Number(v||0),0);
-                if(!rowDef.hasTiers){
-                  return <div key={ri} className="flex items-center justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
-                    <div className="text-xs font-semibold text-gray-700">{rowDef.dailyLabel||rowDef.label}</div>
-                    <input type="number" min="0" value={vals[0]||0}
-                      onChange={e=>setLegacyMatrixDraft(prev=>prev.map((r,ridx)=>ridx===ri?r.map((v,cidx)=>cidx===0?Math.max(0,Number(e.target.value||0)):v):r))}
-                      className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right"/>
-                  </div>;
-                }
-                return <div key={ri} className="rounded-xl border border-gray-100 p-3">
-                  <div className="flex justify-between items-center">
-                    <div className="text-xs font-semibold text-gray-700">{rowDef.dailyLabel||rowDef.label}</div>
-                    <div className="text-[10px] text-gray-400">{fmtCount(rowTotal)}건</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {MATRIX_COLS.map((col,ci)=><label key={ci} className="text-[10px] text-gray-500">
-                      <span className="block mb-1 truncate">{col}</span>
-                      <input type="number" min="0" value={vals[ci]||0}
-                        onChange={e=>setLegacyMatrixDraft(prev=>prev.map((r,ridx)=>ridx===ri?r.map((v,cidx)=>cidx===ci?Math.max(0,Number(e.target.value||0)):v):r))}
-                        className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right"/>
-                    </label>)}
-                  </div>
-                </div>;
-              })}
-            </div>
-            <div className="p-4 border-t grid grid-cols-2 gap-2">
-              <button onClick={()=>setLegacyEditorOpen(false)} className="py-2.5 rounded-xl bg-gray-100 text-sm text-gray-600">취소</button>
-              <button onClick={saveLegacyEditor} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">저장</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
 
       {mobileSaleDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':'한 번에 판매 등록'}</div>
-            <div className="text-lg font-bold text-gray-900 mt-1">모바일 실적 입력</div>
+            <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':legacyConversion?.kind==='mobile'?'이전 판매건 복원':'한 번에 판매 등록'}</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">{legacyConversion?.kind==='mobile'?'모바일 실적 수정':'모바일 실적 입력'}</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
+            {legacyConversion?.kind==='mobile'&&<div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[10px] text-amber-700">
+              기존 데이터에서 확인된 값 · <b>{legacyConversion.title}{legacyConversion.detail?` · ${legacyConversion.detail}`:''}</b><br/>
+              고객명·VAS·2ND 등 당시 저장되지 않은 값은 비워두었어요.
+            </div>}
 
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">1. 판매 구분 *</div>
@@ -7243,13 +7300,13 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
           const sel=key===selectedDay;
           const dow=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d).getDay();
           return <button key={d} type="button" onClick={()=>setSelectedDay(key)}
-            className={`aspect-square rounded-lg flex flex-col items-center justify-center px-0.5 ${sel?'bg-violet-600 text-white':active?'bg-violet-50 text-violet-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
-            <div className="text-[10px] font-semibold leading-none mb-0.5">{d}</div>
-            {active&&<div className={`text-[7px] leading-[9px] font-semibold ${sel?'text-white/85':'text-gray-500'}`}>
-              {x.hs>0&&<div>HS {fmtCount(x.hs)}</div>}
-              {x.sim>0&&<div>SIM {fmtCount(x.sim)}</div>}
-              {x.home>0&&<div>홈 {fmtCount(x.home)}</div>}
-            </div>}
+            className={`min-w-0 h-[58px] sm:h-[64px] rounded-lg flex flex-col items-center justify-start pt-2.5 px-0.5 overflow-hidden ${sel?'bg-violet-600 text-white':active?'bg-violet-50 text-violet-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
+            <div className="text-[10px] font-semibold leading-none shrink-0">{d}</div>
+            <div className={`h-[32px] mt-1.5 text-[7px] leading-[9px] font-semibold text-center shrink-0 ${sel?'text-white/85':'text-gray-500'}`}>
+              <div className={x.hs>0?'':'invisible'}>HS {fmtCount(x.hs)}</div>
+              <div className={x.sim>0?'':'invisible'}>SIM {fmtCount(x.sim)}</div>
+              <div className={x.home>0?'':'invisible'}>홈 {fmtCount(x.home)}</div>
+            </div>
           </button>;
         })}
       </div>
