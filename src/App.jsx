@@ -437,7 +437,7 @@ const DAILY_GROUP_DEFS = [
   { key: 'homeBase', label: '홈 실적 (그레이드 대상)', bucket: 'home' },
   { key: 'homeFlat', label: '홈 단독 / TV프리 / 스마트홈', bucket: 'home' },
   { key: 'homeAddon', label: '동시판매 수수료', bucket: 'home' },
-  { key: 'renew', label: '가정망 인터넷 재약정', bucket: 'home' },
+  { key: 'renew', label: '인터넷 재약정', bucket: 'home' },
   { key: 'bundle2nd', label: '2ND 번들 판매', bucket: 'extra' },
   { key: 'vas', label: '전략 부가서비스 (VAS)', bucket: 'extra' },
   { key: 'sono', label: '소노', bucket: 'extra' },
@@ -457,8 +457,9 @@ const HOME_KPI_MAP = [
   { kpiKey: 'kpiTv', sources: ['homeBase.homeTv'] },
   { kpiKey: 'kpiTvSetTop', sources: ['homeAddon.addSetTop', 'homeFlat.tvFree'] },
   { kpiKey: 'kpiSmartHome', sources: ['homeFlat.smartHome', 'homeAddon.smartHomeSimul'] },
-  { kpiKey: 'kpiInternetRenew', sources: ['renew.renewPremiumSafe1G', 'renew.renewPremiumSafe500', 'renew.renewPremium1G', 'renew.renewPremium500', 'renew.renewSmart1G'] },
-  { kpiKey: 'kpiTvRenew', sources: ['renew.renewTvUpsell'] },
+  // 인터넷/TV 재약정 KPI는 수수료 항목이 아니라 실제 재약정 건 단위로 별도 집계합니다.
+  { kpiKey: 'kpiInternetRenew', sources: [] },
+  { kpiKey: 'kpiTvRenew', sources: [] },
 ];
 
 function emptyDay() {
@@ -600,6 +601,20 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     const total = m.sources.reduce((s, p) => s + pick(p), 0);
     autoKpi[m.kpiKey] = (autoKpi[m.kpiKey] || 0) + total;
   });
+
+  // v21.53: 재약정 생산성은 수수료 항목 수가 아니라 실제 계약 재약정 건수로 계산합니다.
+  // 인터넷 재약정 1건 = 0.3P, TV까지 함께 재약정한 경우 TV 재약정 1건 = 추가 0.3P.
+  let internetRenewKpiCount = 0;
+  let tvRenewKpiCount = 0;
+  Object.values(dailyDaysMap || {}).forEach((raw) => {
+    const rec = normalizeDay(raw);
+    (rec.householdRenewals || []).forEach((item) => {
+      internetRenewKpiCount += 1;
+      if (!item.homeOnly) tvRenewKpiCount += 1;
+    });
+  });
+  autoKpi.kpiInternetRenew = internetRenewKpiCount;
+  autoKpi.kpiTvRenew = tvRenewKpiCount;
 
   const numeric = {};
   DAILY_NUMERIC_KEYS.forEach((k) => { numeric[k] = agg[k] || 0; });
@@ -899,7 +914,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
    - 본인 당월 실적 초기화: 2단계 확인 + '당월실적초기화' 직접 입력 + DB 자동백업 RPC
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
-/* v21.52: 관리자 매장 정렬 1~13호점 통일 + 가정망 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -4465,7 +4480,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
             <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
             <RowKV label="동시판매 수수료" value={won(pay.homeAddonPay)} />
-            <RowKV label="가정망 인터넷 재약정" value={won(pay.renewPay)} />
+            <RowKV label="인터넷 재약정" value={won(pay.renewPay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
             <RowKV label="2ND 번들 유치 수수료" value={won(pay.bundle2ndTotal)} />
             {Number(pay.bundleFreeOffset||0)>0&&<RowKV label="└ 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
@@ -5803,16 +5818,35 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="px-4 py-2.5 text-xs font-semibold text-gray-500 border-b border-gray-50 flex justify-between">
               <span>{parseInt(selectedDay, 10)}일 고객별 판매 내역</span>
-              <span>{daySales.length}건</span>
+              <span>{daySales.length + (day.householdRenewals?.length||0)}건</span>
             </div>
             {daySalesLoading ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">판매 내역 불러오는 중...</div>
-            ) : daySales.length === 0 ? (
+            ) : daySales.length === 0 && (day.householdRenewals?.length||0) === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-400">
                 {legacySaleRows.length>0?'고객별 원본이 없는 이전 판매건은 아래에서 수정할 수 있어요.':<>아직 고객별 판매 기록이 없어요.<br />아래 판매 카테고리에서 등록해 주세요.</>}
               </div>
             ) : (
               <div className="divide-y divide-gray-50">
+                {(day.householdRenewals||[]).map((item,idx)=>{
+                  const c=calculateHouseholdRenew(item,config);
+                  const planLabel=HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan||'';
+                  const speedLabel=item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB';
+                  const tvText=item.homeOnly?'인터넷 재약정':'인터넷+TV 재약정';
+                  return <div key={`renew-list-${item.id||idx}`} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-gray-900">{item.customer||'이름 없음'}</div>
+                        <div className="text-xs text-gray-600 mt-0.5">인터넷 재약정 · {speedLabel} · {planLabel}</div>
+                        <div className="text-[11px] text-gray-400 mt-1">{tvText} · KPI {item.homeOnly?'0.3P':'0.6P'} · {won(c.amount)}</div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
+                        <button onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
+                      </div>
+                    </div>
+                  </div>;
+                })}
                 {daySales.map((sale) => {
                   const meta=sale.source_meta||{};
                   const vasLabels=(meta.vasKeys||[]).map(k=>{
@@ -5879,7 +5913,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
               </button>
               <button type="button" onClick={()=>openHouseholdRenew(null)} className="p-4 rounded-2xl border text-left bg-white border-gray-200">
-                <div className="flex items-center justify-between gap-2"><div><div className="text-xl">♻️</div><div className="text-sm font-bold text-gray-800 mt-1">가정망 인터넷 재약정</div></div><div className="text-xs font-bold text-violet-600">{fmtCount(day.householdRenewals?.length||0)}건</div></div>
+                <div><div className="text-xl">♻️</div><div className="text-sm font-bold text-gray-800 mt-1">인터넷 재약정</div></div>
                 <div className="text-[10px] text-gray-400 mt-1">조건 선택 시 인센티브 자동 계산</div>
               </button>
               <button type="button" onClick={()=>setExtraInput('sono')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">상품 · 건수 · 고객(선택)</div></button>
@@ -5900,7 +5934,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       {householdRenewOpen&&(
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">가정망 인터넷 재약정</div>
+            <div className="text-xs text-violet-500 font-semibold">인터넷 재약정</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{householdRenewEditIndex===null?'재약정 실적 입력':'재약정 실적 수정'}</div>
             <div className="text-xs text-gray-400 mt-1">재약정일 {month}-{selectedDay}</div>
             <label className="block text-xs font-semibold text-gray-600 mt-4 mb-1.5">고객명 (선택)</label>
@@ -5915,7 +5949,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
             <label className={`mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${householdRenewForm.homeOnly?'bg-gray-50 border-gray-100 opacity-50':'border-gray-200'}`}><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" disabled={householdRenewForm.homeOnly} checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
             <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2"><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label><div className="text-[10px] text-gray-400 leading-relaxed">100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.</div></div>
-            <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
+            <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div><div className="text-[10px] text-violet-600 mt-1">생산성 KPI · 인터넷 0.3P{householdRenewForm.homeOnly?'':' + TV 0.3P'}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
             {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-violet-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
             <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
           </div>
@@ -8770,7 +8804,7 @@ function RatesManager({ config, persistConfig }) {
       <RateTable title="홈 그레이드 (누적건수별)" group="homeTiers" data={draft.homeTiers} updateFlatTable={updateFlatTable} field="rate" labelKey="min" labelSuffix="건 이상" />
       <RateTable title="홈 단독 / TV프리 / 스마트홈" group="homeFlat" data={draft.homeFlat} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="동시판매 수수료" group="homeAddon" data={draft.homeAddon} updateFlatTable={updateFlatTable} field="rate" />
-      <RateTable title="가정망 인터넷 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />
+      <RateTable title="인터넷 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="VAS" group="vas" data={draft.vas} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="2ND 번들" group="bundle2nd" data={draft.bundle2nd} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="소노" group="sono" data={draft.sono} updateFlatTable={updateFlatTable} field="rate" />
