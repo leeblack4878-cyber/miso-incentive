@@ -457,7 +457,6 @@ const HOME_KPI_MAP = [
   { kpiKey: 'kpiTv', sources: ['homeBase.homeTv'] },
   { kpiKey: 'kpiTvSetTop', sources: ['homeAddon.addSetTop', 'homeFlat.tvFree'] },
   { kpiKey: 'kpiSmartHome', sources: ['homeFlat.smartHome', 'homeAddon.smartHomeSimul'] },
-  // 인터넷/TV 재약정 KPI는 수수료 항목이 아니라 실제 재약정 건 단위로 별도 집계합니다.
   { kpiKey: 'kpiInternetRenew', sources: [] },
   { kpiKey: 'kpiTvRenew', sources: [] },
 ];
@@ -602,8 +601,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     autoKpi[m.kpiKey] = (autoKpi[m.kpiKey] || 0) + total;
   });
 
-  // v21.53: 재약정 생산성은 수수료 항목 수가 아니라 실제 계약 재약정 건수로 계산합니다.
-  // 인터넷 재약정 1건 = 0.3P, TV까지 함께 재약정한 경우 TV 재약정 1건 = 추가 0.3P.
+  // v21.54: 재약정 KPI는 실제 계약 건수 기준으로 계산
   let internetRenewKpiCount = 0;
   let tvRenewKpiCount = 0;
   Object.values(dailyDaysMap || {}).forEach((raw) => {
@@ -5832,17 +5830,19 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   const c=calculateHouseholdRenew(item,config);
                   const planLabel=HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan||'';
                   const speedLabel=item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB';
-                  const tvText=item.homeOnly?'인터넷 재약정':'인터넷+TV 재약정';
+                  const tvIncluded=!item.homeOnly;
                   return <div key={`renew-list-${item.id||idx}`} className="px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-gray-900">{item.customer||'이름 없음'}</div>
                         <div className="text-xs text-gray-600 mt-0.5">인터넷 재약정 · {speedLabel} · {planLabel}</div>
-                        <div className="text-[11px] text-gray-400 mt-1">{tvText} · KPI {item.homeOnly?'0.3P':'0.6P'} · {won(c.amount)}</div>
+                        <div className="text-[11px] text-gray-400 mt-1">
+                          {tvIncluded?'인터넷+TV 재약정':'인터넷 재약정'} · 생산성 KPI {tvIncluded?'0.6P':'0.3P'} · {won(c.amount)}
+                        </div>
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        <button onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
-                        <button onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
+                        <button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
+                        <button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
                       </div>
                     </div>
                   </div>;
