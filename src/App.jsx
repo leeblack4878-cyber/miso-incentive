@@ -174,6 +174,48 @@ const DEFAULT_RENEW = [
   { key: 'renewTvUpsell', label: 'TV 업셀 수수료', rate: 20000 },
 ];
 
+const HOUSEHOLD_RENEW_PLANS = [
+  { key:'premiumSafe', label:'프리미엄 안심 보상' },
+  { key:'premium', label:'프리미엄 안심' },
+  { key:'smart', label:'스마트' },
+];
+function householdRenewBaseKey(speed, plan){
+  if(speed==='1g'&&plan==='premiumSafe')return 'renewPremiumSafe1G';
+  if(speed==='500'&&plan==='premiumSafe')return 'renewPremiumSafe500';
+  if(speed==='1g'&&plan==='premium')return 'renewPremium1G';
+  if(speed==='500'&&plan==='premium')return 'renewPremium500';
+  if(speed==='1g'&&plan==='smart')return 'renewSmart1G';
+  return '';
+}
+function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).find(x=>x.key===key)?.rate||0); }
+function calculateHouseholdRenew(item,config){
+  const speed=item?.speed||'1g';
+  const invalid=speed==='100'||!!item?.downSpeed||!!item?.temporaryUpgradeSame;
+  const baseKey=householdRenewBaseKey(speed,item?.plan||'premiumSafe');
+  const base=invalid?0:renewRate(config,baseKey);
+  const soloDiscount=invalid?0:(item?.homeOnly?Math.min(50000,base):0);
+  const hsKey=speed==='1g'?'renewSimul1G':speed==='500'?'renewSimul500':'';
+  const hsPay=(!invalid&&item?.hsSimul)?renewRate(config,hsKey):0;
+  const tvPay=(!invalid&&!item?.homeOnly&&item?.tvUpsell)?renewRate(config,'renewTvUpsell'):0;
+  return {invalid,baseKey,base,soloDiscount,hsKey,hsPay,tvPay,amount:Math.max(0,base-soloDiscount+hsPay+tvPay)};
+}
+function aggregateHouseholdRenewals(items,config){
+  const counts={}; let soloDiscount=0;
+  (items||[]).forEach(item=>{
+    const c=calculateHouseholdRenew(item,config);
+    if(c.invalid)return;
+    if(c.baseKey&&c.base>0)counts[c.baseKey]=(counts[c.baseKey]||0)+1;
+    if(item.hsSimul&&c.hsKey&&c.hsPay>0)counts[c.hsKey]=(counts[c.hsKey]||0)+1;
+    if(item.tvUpsell&&!item.homeOnly&&c.tvPay>0)counts.renewTvUpsell=(counts.renewTvUpsell||0)+1;
+    soloDiscount+=c.soloDiscount;
+  });
+  return {counts,soloDiscount};
+}
+function emptyHouseholdRenewForm(){
+  return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,downSpeed:false,temporaryUpgradeSame:false};
+}
+
+
 const MATRIX_ROW_DEFS = [
   { label: '일반모델 신규', dailyLabel: '신규', hasTiers: true },
   { label: '일반모델 MNP', dailyLabel: 'MNP', hasTiers: true },
@@ -259,6 +301,16 @@ function displayStoreName(name) {
   const value = String(name || '');
   const idx = value.indexOf('_');
   return idx >= 0 ? value.slice(idx + 1) : value;
+}
+
+function sortStoresByOpenOrder(list=[]) {
+  const order = new Map(DEFAULT_STORES.map((name, idx) => [name, idx]));
+  return [...new Set((list || []).filter(Boolean))].sort((a,b)=>{
+    const ai = order.has(a) ? order.get(a) : 9999;
+    const bi = order.has(b) ? order.get(b) : 9999;
+    if (ai !== bi) return ai - bi;
+    return displayStoreName(a).localeCompare(displayStoreName(b), 'ko');
+  });
 }
 
 function defaultConfig() {
@@ -385,14 +437,14 @@ const DAILY_GROUP_DEFS = [
   { key: 'homeBase', label: '홈 실적 (그레이드 대상)', bucket: 'home' },
   { key: 'homeFlat', label: '홈 단독 / TV프리 / 스마트홈', bucket: 'home' },
   { key: 'homeAddon', label: '동시판매 수수료', bucket: 'home' },
-  { key: 'renew', label: '홈 재약정', bucket: 'home' },
+  { key: 'renew', label: '가정망 인터넷 재약정', bucket: 'home' },
   { key: 'bundle2nd', label: '2ND 번들 판매', bucket: 'extra' },
   { key: 'vas', label: '전략 부가서비스 (VAS)', bucket: 'extra' },
   { key: 'sono', label: '소노', bucket: 'extra' },
   { key: 'mnpBundle', label: '중고MNP 결합', bucket: 'extra' },
 ];
 const DAILY_GROUP_KEYS = DAILY_GROUP_DEFS.map((g) => g.key);
-const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset'];
+const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset', 'renewSoloDiscountAmount'];
 
 function groupTable(config, key) {
   if (key === 'homeBase') return HOME_BASE_ITEMS;
@@ -405,7 +457,7 @@ const HOME_KPI_MAP = [
   { kpiKey: 'kpiTv', sources: ['homeBase.homeTv'] },
   { kpiKey: 'kpiTvSetTop', sources: ['homeAddon.addSetTop', 'homeFlat.tvFree'] },
   { kpiKey: 'kpiSmartHome', sources: ['homeFlat.smartHome', 'homeAddon.smartHomeSimul'] },
-  { kpiKey: 'kpiInternetRenew', sources: ['renew.renewPremiumSafe1G', 'renew.renewPremiumSafe500', 'renew.renewPremium1G', 'renew.renewPremium500', 'renew.renewSmart1G', 'renew.renewSimul1G', 'renew.renewSimul500'] },
+  { kpiKey: 'kpiInternetRenew', sources: ['renew.renewPremiumSafe1G', 'renew.renewPremiumSafe500', 'renew.renewPremium1G', 'renew.renewPremium500', 'renew.renewSmart1G'] },
   { kpiKey: 'kpiTvRenew', sources: ['renew.renewTvUpsell'] },
 ];
 
@@ -413,7 +465,8 @@ function emptyDay() {
   return {
     matrix: emptyDayMatrix(),
     groups: Object.fromEntries(DAILY_GROUP_KEYS.map((k) => [k, {}])),
-    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0,
+    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0, renewSoloDiscountAmount: 0,
+    householdRenewals: [], householdRenewLegacyCounts: {},
     dayOff: false,
   };
 }
@@ -435,6 +488,9 @@ function normalizeDay(raw) {
     specialReplacementPay: raw.specialReplacementPay || 0,
     bundleFreeOffset: raw.bundleFreeOffset || 0,
     bundleFreeVasOffset: raw.bundleFreeVasOffset || 0,
+    renewSoloDiscountAmount: raw.renewSoloDiscountAmount || 0,
+    householdRenewals: Array.isArray(raw.householdRenewals) ? raw.householdRenewals : [],
+    householdRenewLegacyCounts: raw.householdRenewLegacyCounts && typeof raw.householdRenewLegacyCounts==='object' ? raw.householdRenewLegacyCounts : {},
     dayOff: !!raw.dayOff,
   };
 }
@@ -475,6 +531,7 @@ function dayHasData(raw) {
   const d = normalizeDay(raw);
   if (d.matrix.some((row) => row.some((v) => v > 0))) return true;
   if (DAILY_GROUP_KEYS.some((k) => Object.values(d.groups[k] || {}).some((v) => v > 0))) return true;
+  if ((d.householdRenewals||[]).length > 0) return true;
   return DAILY_NUMERIC_KEYS.some((k) => (d[k] || 0) > 0);
 }
 
@@ -658,7 +715,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const tvFreePay = Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
   const smartHomePay = Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
   const homeAddonPay = sumFlat(draft.homeAddon || {}, config.homeAddon || []);
-  const renewPay = sumFlat(draft.renew || {}, config.renew || []);
+  const renewPay = Math.max(0, sumFlat(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = sumFlat(draft.mnpBundle || {}, config.mnpBundle || []);
   const sonoPay = sumFlat(draft.sono || {}, config.sono || []);
   const custRegBonus = tierBonus(Number(draft.custRegCount || 0), config.custRegTiers);
@@ -842,6 +899,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
    - 본인 당월 실적 초기화: 2단계 확인 + '당월실적초기화' 직접 입력 + DB 자동백업 RPC
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
+/* v21.52: 관리자 매장 정렬 1~13호점 통일 + 가정망 인터넷 재약정 구조화 입력/자동 계산. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1055,7 +1113,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'stores').maybeSingle();
       if (error) throw error;
       if (data && data.value && data.value.length) {
-        setStores(data.value);
+        setStores(sortStoresByOpenOrder(data.value));
       } else {
         await supabase.from('app_config').upsert({ config_key: 'stores', value: DEFAULT_STORES }, { onConflict: 'config_key' });
         setStores(DEFAULT_STORES);
@@ -1064,9 +1122,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, []);
 
   const persistStores = async (next) => {
-    setStores(next);
+    const ordered = sortStoresByOpenOrder(next);
+    setStores(ordered);
     try {
-      const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: next }, { onConflict: 'config_key' });
+      const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: ordered }, { onConflict: 'config_key' });
       if (error) throw error;
     } catch (e) { console.error('STORES SAVE ERROR:', e); setDbError(`매장 목록 저장 실패: ${friendlyError(e)}`); }
   };
@@ -3430,12 +3489,12 @@ function SpotClaimPanel({ userId, month, claimDate }) {
 
 function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
   const me=employees.find(e=>e.id===authUserId);
-  const stores=[...new Set(
+  const stores=sortStoresByOpenOrder(
     employees
       .map(e=>e.branch)
       .filter(Boolean)
       .filter(branch=>!NON_SALES_STORES.includes(branch))
-  )];
+  );
   const canEditCompany=isFullAdmin||me?.position==='담당';
   const [selected,setSelected]=useState(
     !NON_SALES_STORES.includes(me?.branch) ? (me?.branch||stores[0]||'') : (stores[0]||'')
@@ -4406,7 +4465,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
             <RowKV label="스마트홈" value={won(pay.smartHomePay)} />
             <RowKV label="동시판매 수수료" value={won(pay.homeAddonPay)} />
-            <RowKV label="홈 재약정" value={won(pay.renewPay)} />
+            <RowKV label="가정망 인터넷 재약정" value={won(pay.renewPay)} />
             <RowKV label="요금제 유치 수수료" value={won(pay.adjustedMatrixTotal ?? pay.matrixTotal)} />
             <RowKV label="2ND 번들 유치 수수료" value={won(pay.bundle2ndTotal)} />
             {Number(pay.bundleFreeOffset||0)>0&&<RowKV label="└ 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
@@ -4489,6 +4548,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeExtraPromises,setHomeExtraPromises]=useState([]); // [{title,dueDate}]
   const [homeExtraExpenses,setHomeExtraExpenses]=useState([]); // [{category,amount,memo}]
   const [editingHomeSales,setEditingHomeSales]=useState([]);
+  const [householdRenewOpen,setHouseholdRenewOpen]=useState(false);
+  const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
+  const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
   const [editingSale,setEditingSale]=useState(null);
   const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
@@ -4602,6 +4664,37 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const bump = (ri, ci, delta) => setCell(ri, ci, (day.matrix[ri][ci] || 0) + delta);
   const setGroupItem = (gk, key, v) => mutate({ ...day, groups: { ...day.groups, [gk]: { ...day.groups[gk], [key]: Math.max(0, v) } } });
   const setNumeric = (key, v) => mutate({ ...day, [key]: Math.max(0, v) });
+
+  const openHouseholdRenew=(idx=null)=>{
+    if(locked)return;
+    const item=idx===null?null:day.householdRenewals?.[idx];
+    setHouseholdRenewEditIndex(idx);
+    setHouseholdRenewForm(item?{...emptyHouseholdRenewForm(),...item}:emptyHouseholdRenewForm());
+    setHouseholdRenewOpen(true);
+  };
+  const applyHouseholdRenewItems=(items)=>{
+    const baseDay=normalizeDay(day);
+    const hadStructured=(baseDay.householdRenewals||[]).length>0;
+    const storedLegacy=baseDay.householdRenewLegacyCounts||{};
+    const legacyCounts=Object.keys(storedLegacy).length?storedLegacy:(!hadStructured?{...(baseDay.groups?.renew||{})}:{});
+    const agg=aggregateHouseholdRenewals(items,config);
+    const combined={...legacyCounts};
+    Object.entries(agg.counts).forEach(([k,v])=>{combined[k]=Number(combined[k]||0)+Number(v||0);});
+    mutate({...baseDay,householdRenewals:items,householdRenewLegacyCounts:legacyCounts,renewSoloDiscountAmount:agg.soloDiscount,groups:{...baseDay.groups,renew:combined}});
+  };
+  const saveHouseholdRenew=()=>{
+    const items=[...(day.householdRenewals||[])];
+    const item={...householdRenewForm,id:householdRenewEditIndex===null?`renew-${Date.now()}-${Math.random().toString(36).slice(2,7)}`:(items[householdRenewEditIndex]?.id||`renew-${Date.now()}`)};
+    if(householdRenewEditIndex===null)items.push(item); else items[householdRenewEditIndex]=item;
+    applyHouseholdRenewItems(items);
+    setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm());
+  };
+  const deleteHouseholdRenew=(idx)=>{
+    if(!window.confirm('이 재약정 실적을 삭제할까요?'))return;
+    const items=(day.householdRenewals||[]).filter((_,i)=>i!==idx);
+    applyHouseholdRenewItems(items);
+  };
+  const householdRenewPreview=calculateHouseholdRenew(householdRenewForm,config);
 
 
   useEffect(() => {
@@ -5785,6 +5878,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-xl">🏠</div><div className="text-sm font-bold text-gray-800 mt-1">홈 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
               </button>
+              <button type="button" onClick={()=>openHouseholdRenew(null)} className="p-4 rounded-2xl border text-left bg-white border-gray-200">
+                <div className="flex items-center justify-between gap-2"><div><div className="text-xl">♻️</div><div className="text-sm font-bold text-gray-800 mt-1">가정망 인터넷 재약정</div></div><div className="text-xs font-bold text-violet-600">{fmtCount(day.householdRenewals?.length||0)}건</div></div>
+                <div className="text-[10px] text-gray-400 mt-1">조건 선택 시 인센티브 자동 계산</div>
+              </button>
               <button type="button" onClick={()=>setExtraInput('sono')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">상품 · 건수 · 고객(선택)</div></button>
               <button type="button" onClick={()=>setExtraInput('tailored')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">업셀 건수 · 금액</div></button>
               <button type="button" onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
@@ -5799,6 +5896,31 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       )}
 
       {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
+
+      {householdRenewOpen&&(
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="text-xs text-violet-500 font-semibold">가정망 인터넷 재약정</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">{householdRenewEditIndex===null?'재약정 실적 입력':'재약정 실적 수정'}</div>
+            <div className="text-xs text-gray-400 mt-1">재약정일 {month}-{selectedDay}</div>
+            <label className="block text-xs font-semibold text-gray-600 mt-4 mb-1.5">고객명 (선택)</label>
+            <input value={householdRenewForm.customer||''} onChange={e=>setHouseholdRenewForm({...householdRenewForm,customer:e.target.value})} className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" placeholder="고객명"/>
+            <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">인터넷 속도</div>
+            <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
+            <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 상품</div>
+            <div className="space-y-1.5">{HOUSEHOLD_RENEW_PLANS.map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
+            <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 구성</div>
+            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
+            {householdRenewForm.homeOnly&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
+            <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
+            <label className={`mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${householdRenewForm.homeOnly?'bg-gray-50 border-gray-100 opacity-50':'border-gray-200'}`}><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" disabled={householdRenewForm.homeOnly} checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2"><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label><div className="text-[10px] text-gray-400 leading-relaxed">100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.</div></div>
+            <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
+            {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-violet-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
+            <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
+          </div>
+        </div>
+      )}
 
       {mobileSaleDraft && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
@@ -7513,7 +7635,7 @@ function dailyCalendarMetrics(raw){
 }
 
 function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch='', canSwitchStores=false }) {
-  const availableStores=useMemo(()=>[...new Set((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b)))].sort((a,b)=>displayStoreName(a).localeCompare(displayStoreName(b))),[employees]);
+  const availableStores=useMemo(()=>sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b))),[employees]);
   const defaultStore=canSwitchStores?'all':(loginBranch||availableStores[0]||'all');
   const [storeKey,setStoreKey]=useState(defaultStore);
   const [selectedDay,setSelectedDay]=useState(()=>{
@@ -8648,7 +8770,7 @@ function RatesManager({ config, persistConfig }) {
       <RateTable title="홈 그레이드 (누적건수별)" group="homeTiers" data={draft.homeTiers} updateFlatTable={updateFlatTable} field="rate" labelKey="min" labelSuffix="건 이상" />
       <RateTable title="홈 단독 / TV프리 / 스마트홈" group="homeFlat" data={draft.homeFlat} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="동시판매 수수료" group="homeAddon" data={draft.homeAddon} updateFlatTable={updateFlatTable} field="rate" />
-      <RateTable title="홈 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />
+      <RateTable title="가정망 인터넷 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="VAS" group="vas" data={draft.vas} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="2ND 번들" group="bundle2nd" data={draft.bundle2nd} updateFlatTable={updateFlatTable} field="rate" />
       <RateTable title="소노" group="sono" data={draft.sono} updateFlatTable={updateFlatTable} field="rate" />
