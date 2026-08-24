@@ -913,6 +913,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.60: 평가 탭 1차 도입 - 개인 커리어 등급 + 관리자 평가 + 관리자 확인 실적 최신화 + AA임팩트 월 목표/가감점. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -1780,6 +1781,209 @@ export default function App({ authUser, authProfile, onSignOut }) {
     </div>
   );
 }
+
+/* ===================== v21.60 평가 시스템 ===================== */
+
+const CAREER_PASS_SCORE = 90;
+const MANAGER_GRADE = (score) => score >= 100 ? 'S' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
+
+function quarterInfoFromMonth(month){
+  const [y,m]=String(month).split('-').map(Number);
+  const q=Math.floor((m-1)/3)+1;
+  const start=(q-1)*3+1;
+  const months=[0,1,2].map(i=>`${y}-${String(start+i).padStart(2,'0')}`);
+  return {year:y,quarter:q,key:`${y}-Q${q}`,label:`${y}년 ${q}분기`,months,from:`${months[0]}-01`,to:(()=>{const d=new Date(y,start+2,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;})()};
+}
+function previousQuarterKey(q){
+  const [yStr,qStr]=String(q).split('-Q');const y=Number(yStr),n=Number(qStr);return n===1?`${y-1}-Q4`:`${y}-Q${n-1}`;
+}
+function careerTenureBonus(hireDate, quarterEndMonth){
+  const months=monthsSince(hireDate,quarterEndMonth);
+  if(months<=12)return 0;
+  return Math.min(5,Math.floor((months-1)/12));
+}
+function roundedTarget(v,unit='count'){return unit==='won'?Math.max(0,Number(v||0)):Math.max(0,Math.round(Number(v||0)));}
+function cappedAchievement(actual,target,cap=1){if(!(Number(target)>0))return 0;return Math.min(cap,Math.max(0,Number(actual||0)/Number(target||1)));}
+
+const DEFAULT_AA_METRICS=[
+  {key:'mnp',label:'MNP (HS MNP + SIM MNP)',weight:8,target:209,unit:'count'},
+  {key:'simMnp',label:'SIM MNP',weight:7,target:84,unit:'count'},
+  {key:'subTvHousehold',label:'TV부셋탑(가정망)',weight:7,target:81,unit:'count'},
+  {key:'tvFree',label:'TV프리(부)',weight:6,target:64,unit:'count'},
+  {key:'smartHome',label:'스마트홈',weight:4,target:37,unit:'count'},
+  {key:'otherCustomer',label:'타사 고객 등록',weight:4,target:490,unit:'count'},
+  {key:'tailoredAmount',label:'맞춤제안 매출액',weight:4,target:4183276,unit:'won'},
+];
+function normalizeAaWeights(metrics){
+  const sum=(metrics||[]).reduce((s,x)=>s+Number(x.weight||0),0)||1;
+  return (metrics||[]).map(x=>({...x,normalizedWeight:Number(x.weight||0)/sum*100}));
+}
+function aaMetricScore(actual,target,normalizedWeight){return cappedAchievement(actual,target,1.1)*Number(normalizedWeight||0);}
+function aaAdjustments(input={}){
+  const nps=Number(input.npsScore||0);
+  const npsAdj=nps?Number(((nps-95)).toFixed(1)):0;
+  const unkind=-5*Number(input.unkindCount||0);
+  const complaints=-1*Number(input.complaintCount||0);
+  const security=Number(input.securityScore||0)>0&&Number(input.securityScore)<90?-5:0;
+  const privacy=input.privacyViolation?-10:0;
+  const noExp=Number(input.noExperienceRate||0)>0&&Number(input.noExperienceRate)<=40?2:0;
+  const leveling=String(input.leveling||'')==='4'?3:(input.leveling?-3:0);
+  const internetRatio=Number(input.internetRatio||0);
+  const internet=internetRatio>=10?8:internetRatio>=8?3:0;
+  const daemyung=input.daemyungAchieved?3:0;
+  const prospect=input.prospectMnpAchieved?3:0;
+  return {npsAdj,unkind,complaints,security,privacy,noExp,leveling,internet,daemyung,prospect,total:npsAdj+unkind+complaints+security+privacy+noExp+leveling+internet+daemyung+prospect};
+}
+
+async function loadQuarterCareerKpi(userId,quarter,config){
+  if(!userId)return 0;
+  let total=0;
+  for(const m of quarter.months){
+    const [yy,mm]=m.split('-').map(Number);const next=new Date(yy,mm,1);const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+    const [{data:ms},{data:daily}]=await Promise.all([
+      supabase.from('monthly_status').select('data,activity_time_met').eq('user_id',userId).eq('month',m).maybeSingle(),
+      supabase.from('daily_records').select('work_date,data').eq('user_id',userId).gte('work_date',`${m}-01`).lt('work_date',to)
+    ]);
+    const base={...emptyDraft(),...(ms?.data?.draft||{}),activityTimeMet:ms?.activity_time_met??true};
+    const map={};(daily||[]).forEach(r=>map[String(r.work_date).slice(8,10)]=r.data);
+    const merged=applyDailyToDraft(base,map,m,config?.categoryMap,config?.gibyeonColumnMap);
+    const kpi=(config?.kpiItems||DEFAULT_KPI_ITEMS).reduce((s,it)=>s+Number(merged.kpi?.[it.key]||0)*Number(it.point||0),0);
+    total+=kpi;
+  }
+  return total;
+}
+
+function CareerEvaluationPanel({ employee, month, config, canManage=false, canFinalApprove=false, managerScopeEmployees=[] }){
+  const quarter=quarterInfoFromMonth(month);
+  const [selectedId,setSelectedId]=useState(employee?.id||'');
+  const selected=(managerScopeEmployees||[]).find(e=>e.id===selectedId)||employee;
+  const [kpi,setKpi]=useState(0),[events,setEvents]=useState([]),[loading,setLoading]=useState(true),[note,setNote]=useState('');
+  const [eventType,setEventType]=useState('nps_negative'),[eventDate,setEventDate]=useState(new Date().toISOString().slice(0,10)),[count,setCount]=useState(1);
+  const [decision,setDecision]=useState(null),[prevDecision,setPrevDecision]=useState(null);
+  useEffect(()=>{if(employee?.id&&!canManage)setSelectedId(employee.id)},[employee?.id,canManage]);
+  useEffect(()=>{
+    if(!selected?.id)return;
+    (async()=>{setLoading(true);
+      const [k,{data:e},{data:d}]=await Promise.all([
+        loadQuarterCareerKpi(selected.id,quarter,config),
+        supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false}),
+        supabase.from('career_eval_decisions').select('*').eq('user_id',selected.id).in('quarter',[quarter.key,previousQuarterKey(quarter.key)])
+      ]);
+      const decisions=d||[];
+      setKpi(Number(k||0));setEvents(e||[]);setDecision(decisions.find(x=>x.quarter===quarter.key)||null);setPrevDecision(decisions.find(x=>x.quarter===previousQuarterKey(quarter.key))||null);setLoading(false);
+    })();
+  },[selected?.id,quarter.key,config]);
+  const active=events.filter(x=>x.status!=='cancelled');
+  const penalty=active.reduce((s,x)=>s+Number(x.count||1),0);
+  const tenure=careerTenureBonus(selected?.hireDate,quarter.months[2]);
+  const score=Number((kpi+tenure-penalty).toFixed(1));
+  const pass=score>=CAREER_PASS_SCORE;
+  const streakFail=pass?0:(Number(prevDecision?.result==='FAIL'?prevDecision?.consecutive_fail_count||1:0)+1);
+  const addEvent=async()=>{
+    if(!selected?.id||!canManage)return;
+    const {error}=await supabase.from('career_eval_penalties').insert({user_id:selected.id,event_date:eventDate,event_type:eventType,count:Math.max(1,Number(count||1)),note:note.trim()||null,status:'active'});
+    if(error)return alert(`평가 내역 저장 실패: ${friendlyError(error)}`);
+    setNote('');setCount(1);const {data}=await supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false});setEvents(data||[]);
+  };
+  const cancelEvent=async(id)=>{if(!canManage)return;await supabase.from('career_eval_penalties').update({status:'cancelled'}).eq('id',id);setEvents(v=>v.map(x=>x.id===id?{...x,status:'cancelled'}:x));};
+  const saveDecision=async(action)=>{
+    if(!canManage)return;
+    const nextFail=streakFail;
+    const payload={quarter:quarter.key,user_id:selected.id,score,result:pass?'PASS':'FAIL',action,consecutive_fail_count:nextFail};
+    const {error}=await supabase.from('career_eval_decisions').upsert(payload,{onConflict:'quarter,user_id'});if(error)return alert(friendlyError(error));setDecision({...decision,...payload});
+  };
+  const typeLabel={nps_negative:'NPS 비추천/강한 비추천',label:'꼬리표',home_no_experience:'홈 무체험'};
+  return <div className="space-y-3">
+    {canManage&&(managerScopeEmployees||[]).length>0&&<select value={selectedId} onChange={e=>setSelectedId(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{managerScopeEmployees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.position} · {displayStoreName(e.branch)}</option>)}</select>}
+    <div className="bg-white rounded-2xl border border-gray-100 p-4">
+      <div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 커리어 등급</div><div className="text-lg font-bold mt-1">{selected?.name||'-'} · {selected?.position||'-'}</div></div><div className={`px-3 py-1.5 rounded-full h-fit text-xs font-bold ${pass?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-600'}`}>{loading?'계산중':pass?'PASS':'FAIL'}</div></div>
+      <div className="mt-4 flex items-end gap-2"><span className="text-3xl font-bold text-gray-900">{score.toFixed(1)}P</span><span className="text-xs text-gray-400 mb-1">통과 90P</span></div>
+      <div className="grid grid-cols-4 gap-2 mt-4">{[['3개월 KPI',kpi.toFixed(1)],['근속 가점',`+${tenure}`],['감점',`-${penalty}`],['연속 FAIL',`${streakFail}회`]].map(([l,v])=><div key={l} className="bg-gray-50 rounded-xl p-2.5 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold mt-1">{v}P</div></div>)}</div>
+      {selected?.position==='사원'&&pass&&<div className="mt-3 bg-violet-50 text-violet-700 rounded-xl px-3 py-2 text-xs font-semibold">승급 대상 · 면담 후 매니저 승급 승인 필요</div>}
+      {selected?.position==='매니저'&&!pass&&streakFail>=2&&<div className="mt-3 bg-red-50 text-red-700 rounded-xl px-3 py-2 text-xs font-semibold">⚠ 2회 연속 FAIL · 사원 전환 검토 대상</div>}
+    </div>
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">평가 근거</div><div className="text-[10px] text-gray-400">NPS · 꼬리표 · 홈 무체험은 관리자 등록 내역만 반영돼요.</div></div>
+      {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
+    </div>
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
+  </div>;
+}
+
+function managerActualFromDraft(d,key){
+  if(key==='hs')return hsCount(d);
+  const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
+  const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='mnp')return hsMnp+simMnp;
+  if(key==='simMnp')return simMnp;
+  if(key==='subTvHousehold')return Number(d.homeAddon?.addSetTop||0)+Number(d.homeFlat?.tvFree||0);
+  if(key==='tvFree')return Number(d.homeFlat?.tvFree||0);
+  if(key==='smartHome')return Number(d.homeFlat?.smartHome||0);
+  if(key==='otherCustomer')return Number(d.custRegCount||0);
+  if(key==='tailoredAmount')return Number(d.tailoredAmount||0);
+  if(key==='daemyung')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='prospectMnp')return 0;
+  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  return 0;
+}
+
+function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='' }){
+  const quarter=quarterInfoFromMonth(month);
+  const stores=sortStoresByOpenOrder([...new Set((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)))]);
+  const [store,setStore]=useState(canSwitchStores?'':(loginBranch||stores[0]||''));
+  const activeStore=store||stores[0]||'';
+  const [aaConfig,setAaConfig]=useState(DEFAULT_AA_METRICS),[snap,setSnap]=useState({verified_metrics:{},external_inputs:{}}),[allGoals,setAllGoals]=useState([]),[saving,setSaving]=useState(false);
+  const [managerMode,setManagerMode]=useState('dashboard');
+  useEffect(()=>{if(!canSwitchStores&&loginBranch)setStore(loginBranch)},[canSwitchStores,loginBranch]);
+  useEffect(()=>{(async()=>{const [{data:c},{data:s},{data:g}]=await Promise.all([
+    supabase.from('aa_impact_monthly').select('*').eq('month',month).maybeSingle(),
+    supabase.from('manager_eval_monthly').select('*').eq('month',month).eq('store_name',activeStore).maybeSingle(),
+    supabase.from('store_goals').select('store_name,company_goals').eq('month',month)
+  ]);if(Array.isArray(c?.metrics)&&c.metrics.length)setAaConfig(c.metrics);setSnap(s||{verified_metrics:{},external_inputs:{}});setAllGoals(g||[]);})();},[month,activeStore]);
+  const storeRows=(rows||[]).filter(r=>r.branch===activeStore);
+  const live={};['hs','home','mnp','simMnp','subTvHousehold','tvFree','smartHome','otherCustomer','tailoredAmount','daemyung','prospectMnp'].forEach(k=>live[k]=storeRows.reduce((s,r)=>s+managerActualFromDraft(r.draft,k),0));
+  live.productivity=storeRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
+  const verified=snap?.verified_metrics||{};
+  const actual=(key)=>Number(verified[key]??live[key]??0);
+  const goalMap=Object.fromEntries((allGoals||[]).map(g=>[g.store_name,g.company_goals||{}]));
+  const storeHsTarget=Number(goalMap[activeStore]?.hs||0),totalHsTarget=(allGoals||[]).reduce((s,g)=>s+Number(g.company_goals?.hs||0),0),share=totalHsTarget>0?storeHsTarget/totalHsTarget:0;
+  const coreTargets={hs:Number(goalMap[activeStore]?.hs||0),home:Number(goalMap[activeStore]?.home||0),productivity:Number(goalMap[activeStore]?.productivity||0)};
+  const coreRaw=cappedAchievement(actual('hs'),coreTargets.hs)*30+cappedAchievement(actual('home'),coreTargets.home)*30+cappedAchievement(actual('productivity'),coreTargets.productivity)*40;
+  const core50=coreRaw*0.5;
+  const normalized=normalizeAaWeights(aaConfig);
+  const aaRows=normalized.map(m=>{const target=roundedTarget(Number(m.target||0)*share,m.unit);const a=actual(m.key);const score=aaMetricScore(a,target,m.normalizedWeight);return {...m,storeTarget:target,actual:a,score};});
+  const ext=snap?.external_inputs||{};
+  const hsActual=actual('hs'),householdHome=actual('home'),internetRatio=hsActual>0?householdHome/hsActual*100:0;
+  const daemyungTarget=roundedTarget(37*share,'count'),prospectTarget=roundedTarget(21*share,'count');
+  const adj=aaAdjustments({...ext,internetRatio,daemyungAchieved:daemyungTarget>0&&actual('daemyung')>=daemyungTarget,prospectMnpAchieved:prospectTarget>0&&actual('prospectMnp')>=prospectTarget});
+  const aaBase=aaRows.reduce((s,x)=>s+x.score,0),aa100=Math.max(0,Math.min(100,aaBase+adj.total)),aa50=aa100*0.5,total=core50+aa50,grade=MANAGER_GRADE(total);
+  const verifiedAt=snap?.verified_at?new Date(snap.verified_at).toLocaleString('ko-KR'):'미확인';
+  const setVerified=(key,val)=>setSnap(v=>({...v,verified_metrics:{...(v.verified_metrics||{}),[key]:Number(val||0)}}));
+  const setExt=(key,val)=>setSnap(v=>({...v,external_inputs:{...(v.external_inputs||{}),[key]:val}}));
+  const saveSnapshot=async()=>{setSaving(true);const payload={month,store_name:activeStore,verified_metrics:{...live,...(snap.verified_metrics||{})},external_inputs:{...(snap.external_inputs||{})},verified_by:authUserId,verified_at:new Date().toISOString()};const {error}=await supabase.from('manager_eval_monthly').upsert(payload,{onConflict:'month,store_name'});setSaving(false);if(error)return alert(friendlyError(error));setSnap(payload);};
+  const saveAa=async()=>{setSaving(true);const {error}=await supabase.from('aa_impact_monthly').upsert({month,metrics:aaConfig,updated_by:authUserId},{onConflict:'month'});setSaving(false);if(error)return alert(friendlyError(error));alert('AA임팩트 월 목표를 저장했어요.');};
+  return <div className="space-y-3">
+    <div className={`grid gap-2 ${canSwitchStores?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='dashboard'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='settings'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>
+    {canSwitchStores&&<select value={activeStore} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>}
+    {managerMode==='dashboard'?<>
+      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 관리자 평가 · {monthLabel(month)} 현재 기준</div><div className="text-lg font-bold mt-1">{displayStoreName(activeStore)}</div></div><div className="text-right"><div className="text-3xl font-black text-violet-700">{total.toFixed(1)}</div><div className="text-xs font-bold">{grade}등급</div></div></div><div className="grid grid-cols-2 gap-2 mt-4"><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">핵심성과 50%</div><div className="text-xl font-bold mt-1">{core50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">HS 30% · 홈 30% · 생산성 40%</div></div><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">AA임팩트 50%</div><div className="text-xl font-bold mt-1">{aa50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">AA 원점수 {aa100.toFixed(1)} / 100</div></div></div><div className="mt-3 text-[10px] text-gray-400">관리자 확인 실적 기준 · 마지막 최신화 {verifiedAt}</div></div>
+      <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">핵심 성과</div></div>{[['HS','hs',30],['홈','home',30],['생산성','productivity',40]].map(([l,k,w])=>{const t=coreTargets[k],a=actual(k),pct=cappedAchievement(a,t)*100;return <div key={k} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between text-xs"><b>{l}</b><span>{fmtNum(a,1)} / {fmtNum(t,1)} · {pct.toFixed(0)}%</span></div><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}}/></div><div className="text-[9px] text-gray-400 mt-1">반영비중 {w}% · 100% 초과 미반영</div></div>})}</div>
+      <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">AA임팩트</div><div className="text-[10px] text-gray-400">회사 목표를 매장 HS 기준수량 비중({(share*100).toFixed(1)}%)으로 배분 · 건수는 반올림</div></div>{aaRows.map(x=><div key={x.key} className="px-4 py-3 border-b last:border-0 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.label}</div><div className="text-[10px] text-gray-400 mt-1">목표 {x.unit==='won'?won(x.storeTarget):`${x.storeTarget}건`} · 실적 {x.unit==='won'?won(x.actual):`${fmtCount(x.actual)}건`}</div></div><div className="text-right"><b className="text-sm text-violet-700">{x.score.toFixed(1)}점</b><div className="text-[9px] text-gray-400">환산비중 {x.normalizedWeight.toFixed(1)}%</div></div></div>)}<div className="px-4 py-3 bg-gray-50 flex justify-between text-xs"><span>가감점 합계</span><b className={adj.total>=0?'text-emerald-600':'text-red-500'}>{adj.total>=0?'+':''}{adj.total.toFixed(1)}점</b></div></div>
+    </>:<>
+      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">실적 최신화</div><div className="text-[10px] text-gray-400 mt-1">직원 입력 누적과 관리자 확인값을 비교하고, 평가에는 관리자 확인값을 우선 사용합니다.</div></div><button onClick={saveSnapshot} disabled={saving} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold h-fit">{saving?'저장중':'최신화 완료'}</button></div><div className="mt-3 space-y-2">{[['HS','hs'],['홈','home'],['생산성','productivity'],['MNP','mnp'],['SIM MNP','simMnp'],['TV부셋탑(가정망)','subTvHousehold'],['TV프리(부)','tvFree'],['스마트홈','smartHome'],['타사 고객 등록','otherCustomer'],['맞춤제안 매출액','tailoredAmount'],['대명','daemyung'],['MNP 타사 가망 개통','prospectMnp']].map(([l,k])=><div key={k} className="grid grid-cols-[1fr_70px_90px] gap-2 items-center"><div className="text-xs text-gray-600">{l}</div><div className="text-[10px] text-gray-400 text-right">입력 {k==='tailoredAmount'?won(live[k]):fmtNum(live[k],1)}</div><input type="number" value={verified[k]??live[k]??0} onChange={e=>setVerified(k,e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">대명 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(37건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">반영비중 합계를 100점으로 자동 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
+    </>}
+  </div>;
+}
+
+function EvaluationTab({ month, employee, config, isManagerView=false, canFinalApprove=false, employees=[], rows=[], authUserId, canSwitchStores=false, loginBranch='' }){
+  const [mode,setMode]=useState('career');
+  const managerEligible=isManagerView;
+  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">평가</div><div className="text-xl font-bold text-gray-900">커리어 등급</div></div>{managerEligible&&<div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('career')} className={`py-2 rounded-lg text-xs font-bold ${mode==='career'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 커리어 등급</button><button onClick={()=>setMode('manager')} className={`py-2 rounded-lg text-xs font-bold ${mode==='manager'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>관리자 평가</button></div>}{mode==='career'?<CareerEvaluationPanel employee={employee} month={month} config={config} canManage={managerEligible} canFinalApprove={canFinalApprove} managerScopeEmployees={employees}/>:<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch}/>}</div>;
+}
+
 
 /* ===================== 직원 화면 ===================== */
 
@@ -4465,6 +4669,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         </div>
       )}
 
+      {tab === 'evaluation' && (
+        <EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===authUser?.id)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} />
+      )}
+
       {tab === 'history' && (
         <div className="space-y-3">
           <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -4502,11 +4710,12 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className="max-w-5xl mx-auto grid grid-cols-4">
+        <div className="max-w-5xl mx-auto grid grid-cols-5">
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '실적입력', icon: Calendar },
             { key: 'customerCare', label: '고객관리', icon: ClipboardList },
+            { key: 'evaluation', label: '평가', icon: ClipboardCheck },
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
@@ -7816,6 +8025,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
     { key: 'storeGoals', label: '매장 목표', icon: Target },
     { key: 'performance', label: '실적 순위', icon: Trophy },
+    { key: 'evaluation', label: '평가', icon: ClipboardCheck },
 
     { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList },
     { key: 'homeCare', label: '홈 케어', icon: Home },
@@ -7971,6 +8181,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       )}
 
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
+      {adminTab === 'evaluation' && <EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
       {adminTab === 'performanceApproval' && <PerformanceApprovalQueue month={month} rows={rows} approve={approve} rejectApproval={rejectApproval} />}
