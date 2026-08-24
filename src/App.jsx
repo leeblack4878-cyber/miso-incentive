@@ -163,6 +163,121 @@ const DEFAULT_HOME_ADDON = [
   { key: 'smartHomeSimul', label: '스마트홈 동시판매', rate: 50000 },
 ];
 
+/* v21.63 새 홈 인센티브 정책
+   - 그레이드 구간 산정: 가정망+소호망 전체 인터넷 가입건 합산, 단독 포함
+   - 그레이드 수수료 지급: 인터넷+TV 가입건만
+   - 인터넷 단독: 1G 20만 / 500M 10만 / 100M 5만, HS 동시판매 +5만
+   - 가정망 인터넷+TV: 1G 25/35/45/55/65/75만, 500M은 각 구간 +2만
+   - 소호 인터넷+TV: 1G 44/54/64/74/84/94만, 500M 34/44/54/64/74/84만
+   - 인터넷+TV HS 동시판매: 신규/기변 +10만 / MNP +30만 / 조건충족 중고MNP(가정망) +20만
+*/
+const HOME_GRADE_THRESHOLDS = [1,2,3,5,7,10];
+const HOME_HOUSEHOLD_1G = [250000,350000,450000,550000,650000,750000];
+const HOME_SOHO_1G = [440000,540000,640000,740000,840000,940000];
+const HOME_SOHO_500 = [340000,440000,540000,640000,740000,840000];
+
+function homeGradeIndex(totalInternetCount){
+  let idx=-1;
+  HOME_GRADE_THRESHOLDS.forEach((min,i)=>{ if(Number(totalInternetCount||0)>=min) idx=i; });
+  return idx;
+}
+function homeTvGradeRate(totalInternetCount,networkType,speed){
+  const idx=homeGradeIndex(totalInternetCount);
+  if(idx<0)return 0;
+  if(networkType==='soho'){
+    if(speed==='1g')return HOME_SOHO_1G[idx];
+    if(speed==='500')return HOME_SOHO_500[idx];
+    return 0; // 소호 인터넷+TV 100M 단가는 현재 정책 미설정
+  }
+  if(speed==='1g')return HOME_HOUSEHOLD_1G[idx];
+  if(speed==='500')return HOME_HOUSEHOLD_1G[idx]+20000;
+  return 0; // 가정망 인터넷+TV 100M 단가는 현재 정책 미설정
+}
+function homeSoloRate(speed){
+  if(speed==='1g')return 200000;
+  if(speed==='500')return 100000;
+  if(speed==='100')return 50000;
+  return 0;
+}
+function homeSimulTypeFromProducts(types){
+  if(types.has('simulUsedMnp'))return 'usedMnp';
+  if(types.has('simulMnp'))return 'mnp';
+  if(types.has('simulNewChange'))return 'newChange';
+  return 'none';
+}
+function buildHomeBundlesFromOrders(orders=[]){
+  const map=new Map();
+  (orders||[]).filter(o=>o&&o.status==='completed').forEach(o=>{
+    const date=String(o.source_work_date||o.actual_install_date||'').slice(0,10);
+    const customerId=String(o.customer_id||'');
+    const customer=String(o.customer_name||'이름 없음');
+    const key=`${date}|${customerId||customer}`;
+    const cur=map.get(key)||{key,date,customer,networkType:o.network_type||'',types:new Set(),orders:[]};
+    cur.networkType=cur.networkType||o.network_type||'';
+    cur.types.add(o.product_type);
+    cur.orders.push(o);
+    map.set(key,cur);
+  });
+  return [...map.values()].map(b=>{
+    const speed=b.types.has('internet1g')?'1g':b.types.has('internet500')?'500':b.types.has('internet100')?'100':'';
+    return {...b,speed,hasInternet:!!speed,hasTv:b.types.has('homeTv'),simul:homeSimulTypeFromProducts(b.types)};
+  });
+}
+function calculateHomePolicyFromOrders(orders=[],config={}){
+  const bundles=buildHomeBundlesFromOrders(orders);
+  const internetBundles=bundles.filter(b=>b.hasInternet);
+  const totalInternetCount=internetBundles.length;
+  const gradeIdx=homeGradeIndex(totalInternetCount);
+  const tierMin=gradeIdx>=0?HOME_GRADE_THRESHOLDS[gradeIdx]:0;
+  let gradePay=0,soloPay=0,simulPay=0,tvFreePay=0,smartHomePay=0,subSetTopPay=0;
+  const details=[];
+  const tvFreeRate=Number((config.homeFlat||DEFAULT_HOME_FLAT).find(x=>x.key==='tvFree')?.rate||0);
+  const smartHomeRate=Number((config.homeFlat||DEFAULT_HOME_FLAT).find(x=>x.key==='smartHome')?.rate||0);
+  const setTopRate=Number((config.homeAddon||DEFAULT_HOME_ADDON).find(x=>x.key==='addSetTop')?.rate||0);
+
+  internetBundles.forEach(b=>{
+    const network=b.networkType==='soho'?'soho':'household';
+    const networkLabel=network==='soho'?'소호망':'가정망';
+    const speedLabel=b.speed==='1g'?'1GB':b.speed==='500'?'500MB':'100MB';
+    if(b.hasTv){
+      const base=homeTvGradeRate(totalInternetCount,network,b.speed);
+      gradePay+=base;
+      details.push({date:b.date,customer:b.customer,type:'홈',item:'인터넷+TV 그레이드 수수료',amount:base,note:`${networkLabel} · ${speedLabel} · 총 인터넷 ${totalInternetCount}건 (${tierMin}건 구간)`});
+      let add=0,addLabel='';
+      if(b.simul==='newChange'){add=100000;addLabel='홈 + HS 신규/기변 동시판매';}
+      else if(b.simul==='mnp'){add=300000;addLabel='홈 + HS MNP 동시판매';}
+      else if(b.simul==='usedMnp'&&network==='household'){add=200000;addLabel='홈 + 중고MNP 동시판매 (85군↑·선약)';}
+      if(add){simulPay+=add;details.push({date:b.date,customer:b.customer,type:'홈',item:addLabel,amount:add,note:`인터넷+TV · ${networkLabel}`});}
+    }else{
+      const base=homeSoloRate(b.speed);
+      soloPay+=base;
+      details.push({date:b.date,customer:b.customer,type:'홈',item:'인터넷 단독 수수료',amount:base,note:`${networkLabel} · ${speedLabel} · 그레이드 건수에는 포함`});
+      if(b.simul!=='none'){
+        simulPay+=50000;
+        details.push({date:b.date,customer:b.customer,type:'홈',item:'홈 단독 + HS 동시판매',amount:50000,note:'HS 가입유형 공통 +5만원'});
+      }
+    }
+    if(b.types.has('tvFree')&&tvFreeRate){tvFreePay+=tvFreeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'TV프리(부)',amount:tvFreeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('smartHome')&&smartHomeRate){smartHomePay+=smartHomeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈',amount:smartHomeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('subSetTop')&&setTopRate){subSetTopPay+=setTopRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'일반 부셋탑',amount:setTopRate,note:'부가 홈 수수료'});}
+  });
+
+  // 인터넷 없는 부가 홈만 별도로 등록된 경우도 누락하지 않음
+  bundles.filter(b=>!b.hasInternet).forEach(b=>{
+    if(b.types.has('tvFree')&&tvFreeRate){tvFreePay+=tvFreeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'TV프리(부)',amount:tvFreeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('smartHome')&&smartHomeRate){smartHomePay+=smartHomeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈',amount:smartHomeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('subSetTop')&&setTopRate){subSetTopPay+=setTopRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'일반 부셋탑',amount:setTopRate,note:'부가 홈 수수료'});}
+  });
+
+  const homeFlatPay=soloPay+tvFreePay+smartHomePay;
+  const homeAddonPay=simulPay+subSetTopPay;
+  return {
+    source:'orders',totalInternetCount,tierMin,
+    gradePay,soloPay,simulPay,tvFreePay,smartHomePay,subSetTopPay,
+    homeFlatPay,homeAddonPay,total:gradePay+homeFlatPay+homeAddonPay,details
+  };
+}
+
 const DEFAULT_RENEW = [
   { key: 'renewPremiumSafe1G', label: '재약정 - 프리미엄 안심보상 1GB', rate: 120000 },
   { key: 'renewPremiumSafe500', label: '재약정 - 프리미엄 안심보상 500MB', rate: 90000 },
@@ -453,7 +568,7 @@ function groupTable(config, key) {
 
 // 홈·부가 실적 → 생산성 항목 자동 반영 규칙
 const HOME_KPI_MAP = [
-  { kpiKey: 'kpiHome', sources: ['homeBase.homeOnly', 'homeBase.homeTv', 'homeFlat.home1GBOnly', 'homeFlat.home500Only', 'homeFlat.home100Only'] },
+  { kpiKey: 'kpiHome', sources: ['homeBase.homeOnly', 'homeBase.homeTv'] },
   { kpiKey: 'kpiTv', sources: ['homeBase.homeTv'] },
   { kpiKey: 'kpiTvSetTop', sources: ['homeAddon.addSetTop', 'homeFlat.tvFree'] },
   { kpiKey: 'kpiSmartHome', sources: ['homeFlat.smartHome', 'homeAddon.smartHomeSimul'] },
@@ -705,7 +820,9 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   // 최저보장 비교 대상:
   // 영업 활동 지원 정책 + 요금제 + VAS + 2ND + 모바일 승인 스팟 + 직책수당
   // 특판·지인판매 대체 인센티브는 요금제/VAS 대체 성격이므로 모바일 비교 대상에 포함합니다.
-  const mobileMatrixPay = (adjustedMatrixTotal + bundle2ndTotal) * penaltyFactor;
+  const mobilePlanPay = adjustedMatrixTotal * penaltyFactor;
+  const bundle2ndPay = bundle2ndTotal * penaltyFactor;
+  const mobileMatrixPay = mobilePlanPay + bundle2ndPay;
   const approvedMobileSpotPay = Math.max(0, Number(mobileSpotPay || 0));
   const mobileGuaranteeBasis = tenurePay
     + mobileMatrixPay
@@ -717,17 +834,20 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const guaranteedComponent = Math.max(minimumGuarantee, mobileGuaranteeBasis);
 
   // 최저보장 비교 후 별도로 추가되는 항목
-  const homeGradeQualCount = Number(draft.homeBase?.homeTv || 0);
-  const homeTierCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
+  // v21.63: 고객별 home_orders가 있으면 새 홈 정책으로 재계산하고,
+  // 구버전 집계만 존재하면 기존 계산을 fallback으로 유지합니다.
+  const legacyHomeGradeQualCount = Number(draft.homeBase?.homeTv || 0);
+  const legacyHomeTierCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
     + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0);
-  const homeCaseCount = homeTierCount;
-  const homeGradePay = homeGradeTotal(homeTierCount, homeGradeQualCount, config.homeTiers);
-  const homeFlatPay = sumFlat(draft.homeFlat || {}, config.homeFlat || []);
+  const homePolicy = draft.homePolicy?.source==='orders' ? draft.homePolicy : null;
+  const homeCaseCount = homePolicy ? Number(homePolicy.totalInternetCount||0) : legacyHomeTierCount;
+  const homeGradePay = homePolicy ? Number(homePolicy.gradePay||0) : homeGradeTotal(legacyHomeTierCount, legacyHomeGradeQualCount, config.homeTiers);
+  const homeFlatPay = homePolicy ? Number(homePolicy.homeFlatPay||0) : sumFlat(draft.homeFlat || {}, config.homeFlat || []);
   const tvFreeRate = config.homeFlat.find((t) => t.key === 'tvFree')?.rate || 0;
   const smartHomeRate = config.homeFlat.find((t) => t.key === 'smartHome')?.rate || 0;
-  const tvFreePay = Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
-  const smartHomePay = Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
-  const homeAddonPay = sumFlat(draft.homeAddon || {}, config.homeAddon || []);
+  const tvFreePay = homePolicy ? Number(homePolicy.tvFreePay||0) : Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
+  const smartHomePay = homePolicy ? Number(homePolicy.smartHomePay||0) : Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
+  const homeAddonPay = homePolicy ? Number(homePolicy.homeAddonPay||0) : sumFlat(draft.homeAddon || {}, config.homeAddon || []);
   const renewPay = Math.max(0, sumFlat(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = sumFlat(draft.mnpBundle || {}, config.mnpBundle || []);
   const sonoPay = sumFlat(draft.sono || {}, config.sono || []);
@@ -757,12 +877,12 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
     matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay,
     rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal,
-    rawVasPay, vasPay, approvedMobileSpotPay, mobileMatrixPay,
+    rawVasPay, vasPay, approvedMobileSpotPay, mobileMatrixPay, mobilePlanPay, bundle2ndPay,
     positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee,
     performanceComponents, performanceWithAllowance, mobileGuaranteeBasis, guaranteedComponent,
     currentPerformanceAmount, closingAmount, postGuaranteeExtras,
     homeAnyCount, homeNoPerformance,
-    homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay,
+    homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
     mnpBundlePay, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
   };
 }
@@ -913,6 +1033,8 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.64: 홈 동시판매 모수 표기 강화. 고객별 판매내역에 홈+HS/스마트홈+HS를 명시하고 신규 저장건에는 simulBase를 보존. */
+/* v21.63: 새 홈 인센티브 정책(가정망/소호/속도/그레이드/HS동시) 적용 + 기존 고객별 홈실적 자동 재계산 + 정산상단 항목별 분리. */
 /* v21.62: 정산 검토 고객별 상세 원장 + RAW CSV schema-cache 오류 수정. */
 /* v21.61: 회사 목표의 HS/홈/생산성 기준수량과 평가 연결, AA임팩트 목표 자동배분 및 가감점 상세 표시. */
 /* v21.60: 평가 탭 1차 도입 - 개인 커리어 등급 + 관리자 평가 + 관리자 확인 실적 최신화 + AA임팩트 월 목표/가감점. */
@@ -942,6 +1064,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
+  const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
 
   // 모바일 웹앱 뒤로가기 제어
   const [exitHint, setExitHint] = useState(false);
@@ -1339,6 +1462,22 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setDailyRecords(mapped);
   }, []);
 
+  const loadHomePolicies = useCallback(async (m,list)=>{
+    const ids=(list||[]).map(e=>e.id),mapped={};
+    if(!ids.length){setHomePolicyMap({});return;}
+    const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+    const {data,error}=await supabase.from('home_orders')
+      .select('id,user_id,customer_id,customer_name,product_type,network_type,status,source_work_date,actual_install_date')
+      .in('user_id',ids).gte('source_work_date',`${m}-01`).lt('source_work_date',to);
+    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});return;}
+    ids.forEach(id=>{
+      const userOrders=(data||[]).filter(o=>o.user_id===id);
+      const completed=userOrders.filter(o=>o.status==='completed');
+      mapped[id]=completed.length?calculateHomePolicyFromOrders(userOrders,config):null;
+    });
+    setHomePolicyMap(mapped);
+  },[config]);
+
   const saveDailyDay = async (day, record) => {
     if (!empId) return false;
 
@@ -1381,10 +1520,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
       setEmpId(first);
       await loadMonth(month, list);
       await loadDaily(month, list);
+      await loadHomePolicies(month, list);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.id]);
-  useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); } }, [month]); // eslint-disable-line
+  useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); loadHomePolicies(month, employees); } }, [month]); // eslint-disable-line
+  // 홈 고객별 저장/수정으로 일일 실적이 바뀌면 새 정책 금액도 다시 계산합니다.
+  useEffect(() => { if (employees.length) loadHomePolicies(month, employees); }, [dailyRecords]); // eslint-disable-line
 
   useEffect(()=>{
     if(!employees.length)return;
@@ -1602,7 +1744,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   const rows = employees.map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
-    const mergedDraft = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
+    const mergedBase = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
+    const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null};
     const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0);
     return { ...e, status: rec.status, pay, draft: mergedDraft, updatedAt: rec.updatedAt };
   });
@@ -1658,7 +1801,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
       setPrevMonthTotal(prevPay.currentPerformanceAmount);
     })();
   }, [empId, month, currentEmp?.position, currentEmp?.hireDate, config]); // eslint-disable-line
-  const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
+  const myMergedBase = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
+  const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null};
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0);
   // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
   // '기타' 직급(대리입력용 매장 실적 계정)은 건수·성과등급P는 유지하되 인센티브 금액은 0으로 표시(개인 지급 없음)
@@ -5148,7 +5292,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
           metric_label:product.label,source_type:'home_order',source_ref:String(order?.id||''),
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({networkType:homeNetworkType,internetSpeed:homeInternetSpeed||null,mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete})
+          source_meta:withCurrentSaleSchema({
+            networkType:homeNetworkType,internetSpeed:homeInternetSpeed||null,
+            mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
+            simulBase:homeInternet?'home':(!homeInternet&&homeSmartHome?'smartHome':null)
+          })
         }).select('id').single();
         if(saleError)throw saleError;
         if(!primarySaleId)primarySaleId=sale.id;
@@ -6097,6 +6245,24 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 })}
                 {daySales.map((sale) => {
                   const meta=sale.source_meta||{};
+                  const sameCustomerHomeSales=daySales.filter(x=>
+                    x.source_type==='home_order' &&
+                    x.sale_date===sale.sale_date &&
+                    x.customer_id===sale.customer_id
+                  );
+                  const sameHomeTypes=new Set(sameCustomerHomeSales.map(x=>inferHomeProductTypeFromLabel(x.metric_label)));
+                  const currentHomeType=inferHomeProductTypeFromLabel(sale.metric_label);
+                  const isHomeSimul=['simulNewChange','simulMnp','simulUsedMnp'].includes(currentHomeType);
+                  let displayMetricLabel=sale.metric_label;
+                  if(isHomeSimul){
+                    // 인터넷/TV가 있으면 '홈'이 모수, 인터넷 없이 스마트홈만 있으면 '스마트홈'이 모수
+                    const hasInternetOrTv=['homeOnly','homeTv','internet100','internet500','internet1g'].some(k=>sameHomeTypes.has(k));
+                    const hasSmartHome=sameHomeTypes.has('smartHome');
+                    const baseLabel=hasInternetOrTv?'홈':hasSmartHome?'스마트홈':'홈';
+                    const simulText=currentHomeType==='simulNewChange'?'HS 신규/기변 동시판매':
+                      currentHomeType==='simulMnp'?'HS MNP 동시판매':'중고MNP 동시판매';
+                    displayMetricLabel=`${baseLabel} + ${simulText}`;
+                  }
                   const vasLabels=(meta.vasKeys||[]).map(k=>{
                     if(k==='vasNone')return '미유치';
                     return (config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k;
@@ -6107,7 +6273,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                         <div className="min-w-0">
                           <div className="text-sm font-bold text-gray-900">{sale.customers?.customer_name||'고객'}</div>
                           <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                            <span>{sale.metric_label}</span>
+                            <span>{displayMetricLabel}</span>
                             {legacySaleBadge(sale)&&<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
                           </div>
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
@@ -7851,10 +8017,11 @@ function SettlementReview({ month, rows, employees, config }) {
         supabase.from('customer_sales').select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)').eq('user_id',r.id).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
         supabase.from('spot_claims').select('id,claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',r.id).gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date'),
         supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
-        supabase.from('home_orders').select('id,customer_name,source_group,source_key,status,source_work_date').eq('user_id',r.id).gte('source_work_date',`${month}-01`).lt('source_work_date',to)
+        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).gte('source_work_date',`${month}-01`).lt('source_work_date',to)
       ]);
       const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
       const homeMap=Object.fromEntries((homeRes.data||[]).map(o=>[String(o.id),o]));
+      const detailHomePolicy=calculateHomePolicyFromOrders(homeRes.data||[],config);
       const ledger=[];
       (salesRes.data||[]).forEach(x=>{
         const meta=x.source_meta||{}, customer=x.customers?.customer_name||'이름 없음';
@@ -7876,16 +8043,10 @@ function SettlementReview({ month, rows, employees, config }) {
             if(repl)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 대체 인센티브',amount:repl,note:sp.policyTitle||'특판·지인판매'});
           }
         } else if(x.source_type==='home_order'){
-          const ref=String(x.source_ref||''),o=homeMap[ref];
-          const table=o?.source_group?groupTable(config,o.source_group):[];
-          const it=table.find(v=>v.key===o?.source_key);
-          const directRate=Number(it?.rate||0);
-          // 홈 그레이드는 월 누적 건수로 단가가 결정되므로 고객별 직접 귀속이 불가능하고,
-          // 정액/부가 항목은 설정 단가가 있으면 고객별로 바로 표시합니다.
-          const isGradeBase=o?.source_group==='homeBase';
-          ledger.push({date:x.sale_date,customer,type:'홈',item:x.metric_label||'홈 판매',amount:(!isGradeBase&&directRate)?directRate:null,note:isGradeBase?'홈 그레이드 산정 대상 · 최종 금액은 월 누적 구간으로 결정':(it?.label||'고객별 홈 판매')});
+          // 홈은 아래에서 고객 묶음 단위 새 정책 계산 결과를 한 번만 표시합니다.
         }
       });
+      (detailHomePolicy.details||[]).forEach(x=>ledger.push(x));
       (spotsRes.data||[]).forEach(x=>{
         if(x.status!=='approved')return;
         ledger.push({date:x.claim_date,customer:x.customer_name||'이름 없음',type:'스팟',item:x.reviewed_title||x.direct_title||x.spot_policies?.title||'승인 스팟',amount:Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),note:x.source_context==='mobile'?'모바일 승인 스팟':'승인 스팟'});
@@ -7932,13 +8093,37 @@ function SettlementReview({ month, rows, employees, config }) {
     } catch(e) { alert(`정산 RAW 생성 실패: ${friendlyError(e)}`); }
   };
 
-  const detailSummary=detailUser?[
-    ['영업활동/최저보장 반영',detailUser.pay.guaranteedComponent],
-    ['홈 그레이드',detailUser.pay.homeGradePay],['홈 정액',detailUser.pay.homeFlatPay],['홈 부가',detailUser.pay.homeAddonPay],
-    ['인터넷 재약정',detailUser.pay.renewPay],['중고MNP 결합',detailUser.pay.mnpBundlePay],['소노',detailUser.pay.sonoPay],
-    ['고객등록 보너스',detailUser.pay.custRegBonus],['맞춤제안 건수',detailUser.pay.tailoredBonus],['맞춤제안 금액',detailUser.pay.tailoredAmountBonus],
-    ['승인 스팟',spotMap[detailUser.id]||0],['영업비용',-(expenseMap[detailUser.id]||0)]
-  ].filter(([,v])=>Number(v||0)!==0):[];
+  const detailSummary=detailUser?(()=>{
+    const p=detailUser.pay||{};
+    const basis=Number(p.mobileGuaranteeBasis||0);
+    const applied=Number(p.guaranteedComponent||0);
+    const standardAdjustment=Math.max(0,applied-basis);
+    const freeSaleAdjust=-(Number(p.bundleFreeOffset||0)+Number(p.bundleFreeVasOffset||0));
+    return [
+      ['영업 활동 지원 정책',p.tenurePay],
+      ['모바일 요금제 유치 수수료',p.mobilePlanPay],
+      ['VAS 유치 수수료',p.rawVasPay],
+      ['2ND 번들 유치 수수료',Number(p.rawBundle2ndTotal||0)],
+      ['무료판매 제외',freeSaleAdjust],
+      ['특판 요금제/VAS 제외',-(Number(p.specialMatrixOffset||0)+Number(p.specialVasOffset||0))],
+      ['특판 대체 인센티브',p.specialReplacementPay],
+      ['승인 모바일 스팟',p.approvedMobileSpotPay],
+      ['직책수당',p.positionAllowance],
+      ['직급 기준 보정',standardAdjustment],
+      ['성과등급 보너스',p.gradeBonus],
+      ['홈 그레이드 수수료',p.homeGradePay],
+      ['홈 단독·부가 수수료',p.homeFlatPay],
+      ['홈 동시판매·부셋탑',p.homeAddonPay],
+      ['인터넷 재약정',p.renewPay],
+      ['중고MNP 결합',p.mnpBundlePay],
+      ['소노',p.sonoPay],
+      ['고객등록 보너스',p.custRegBonus],
+      ['맞춤제안 건수',p.tailoredBonus],
+      ['맞춤제안 금액',p.tailoredAmountBonus],
+      ['승인 홈/기타 스팟',spotMap[detailUser.id]||0],
+      ['영업비용',-(expenseMap[detailUser.id]||0)]
+    ].filter(([,v])=>Number(v||0)!==0);
+  })():[];
 
   return <div className="space-y-3">
     <div className="bg-white rounded-xl border p-4 flex justify-between gap-3 items-center">
