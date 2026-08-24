@@ -1,0 +1,242 @@
+name: Apply approved v21.52 updates
+
+on:
+  push:
+    paths:
+      - '.github/workflows/v21_52_apply.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch App.jsx
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('src/App.jsx')
+          s=path.read_text(encoding='utf-8')
+          def rep(old,new,label):
+              global s
+              if old not in s:
+                  raise RuntimeError(f'missing snippet: {label}')
+              s=s.replace(old,new,1)
+
+          old="""function displayStoreName(name) {
+            const value = String(name || '');
+            const idx = value.indexOf('_');
+            return idx >= 0 ? value.slice(idx + 1) : value;
+          }
+          """
+          rep(old,old+"""
+          function sortStoresByOpenOrder(list=[]) {
+            const order = new Map(DEFAULT_STORES.map((name, idx) => [name, idx]));
+            return [...new Set((list || []).filter(Boolean))].sort((a,b)=>{
+              const ai = order.has(a) ? order.get(a) : 9999;
+              const bi = order.has(b) ? order.get(b) : 9999;
+              if (ai !== bi) return ai - bi;
+              return displayStoreName(a).localeCompare(displayStoreName(b), 'ko');
+            });
+          }
+          """,'store order helper')
+          rep("setStores(data.value);","setStores(sortStoresByOpenOrder(data.value));",'load stores order')
+          rep("""  const persistStores = async (next) => {
+            setStores(next);
+            try {
+              const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: next }, { onConflict: 'config_key' });
+          ""","""  const persistStores = async (next) => {
+            const ordered = sortStoresByOpenOrder(next);
+            setStores(ordered);
+            try {
+              const { error } = await supabase.from('app_config').upsert({ config_key: 'stores', value: ordered }, { onConflict: 'config_key' });
+          """,'persist stores order')
+          rep("""  const stores=[...new Set(
+            employees
+              .map(e=>e.branch)
+              .filter(Boolean)
+              .filter(branch=>!NON_SALES_STORES.includes(branch))
+          )];
+          ""","""  const stores=sortStoresByOpenOrder(
+            employees
+              .map(e=>e.branch)
+              .filter(Boolean)
+              .filter(branch=>!NON_SALES_STORES.includes(branch))
+          );
+          """,'store goal order')
+          rep("""  const availableStores=useMemo(()=>[...new Set((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b)))].sort((a,b)=>displayStoreName(a).localeCompare(displayStoreName(b))),[employees]);
+          ""","""  const availableStores=useMemo(()=>sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b))),[employees]);
+          """,'admin calendar store order')
+
+          renew_anchor="""const DEFAULT_RENEW = [
+            { key: 'renewPremiumSafe1G', label: '재약정 - 프리미엄 안심보상 1GB', rate: 120000 },
+            { key: 'renewPremiumSafe500', label: '재약정 - 프리미엄 안심보상 500MB', rate: 90000 },
+            { key: 'renewPremium1G', label: '재약정 - 프리미엄 안심 1GB', rate: 110000 },
+            { key: 'renewPremium500', label: '재약정 - 프리미엄 안심 500MB', rate: 80000 },
+            { key: 'renewSmart1G', label: '재약정 - 스마트 1GB', rate: 20000 },
+            { key: 'renewSimul1G', label: '재약정 - 동시판매 1GB', rate: 80000 },
+            { key: 'renewSimul500', label: '재약정 - 동시판매 500MB', rate: 50000 },
+            { key: 'renewTvUpsell', label: 'TV 업셀 수수료', rate: 20000 },
+          ];
+          """
+          rep(renew_anchor,renew_anchor+"""
+          const HOUSEHOLD_RENEW_PLANS = [
+            { key:'premiumSafe', label:'프리미엄 안심 보상' },
+            { key:'premium', label:'프리미엄 안심' },
+            { key:'smart', label:'스마트' },
+          ];
+          function householdRenewBaseKey(speed, plan){
+            if(speed==='1g'&&plan==='premiumSafe')return 'renewPremiumSafe1G';
+            if(speed==='500'&&plan==='premiumSafe')return 'renewPremiumSafe500';
+            if(speed==='1g'&&plan==='premium')return 'renewPremium1G';
+            if(speed==='500'&&plan==='premium')return 'renewPremium500';
+            if(speed==='1g'&&plan==='smart')return 'renewSmart1G';
+            return '';
+          }
+          function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).find(x=>x.key===key)?.rate||0); }
+          function calculateHouseholdRenew(item,config){
+            const speed=item?.speed||'1g';
+            const invalid=speed==='100'||!!item?.downSpeed||!!item?.temporaryUpgradeSame;
+            const baseKey=householdRenewBaseKey(speed,item?.plan||'premiumSafe');
+            const base=invalid?0:renewRate(config,baseKey);
+            const soloDiscount=invalid?0:(item?.homeOnly?Math.min(50000,base):0);
+            const hsKey=speed==='1g'?'renewSimul1G':speed==='500'?'renewSimul500':'';
+            const hsPay=(!invalid&&item?.hsSimul)?renewRate(config,hsKey):0;
+            const tvPay=(!invalid&&!item?.homeOnly&&item?.tvUpsell)?renewRate(config,'renewTvUpsell'):0;
+            return {invalid,baseKey,base,soloDiscount,hsKey,hsPay,tvPay,amount:Math.max(0,base-soloDiscount+hsPay+tvPay)};
+          }
+          function aggregateHouseholdRenewals(items,config){
+            const counts={}; let soloDiscount=0;
+            (items||[]).forEach(item=>{
+              const c=calculateHouseholdRenew(item,config);
+              if(c.invalid)return;
+              if(c.baseKey&&c.base>0)counts[c.baseKey]=(counts[c.baseKey]||0)+1;
+              if(item.hsSimul&&c.hsKey&&c.hsPay>0)counts[c.hsKey]=(counts[c.hsKey]||0)+1;
+              if(item.tvUpsell&&!item.homeOnly&&c.tvPay>0)counts.renewTvUpsell=(counts.renewTvUpsell||0)+1;
+              soloDiscount+=c.soloDiscount;
+            });
+            return {counts,soloDiscount};
+          }
+          function emptyHouseholdRenewForm(){
+            return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,downSpeed:false,temporaryUpgradeSame:false};
+          }
+          """,'renew helpers')
+          rep("  { key: 'renew', label: '홈 재약정', bucket: 'home' },","  { key: 'renew', label: '가정망 인터넷 재약정', bucket: 'home' },",'renew label')
+          rep("const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset'];","const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset', 'renewSoloDiscountAmount'];",'numeric key')
+          rep("  { kpiKey: 'kpiInternetRenew', sources: ['renew.renewPremiumSafe1G', 'renew.renewPremiumSafe500', 'renew.renewPremium1G', 'renew.renewPremium500', 'renew.renewSmart1G', 'renew.renewSimul1G', 'renew.renewSimul500'] },","  { kpiKey: 'kpiInternetRenew', sources: ['renew.renewPremiumSafe1G', 'renew.renewPremiumSafe500', 'renew.renewPremium1G', 'renew.renewPremium500', 'renew.renewSmart1G'] },",'renew KPI')
+          rep("""    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0,
+            dayOff: false,
+          ""","""    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0, renewSoloDiscountAmount: 0,
+            householdRenewals: [],
+            dayOff: false,
+          """,'empty day')
+          rep("""    bundleFreeVasOffset: raw.bundleFreeVasOffset || 0,
+            dayOff: !!raw.dayOff,
+          ""","""    bundleFreeVasOffset: raw.bundleFreeVasOffset || 0,
+            renewSoloDiscountAmount: raw.renewSoloDiscountAmount || 0,
+            householdRenewals: Array.isArray(raw.householdRenewals) ? raw.householdRenewals : [],
+            dayOff: !!raw.dayOff,
+          """,'normalize day')
+          rep("  const renewPay = sumFlat(draft.renew || {}, config.renew || []);","  const renewPay = Math.max(0, sumFlat(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));",'renew pay')
+          rep('<RowKV label="홈 재약정" value={won(pay.renewPay)} />','<RowKV label="가정망 인터넷 재약정" value={won(pay.renewPay)} />','history label')
+          rep('<RateTable title="홈 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />','<RateTable title="가정망 인터넷 재약정" group="renew" data={draft.renew} updateFlatTable={updateFlatTable} field="rate" />','rate label')
+
+          rep("""  const [editingHomeSales,setEditingHomeSales]=useState([]);
+            const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+          ""","""  const [editingHomeSales,setEditingHomeSales]=useState([]);
+            const [householdRenewOpen,setHouseholdRenewOpen]=useState(false);
+            const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
+            const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
+            const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+          """,'renew states')
+          rep("""  const setNumeric = (key, v) => mutate({ ...day, [key]: Math.max(0, v) });
+
+
+            useEffect(() => {
+          ""","""  const setNumeric = (key, v) => mutate({ ...day, [key]: Math.max(0, v) });
+
+            const openHouseholdRenew=(idx=null)=>{
+              const item=idx===null?null:day.householdRenewals?.[idx];
+              setHouseholdRenewEditIndex(idx);
+              setHouseholdRenewForm(item?{...emptyHouseholdRenewForm(),...item}:emptyHouseholdRenewForm());
+              setHouseholdRenewOpen(true);
+            };
+            const applyHouseholdRenewItems=(items)=>{
+              const agg=aggregateHouseholdRenewals(items,config);
+              mutate({...day,householdRenewals:items,renewSoloDiscountAmount:agg.soloDiscount,groups:{...day.groups,renew:agg.counts}});
+            };
+            const saveHouseholdRenew=()=>{
+              const items=[...(day.householdRenewals||[])];
+              const item={...householdRenewForm,id:householdRenewEditIndex===null?`renew-${Date.now()}-${Math.random().toString(36).slice(2,7)}`:(items[householdRenewEditIndex]?.id||`renew-${Date.now()}`)};
+              if(householdRenewEditIndex===null)items.push(item); else items[householdRenewEditIndex]=item;
+              applyHouseholdRenewItems(items);
+              setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm());
+            };
+            const deleteHouseholdRenew=(idx)=>{
+              if(!window.confirm('이 재약정 실적을 삭제할까요?'))return;
+              const items=(day.householdRenewals||[]).filter((_,i)=>i!==idx);
+              applyHouseholdRenewItems(items);
+            };
+            const householdRenewPreview=calculateHouseholdRenew(householdRenewForm,config);
+
+
+            useEffect(() => {
+          """,'renew functions')
+
+          home_button="""              <button type="button" onClick={()=>{setInputCategory('home');setPickedRow(null);openHomeOrder();}}
+                        className={`p-4 rounded-2xl border text-left ${inputCategory==='home'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
+                        <div className="text-xl">🏠</div><div className="text-sm font-bold text-gray-800 mt-1">홈 실적 입력</div>
+                        <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
+                      </button>
+          """
+          rep(home_button,home_button+"""              <button type="button" onClick={()=>openHouseholdRenew(null)} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2">
+                        <div className="flex items-center justify-between gap-2"><div><div className="text-xl">♻️</div><div className="text-sm font-bold text-gray-800 mt-1">가정망 인터넷 재약정</div></div><div className="text-xs font-bold text-violet-600">{fmtCount(day.householdRenewals?.length||0)}건</div></div>
+                        <div className="text-[10px] text-gray-400 mt-1">속도 · 상품 · 홈 단독 · HS 동시판매 · TV 업셀 자동 계산</div>
+                      </button>
+          """,'renew button')
+
+          modal_anchor="""      {mobileSaleDraft && (
+          """
+          modal="""      {householdRenewOpen&&(
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                  <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="text-xs text-violet-500 font-semibold">가정망 인터넷 재약정</div>
+                    <div className="text-lg font-bold text-gray-900 mt-1">{householdRenewEditIndex===null?'재약정 실적 입력':'재약정 실적 수정'}</div>
+                    <div className="text-xs text-gray-400 mt-1">재약정일 {month}-{selectedDay}</div>
+                    <label className="block text-xs font-semibold text-gray-600 mt-4 mb-1.5">고객명 (선택)</label>
+                    <input value={householdRenewForm.customer||''} onChange={e=>setHouseholdRenewForm({...householdRenewForm,customer:e.target.value})} className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" placeholder="고객명"/>
+                    <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">인터넷 속도</div>
+                    <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
+                    <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 상품</div>
+                    <div className="space-y-1.5">{HOUSEHOLD_RENEW_PLANS.map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
+                    <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 구성</div>
+                    <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
+                    {householdRenewForm.homeOnly&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
+                    <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
+                    <label className={`mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${householdRenewForm.homeOnly?'bg-gray-50 border-gray-100 opacity-50':'border-gray-200'}`}><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" disabled={householdRenewForm.homeOnly} checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
+                    <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2"><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label><div className="text-[10px] text-gray-400 leading-relaxed">100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.</div></div>
+                    <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
+                    {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-violet-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
+                    <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
+                  </div>
+                </div>
+              )}
+
+          """+modal_anchor
+          rep(modal_anchor,modal,'renew modal')
+          marker='/* ===================== 메인 앱 ===================== */'
+          if marker in s:
+              s=s.replace(marker,'/* v21.52: 관리자 매장 정렬을 1~13호점 오픈 순서로 통일하고, 가정망 인터넷 재약정 구조화 입력/자동 인센티브 계산을 추가. */\n'+marker,1)
+          path.write_text(s,encoding='utf-8')
+          PY
+          rm -f .github/workflows/v21_52_apply.yml
+          git config user.name 'OpenAI App Updater'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/App.jsx .github/workflows/v21_52_apply.yml
+          git commit -m 'feat: apply approved v21.52 store order and household renewal policy'
+          git push
