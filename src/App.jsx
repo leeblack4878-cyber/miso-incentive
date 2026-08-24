@@ -913,6 +913,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.62: 정산 검토 고객별 상세 원장 + RAW CSV schema-cache 오류 수정. */
 /* v21.61: 회사 목표의 HS/홈/생산성 기준수량과 평가 연결, AA임팩트 목표 자동배분 및 가감점 상세 표시. */
 /* v21.60: 평가 탭 1차 도입 - 개인 커리어 등급 + 관리자 평가 + 관리자 확인 실적 최신화 + AA임팩트 월 목표/가감점. */
 /* ===================== 메인 앱 ===================== */
@@ -7818,6 +7819,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo }) {
 
 function SettlementReview({ month, rows, employees, config }) {
   const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({});
+  const [detailUser,setDetailUser]=useState(null),[detailRows,setDetailRows]=useState([]),[detailLoading,setDetailLoading]=useState(false);
   useEffect(()=>{
     (async()=>{
       const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
@@ -7836,71 +7838,150 @@ function SettlementReview({ month, rows, employees, config }) {
   },[month,rows]);
 
   const setStatus=async(userId,status)=>{
-    const {error}=await supabase.from('settlement_reviews').upsert({
-      month,user_id:userId,status,updated_at:new Date().toISOString()
-    },{onConflict:'month,user_id'});
+    const {error}=await supabase.from('settlement_reviews').upsert({month,user_id:userId,status,updated_at:new Date().toISOString()},{onConflict:'month,user_id'});
     if(error)return alert(`정산 상태 저장 실패: ${friendlyError(error)}`);
     setStatusMap({...statusMap,[userId]:status});
   };
 
+  const loadDetail=async(r)=>{
+    setDetailUser(r);setDetailRows([]);setDetailLoading(true);
+    const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+    try{
+      const [salesRes,spotsRes,expensesRes,homeRes]=await Promise.all([
+        supabase.from('customer_sales').select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)').eq('user_id',r.id).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
+        supabase.from('spot_claims').select('id,claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',r.id).gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date'),
+        supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
+        supabase.from('home_orders').select('id,customer_name,source_group,source_key,status,source_work_date').eq('user_id',r.id).gte('source_work_date',`${month}-01`).lt('source_work_date',to)
+      ]);
+      const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
+      const homeMap=Object.fromEntries((homeRes.data||[]).map(o=>[String(o.id),o]));
+      const ledger=[];
+      (salesRes.data||[]).forEach(x=>{
+        const meta=x.source_meta||{}, customer=x.customers?.customer_name||'이름 없음';
+        if(x.source_type==='mobile'){
+          const ri=Number(meta.ri),ci=Number(meta.ci);
+          const matrixRate=Number(config.matrix?.[ri]?.[ci]||0);
+          if(matrixRate)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'요금제 유치 수수료',amount:matrixRate,note:`${MATRIX_ROW_DEFS[ri]?.dailyLabel||MATRIX_ROW_DEFS[ri]?.label||''}${MATRIX_ROW_DEFS[ri]?.hasTiers?` · ${MATRIX_COLS[ci]||''}`:''}`});
+          const normalVas=[...(meta.vasKeys||[])];
+          normalVas.forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:it.label||k});});
+          Object.entries(meta.bundle2ndKeys||[]).forEach(()=>{});
+          (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'2ND 번들 유치 수수료',amount:Number(it.rate),note:it.label||k});});
+          Object.entries(meta.bundleVasMap||{}).forEach(([bk,keys])=>(keys||[]).forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:`2ND · ${it.label||k}${(meta.bundleSaleTypeMap?.[bk]||'normal')==='free'?' · 무료판매 제외대상':''}`});}));
+          if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고MNP 결합',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
+          const sp=meta.specialPolicy||{};
+          if(sp.policyId){
+            const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
+            if(matrixRate)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 요금제 수수료 제외',amount:-matrixRate,note:sp.policyTitle||'특판·지인판매'});
+            const vasFee=Number(sp.normalVasFee||0);if(vasFee)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 VAS 수수료 제외',amount:-vasFee,note:sp.policyTitle||'특판·지인판매'});
+            if(repl)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 대체 인센티브',amount:repl,note:sp.policyTitle||'특판·지인판매'});
+          }
+        } else if(x.source_type==='home_order'){
+          const ref=String(x.source_ref||''),o=homeMap[ref];
+          const table=o?.source_group?groupTable(config,o.source_group):[];
+          const it=table.find(v=>v.key===o?.source_key);
+          const directRate=Number(it?.rate||0);
+          // 홈 그레이드는 월 누적 건수로 단가가 결정되므로 고객별 직접 귀속이 불가능하고,
+          // 정액/부가 항목은 설정 단가가 있으면 고객별로 바로 표시합니다.
+          const isGradeBase=o?.source_group==='homeBase';
+          ledger.push({date:x.sale_date,customer,type:'홈',item:x.metric_label||'홈 판매',amount:(!isGradeBase&&directRate)?directRate:null,note:isGradeBase?'홈 그레이드 산정 대상 · 최종 금액은 월 누적 구간으로 결정':(it?.label||'고객별 홈 판매')});
+        }
+      });
+      (spotsRes.data||[]).forEach(x=>{
+        if(x.status!=='approved')return;
+        ledger.push({date:x.claim_date,customer:x.customer_name||'이름 없음',type:'스팟',item:x.reviewed_title||x.direct_title||x.spot_policies?.title||'승인 스팟',amount:Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),note:x.source_context==='mobile'?'모바일 승인 스팟':'승인 스팟'});
+      });
+      (expensesRes.data||[]).forEach(x=>ledger.push({date:x.expense_date,customer:x.customer_name||'이름 없음',type:'영업비용',item:x.category||'영업비용',amount:-Number(x.amount||0),note:x.memo||'비용 차감'}));
+      ledger.sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.customer).localeCompare(String(b.customer)));
+      setDetailRows(ledger);
+    }catch(e){alert(`상세 산출내역 불러오기 실패: ${friendlyError(e)}`);}
+    finally{setDetailLoading(false);}
+  };
+
+  // 관계 조인을 사용하지 않고 프로필을 별도 매핑해 schema-cache 오류를 피합니다.
   const exportRaw=async()=>{
     const ids=(rows||[]).map(r=>r.id);if(!ids.length)return alert('정산 대상 직원이 없어요.');
     const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
     try {
       const results=await Promise.all([
-        supabase.from('daily_records').select('user_id,work_date,data,profiles:user_id(name,store_name)').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to).order('work_date'),
-        supabase.from('spot_claims').select('*, spot_policies(title,amount), profiles:user_id(name,store_name)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
-        supabase.from('sales_expenses').select('*, profiles:user_id(name,store_name)').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to)
+        supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to).order('work_date'),
+        supabase.from('spot_claims').select('*, spot_policies(title,amount)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
+        supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
+        supabase.from('profiles').select('id,name,store_name').in('id',ids)
       ]);
       const firstError=results.find(x=>x.error)?.error;if(firstError)throw firstError;
-      const [daily,spots,expenses]=results.map(x=>x.data||[]);
+      const [daily,spots,expenses,profiles]=results.map(x=>x.data||[]);
+      const pm=Object.fromEntries(profiles.map(p=>[p.id,p]));
       const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
       const rowsCsv=[['구분','기준월','일자','매장','직원','대분류','세부항목','세부구분','건수/값','적용금액','지급반영','비고']];
-      // 화면의 최종 예상지급액을 먼저 기록해 CSV 합계와 화면을 대조하기 쉽게 함
       (rows||[]).forEach(r=>{
         const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense;
         const parts=[['보장/기본',r.pay.guaranteedComponent],['홈 그레이드',r.pay.homeGradePay],['홈 정액',r.pay.homeFlatPay],['홈 부가',r.pay.homeAddonPay],['재약정',r.pay.renewPay],['VAS',r.pay.vasPay],['MNP번들',r.pay.mnpBundlePay],['소노',r.pay.sonoPay],['고객등록 보너스',r.pay.custRegBonus],['맞춤제안 보너스',r.pay.tailoredBonus],['맞춤제안 금액',r.pay.tailoredAmountBonus],['승인 스팟',spot],['영업비용 차감',-expense]];
         parts.filter(([,v])=>Number(v||0)!==0).forEach(([label,v])=>rowsCsv.push(['정산요약',month,'',r.branch,r.name,'지급구성',label,'',1,v,'반영','']));
-        if(Number(r.pay.specialMatrixOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','요금제 수수료 제외','',1,-Number(r.pay.specialMatrixOffset||0),'참고','보장/기본 계산에 이미 반영']);
-        if(Number(r.pay.specialVasOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','VAS 수수료 제외','',1,-Number(r.pay.specialVasOffset||0),'참고','VAS 지급액에 이미 반영']);
-        if(Number(r.pay.specialReplacementPay||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'특판·지인판매','대체 인센티브','',1,Number(r.pay.specialReplacementPay||0),'참고','보장/기본 계산에 이미 반영']);
-        if(Number(r.pay.bundleFreeOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'2ND 무료판매','2ND 번들 수수료 제외','',1,-Number(r.pay.bundleFreeOffset||0),'참고','실적/KPI 인정 · 지급액에서 제외']);
-        if(Number(r.pay.bundleFreeVasOffset||0)>0)rowsCsv.push(['정산참고',month,'',r.branch,r.name,'2ND 무료판매','2ND VAS 수수료 제외','',1,-Number(r.pay.bundleFreeVasOffset||0),'참고','VAS 실적 기록 · 지급액에서 제외']);
         rowsCsv.push(['정산합계',month,'',r.branch,r.name,'최종지급액','', '',1,net,'실지급 검토',`기본계산 ${r.pay.total} + 스팟 ${spot} - 비용 ${expense}`]);
       });
       (daily||[]).forEach(x=>{
-        const d=normalizeDay(x.data);
-        d.matrix.forEach((arr,ri)=>arr.forEach((cnt,ci)=>{if(!cnt)return;const rd=MATRIX_ROW_DEFS[ri];rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'모바일',rd?.dailyLabel||rd?.label||`행${ri+1}`,rd?.hasTiers?MATRIX_COLS[ci]:'',cnt,config.matrix?.[ri]?.[ci]||0,'계산대상',`원천 일일입력`])}));
-        DAILY_GROUP_DEFS.forEach(g=>{const table=groupTable(config,g.key);Object.entries(d.groups?.[g.key]||{}).forEach(([key,cnt])=>{if(!cnt)return;const item=table.find(t=>t.key===key);rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,g.bucket==='home'?'홈':'기타',g.label,item?.label||key,cnt,item?.rate||item?.point||0,'계산대상','원천 일일입력'])})});
-        [['custRegCount','고객등록'],['tailoredCount','맞춤제안 건수'],['tailoredAmount','맞춤제안 금액'],['specialMatrixOffset','특판 요금제수수료 제외'],['specialVasOffset','특판 VAS수수료 제외'],['specialReplacementPay','특판 대체 인센티브'],['bundleFreeOffset','2ND 무료판매 수수료 제외'],['bundleFreeVasOffset','2ND 무료판매 VAS 제외']].forEach(([k,l])=>{if(Number(d[k]||0)>0)rowsCsv.push(['실적RAW',month,x.work_date,x.profiles?.store_name,x.profiles?.name,'기타',l,'',d[k],k==='tailoredAmount'?d[k]:0,'계산대상','원천 일일입력'])});
+        const p=pm[x.user_id]||{},d=normalizeDay(x.data);
+        d.matrix.forEach((arr,ri)=>arr.forEach((cnt,ci)=>{if(!cnt)return;const rd=MATRIX_ROW_DEFS[ri];rowsCsv.push(['실적RAW',month,x.work_date,p.store_name,p.name,'모바일',rd?.dailyLabel||rd?.label||`행${ri+1}`,rd?.hasTiers?MATRIX_COLS[ci]:'',cnt,config.matrix?.[ri]?.[ci]||0,'계산대상','원천 일일입력'])}));
+        DAILY_GROUP_DEFS.forEach(g=>{const table=groupTable(config,g.key);Object.entries(d.groups?.[g.key]||{}).forEach(([key,cnt])=>{if(!cnt)return;const item=table.find(t=>t.key===key);rowsCsv.push(['실적RAW',month,x.work_date,p.store_name,p.name,g.bucket==='home'?'홈':'기타',g.label,item?.label||key,cnt,item?.rate||item?.point||0,'계산대상','원천 일일입력'])})});
       });
-      (spots||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.claim_date,x.profiles?.store_name,x.profiles?.name,'스팟',x.reviewed_title||x.direct_title||x.spot_policies?.title||'',x.customer_name||'',1,x.final_amount??x.direct_amount??x.spot_policies?.amount??0,x.status==='approved'?'반영':'미반영',x.status]));
-      (expenses||[]).forEach(x=>rowsCsv.push(['가감RAW',month,x.expense_date,x.profiles?.store_name,x.profiles?.name,'영업비용',x.category,x.customer_name||'',1,-Number(x.amount||0),'차감',x.memo||'']));
+      (spots||[]).forEach(x=>{const p=pm[x.user_id]||{};rowsCsv.push(['가감RAW',month,x.claim_date,p.store_name,p.name,'스팟',x.reviewed_title||x.direct_title||x.spot_policies?.title||'',x.customer_name||'',1,x.final_amount??x.direct_amount??x.spot_policies?.amount??0,x.status==='approved'?'반영':'미반영',x.status])});
+      (expenses||[]).forEach(x=>{const p=pm[x.user_id]||{};rowsCsv.push(['가감RAW',month,x.expense_date,p.store_name,p.name,'영업비용',x.category,x.customer_name||'',1,-Number(x.amount||0),'차감',x.memo||''])});
       const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
       a.href=url;a.download=`정산_검증_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
     } catch(e) { alert(`정산 RAW 생성 실패: ${friendlyError(e)}`); }
   };
 
+  const detailSummary=detailUser?[
+    ['영업활동/최저보장 반영',detailUser.pay.guaranteedComponent],
+    ['홈 그레이드',detailUser.pay.homeGradePay],['홈 정액',detailUser.pay.homeFlatPay],['홈 부가',detailUser.pay.homeAddonPay],
+    ['인터넷 재약정',detailUser.pay.renewPay],['중고MNP 결합',detailUser.pay.mnpBundlePay],['소노',detailUser.pay.sonoPay],
+    ['고객등록 보너스',detailUser.pay.custRegBonus],['맞춤제안 건수',detailUser.pay.tailoredBonus],['맞춤제안 금액',detailUser.pay.tailoredAmountBonus],
+    ['승인 스팟',spotMap[detailUser.id]||0],['영업비용',-(expenseMap[detailUser.id]||0)]
+  ].filter(([,v])=>Number(v||0)!==0):[];
+
   return <div className="space-y-3">
     <div className="bg-white rounded-xl border p-4 flex justify-between gap-3 items-center">
-      <div><div className="font-bold">💰 {monthLabel(month)} 정산 검토</div><div className="text-xs text-gray-400 mt-1">기본 인센티브 + 승인 스팟 - 영업비용을 검토해요. RAW는 마감 전에도 통신사 자료와 대조할 수 있어요.</div></div>
+      <div><div className="font-bold">💰 {monthLabel(month)} 정산 검토</div><div className="text-xs text-gray-400 mt-1">직원을 누르면 날짜·고객·판매항목별 산출근거를 확인할 수 있어요. RAW CSV는 같은 원천자료 대조용입니다.</div></div>
       <button onClick={exportRaw} className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">RAW CSV</button>
     </div>
     <div className="bg-white rounded-xl border overflow-hidden divide-y">
       {(rows||[]).map(r=>{
         const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense,status=statusMap[r.id]||'unreviewed';
         return <div key={r.id} className="p-4">
-          <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div></div><div className="text-right"><div className="font-bold text-violet-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
+          <button onClick={()=>loadDetail(r)} className="w-full text-left">
+            <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div><div className="text-[10px] text-violet-500 mt-1">상세 산출내역 보기 ›</div></div><div className="text-right"><div className="font-bold text-violet-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
+          </button>
           <div className="grid grid-cols-4 gap-1 mt-3">
             {[['unreviewed','미검토'],['reviewing','검토중'],['checked','확인완료'],['final','정산확정']].map(([k,l])=><button key={k} onClick={()=>setStatus(r.id,k)} className={`py-1.5 rounded text-[10px] font-semibold ${status===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
           </div>
         </div>
       })}
     </div>
+    {detailUser&&<div className="fixed inset-0 z-[80] bg-black/40 flex items-end md:items-center justify-center p-0 md:p-4" onClick={()=>setDetailUser(null)}>
+      <div className="bg-white w-full md:max-w-5xl max-h-[92vh] rounded-t-2xl md:rounded-2xl overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
+        <div className="p-4 border-b flex justify-between items-start"><div><div className="font-bold">{detailUser.name} · {monthLabel(month)} 상세 정산 원장</div><div className="text-xs text-gray-400 mt-1">날짜 / 고객명 / 가입구분 / 돈이 발생한 항목 / 적용금액</div></div><button onClick={()=>setDetailUser(null)} className="text-gray-400 text-xl">×</button></div>
+        <div className="overflow-auto">
+          <div className="p-4 bg-violet-50 border-b">
+            <div className="text-xs font-bold text-violet-700 mb-2">최종 지급 구성</div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{detailSummary.map(([l,v])=><div key={l} className="bg-white rounded-lg border p-2 flex justify-between gap-2 text-xs"><span>{l}</span><b>{v>=0?'+':''}{won(v)}</b></div>)}</div>
+            <div className="mt-3 flex justify-between font-bold text-sm"><span>최종 검토금액</span><span className="text-violet-700">{won(detailUser.pay.total+(spotMap[detailUser.id]||0)-(expenseMap[detailUser.id]||0))}</span></div>
+          </div>
+          {detailLoading?<div className="p-10 text-center text-sm text-gray-400">상세 내역을 불러오는 중...</div>:detailRows.length===0?<div className="p-10 text-center text-sm text-gray-400">고객별 판매 기록이 없어요. 구버전 집계 실적은 위 최종 지급 구성에서 확인할 수 있어요.</div>:<div className="divide-y">
+            {detailRows.map((x,i)=><div key={`${x.date}-${i}`} className="p-3 grid grid-cols-[72px_1fr_auto] md:grid-cols-[90px_140px_150px_1fr_120px] gap-2 items-center text-xs">
+              <div className="text-gray-500">{String(x.date||'').slice(5)}</div>
+              <div className="font-semibold truncate">{x.customer}</div>
+              <div className="hidden md:block text-gray-500">{x.type}</div>
+              <div><div className="font-medium">{x.item}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-0.5">{x.note}</div>}</div>
+              <div className={`text-right font-bold ${Number(x.amount)<0?'text-red-500':Number(x.amount)>0?'text-violet-700':'text-gray-400'}`}>{x.amount===null?'금액은 월 합산 반영':`${Number(x.amount)>0?'+':''}${won(x.amount)}`}</div>
+            </div>)}
+          </div>}
+          <div className="p-4 text-[10px] text-gray-400 bg-gray-50">※ 고객별 원장은 현재 고객별 판매로 저장된 건을 기준으로 보여줍니다. 영업활동지원·최저보장·홈 그레이드처럼 월 누적 조건으로 결정되는 금액은 상단 ‘최종 지급 구성’에서 별도로 대조합니다.</div>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
-
 
 function dailyCalendarMetrics(raw){
   const d=normalizeDay(raw);
