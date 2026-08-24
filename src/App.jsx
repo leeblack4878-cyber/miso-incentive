@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
   Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
   UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
-  UploadCloud, X, Target, ShieldCheck, LogOut, Bell
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -558,7 +558,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
 }
 
 /* 급여 전체 계산 */
-function computePay(draft, position, hireDate, month, config) {
+function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0) {
   const months = monthsSince(hireDate, month);
   const bucketKey = tenureBucketOf(months);
   const bucket = config.tenure.find((t) => t.key === bucketKey) || config.tenure[0];
@@ -566,25 +566,38 @@ function computePay(draft, position, hireDate, month, config) {
   const mobileItems = config.mobilePointItems || DEFAULT_MOBILE_POINT_ITEMS;
   const kpiItems = config.kpiItems || DEFAULT_KPI_ITEMS;
   const kpiScore = sumPoint(draft.kpi || {}, kpiItems);
-  const activityCount = mobileItems.filter((i) => i.countsTenure !== false).reduce((s, i) => s + (draft.mobilePoint[i.key] || 0), 0);
-  const tenurePay = Math.min((bucket.rate || 0) * activityCount, config.tenureCap);
 
-  const mobilePoints = sumPoint(draft.mobilePoint, mobileItems);
-  // 총 포인트 합산에 더해지는 홈 가점 (성과등급P 안내표 기준: 홈단독1P, 홈+TV2P, TV프리0.5P, 스마트홈0.5P)
-  const homeAddonPoints = sumPoint(draft.homeBase, HOME_BASE_ITEMS)
-    + (draft.homeFlat.tvFree || 0) * 0.5 + (draft.homeFlat.smartHome || 0) * 0.5;
-  // 홈 최소조건 3점 게이트 전용 점수 (인터넷1점/프리0.3점/스홈0.2점 기준 — 별도 배점)
-  const homeGatePoints = (draft.homeBase.homeOnly || 0) * HOME_GATE_WEIGHTS.homeOnly
-    + (draft.homeBase.homeTv || 0) * HOME_GATE_WEIGHTS.homeTv
-    + (draft.homeFlat.tvFree || 0) * HOME_GATE_WEIGHTS.tvFree
-    + (draft.homeFlat.smartHome || 0) * HOME_GATE_WEIGHTS.smartHome;
+  // 영업 활동 지원 정책 대상 = HS + SIM MNP + 2ND
+  // mobilePoint에는 HS/SIM MNP/2ND단독이 들어오고, 2ND 번들 판매건은 별도 그룹이므로 추가 합산합니다.
+  const baseActivityCount = mobileItems
+    .filter((i) => i.countsTenure !== false)
+    .reduce((sum, item) => sum + Number(draft.mobilePoint?.[item.key] || 0), 0);
+  const bundle2ndActivityCount = Object.values(draft.bundle2nd || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const activityCount = baseActivityCount + bundle2ndActivityCount;
+
+  const supportCap = Number(config.tenureCap ?? DEFAULT_ACTIVITY_SUPPORT_MAX);
+  // 6개월 미만: 실적 무관 230만원
+  // 6~12개월: 건당 20만원 / 12~24개월: 15만원 / 24개월 이상: 10만원, 공통 MAX 230만원
+  const tenurePay = months < 6
+    ? supportCap
+    : Math.min(Number(bucket?.rate || 0) * activityCount, supportCap);
+
+  const mobilePoints = sumPoint(draft.mobilePoint || {}, mobileItems);
+  const homeAddonPoints = sumPoint(draft.homeBase || {}, HOME_BASE_ITEMS)
+    + Number(draft.homeFlat?.tvFree || 0) * 0.5
+    + Number(draft.homeFlat?.smartHome || 0) * 0.5;
+  const homeGatePoints = Number(draft.homeBase?.homeOnly || 0) * HOME_GATE_WEIGHTS.homeOnly
+    + Number(draft.homeBase?.homeTv || 0) * HOME_GATE_WEIGHTS.homeTv
+    + Number(draft.homeFlat?.tvFree || 0) * HOME_GATE_WEIGHTS.tvFree
+    + Number(draft.homeFlat?.smartHome || 0) * HOME_GATE_WEIGHTS.smartHome;
   const addonApplies = mobilePoints > ADDON_GATE;
   const totalPoints = mobilePoints + (addonApplies ? homeAddonPoints : 0);
   const gradeEligible = homeGatePoints >= HOME_GATE_MIN;
   const gradeSorted = [...config.grades].sort((a, b) => b.min - a.min);
-  const gradeHit = gradeEligible ? (gradeSorted.find((g) => totalPoints >= g.min) || config.grades[config.grades.length - 1]) : config.grades[config.grades.length - 1];
-  const gradeBonus = gradeEligible ? gradeHit.bonus : 0;
-  // 다음 등급까지 남은 포인트 (진행바용) — 포인트가 낮은 등급부터 정렬해 현재보다 위에 있는 첫 등급을 찾음
+  const gradeHit = gradeEligible
+    ? (gradeSorted.find((g) => totalPoints >= g.min) || config.grades[config.grades.length - 1])
+    : config.grades[config.grades.length - 1];
+  const gradeBonus = gradeEligible ? Number(gradeHit.bonus || 0) : 0;
   const gradeAsc = [...config.grades].sort((a, b) => a.min - b.min);
   const nextGrade = gradeAsc.find((g) => g.min > totalPoints) || null;
   const currentTierMin = gradeHit.min || 0;
@@ -592,72 +605,95 @@ function computePay(draft, position, hireDate, month, config) {
     ? Math.max(0, Math.min(1, (totalPoints - currentTierMin) / (nextGrade.min - currentTierMin)))
     : 1;
 
-  const matrixTotal = draft.matrix.reduce((s, row, ri) => s + row.reduce((rs, cnt, ci) => rs + cnt * (config.matrix[ri]?.[ci] || 0), 0), 0);
-  // v21.19 특판·지인판매: 실적/KPI/성과등급P는 인정하되 요금제·VAS 수수료는 제외하고 대체 인센티브를 반영
+  const matrixTotal = (draft.matrix || []).reduce(
+    (sum, row, ri) => sum + (row || []).reduce((rs, cnt, ci) => rs + Number(cnt || 0) * Number(config.matrix?.[ri]?.[ci] || 0), 0),
+    0
+  );
   const specialMatrixOffset = Number(draft.specialMatrixOffset || 0);
   const specialVasOffset = Number(draft.specialVasOffset || 0);
   const specialReplacementPay = Number(draft.specialReplacementPay || 0);
   const adjustedMatrixTotal = Math.max(0, matrixTotal - specialMatrixOffset);
-  // v21.26: 2ND 무료판매는 실적/KPI는 유지하고 번들·해당 VAS 인센티브만 제외
-  const rawBundle2ndTotal = sumFlat(draft.bundle2nd, config.bundle2nd);
+
+  const rawBundle2ndTotal = sumFlat(draft.bundle2nd || {}, config.bundle2nd || []);
   const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
   const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
   const bundle2ndTotal = Math.max(0, rawBundle2ndTotal - bundleFreeOffset);
-  // 홈 무성과 자동 판정 — 홈 관련 실적이 한 건도 없으면 요금제 유치·2ND 50% 감액
-  const homeAnyCount = (draft.homeBase.homeOnly || 0) + (draft.homeBase.homeTv || 0)
-    + (draft.homeFlat.home1GBOnly || 0) + (draft.homeFlat.home500Only || 0) + (draft.homeFlat.home100Only || 0)
-    + (draft.homeFlat.tvFree || 0) + (draft.homeFlat.smartHome || 0);
+
+  const homeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
+    + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0)
+    + Number(draft.homeFlat?.tvFree || 0) + Number(draft.homeFlat?.smartHome || 0);
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
 
-  const positionAllowance = config.positionAllowance?.[position] || 0;
-  // v21.16: 영업활동 지원금과 직책수당을 분리합니다.
-  // - 영업활동 지원 정책의 공통 MAX/기준선은 230만원
-  // - 직책수당은 실적으로 다시 채우는 금액이 아니라 직책 달성에 따른 별도 가산
-  // - 기존 직급별 basePay는 '최종 최저보장액'으로 유지 (점장280/부점장260/매니저250/사원230)
-  const activityPenalty = draft.activityTimeMet ? 0 : config.basePenalty;
-  const activitySupportFloor = Math.max(0, DEFAULT_ACTIVITY_SUPPORT_MAX - activityPenalty);
-  const minimumGuarantee = Math.max(0, (config.basePay[position] || 0) - activityPenalty);
-  const performanceComponents = tenurePay + gradeBonus + (adjustedMatrixTotal + bundle2ndTotal) * penaltyFactor + specialReplacementPay;
-  const performanceWithAllowance = Math.max(activitySupportFloor, performanceComponents) + positionAllowance;
-  const guaranteedComponent = Math.max(minimumGuarantee, performanceWithAllowance);
+  const rawVasPay = sumFlat(draft.vas || {}, config.vas || []);
+  const vasPay = Math.max(0, rawVasPay - specialVasOffset - bundleFreeVasOffset);
 
-  // 기존 화면/RAW 호환용 이름
-  const positionBase = minimumGuarantee;
-  const otherComponents = performanceComponents;
+  const positionAllowance = Number(config.positionAllowance?.[position] || 0);
+  const activityPenalty = draft.activityTimeMet ? 0 : Number(config.basePenalty || 0);
+  const minimumGuarantee = Math.max(0, Number(config.basePay?.[position] || 0) - activityPenalty);
 
-  const homeGradeQualCount = draft.homeBase.homeTv || 0; // "1G+TV 기준" - 그레이드 단가 지급 대상 (홈+TV 동시청약만)
-  const homeTierCount = (draft.homeBase.homeOnly || 0) + (draft.homeBase.homeTv || 0)
-    + (draft.homeFlat.home1GBOnly || 0) + (draft.homeFlat.home500Only || 0) + (draft.homeFlat.home100Only || 0); // 단독상품도 구간 집계에는 포함
-  const homeCaseCount = homeTierCount; // 화면 표시용(총 홈 건수)
+  // 최저보장 비교 대상:
+  // 영업 활동 지원 정책 + 요금제 + VAS + 2ND + 모바일 승인 스팟 + 직책수당
+  // 특판·지인판매 대체 인센티브는 요금제/VAS 대체 성격이므로 모바일 비교 대상에 포함합니다.
+  const mobileMatrixPay = (adjustedMatrixTotal + bundle2ndTotal) * penaltyFactor;
+  const approvedMobileSpotPay = Math.max(0, Number(mobileSpotPay || 0));
+  const mobileGuaranteeBasis = tenurePay
+    + mobileMatrixPay
+    + vasPay
+    + approvedMobileSpotPay
+    + specialReplacementPay
+    + positionAllowance;
+
+  const guaranteedComponent = Math.max(minimumGuarantee, mobileGuaranteeBasis);
+
+  // 최저보장 비교 후 별도로 추가되는 항목
+  const homeGradeQualCount = Number(draft.homeBase?.homeTv || 0);
+  const homeTierCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
+    + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0);
+  const homeCaseCount = homeTierCount;
   const homeGradePay = homeGradeTotal(homeTierCount, homeGradeQualCount, config.homeTiers);
-  const homeFlatPay = sumFlat(draft.homeFlat, config.homeFlat);
+  const homeFlatPay = sumFlat(draft.homeFlat || {}, config.homeFlat || []);
   const tvFreeRate = config.homeFlat.find((t) => t.key === 'tvFree')?.rate || 0;
   const smartHomeRate = config.homeFlat.find((t) => t.key === 'smartHome')?.rate || 0;
-  const tvFreePay = (draft.homeFlat.tvFree || 0) * tvFreeRate;
-  const smartHomePay = (draft.homeFlat.smartHome || 0) * smartHomeRate;
-  const homeAddonPay = sumFlat(draft.homeAddon, config.homeAddon);
-  const renewPay = sumFlat(draft.renew, config.renew);
-  const rawVasPay = sumFlat(draft.vas, config.vas);
-  // 특판·지인판매 건의 VAS 정상 수수료만 별도 상쇄합니다.
-  const vasPay = Math.max(0, rawVasPay - specialVasOffset - bundleFreeVasOffset);
-  const mnpBundlePay = sumFlat(draft.mnpBundle, config.mnpBundle);
-  const sonoPay = sumFlat(draft.sono, config.sono);
-  const custRegBonus = tierBonus(draft.custRegCount || 0, config.custRegTiers);
-  const tailoredBonus = tierBonus(draft.tailoredCount || 0, config.tailoredTiers);
-  const tailoredAmountBonus = draft.tailoredAmount || 0; // 업셀 금액 100% 지급
+  const tvFreePay = Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
+  const smartHomePay = Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
+  const homeAddonPay = sumFlat(draft.homeAddon || {}, config.homeAddon || []);
+  const renewPay = sumFlat(draft.renew || {}, config.renew || []);
+  const mnpBundlePay = sumFlat(draft.mnpBundle || {}, config.mnpBundle || []);
+  const sonoPay = sumFlat(draft.sono || {}, config.sono || []);
+  const custRegBonus = tierBonus(Number(draft.custRegCount || 0), config.custRegTiers);
+  const tailoredBonus = tierBonus(Number(draft.tailoredCount || 0), config.tailoredTiers);
+  const tailoredAmountBonus = Number(draft.tailoredAmount || 0);
 
-  const total = guaranteedComponent + homeGradePay + homeFlatPay + homeAddonPay + renewPay
-    + vasPay + mnpBundlePay + sonoPay + custRegBonus + tailoredBonus + tailoredAmountBonus;
+  const postGuaranteeExtras = gradeBonus + homeGradePay + homeFlatPay + homeAddonPay + renewPay
+    + mnpBundlePay + sonoPay + custRegBonus + tailoredBonus + tailoredAmountBonus;
+
+  // 직원 홈 메인: 최저보정 없이 지금까지 실제로 만들어진 금액
+  const currentPerformanceAmount = mobileGuaranteeBasis + postGuaranteeExtras;
+  // 현재까지 실적을 그대로 마감한다고 가정한 금액
+  const closingAmount = guaranteedComponent + postGuaranteeExtras;
+  const total = closingAmount;
+
+  // 기존 화면/RAW 호환용
+  const positionBase = minimumGuarantee;
+  const otherComponents = mobileGuaranteeBasis - positionAllowance;
+  const activitySupportFloor = supportCap;
+  const performanceComponents = mobileGuaranteeBasis - positionAllowance;
+  const performanceWithAllowance = mobileGuaranteeBasis;
 
   return {
-    months, bucket, activityCount, tenurePay,
+    months, bucket, activityCount, baseActivityCount, bundle2ndActivityCount, tenurePay,
     mobilePoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
-    matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay, rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal, positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee, performanceComponents, performanceWithAllowance, guaranteedComponent,
+    matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay,
+    rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal,
+    rawVasPay, vasPay, approvedMobileSpotPay, mobileMatrixPay,
+    positionBase, positionAllowance, otherComponents, activitySupportFloor, minimumGuarantee,
+    performanceComponents, performanceWithAllowance, mobileGuaranteeBasis, guaranteedComponent,
+    currentPerformanceAmount, closingAmount, postGuaranteeExtras,
     homeAnyCount, homeNoPerformance,
-    homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay, vasPay, mnpBundlePay, sonoPay,
-    custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
+    homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, renewPay,
+    mnpBundlePay, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, total,
   };
 }
 
@@ -792,6 +828,20 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.47: 개인/관리자 달력 HS·SIM MNP·홈 요약을 현행 daily_records + 구형 top-level 저장 형식까지 호환해 계산. SIM 표기를 SIM MNP로 통일. */
 /* v21.48: 관리알림 '기타 승인'을 '실적 승인 대기'로 변경하고 실제 pending 월 실적 목록/승인/반려 화면 연결. */
+/* v21.49:
+   - 구버전 복원 저장도 반드시 상위 saveDailyDay를 통과시켜 dailyRecords를 즉시 갱신
+   - 일일 실적 저장 완료 후 mergedDraft/생산성/예상급여가 즉시 재계산
+   - 일반 일일 저장도 실제 DB 저장 성공 후에만 '저장됨' 표시
+*/
+/* v21.50 PAY POLICY + SAFE RESET
+   - 6개월 미만 영업 활동 지원 정책 230만원 고정
+   - 6~12개월 HS/SIM MNP/2ND 건당 20만원, 12~24개월 15만원, 24개월 이상 10만원, MAX 230만원
+   - 최저보장 비교: 영업활동지원 + 요금제 + VAS + 2ND + 승인 모바일 스팟 + 특판대체 + 직책수당
+   - 성과등급/홈/소노/맞춤제안 등은 최저보장 비교 후 별도 추가
+   - 직원 홈 메인은 '현재 실적 기준 금액', 버튼으로 '현재 실적 기준 마감시 금액' 확인
+   - 본인 당월 실적 초기화: 2단계 확인 + '당월실적초기화' 직접 입력 + DB 자동백업 RPC
+*/
+/* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* ===================== 메인 앱 ===================== */
 
 export default function App({ authUser, authProfile, onSignOut }) {
@@ -817,6 +867,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
+  const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
 
   // 모바일 웹앱 뒤로가기 제어
   const [exitHint, setExitHint] = useState(false);
@@ -1259,6 +1310,33 @@ export default function App({ authUser, authProfile, onSignOut }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.id]);
   useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); } }, [month]); // eslint-disable-line
+
+  useEffect(()=>{
+    if(!employees.length)return;
+    let alive=true;
+    (async()=>{
+      const ids=employees.map(e=>e.id);
+      const [y,m]=month.split('-').map(Number);
+      const next=new Date(y,m,1);
+      const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+      const {data,error}=await supabase
+        .from('spot_claims')
+        .select('user_id,final_amount,direct_amount,source_context,spot_policies(amount)')
+        .in('user_id',ids)
+        .eq('status','approved')
+        .eq('source_context','mobile')
+        .gte('claim_date',`${month}-01`)
+        .lt('claim_date',to);
+      if(!alive)return;
+      if(error){console.error('MOBILE SPOT LOAD ERROR',error);setApprovedMobileSpotMap({});return;}
+      const map={};
+      (data||[]).forEach(x=>{
+        map[x.user_id]=Number(map[x.user_id]||0)+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0);
+      });
+      setApprovedMobileSpotMap(map);
+    })();
+    return()=>{alive=false};
+  },[month,employees,tab,role,adminTab]);
   useEffect(() => {
     const rec = monthRecords[empId];
     setDraft(rec ? { ...emptyDraft(), ...rec.draft } : emptyDraft());
@@ -1450,7 +1528,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const rows = employees.map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
     const mergedDraft = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
-    const pay = computePay(mergedDraft, e.position, e.hireDate, month, config);
+    const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0);
     return { ...e, status: rec.status, pay, draft: mergedDraft, updatedAt: rec.updatedAt };
   });
   const currentEmp = employees.find((e) => e.id === empId);
@@ -1488,21 +1566,25 @@ export default function App({ authUser, authProfile, onSignOut }) {
       const prevMonth = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
       const nextKey = `${month}-01`;
 
-      const [{ data: msRow }, { data: dailyRows }] = await Promise.all([
+      const prevNextD=new Date(prevD.getFullYear(),prevD.getMonth()+1,1);
+      const prevTo=`${prevNextD.getFullYear()}-${String(prevNextD.getMonth()+1).padStart(2,'0')}-01`;
+      const [{ data: msRow }, { data: dailyRows }, {data:prevSpots}] = await Promise.all([
         supabase.from('monthly_status').select('data, activity_time_met').eq('user_id', empId).eq('month', prevMonth).maybeSingle(),
         supabase.from('daily_records').select('work_date, data').eq('user_id', empId).gte('work_date', `${prevMonth}-01`).lt('work_date', nextKey),
+        supabase.from('spot_claims').select('final_amount,direct_amount,spot_policies(amount)').eq('user_id',empId).eq('status','approved').eq('source_context','mobile').gte('claim_date',`${prevMonth}-01`).lt('claim_date',prevTo)
       ]);
 
       const prevDraft = { ...emptyDraft(), ...(msRow?.data?.draft || {}), activityTimeMet: msRow?.activity_time_met ?? true };
       const prevDailyMap = {};
       (dailyRows || []).forEach((r) => { prevDailyMap[r.work_date.slice(8, 10)] = r.data; });
       const prevMerged = applyDailyToDraft(prevDraft, prevDailyMap, prevMonth, config.categoryMap, config.gibyeonColumnMap);
-      const prevPay = computePay(prevMerged, currentEmp.position, currentEmp.hireDate, prevMonth, config);
-      setPrevMonthTotal(prevPay.total);
+      const prevSpotTotal=(prevSpots||[]).reduce((sum,x)=>sum+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),0);
+      const prevPay = computePay(prevMerged, currentEmp.position, currentEmp.hireDate, prevMonth, config, prevSpotTotal);
+      setPrevMonthTotal(prevPay.currentPerformanceAmount);
     })();
   }, [empId, month, currentEmp?.position, currentEmp?.hireDate, config]); // eslint-disable-line
   const myMergedDraft = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
-  const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config);
+  const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0);
   // 영업 조직이 아닌 인원(운영진·영업지원팀 등)은 실적표/실적비교에서 제외
   // '기타' 직급(대리입력용 매장 실적 계정)은 건수·성과등급P는 유지하되 인센티브 금액은 0으로 표시(개인 지급 없음)
   const salesRows = rows
@@ -3291,7 +3373,7 @@ function SpotClaimPanel({ userId, month, claimDate }) {
     const {error}=await supabase.from('spot_claims').insert({
       policy_id:policyId,user_id:userId,
       claim_date:claimDate||new Date().toISOString().slice(0,10),
-      customer_name:customer.trim()||null,status:'pending'
+      customer_name:customer.trim()||null,status:'pending',source_context:'mobile'
     });
     if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);
     setCustomer('');setPolicyId('');load();
@@ -3305,7 +3387,7 @@ function SpotClaimPanel({ userId, month, claimDate }) {
       policy_id:null,user_id:userId,
       claim_date:claimDate||new Date().toISOString().slice(0,10),
       customer_name:customer.trim()||null,status:'pending',
-      direct_title:title,direct_amount:amount,direct_memo:directMemo.trim()||null
+      direct_title:title,direct_amount:amount,direct_memo:directMemo.trim()||null,source_context:'mobile'
     });
     if(error)return alert(`스팟 직접 입력 실패: ${friendlyError(error)}`);
     setDirectTitle('');setDirectAmount('');setDirectMemo('');setCustomer('');setDirectOpen(false);load();
@@ -4040,6 +4122,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
   const [homeApprovalPending,setHomeApprovalPending]=useState(0);
   const [homeTodayInputCount,setHomeTodayInputCount]=useState(0);
+  const [showClosingAmount,setShowClosingAmount]=useState(false);
+  const [resetMonthOpen,setResetMonthOpen]=useState(false);
+  const [resetPhrase,setResetPhrase]=useState('');
+  const [resetBusy,setResetBusy]=useState(false);
   useEffect(() => {
     if (!authUser?.id) return;
     (async () => {
@@ -4093,6 +4179,25 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
     return()=>{alive=false};
   },[authUser?.id,month,dailyDays]);
 
+  const resetOwnMonthPerformance=async()=>{
+    if(monthLocked)return alert('마감된 월은 초기화할 수 없어요.');
+    if(String(resetPhrase).trim()!=='당월실적초기화')return;
+    if(!authUser?.id || currentEmp?.id!==authUser.id)return alert('본인의 실적만 초기화할 수 있어요.');
+    setResetBusy(true);
+    try{
+      const {data,error}=await supabase.rpc('reset_my_month_performance',{
+        p_month:month,
+        p_confirm_phrase:'당월실적초기화'
+      });
+      if(error)throw error;
+      alert(`${monthLabel(month)} 실적을 초기화했어요.\n초기화 직전 데이터는 백업되었습니다.`);
+      window.location.reload();
+    }catch(e){
+      alert(`실적 초기화 실패: ${friendlyError(e)}`);
+      setResetBusy(false);
+    }
+  };
+
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
     if (tab === 'criteria' && !canSeeCriteria) setTab('home');
@@ -4134,7 +4239,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           : {label:'오늘 실적 미입력', cls:'bg-white/10 text-violet-100 border-white/15'})
       : {label:dayHasData(dailyDays?.[todayHomeKey])?'입력 완료':'입력 없음', cls:'bg-white/10 text-violet-100 border-white/15'};
 
-  const currentPayForCompare=Number(pay.total||0);
+  const currentPayForCompare=Number(pay.currentPerformanceAmount||0);
   const prevPayForCompare=Number(prevMonthTotal||0);
   const prevDiff=prevMonthTotal===null?null:currentPayForCompare-prevPayForCompare;
   const prevPct=(prevMonthTotal===null || prevPayForCompare===0)?null:(prevDiff/prevPayForCompare)*100;
@@ -4159,7 +4264,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
               <div className="flex items-start justify-between gap-3">
-                <div className="text-[11px] text-violet-100">{monthLabel(month)} {showNet?'비용 차감 후 예상 지급액':'당월 예상 지급액'}</div>
+                <div className="text-[11px] text-violet-100">{monthLabel(month)} 현재 실적 기준 금액</div>
                 <div className="text-right shrink-0">
                   {prevMonthTotal===null ? (
                     <div className="text-[9px] text-violet-100/70">전월 비교 없음</div>
@@ -4175,8 +4280,16 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
                   )}
                 </div>
               </div>
-              <div className="text-2xl font-bold mt-0.5">{won(showNet ? Math.max(0,pay.total-expenseTotal) : pay.total)}</div>
-              <div className="mt-1 text-[9px] leading-relaxed text-violet-100/80">현재 실적 기준 가계산 금액이며 최종 정산 조건에 따라 실제 지급액이 달라질 수 있어요.</div>
+              <div className="text-2xl font-bold mt-0.5">{won(Math.max(0,pay.currentPerformanceAmount-(showNet?expenseTotal:0)))}</div>
+              <div className="mt-1 text-[9px] leading-relaxed text-violet-100/80">
+                지금까지 등록된 실적에서 실제 발생한 금액을 기준으로 보여줘요.
+              </div>
+
+              <button type="button" onClick={()=>setShowClosingAmount(true)}
+                className="w-full mt-3 py-2.5 px-3 rounded-xl bg-white/12 border border-white/20 text-[11px] font-bold flex items-center justify-between">
+                <span>현재 실적 기준 마감시 금액 확인</span><span>›</span>
+              </button>
+
               <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/15">
                 <div><div className="text-[9px] text-violet-100/75">근속</div><div className="text-[11px] font-bold mt-0.5">{fmtCount(pay.months)}개월</div></div>
                 <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay.gradeEligible?pay.grade:'D(미달)'}</div></div>
@@ -4185,11 +4298,20 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               </div>
               <div className="mt-2 flex items-center justify-between gap-2">
                 <button onClick={()=>setShowNet(v=>!v)} className="text-[10px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
-                  {showNet?'기본 인센티브 보기':`영업비용 ${won(expenseTotal)} 차감`}
+                  {showNet?'영업비용 차감 전 보기':`영업비용 ${won(expenseTotal)} 차감`}
                 </button>
                 <div className={`text-[9px] font-semibold px-2 py-1 rounded-full border ${homeInputStatus.cls}`}>{homeInputStatus.label}</div>
               </div>
             </div>
+
+            {showClosingAmount&&<div className="fixed inset-0 z-[95] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowClosingAmount(false)}>
+              <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
+                <div className="text-sm font-bold text-gray-900">현재 실적 기준 마감시 금액</div>
+                <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
+                <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
+                <button type="button" onClick={()=>setShowClosingAmount(false)} className="w-full mt-5 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">확인</button>
+              </div>
+            </div>}
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <MonthlyPerformanceRankingCard
@@ -4222,6 +4344,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             setDraft={setDraft}
             locked={monthLocked}
             currentEmp={currentEmp}
+            authUser={authUser}
+            resetMonthOpen={resetMonthOpen}
+            setResetMonthOpen={setResetMonthOpen}
+            resetPhrase={resetPhrase}
+            setResetPhrase={setResetPhrase}
+            resetBusy={resetBusy}
+            resetOwnMonthPerformance={resetOwnMonthPerformance}
           />
 
           <div className="mt-4">
@@ -4270,9 +4399,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
           <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
-            <RowKV label="영업 활동 지원금" value={won(pay.guaranteedComponent)} />
-            <RowKV label="└ 영업 활동 지원 정책 (근속기간별 건당)" value={won(pay.tenurePay)} />
-            <RowKV label="└ 직책수당" value={won(pay.positionAllowance)} />
+            <RowKV label="현재 실적 기준 금액" value={won(pay.currentPerformanceAmount)} />
+            <RowKV label="현재 실적 기준 마감시 금액" value={won(pay.closingAmount)} />
             <RowKV label="홈 그레이드 수수료" value={won(pay.homeGradePay)} />
             <RowKV label="홈 단독" value={won(pay.homeFlatPay - pay.tvFreePay - pay.smartHomePay)} />
             <RowKV label="TV프리(부)" value={won(pay.tvFreePay)} />
@@ -4295,16 +4423,9 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <div className="text-[11px] text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
             영업비용 등록은 <b>일일입력</b>에서 할 수 있어요.
           </div>
-          {canSeeCriteria && (
-            <Section title="인센티브 지급 기준 보기">
-              <div className="divide-y divide-gray-50">
-                {POSITIONS.map((p)=><RowKV key={p} label={`${p} 최저 보장금액`} value={won(config.basePay[p])}/>)}
-                <RowKV label="영업활동 지원 정책 공통 MAX" value={won(DEFAULT_ACTIVITY_SUPPORT_MAX)}/>
-                {config.tenure.map((t)=><RowKV key={t.key} label={t.label} value={t.rate?`건당 ${won(t.rate)}`:'실적 무관'}/>)}
-                {config.grades.map((g)=><RowKV key={g.grade} label={`${g.grade}등급 (${g.min}P↑)`} value={won(g.bonus)}/>)}
-              </div>
-            </Section>
-          )}
+
+
+
         </div>
       )}
 
@@ -4326,7 +4447,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   );
 }
 
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, locked, currentEmp }) {
+function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, locked, currentEmp, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -4432,19 +4553,26 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const pendingRef = useRef(null);
   const flushRef = useRef(() => {});
 
-  const flush = useCallback(() => {
+  const flush = useCallback(async() => {
     const p = pendingRef.current;
     if (!p) return;
     pendingRef.current = null;
-    saveDailyDay(p.day, p.record);
-    setSaveState('saved');
+    const ok=await saveDailyDay(p.day,p.record);
+    if(ok){
+      setSaveState('saved');
+      setTimeout(()=>setSaveState('idle'),1200);
+    }else{
+      pendingRef.current=p;
+      setSaveState('pending');
+    }
   }, [saveDailyDay]);
   flushRef.current = flush;
 
   useEffect(() => {
+    if(pendingRef.current)return;
     setDay(normalizeDay(dailyDays[selectedDay]));
     setSaveState('idle');
-  }, [selectedDay, month]); // eslint-disable-line
+  }, [selectedDay, month, dailyDays[selectedDay]]); // eslint-disable-line
 
   // 마지막 입력 후 0.8초 조용하면 자동 저장
   useEffect(() => {
@@ -4682,9 +4810,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
 
       if(homeSpotPolicyId){
-        const {error}=await supabase.from('spot_claims').insert({policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending'}); if(error)throw error;
+        const {error}=await supabase.from('spot_claims').insert({policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',source_context:'home'}); if(error)throw error;
       } else if(homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
-        const {error}=await supabase.from('spot_claims').insert({policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null}); if(error)throw error;
+        const {error}=await supabase.from('spot_claims').insert({policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null,source_context:'home'}); if(error)throw error;
       }
       if(homeExpenseOpen&&primarySaleId){
         const expRows=[{category:homeExpenseCategory,amount:homeExpenseAmount,memo:homeExpenseMemo},...(homeExtraExpenses||[])].filter(x=>Number(x.amount)>0);
@@ -5178,13 +5306,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const persistLegacyConvertedDay=async(nextDay)=>{
     const normalized=normalizeDay(nextDay);
     setDay(normalized);
-    pendingRef.current={day:selectedDay,record:normalized};
-    const {error}=await supabase.from('daily_records').upsert({
-      user_id:currentEmp.id,
-      work_date:`${month}-${selectedDay}`,
-      data:normalized
-    },{onConflict:'user_id,work_date'});
-    if(error)throw error;
+    // 반드시 상위 saveDailyDay를 거쳐야 dailyRecords 상태도 함께 갱신되고
+    // mergedDraft → 생산성 → 예상급여가 즉시 다시 계산됩니다.
+    const ok=await saveDailyDay(selectedDay,normalized);
+    if(!ok)throw new Error('일일 실적 저장에 실패했습니다.');
     pendingRef.current=null;
     setSaveState('saved');
     setTimeout(()=>setSaveState('idle'),1200);
@@ -5337,7 +5462,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           user_id:currentEmp.id,
           claim_date:saleDate,
           customer_name:customer,
-          status:'pending'
+          status:'pending',
+          source_context:'mobile'
         });
         if (spotError) throw spotError;
       } else if (mobileSpotDirectOpen && mobileSpotDirectTitle.trim() && Number(mobileSpotDirectAmount)>0) {
@@ -5349,7 +5475,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           status:'pending',
           direct_title:mobileSpotDirectTitle.trim(),
           direct_amount:Number(mobileSpotDirectAmount),
-          direct_memo:mobileSpotDirectMemo.trim()||null
+          direct_memo:mobileSpotDirectMemo.trim()||null,
+          source_context:'mobile'
         });
         if (spotDirectError) throw spotDirectError;
       }
@@ -6158,6 +6285,44 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           </div>
         </div>
       )}
+      {currentEmp?.id===authUser?.id&&<div className="mt-4 bg-white rounded-xl border border-red-100 overflow-hidden">
+        <div className="p-4">
+          <div className="text-[10px] font-bold text-red-500">실적 관리</div>
+          <div className="text-sm font-bold text-gray-900 mt-1">당월 실적 초기화</div>
+          <div className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+            잘못 입력된 실적을 월 단위로 초기화할 수 있어요. 실행 직전 데이터는 자동 백업됩니다.
+          </div>
+          <button type="button" disabled={locked}
+            onClick={()=>{setResetMonthOpen(true);setResetPhrase('')}}
+            className="mt-3 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-bold disabled:opacity-40">
+            {monthLabel(month)} 실적 초기화
+          </button>
+        </div>
+      </div>}
+
+      {resetMonthOpen&&<div className="fixed inset-0 z-[96] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>!resetBusy&&setResetMonthOpen(false)}>
+        <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
+          <div className="text-xs font-bold text-red-600">1차 확인</div>
+          <div className="text-lg font-bold text-gray-900 mt-1">{monthLabel(month)} 실적을 초기화할까요?</div>
+          <div className="text-xs text-gray-500 mt-2 leading-relaxed">
+            이 작업은 해당 월의 실적 데이터를 지웁니다. 초기화 직전 데이터는 자동 백업됩니다.
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="text-xs font-semibold text-gray-700">2차 확인</div>
+            <div className="text-[11px] text-gray-500 mt-1">아래에 <b>당월실적초기화</b>를 직접 입력해주세요.</div>
+            <input value={resetPhrase} onChange={e=>setResetPhrase(e.target.value)} disabled={resetBusy}
+              placeholder="당월실적초기화" className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <button type="button" disabled={resetBusy} onClick={()=>setResetMonthOpen(false)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">취소</button>
+            <button type="button" disabled={resetBusy||resetPhrase.trim()!=='당월실적초기화'} onClick={resetOwnMonthPerformance}
+              className="py-3 rounded-xl bg-red-600 text-white text-sm font-bold disabled:opacity-35">
+              {resetBusy?'초기화 중...':'실적 초기화 실행'}
+            </button>
+          </div>
+        </div>
+      </div>}
+
     </div>
   );
 }
@@ -7255,12 +7420,12 @@ function SettlementReview({ month, rows, employees, config }) {
       const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
       const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
       const [{data:s},{data:e},{data:r}]=await Promise.all([
-        supabase.from('spot_claims').select('user_id,final_amount,direct_amount,spot_policies(amount)').in('user_id',ids).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to),
+        supabase.from('spot_claims').select('user_id,final_amount,direct_amount,source_context,spot_policies(amount)').in('user_id',ids).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to),
         supabase.from('sales_expenses').select('user_id,amount').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
         supabase.from('settlement_reviews').select('*').eq('month',month).in('user_id',ids)
       ]);
       const sm={},em={},stm={};
-      (s||[]).forEach(x=>sm[x.user_id]=(sm[x.user_id]||0)+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0));
+      (s||[]).filter(x=>x.source_context!=='mobile').forEach(x=>sm[x.user_id]=(sm[x.user_id]||0)+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0));
       (e||[]).forEach(x=>em[x.user_id]=(em[x.user_id]||0)+Number(x.amount||0));
       (r||[]).forEach(x=>stm[x.user_id]=x.status);
       setSpotMap(sm);setExpenseMap(em);setStatusMap(stm);
@@ -8438,7 +8603,47 @@ function RatesManager({ config, persistConfig }) {
         </div>
       </Section>
 
-      <RateTable title="근속기간별 건당 지급액" group="tenure" data={draft.tenure} updateFlatTable={updateFlatTable} field="rate" />
+      <Section title="영업 활동 지원 정책" defaultOpen>
+        <div className="px-4 py-3 bg-gray-50 text-[11px] text-gray-500 leading-relaxed">
+          대상 실적은 <b>HS · SIM MNP · 2ND</b>입니다. 6개월 미만은 실적과 무관하게 고정 지급하고,
+          이후 구간은 건당 금액을 누적하되 영업 활동 지원 정책 지급액은 MAX를 넘지 않습니다.
+        </div>
+        <div className="divide-y divide-gray-50">
+          {(draft.tenure||[]).map((t,i)=><div key={t.key} className="flex items-center justify-between px-4 py-2.5 gap-3">
+            <div>
+              <div className="text-sm text-gray-700">{t.label}</div>
+              {t.key==='under6'&&<div className="text-[10px] text-gray-400">실적 무관 고정 지급</div>}
+            </div>
+            {t.key==='under6' ? (
+              <div className="text-sm font-bold text-gray-700">{won(draft.tenureCap||DEFAULT_ACTIVITY_SUPPORT_MAX)}</div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <input type="text" inputMode="numeric" value={fmtInputNumber(t.rate)}
+                  onChange={(e)=>updateFlatTable('tenure',i,'rate',parseInt(e.target.value.replace(/\D/g,'')||'0',10))}
+                  className="w-24 text-right border border-gray-200 rounded px-1.5 py-1 text-sm"/>
+                <span className="text-xs text-gray-400">원/건</span>
+              </div>
+            )}
+          </div>)}
+          <div className="flex items-center justify-between px-4 py-3 gap-3 bg-violet-50/40">
+            <div><div className="text-sm font-semibold text-gray-700">영업 활동 지원 정책 MAX</div><div className="text-[10px] text-gray-400">6개월 미만 고정 지급액도 이 금액을 사용합니다.</div></div>
+            <div className="flex items-center gap-1">
+              <input type="text" inputMode="numeric" value={fmtInputNumber(draft.tenureCap||DEFAULT_ACTIVITY_SUPPORT_MAX)}
+                onChange={(e)=>setDraftCfg({...draft,tenureCap:parseInt(e.target.value.replace(/\D/g,'')||'0',10)})}
+                className="w-28 text-right border border-gray-200 rounded px-2 py-1 text-sm bg-white"/>
+              <span className="text-xs text-gray-400">원</span>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="최저 보장 비교 기준">
+        <div className="p-4 text-xs text-gray-600 leading-relaxed space-y-2">
+          <div><b>비교 대상</b> · 영업 활동 지원 정책 + 요금제 + VAS + 2ND + 승인된 모바일 스팟 + 특판·지인판매 대체 인센티브 + 직책수당</div>
+          <div><b>비교 제외</b> · 성과등급 보너스 + 홈 관련 수수료 + 소노 + 중고MNP 결합 + 고객등록 + 맞춤제안</div>
+          <div className="text-gray-400">비교 대상 합계가 직급별 최저 보장금액보다 낮으면 해당 직급의 최저 보장금액으로 보정한 뒤, 비교 제외 항목을 추가합니다.</div>
+        </div>
+      </Section>
       <RateTable title="성과등급 보너스" group="grades" data={draft.grades} updateFlatTable={updateFlatTable} field="bonus" labelKey="grade" extraField="min" />
       <RateTable title="홈 그레이드 (누적건수별)" group="homeTiers" data={draft.homeTiers} updateFlatTable={updateFlatTable} field="rate" labelKey="min" labelSuffix="건 이상" />
       <RateTable title="홈 단독 / TV프리 / 스마트홈" group="homeFlat" data={draft.homeFlat} updateFlatTable={updateFlatTable} field="rate" />
