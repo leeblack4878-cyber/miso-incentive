@@ -913,6 +913,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.61: 회사 목표의 HS/홈/생산성 기준수량과 평가 연결, AA임팩트 목표 자동배분 및 가감점 상세 표시. */
 /* v21.60: 평가 탭 1차 도입 - 개인 커리어 등급 + 관리자 평가 + 관리자 확인 실적 최신화 + AA임팩트 월 목표/가감점. */
 /* ===================== 메인 앱 ===================== */
 
@@ -1946,9 +1947,21 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   live.productivity=storeRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
   const verified=snap?.verified_metrics||{};
   const actual=(key)=>Number(verified[key]??live[key]??0);
-  const goalMap=Object.fromEntries((allGoals||[]).map(g=>[g.store_name,g.company_goals||{}]));
-  const storeHsTarget=Number(goalMap[activeStore]?.hs||0),totalHsTarget=(allGoals||[]).reduce((s,g)=>s+Number(g.company_goals?.hs||0),0),share=totalHsTarget>0?storeHsTarget/totalHsTarget:0;
-  const coreTargets={hs:Number(goalMap[activeStore]?.hs||0),home:Number(goalMap[activeStore]?.home||0),productivity:Number(goalMap[activeStore]?.productivity||0)};
+  // 관리자 > 회사 목표 > 회사 기준수량을 평가의 단일 기준으로 사용합니다.
+  // DB에 해당 월 저장값이 있으면 우선하고, 아직 저장 전인 매장은 회사 기본 기준수량을 보완값으로 사용합니다.
+  const goalMap=Object.fromEntries(stores.map(storeName=>{
+    const saved=(allGoals||[]).find(g=>g.store_name===storeName);
+    return [storeName,{...companyGoalDefaults(storeName),...(saved?.company_goals||{})}];
+  }));
+  const storeHsTarget=Number(goalMap[activeStore]?.hs||0);
+  const totalHsTarget=stores.reduce((sum,storeName)=>sum+Number(goalMap[storeName]?.hs||0),0);
+  const share=totalHsTarget>0?storeHsTarget/totalHsTarget:0;
+  const coreTargets={
+    hs:Number(goalMap[activeStore]?.hs||0),
+    home:Number(goalMap[activeStore]?.home||0),
+    productivity:Number(goalMap[activeStore]?.productivity||0)
+  };
+  const hasCompanyGoalBasis=storeHsTarget>0&&totalHsTarget>0;
   const coreRaw=cappedAchievement(actual('hs'),coreTargets.hs)*30+cappedAchievement(actual('home'),coreTargets.home)*30+cappedAchievement(actual('productivity'),coreTargets.productivity)*40;
   const core50=coreRaw*0.5;
   const normalized=normalizeAaWeights(aaConfig);
@@ -1969,11 +1982,36 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     {managerMode==='dashboard'?<>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 관리자 평가 · {monthLabel(month)} 현재 기준</div><div className="text-lg font-bold mt-1">{displayStoreName(activeStore)}</div></div><div className="text-right"><div className="text-3xl font-black text-violet-700">{total.toFixed(1)}</div><div className="text-xs font-bold">{grade}등급</div></div></div><div className="grid grid-cols-2 gap-2 mt-4"><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">핵심성과 50%</div><div className="text-xl font-bold mt-1">{core50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">HS 30% · 홈 30% · 생산성 40%</div></div><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">AA임팩트 50%</div><div className="text-xl font-bold mt-1">{aa50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">AA 원점수 {aa100.toFixed(1)} / 100</div></div></div><div className="mt-3 text-[10px] text-gray-400">관리자 확인 실적 기준 · 마지막 최신화 {verifiedAt}</div></div>
       <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">핵심 성과</div></div>{[['HS','hs',30],['홈','home',30],['생산성','productivity',40]].map(([l,k,w])=>{const t=coreTargets[k],a=actual(k),pct=cappedAchievement(a,t)*100;return <div key={k} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between text-xs"><b>{l}</b><span>{fmtNum(a,1)} / {fmtNum(t,1)} · {pct.toFixed(0)}%</span></div><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}}/></div><div className="text-[9px] text-gray-400 mt-1">반영비중 {w}% · 100% 초과 미반영</div></div>})}</div>
-      <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">AA임팩트</div><div className="text-[10px] text-gray-400">회사 목표를 매장 HS 기준수량 비중({(share*100).toFixed(1)}%)으로 배분 · 건수는 반올림</div></div>{aaRows.map(x=><div key={x.key} className="px-4 py-3 border-b last:border-0 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.label}</div><div className="text-[10px] text-gray-400 mt-1">목표 {x.unit==='won'?won(x.storeTarget):`${x.storeTarget}건`} · 실적 {x.unit==='won'?won(x.actual):`${fmtCount(x.actual)}건`}</div></div><div className="text-right"><b className="text-sm text-violet-700">{x.score.toFixed(1)}점</b><div className="text-[9px] text-gray-400">환산비중 {x.normalizedWeight.toFixed(1)}%</div></div></div>)}<div className="px-4 py-3 bg-gray-50 flex justify-between text-xs"><span>가감점 합계</span><b className={adj.total>=0?'text-emerald-600':'text-red-500'}>{adj.total>=0?'+':''}{adj.total.toFixed(1)}점</b></div></div>
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <div className="px-4 py-3 border-b">
+          <div className="text-sm font-bold">AA임팩트</div>
+          {hasCompanyGoalBasis
+            ? <div className="text-[10px] text-gray-400">회사 목표를 관리자 → 회사 목표의 HS 기준수량 비중({(share*100).toFixed(1)}%)으로 자동 배분 · 건수는 반올림</div>
+            : <div className="text-[10px] text-red-500 font-semibold">⚠ 회사 목표의 HS 기준수량을 확인할 수 없어 AA임팩트 목표를 배분할 수 없습니다.</div>}
+        </div>
+        {aaRows.map(x=><div key={x.key} className="px-4 py-3 border-b flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.label}</div><div className="text-[10px] text-gray-400 mt-1">목표 {x.unit==='won'?won(x.storeTarget):`${x.storeTarget}건`} · 실적 {x.unit==='won'?won(x.actual):`${fmtCount(x.actual)}건`}</div></div><div className="text-right"><b className="text-sm text-violet-700">{x.score.toFixed(1)}점</b><div className="text-[9px] text-gray-400">환산비중 {x.normalizedWeight.toFixed(1)}%</div></div></div>)}
+        <div className="px-4 py-3 bg-gray-50 border-t">
+          <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold">AA임팩트 가감점</span><b className={`text-xs ${adj.total>=0?'text-emerald-600':'text-red-500'}`}>{adj.total>=0?'+':''}{adj.total.toFixed(1)}점</b></div>
+          <div className="space-y-1.5">
+            {[
+              ['NPS', ext.npsScore?`${fmtNum(Number(ext.npsScore),1)}점 · 95점 기준`:'미입력', adj.npsAdj],
+              ['불친절', `${fmtCount(Number(ext.unkindCount||0))}건`, adj.unkind],
+              ['대외민원', `${fmtCount(Number(ext.complaintCount||0))}건`, adj.complaints],
+              ['정보보호', ext.securityScore?`${fmtNum(Number(ext.securityScore),1)}점`:'미입력', adj.security],
+              ['개인정보보호위원회', ext.privacyViolation?'적발':'해당 없음', adj.privacy],
+              ['U+one 무체험', ext.noExperienceRate!==undefined&&ext.noExperienceRate!==''?`${fmtNum(Number(ext.noExperienceRate),1)}%`:'미입력', adj.noExp],
+              ['매장 레벨링', ext.leveling==='4'?'Lv4':ext.leveling?'Lv4 미만':'미입력', adj.leveling],
+              ['인터넷 비중', `${internetRatio.toFixed(1)}% · 홈 ${fmtCount(householdHome)} / HS ${fmtCount(hsActual)}`, adj.internet],
+              ['대명', `목표 ${daemyungTarget}건 / 실적 ${fmtCount(actual('daemyung'))}건`, adj.daemyung],
+              ['MNP 타사 가망', `목표 ${prospectTarget}건 / 실적 ${fmtCount(actual('prospectMnp'))}건`, adj.prospect],
+            ].map(([label,basis,point])=><div key={label} className="flex items-center justify-between gap-3 text-[10px]"><div className="min-w-0"><span className="font-semibold text-gray-600">{label}</span><span className="text-gray-400 ml-1.5">{basis}</span></div><b className={Number(point)>0?'text-emerald-600':Number(point)<0?'text-red-500':'text-gray-400'}>{Number(point)>0?'+':''}{Number(point).toFixed(1)}점</b></div>)}
+          </div>
+        </div>
+      </div>
     </>:<>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">실적 최신화</div><div className="text-[10px] text-gray-400 mt-1">직원 입력 누적과 관리자 확인값을 비교하고, 평가에는 관리자 확인값을 우선 사용합니다.</div></div><button onClick={saveSnapshot} disabled={saving} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold h-fit">{saving?'저장중':'최신화 완료'}</button></div><div className="mt-3 space-y-2">{[['HS','hs'],['홈','home'],['생산성','productivity'],['MNP','mnp'],['SIM MNP','simMnp'],['TV부셋탑(가정망)','subTvHousehold'],['TV프리(부)','tvFree'],['스마트홈','smartHome'],['타사 고객 등록','otherCustomer'],['맞춤제안 매출액','tailoredAmount'],['대명','daemyung'],['MNP 타사 가망 개통','prospectMnp']].map(([l,k])=><div key={k} className="grid grid-cols-[1fr_70px_90px] gap-2 items-center"><div className="text-xs text-gray-600">{l}</div><div className="text-[10px] text-gray-400 text-right">입력 {k==='tailoredAmount'?won(live[k]):fmtNum(live[k],1)}</div><input type="number" value={verified[k]??live[k]??0} onChange={e=>setVerified(k,e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
       <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">대명 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(37건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">반영비중 합계를 100점으로 자동 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
     </>}
   </div>;
 }
