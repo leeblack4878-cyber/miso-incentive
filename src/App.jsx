@@ -1046,6 +1046,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.66: 고객별 판매내역 핵심상품 기준 묶음. 같은 고객의 홈 세부항목은 홈 1건으로 표시하고 인센티브도 1회만 표시. 일자 건수도 HS/인터넷 핵심 판매건 기준. */
 /* v21.65: 올인원 홈(망구분 유지·인센티브0·그레이드/성과 인정) + 실적점검 전환 + 직원 내역 아코디언 개편 + 판매건별 인센티브 즉시 표시. */
 /* v21.64: 홈 동시판매 모수 표기 강화. 고객별 판매내역에 홈+HS/스마트홈+HS를 명시하고 신규 저장건에는 simulBase를 보존. */
 /* v21.63: 새 홈 인센티브 정책(가정망/소호/속도/그레이드/HS동시) 적용 + 기존 고객별 홈실적 자동 재계산 + 정산상단 항목별 분리. */
@@ -6158,7 +6159,28 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const legacyWholeDayCount = legacyWholeDay ? dayTotal : 0;
   const monthTotal = Object.values(dailyDays).reduce((s, raw) => { const r = normalizeDay(raw); return s + matrixSum(r) + groupSum(r); }, 0);
 
-  // 등록 내역은 합산 숫자보다 고객 판매 건 단위로 보여줘요.
+  // v21.66 핵심 판매건 기준
+  // 모바일 1건은 그대로 1건, 홈은 같은 날짜+같은 고객의 세부항목을 하나의 핵심 홈 판매건으로 묶습니다.
+  const groupedCoreSales=useMemo(()=>{
+    const groups=[];
+    const homeMap=new Map();
+    (daySales||[]).forEach(sale=>{
+      if(sale.source_type!=='home_order'){
+        groups.push({key:`sale-${sale.id}`,kind:'mobile',sales:[sale],primary:sale});
+        return;
+      }
+      const customerKey=sale.customer_id||sale.customers?.customer_name||sale.id;
+      const key=`home-${sale.sale_date}-${customerKey}`;
+      if(!homeMap.has(key)){
+        const g={key,kind:'home',sales:[],primary:sale};
+        homeMap.set(key,g); groups.push(g);
+      }
+      homeMap.get(key).sales.push(sale);
+    });
+    return groups;
+  },[daySales]);
+
+  const coreDayTotal=groupedCoreSales.length+(day.householdRenewals?.length||0);
 
   const saleIncentiveBreakdown=(sale)=>{
     const meta=sale?.source_meta||{};
@@ -6291,14 +6313,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       <>
 
       <div className="flex items-center justify-between">
-        <div className="text-sm font-semibold text-gray-800">{parseInt(selectedDay, 10)}일 · {dayTotal}건</div>
+        <div className="text-sm font-semibold text-gray-800">{parseInt(selectedDay, 10)}일 · {coreDayTotal}건</div>
       </div>
 
       <>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="px-4 py-2.5 text-xs font-semibold text-gray-500 border-b border-gray-50 flex justify-between">
               <span>{parseInt(selectedDay, 10)}일 고객별 판매 내역</span>
-              <span>{daySales.length + (day.householdRenewals?.length||0)}건</span>
+              <span>{groupedCoreSales.length + (day.householdRenewals?.length||0)}건</span>
             </div>
             {daySalesLoading ? (
               <div className="px-4 py-8 text-center text-sm text-gray-400">판매 내역 불러오는 중...</div>
@@ -6329,58 +6351,105 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     </div>
                   </div>;
                 })}
-                {daySales.map((sale) => {
+                {groupedCoreSales.map((group) => {
+                  const sale=group.primary;
                   const meta=sale.source_meta||{};
-                  const sameCustomerHomeSales=daySales.filter(x=>
-                    x.source_type==='home_order' &&
-                    x.sale_date===sale.sale_date &&
-                    x.customer_id===sale.customer_id
-                  );
-                  const sameHomeTypes=new Set(sameCustomerHomeSales.map(x=>inferHomeProductTypeFromLabel(x.metric_label)));
-                  const currentHomeType=inferHomeProductTypeFromLabel(sale.metric_label);
-                  const isHomeSimul=['simulNewChange','simulMnp','simulUsedMnp'].includes(currentHomeType);
-                  let displayMetricLabel=sale.metric_label;
-                  if(isHomeSimul){
-                    // 인터넷/TV가 있으면 '홈'이 모수, 인터넷 없이 스마트홈만 있으면 '스마트홈'이 모수
-                    const hasInternetOrTv=['homeOnly','homeTv','internet100','internet500','internet1g'].some(k=>sameHomeTypes.has(k));
-                    const hasSmartHome=sameHomeTypes.has('smartHome');
-                    const baseLabel=hasInternetOrTv?'홈':hasSmartHome?'스마트홈':'홈';
-                    const simulText=currentHomeType==='simulNewChange'?'HS 신규/기변 동시판매':
-                      currentHomeType==='simulMnp'?'HS MNP 동시판매':'중고MNP 동시판매';
-                    displayMetricLabel=`${baseLabel} + ${simulText}`;
+                  const customerName=sale.customers?.customer_name||'고객';
+
+                  if(group.kind==='home'){
+                    const homeSales=group.sales;
+                    const homeTypes=new Set(homeSales.map(x=>inferHomeProductTypeFromLabel(x.metric_label)));
+                    const labels=[];
+
+                    // 핵심 상품/구성 순서로 한 카드 안에 정리
+                    const internetSale=homeSales.find(x=>['internet1g','internet500','internet100'].includes(inferHomeProductTypeFromLabel(x.metric_label)));
+                    const tvSale=homeSales.find(x=>inferHomeProductTypeFromLabel(x.metric_label)==='homeTv');
+                    const smartSale=homeSales.find(x=>inferHomeProductTypeFromLabel(x.metric_label)==='smartHome');
+                    const tvFreeSale=homeSales.find(x=>inferHomeProductTypeFromLabel(x.metric_label)==='tvFree');
+                    const subSale=homeSales.find(x=>inferHomeProductTypeFromLabel(x.metric_label)==='subSetTop');
+                    const simulSale=homeSales.find(x=>['simulNewChange','simulMnp','simulUsedMnp'].includes(inferHomeProductTypeFromLabel(x.metric_label)));
+
+                    if(internetSale)labels.push(internetSale.metric_label);
+                    if(tvSale)labels.push(tvSale.metric_label);
+                    if(smartSale)labels.push(smartSale.metric_label);
+                    if(tvFreeSale)labels.push(tvFreeSale.metric_label);
+                    if(subSale)labels.push(subSale.metric_label);
+
+                    if(simulSale){
+                      const t=inferHomeProductTypeFromLabel(simulSale.metric_label);
+                      const hasInternetOrTv=['homeOnly','homeTv','internet100','internet500','internet1g'].some(k=>homeTypes.has(k));
+                      const hasSmartHome=homeTypes.has('smartHome');
+                      const baseLabel=hasInternetOrTv?'홈':hasSmartHome?'스마트홈':'홈';
+                      const simulText=t==='simulNewChange'?'HS 신규/기변 동시판매':t==='simulMnp'?'HS MNP 동시판매':'중고MNP 동시판매';
+                      labels.push(`${baseLabel} + ${simulText}`);
+                    }
+
+                    // 위 분류에 안 잡힌 홈 세부항목도 누락 없이 표시
+                    homeSales.forEach(x=>{
+                      const t=inferHomeProductTypeFromLabel(x.metric_label);
+                      if(!['internet1g','internet500','internet100','homeTv','smartHome','tvFree','subSetTop','simulNewChange','simulMnp','simulUsedMnp'].includes(t) && !labels.includes(x.metric_label)) labels.push(x.metric_label);
+                    });
+
+                    const inc=saleIncentiveBreakdown(sale); // 같은 고객 홈 전체 금액을 딱 한 번 표시
+                    return <div key={group.key} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-gray-900">{customerName}</div>
+                          <div className="mt-1 space-y-0.5">
+                            {labels.map((label,i)=><div key={i} className="text-xs text-gray-600">{label}</div>)}
+                          </div>
+                          {homeSales.some(legacySaleBadge)&&<span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="relative mb-2">
+                            <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
+                              className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
+                              {inc.total>0?`+${won(inc.total)}`:'0원'}
+                            </button>
+                            <div className="text-[9px] text-gray-400">인센티브</div>
+                            {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
+                              <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
+                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                            </div>}
+                          </div>
+                          <div className="flex gap-1">
+                            <button onClick={()=>openEditSale(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
+                            <button onClick={()=>deleteSale(sale)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>;
                   }
+
                   const vasLabels=(meta.vasKeys||[]).map(k=>{
                     if(k==='vasNone')return '미유치';
                     return (config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k;
                   });
+                  const inc=saleIncentiveBreakdown(sale);
                   return (
-                    <div key={sale.id} className="px-4 py-3">
+                    <div key={group.key} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="text-sm font-bold text-gray-900">{sale.customers?.customer_name||'고객'}</div>
+                          <div className="text-sm font-bold text-gray-900">{customerName}</div>
                           <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                            <span>{displayMetricLabel}</span>
+                            <span>{sale.metric_label}</span>
                             {legacySaleBadge(sale)&&<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
                           </div>
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
-                          {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&
-                            <div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
+                          {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&<div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
                         </div>
                         <div className="shrink-0 text-right">
-                          {(()=>{
-                            const inc=saleIncentiveBreakdown(sale);
-                            return <div className="relative mb-2">
-                              <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===sale.id?null:sale.id)}
-                                className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
-                                {inc.total>0?`+${won(inc.total)}`:'0원'}
-                              </button>
-                              <div className="text-[9px] text-gray-400">인센티브</div>
-                              {saleIncentiveOpen===sale.id&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
-                                <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
-                                {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
-                              </div>}
-                            </div>;
-                          })()}
+                          <div className="relative mb-2">
+                            <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
+                              className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
+                              {inc.total>0?`+${won(inc.total)}`:'0원'}
+                            </button>
+                            <div className="text-[9px] text-gray-400">인센티브</div>
+                            {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
+                              <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
+                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                            </div>}
+                          </div>
                           <div className="flex gap-1">
                             <button onClick={()=>openEditSale(sale)} className="px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-semibold">판매건 수정</button>
                             <button onClick={()=>deleteSale(sale)} className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 text-[11px] font-semibold">삭제</button>
