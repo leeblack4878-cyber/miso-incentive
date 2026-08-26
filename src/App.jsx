@@ -1047,6 +1047,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.70: 관리자 판매 퀄리티 백지화 수정. 0건/빈 매장/조회 오류 시에도 안전하게 0% 지표를 렌더링. */
 /* v21.69: SIM MNP(선약) 61군 이상에서 중고 MNP 결합 인센티브(+10만원) 선택 UI 복구 및 저장 조건 보호. */
 /* v21.68: 판매 퀄리티 보조지표(개인/매장/직원), HS 대비 매출지표, 전략요금제 체크, 폰안심패스(0원·보험 0.8P), 관리자 영업비용/오퍼 조회. */
 /* v21.67: 관리자 홈 케어 화면의 internet1g/internet500/internet100 및 동시판매 내부키를 한글 상품명으로 표시. */
@@ -2232,30 +2233,42 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
       (sr.data||[]).forEach(x=>map[x.user_id]?.sales.push(x));
       (hr.data||[]).filter(x=>{const d=String(x.source_work_date||x.actual_install_date||'');return d>=`${month}-01`&&d<to}).forEach(x=>map[x.user_id]?.home.push(x));
       (dr.data||[]).forEach(x=>{const g=x.data?.groups?.sono||{};if(map[x.user_id])map[x.user_id].sono+=Object.values(g).reduce((a,v)=>a+Number(v||0),0)});
-      const result={};ids.forEach(id=>result[id]=qualityFromSales(map[id].sales,map[id].home,map[id].sono));setData(result);setLoading(false);
-    })();
+      const result={};ids.forEach(id=>result[id]=qualityFromSales(map[id]?.sales||[],map[id]?.home||[],map[id]?.sono||0));setData(result);setLoading(false);
+    })().catch(err=>{console.error('SALES QUALITY LOAD ERROR',err);const result={};ids.forEach(id=>result[id]=qualityFromSales([],[],0));setData(result);setLoading(false);});
   },[month,ids.join('|')]);
 
   if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">판매 퀄리티 계산 중...</div>;
-  const render=(q)=>q?<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-    <QualityMetricCard label="115군 비중" value={`${q.plan115Pct}%`} sub={`${q.plan115}/${q.hs}건`} />
-    <QualityMetricCard label="홈(인터넷) 비중" value={`${q.homePct}%`} sub={`${q.home}/${q.hs}건 · 올인원 포함`} />
-    <QualityMetricCard label="프리+스홈 비중" value={`${q.freeSmartPct}%`} sub={`${q.freeSmart}/${q.hs}건 · 상품수 기준`} />
-    <QualityMetricCard label="MNP 비중" value={`${q.mnpPct}%`} sub={`${q.mnp}/${q.hs}건`} />
-    <QualityMetricCard label="2ND 번들 비중" value={`${q.secondPct}%`} sub={`${q.second}/${q.hs}건 · 상품수 기준`} />
-    <QualityMetricCard label="매출지표" value={`${q.revenuePct}%`} sub={`총 ${q.revenuePoints.toFixed(1)}P / HS ${q.hs}건`} />
-  </div>:null;
+  const render=(q)=>{
+    const safe={
+      hs:Number(q?.hs||0),plan115:Number(q?.plan115||0),home:Number(q?.home||0),
+      freeSmart:Number(q?.freeSmart||0),mnp:Number(q?.mnp||0),second:Number(q?.second||0),
+      revenuePoints:Number(q?.revenuePoints||0),
+      plan115Pct:Number(q?.plan115Pct||0),homePct:Number(q?.homePct||0),
+      freeSmartPct:Number(q?.freeSmartPct||0),mnpPct:Number(q?.mnpPct||0),
+      secondPct:Number(q?.secondPct||0),revenuePct:Number(q?.revenuePct||0)
+    };
+    return <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      <QualityMetricCard label="115군 비중" value={`${safe.plan115Pct}%`} sub={`${safe.plan115}/${safe.hs}건`} />
+      <QualityMetricCard label="홈(인터넷) 비중" value={`${safe.homePct}%`} sub={`${safe.home}/${safe.hs}건 · 올인원 포함`} />
+      <QualityMetricCard label="프리+스홈 비중" value={`${safe.freeSmartPct}%`} sub={`${safe.freeSmart}/${safe.hs}건 · 상품수 기준`} />
+      <QualityMetricCard label="MNP 비중" value={`${safe.mnpPct}%`} sub={`${safe.mnp}/${safe.hs}건`} />
+      <QualityMetricCard label="2ND 번들 비중" value={`${safe.secondPct}%`} sub={`${safe.second}/${safe.hs}건 · 상품수 기준`} />
+      <QualityMetricCard label="매출지표" value={`${safe.revenuePct}%`} sub={`총 ${safe.revenuePoints.toFixed(1)}P / HS ${safe.hs}건`} />
+    </div>;
+  };
 
   if(!isManager)return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">보조지표</div><div className="text-lg font-bold">판매 퀄리티 · {monthLabel(month)}</div><div className="text-[10px] text-gray-400 mt-1">평가점수에는 반영되지 않습니다.</div></div>{render(data[employee?.id])}</div>;
 
   const stores=sortStoresByOpenOrder([...new Set(scoped.map(e=>e.branch))]);
   const selectedStore=storeFilter||stores[0]||'';
   const members=scoped.filter(e=>e.branch===selectedStore);
-  const agg=members.reduce((a,e)=>{const q=data[e.id];if(!q)return a;['hs','plan115','home','freeSmart','mnp','second','strategicPlan','insurance','strategicVas','sono','revenuePoints'].forEach(k=>a[k]=(a[k]||0)+Number(q[k]||0));return a},{});
+  const emptyAgg={hs:0,plan115:0,home:0,freeSmart:0,mnp:0,second:0,strategicPlan:0,insurance:0,strategicVas:0,sono:0,revenuePoints:0};
+  const agg=members.reduce((a,e)=>{const q=data[e.id];if(!q)return a;Object.keys(emptyAgg).forEach(k=>a[k]=Number(a[k]||0)+Number(q[k]||0));return a},{...emptyAgg});
   const storeQ={...agg,plan115Pct:qualityPct(agg.plan115,agg.hs),homePct:qualityPct(agg.home,agg.hs),freeSmartPct:qualityPct(agg.freeSmart,agg.hs),mnpPct:qualityPct(agg.mnp,agg.hs),secondPct:qualityPct(agg.second,agg.hs),revenuePct:qualityPct(agg.revenuePoints,agg.hs)};
-  return <div className="space-y-3"><div className="flex justify-between items-end gap-2"><div><div className="text-xs text-violet-600 font-semibold">판매 퀄리티</div><div className="text-lg font-bold">매장/직원 보조지표</div></div><select value={selectedStore} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(st=><option key={st} value={st}>{displayStoreName(st)}</option>)}</select></div>
+  if(!stores.length)return <div className="bg-white rounded-xl border p-5"><div className="text-sm font-bold text-gray-800">판매 퀄리티</div><div className="text-xs text-gray-400 mt-1">조회 가능한 매장이 없습니다.</div></div>;
+  return <div className="space-y-3"><div className="flex justify-between items-end gap-2"><div><div className="text-xs text-violet-600 font-semibold">판매 퀄리티</div><div className="text-lg font-bold">매장/직원 보조지표</div><div className="text-[10px] text-gray-400 mt-1">매장 수치는 직원 비율 평균이 아니라 매장 전체 HS 기준으로 재계산합니다.</div></div><select value={selectedStore} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(st=><option key={st} value={st}>{displayStoreName(st)}</option>)}</select></div>
     <div className="bg-violet-50/50 border border-violet-100 rounded-xl p-3"><div className="text-sm font-bold mb-2">{displayStoreName(selectedStore)} 전체</div>{render(storeQ)}</div>
-    <div className="space-y-2">{members.map(e=><div key={e.id} className="bg-white border rounded-xl p-3"><div className="font-bold text-sm mb-2">{e.name}</div>{render(data[e.id])}</div>)}</div>
+    <div className="space-y-2">{members.length?members.map(e=><div key={e.id} className="bg-white border rounded-xl p-3"><div className="font-bold text-sm mb-2">{e.name}</div>{render(data[e.id])}</div>):<div className="bg-white border rounded-xl p-4 text-xs text-gray-400">이 매장에 조회 가능한 직원이 없습니다.</div>}</div>
   </div>;
 }
 
