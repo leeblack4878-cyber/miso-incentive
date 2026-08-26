@@ -1047,6 +1047,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.72: 내 입력 실적 요약 직원 ID 연결 수정(auth UUID 대신 실제 employee ID 우선), 조회 오류 표시 추가. */
 /* v21.71: 직원 내역 상단 '내 입력 실적 요약' 추가(모바일/VAS/2ND/홈 월 누적), 고객관리 홈 설치·개통 진행관리 항상 펼침. */
 /* v21.70: 관리자 판매 퀄리티 백지화 수정. 0건/빈 매장/조회 오류 시에도 안전하게 0% 지표를 렌더링. */
 /* v21.69: SIM MNP(선약) 61군 이상에서 중고 MNP 결합 인센티브(+10만원) 선택 UI 복구 및 저장 조건 보호. */
@@ -4701,6 +4702,7 @@ function DailyOneLiner({ userId, month, pay, draft, config, competitionRows, bra
 function MyInputSummary({userId,month,config}){
   const [open,setOpen]=useState(false);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState('');
   const [summary,setSummary]=useState({mobile:[],vas:[],second:[],home:[],totalHs:0,totalHome:0,totalVas:0,totalSecond:0});
 
   useEffect(()=>{
@@ -4716,6 +4718,12 @@ function MyInputSummary({userId,month,config}){
           .or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
       ]);
       if(!alive)return;
+      if(se||he){
+        setLoadError(friendlyError(se||he));
+        setLoading(false);
+        return;
+      }
+      setLoadError('');
       const inc=(o,k,n=1)=>{if(k)o[k]=Number(o[k]||0)+n};
       const mobile={},vas={},second={},home={};
       let totalHs=0;
@@ -4748,7 +4756,7 @@ function MyInputSummary({userId,month,config}){
       const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
       const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),totalHs,totalHome:validHomes.filter(x=>['internet1g','internet500','internet100','homeOnly','homeTv'].includes(x.product_type)).length,totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
       setSummary(result);setLoading(false);
-    })().catch(e=>{console.error('INPUT SUMMARY LOAD ERROR',e);if(alive)setLoading(false)});
+    })().catch(e=>{console.error('INPUT SUMMARY LOAD ERROR',e);if(alive){setLoadError(friendlyError(e));setLoading(false)}});
     return()=>{alive=false};
   },[userId,month,config]);
 
@@ -4768,7 +4776,7 @@ function MyInputSummary({userId,month,config}){
       </div>
     </button>
     {open&&<div className="border-t border-gray-50 px-4 py-2 divide-y divide-gray-50">
-      {loading?<div className="py-5 text-center text-xs text-gray-400">입력 실적을 불러오는 중...</div>:<>
+      {loading?<div className="py-5 text-center text-xs text-gray-400">입력 실적을 불러오는 중...</div>:loadError?<div className="py-5 text-center text-xs text-red-500">실적 요약을 불러오지 못했어요 · {loadError}</div>:<>
         <Group title="모바일" rows={summary.mobile}/>
         <Group title="VAS" rows={summary.vas}/>
         <Group title="2ND" rows={summary.second}/>
@@ -5078,7 +5086,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </select>
           </div>
 
-          <MyInputSummary userId={authUser?.id} month={month} config={config} />
+          <MyInputSummary userId={currentEmp?.id||authUser?.id} month={month} config={config} />
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
             <RowKV label="영업 활동 지원 정책" value={won(pay.tenurePay)} />
