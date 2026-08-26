@@ -1047,6 +1047,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.71: 직원 내역 상단 '내 입력 실적 요약' 추가(모바일/VAS/2ND/홈 월 누적), 고객관리 홈 설치·개통 진행관리 항상 펼침. */
 /* v21.70: 관리자 판매 퀄리티 백지화 수정. 0건/빈 매장/조회 오류 시에도 안전하게 0% 지표를 렌더링. */
 /* v21.69: SIM MNP(선약) 61군 이상에서 중고 MNP 결합 인센티브(+10만원) 선택 UI 복구 및 저장 조건 보호. */
 /* v21.68: 판매 퀄리티 보조지표(개인/매장/직원), HS 대비 매출지표, 전략요금제 체크, 폰안심패스(0원·보험 0.8P), 관리자 영업비용/오퍼 조회. */
@@ -4582,9 +4583,13 @@ function CustomerCareManager({ userId, month, homeProps }) {
        </div>}
     </div>
 
-    <Section title="🏠 홈 설치·개통 진행관리">
-      <HomeOrderManager {...homeProps}/>
-    </Section>
+    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-50">
+        <div className="text-sm font-semibold text-gray-800">🏠 홈 설치·개통 진행관리</div>
+        <div className="text-[11px] text-gray-400 mt-0.5">설치 예정과 진행 상태를 항상 표시해요.</div>
+      </div>
+      <div><HomeOrderManager {...homeProps}/></div>
+    </div>
   </div>;
 }
 
@@ -4689,6 +4694,88 @@ function DailyOneLiner({ userId, month, pay, draft, config, competitionRows, bra
         {messageIndex+1}/{messages.length} ›
       </button>
     )}
+  </div>;
+}
+
+
+function MyInputSummary({userId,month,config}){
+  const [open,setOpen]=useState(false);
+  const [loading,setLoading]=useState(true);
+  const [summary,setSummary]=useState({mobile:[],vas:[],second:[],home:[],totalHs:0,totalHome:0,totalVas:0,totalSecond:0});
+
+  useEffect(()=>{
+    if(!userId)return;
+    let alive=true;
+    (async()=>{
+      setLoading(true);
+      const [y,m]=month.split('-').map(Number), next=new Date(y,m,1);
+      const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+      const [{data:sales,error:se},{data:homes,error:he}]=await Promise.all([
+        supabase.from('customer_sales').select('source_type,source_meta,metric_label').eq('user_id',userId).gte('sale_date',`${month}-01`).lt('sale_date',to),
+        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,source_work_date,actual_install_date').eq('user_id',userId)
+          .or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
+      ]);
+      if(!alive)return;
+      const inc=(o,k,n=1)=>{if(k)o[k]=Number(o[k]||0)+n};
+      const mobile={},vas={},second={},home={};
+      let totalHs=0;
+      (sales||[]).filter(x=>x.source_type==='mobile').forEach(x=>{
+        const meta=x.source_meta||{}, ri=Number(meta.ri), ci=Number(meta.ci);
+        const rd=MATRIX_ROW_DEFS[ri];
+        if(!rd)return;
+        const label=rd.hasTiers?`${rd.dailyLabel||rd.label} · ${MATRIX_COLS[ci]||''}`:(rd.dailyLabel||rd.label);
+        inc(mobile,label);
+        if(HS_PARTS.some(p=>p.idx===ri))totalHs++;
+        [...(meta.vasKeys||[]),...Object.values(meta.bundleVasMap||{}).flat()].forEach(k=>{
+          if(k==='vasNone')return;
+          const v=(config.vas||[]).find(z=>z.key===k);
+          inc(vas,v?.label||k);
+        });
+        (meta.bundle2ndKeys||[]).forEach(k=>{
+          const v=(config.bundle2nd||[]).find(z=>z.key===k);
+          inc(second,v?.label||k);
+        });
+        if(meta.usedMnpBundle)inc(mobile,'중고 MNP 61군↑ 결합');
+      });
+      const validHomes=(homes||[]).filter(x=>{
+        const d=String(x.source_work_date||x.actual_install_date||'').slice(0,7);
+        return d===month;
+      });
+      validHomes.forEach(x=>{
+        const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'홈+TV 동시청약',tvFree:'TV프리(부)',smartHome:'스마트홈'};
+        inc(home,labels[x.product_type]||homeProductLabel(x.product_type)||x.product_type);
+      });
+      const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
+      const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),totalHs,totalHome:validHomes.filter(x=>['internet1g','internet500','internet100','homeOnly','homeTv'].includes(x.product_type)).length,totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
+      setSummary(result);setLoading(false);
+    })().catch(e=>{console.error('INPUT SUMMARY LOAD ERROR',e);if(alive)setLoading(false)});
+    return()=>{alive=false};
+  },[userId,month,config]);
+
+  const Group=({title,rows})=>rows?.length?<div className="py-2"><div className="text-[11px] font-bold text-gray-500 mb-1.5">{title}</div><div className="space-y-1">{rows.map((x,i)=><div key={`${title}-${i}`} className="flex justify-between text-xs"><span className="text-gray-600">{x.label}</span><b className="text-gray-900">{x.count}건</b></div>)}</div></div>:null;
+
+  return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <button type="button" onClick={()=>setOpen(v=>!v)} className="w-full px-4 py-3 text-left">
+      <div className="flex justify-between items-center gap-3">
+        <div><div className="text-sm font-bold text-gray-900">내 입력 실적 요약</div><div className="text-[10px] text-gray-400 mt-0.5">내가 직접 등록한 월 누적 실적을 확인해요.</div></div>
+        <ChevronDown size={16} className={`text-gray-400 transition ${open?'rotate-180':''}`}/>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-2">
+        <span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">HS {summary.totalHs}건</span>
+        <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 {summary.totalHome}건</span>
+        <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">VAS {summary.totalVas}건</span>
+        <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span>
+      </div>
+    </button>
+    {open&&<div className="border-t border-gray-50 px-4 py-2 divide-y divide-gray-50">
+      {loading?<div className="py-5 text-center text-xs text-gray-400">입력 실적을 불러오는 중...</div>:<>
+        <Group title="모바일" rows={summary.mobile}/>
+        <Group title="VAS" rows={summary.vas}/>
+        <Group title="2ND" rows={summary.second}/>
+        <Group title="홈" rows={summary.home}/>
+        {!summary.mobile.length&&!summary.vas.length&&!summary.second.length&&!summary.home.length&&<div className="py-5 text-center text-xs text-gray-400">이번 달 입력 실적이 없어요.</div>}
+      </>}
+    </div>}
   </div>;
 }
 
@@ -4990,6 +5077,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           </div>
+
+          <MyInputSummary userId={authUser?.id} month={month} config={config} />
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
             <RowKV label="영업 활동 지원 정책" value={won(pay.tenurePay)} />
