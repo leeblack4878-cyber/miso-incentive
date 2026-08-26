@@ -1047,6 +1047,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.78: 내 입력 실적 요약에서 취소 홈 제외, 설치완료/설치대기 분리, 같은 날짜+고객 홈 묶음을 1건으로 계산. */
 /* v21.77: v21.76 홈 예상 인센티브 유지 + 관리자 영업비용/오퍼 조회 오류 가시화. sales_expenses RLS 보완 SQL 동봉. 전체 연결부 회귀점검 기준 적용. */
 /* v21.76: 홈 판매카드 예상 인센티브 표시 수정. 설치예정 포함 월 전체 홈 입력으로 예상 그레이드/단독/TV프리/스마트홈/동시판매를 계산하되 실제 급여·정산은 completed만 반영. 관련 경로 회귀점검. */
 /* v21.75: 관리자 수동 배지/인정 메뉴 제거. 점장 PICK→성장왕(월 후반 HS 일평균 30%↑), 팀플레이어→올라운드 세일즈(HS·홈·프리·스홈·2ND 모두 판매), 미소 MVP→HS·홈·생산성 종합순위 1위 자동 부여. */
@@ -4737,7 +4738,7 @@ function MyInputSummary({userId,month,config}){
   const [open,setOpen]=useState(false);
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState('');
-  const [summary,setSummary]=useState({mobile:[],vas:[],second:[],home:[],totalHs:0,totalHome:0,totalVas:0,totalSecond:0});
+  const [summary,setSummary]=useState({mobile:[],vas:[],second:[],home:[],homePending:[],totalHs:0,totalHome:0,totalHomePending:0,totalVas:0,totalSecond:0});
 
   useEffect(()=>{
     if(!userId)return;
@@ -4748,7 +4749,7 @@ function MyInputSummary({userId,month,config}){
       const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
       const [{data:sales,error:se},{data:homes,error:he}]=await Promise.all([
         supabase.from('customer_sales').select('source_type,source_meta,metric_label').eq('user_id',userId).gte('sale_date',`${month}-01`).lt('sale_date',to),
-        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,source_work_date,actual_install_date').eq('user_id',userId)
+        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,status,source_work_date,actual_install_date').eq('user_id',userId)
           .or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
       ]);
       if(!alive)return;
@@ -4759,7 +4760,7 @@ function MyInputSummary({userId,month,config}){
       }
       setLoadError('');
       const inc=(o,k,n=1)=>{if(k)o[k]=Number(o[k]||0)+n};
-      const mobile={},vas={},second={},home={};
+      const mobile={},vas={},second={},home={},homePending={};
       let totalHs=0;
       (sales||[]).filter(x=>x.source_type==='mobile').forEach(x=>{
         const meta=x.source_meta||{}, ri=Number(meta.ri), ci=Number(meta.ci);
@@ -4781,9 +4782,11 @@ function MyInputSummary({userId,month,config}){
       });
       const validHomes=(homes||[]).filter(x=>{
         const d=String(x.source_work_date||x.actual_install_date||'').slice(0,7);
-        return d===month;
+        return d===month&&x.status!=='cancelled';
       });
-      validHomes.forEach(x=>{
+      const completedHomes=validHomes.filter(x=>x.status==='completed');
+      const pendingHomes=validHomes.filter(x=>x.status==='pending');
+      const addHomeRows=(rows,target)=>rows.forEach(x=>{
         const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'홈+TV 동시청약',tvFree:'TV프리(부)',smartHome:'스마트홈'};
         const fallbackLabel=String(x.product_type||'홈 기타')
           .replace(/^internet1g$/i,'인터넷 1GB')
@@ -4791,10 +4794,18 @@ function MyInputSummary({userId,month,config}){
           .replace(/^internet100$/i,'인터넷 100MB')
           .replace(/^simulNewChange$/i,'홈 + HS 신규/기변 동시판매')
           .replace(/^simulMnp$/i,'홈 + HS MNP 동시판매');
-        inc(home,labels[x.product_type]||fallbackLabel);
+        inc(target,labels[x.product_type]||fallbackLabel);
       });
+      addHomeRows(completedHomes,home);
+      addHomeRows(pendingHomes,homePending);
+      // 홈은 한 고객 묶음이 홈+TV/인터넷/동시판매 등 여러 행으로 저장되므로
+      // 같은 날짜+고객을 핵심 판매 1건으로 계산합니다.
+      const homeBundleCount=rows=>new Set(rows.map(x=>{
+        const date=String(x.source_work_date||x.actual_install_date||'').slice(0,10);
+        return `${date}|${x.customer_id||x.customer_name||x.id}`;
+      })).size;
       const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
-      const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),totalHs,totalHome:validHomes.filter(x=>['internet1g','internet500','internet100','homeOnly','homeTv'].includes(x.product_type)).length,totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
+      const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),homePending:arr(homePending),totalHs,totalHome:homeBundleCount(completedHomes),totalHomePending:homeBundleCount(pendingHomes),totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
       setSummary(result);setLoading(false);
     })().catch(e=>{console.error('INPUT SUMMARY LOAD ERROR',e);if(alive){setLoadError(friendlyError(e));setLoading(false)}});
     return()=>{alive=false};
@@ -4811,6 +4822,7 @@ function MyInputSummary({userId,month,config}){
       <div className="flex flex-wrap gap-1.5 mt-2">
         <span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">HS {summary.totalHs}건</span>
         <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 {summary.totalHome}건</span>
+        {summary.totalHomePending>0&&<span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">홈 대기 {summary.totalHomePending}건</span>}
         <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">VAS {summary.totalVas}건</span>
         <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span>
       </div>
@@ -4821,7 +4833,8 @@ function MyInputSummary({userId,month,config}){
         <Group title="VAS" rows={summary.vas}/>
         <Group title="2ND" rows={summary.second}/>
         <Group title="홈" rows={summary.home}/>
-        {!summary.mobile.length&&!summary.vas.length&&!summary.second.length&&!summary.home.length&&<div className="py-5 text-center text-xs text-gray-400">이번 달 입력 실적이 없어요.</div>}
+        <Group title="홈 설치대기" rows={summary.homePending}/>
+        {!summary.mobile.length&&!summary.vas.length&&!summary.second.length&&!summary.home.length&&!summary.homePending.length&&<div className="py-5 text-center text-xs text-gray-400">이번 달 입력 실적이 없어요.</div>}
       </>}
     </div>}
   </div>;
