@@ -387,6 +387,7 @@ const DEFAULT_VAS = [
   { key: 'vasKyobo', label: '교보문고sam + 구글원', rate: 20000 },
   { key: 'vasVcolor', label: 'V컬러링 + 벨링콘텐츠팩', rate: 20000 },
   { key: 'vasPhonePass', label: '폰교체패스', rate: 10000 },
+  { key: 'vasSafePass', label: '폰안심패스', rate: 0 },
 ];
 
 const DEFAULT_BUNDLE2ND = [
@@ -1046,6 +1047,9 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.69: SIM MNP(선약) 61군 이상에서 중고 MNP 결합 인센티브(+10만원) 선택 UI 복구 및 저장 조건 보호. */
+/* v21.68: 판매 퀄리티 보조지표(개인/매장/직원), HS 대비 매출지표, 전략요금제 체크, 폰안심패스(0원·보험 0.8P), 관리자 영업비용/오퍼 조회. */
+/* v21.67: 관리자 홈 케어 화면의 internet1g/internet500/internet100 및 동시판매 내부키를 한글 상품명으로 표시. */
 /* v21.66: 고객별 판매내역 핵심상품 기준 묶음. 같은 고객의 홈 세부항목은 홈 1건으로 표시하고 인센티브도 1회만 표시. 일자 건수도 HS/인터넷 핵심 판매건 기준. */
 /* v21.65: 올인원 홈(망구분 유지·인센티브0·그레이드/성과 인정) + 실적점검 전환 + 직원 내역 아코디언 개편 + 판매건별 인센티브 즉시 표시. */
 /* v21.64: 홈 동시판매 모수 표기 강화. 고객별 판매내역에 홈+HS/스마트홈+HS를 명시하고 신규 저장건에는 simulBase를 보존. */
@@ -2176,10 +2180,89 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   </div>;
 }
 
+
+function qualityPct(n,d){return d>0?Number((Number(n||0)/d*100).toFixed(1)):0}
+function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
+  const mobile=(sales||[]).filter(x=>x.source_type==='mobile');
+  const hs=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))).length;
+  const plan115=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))&&Number(x.source_meta?.ci)===0).length;
+  const mnpRi=MATRIX_ROWS.indexOf('일반모델 MNP');
+  const mnp=mobile.filter(x=>Number(x.source_meta?.ri)===mnpRi).length;
+  const second=mobile.reduce((sum,x)=>sum+(x.source_meta?.bundle2ndKeys||[]).length,0);
+  const strategicPlan=mobile.filter(x=>!!x.source_meta?.strategicPlan).length;
+
+  // 홈은 동일 고객/날짜의 인터넷을 1건으로 계산. 올인원 포함.
+  const internetKeys=new Set();
+  let free=0,smart=0;
+  (homeOrders||[]).forEach(o=>{
+    const d=String(o.source_work_date||o.actual_install_date||'').slice(0,10);
+    const ck=o.customer_id||o.customer_name||o.id;
+    if(['internet1g','internet500','internet100','homeOnly','homeTv'].includes(o.product_type))internetKeys.add(`${d}|${ck}`);
+    if(o.product_type==='tvFree')free++;
+    if(o.product_type==='smartHome')smart++;
+  });
+
+  let insurance=0, strategicVas=0;
+  mobile.forEach(x=>{
+    const all=[...(x.source_meta?.vasKeys||[]),...Object.values(x.source_meta?.bundleVasMap||{}).flat()];
+    all.forEach(k=>{
+      if(k==='vasPhonePass'||k==='vasSafePass')insurance++;
+      if(k==='vasKyobo'||k==='vasVcolor')strategicVas++;
+    });
+  });
+  const revenuePoints=strategicPlan*.5+insurance*.8+strategicVas*1+Number(sonoCount||0)*2;
+  return {hs,plan115,home:internetKeys.size,freeSmart:free+smart,mnp,second,strategicPlan,insurance,strategicVas,sono:Number(sonoCount||0),revenuePoints,
+    plan115Pct:qualityPct(plan115,hs),homePct:qualityPct(internetKeys.size,hs),freeSmartPct:qualityPct(free+smart,hs),mnpPct:qualityPct(mnp,hs),secondPct:qualityPct(second,hs),revenuePct:qualityPct(revenuePoints,hs)};
+}
+
+function QualityMetricCard({label,value,sub=''}){return <div className="bg-white border border-gray-100 rounded-xl p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="text-xl font-black text-gray-900 mt-1">{value}</div>{sub&&<div className="text-[9px] text-gray-400 mt-1">{sub}</div>}</div>}
+
+function SalesQualityPanel({month,employee=null,employees=[],isManager=false,loginBranch='',canSwitchStores=false}){
+  const [loading,setLoading]=useState(true),[data,setData]=useState({}),[storeFilter,setStoreFilter]=useState(loginBranch||'');
+  const scoped=(employees||[]).filter(e=>!NON_SALES_STORES.includes(e.branch)).filter(e=>canSwitchStores||!loginBranch?true:e.branch===loginBranch);
+  const ids=isManager?scoped.map(e=>e.id):[employee?.id].filter(Boolean);
+  useEffect(()=>{if(!ids.length){setData({});setLoading(false);return}
+    (async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+      const [sr,hr,dr]=await Promise.all([
+        supabase.from('customer_sales').select('user_id,source_type,source_meta').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to),
+        supabase.from('home_orders').select('id,user_id,customer_id,customer_name,product_type,sale_type,source_work_date,actual_install_date').in('user_id',ids).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`),
+        supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to)
+      ]);
+      const map={};ids.forEach(id=>map[id]={sales:[],home:[],sono:0});
+      (sr.data||[]).forEach(x=>map[x.user_id]?.sales.push(x));
+      (hr.data||[]).filter(x=>{const d=String(x.source_work_date||x.actual_install_date||'');return d>=`${month}-01`&&d<to}).forEach(x=>map[x.user_id]?.home.push(x));
+      (dr.data||[]).forEach(x=>{const g=x.data?.groups?.sono||{};if(map[x.user_id])map[x.user_id].sono+=Object.values(g).reduce((a,v)=>a+Number(v||0),0)});
+      const result={};ids.forEach(id=>result[id]=qualityFromSales(map[id].sales,map[id].home,map[id].sono));setData(result);setLoading(false);
+    })();
+  },[month,ids.join('|')]);
+
+  if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">판매 퀄리티 계산 중...</div>;
+  const render=(q)=>q?<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+    <QualityMetricCard label="115군 비중" value={`${q.plan115Pct}%`} sub={`${q.plan115}/${q.hs}건`} />
+    <QualityMetricCard label="홈(인터넷) 비중" value={`${q.homePct}%`} sub={`${q.home}/${q.hs}건 · 올인원 포함`} />
+    <QualityMetricCard label="프리+스홈 비중" value={`${q.freeSmartPct}%`} sub={`${q.freeSmart}/${q.hs}건 · 상품수 기준`} />
+    <QualityMetricCard label="MNP 비중" value={`${q.mnpPct}%`} sub={`${q.mnp}/${q.hs}건`} />
+    <QualityMetricCard label="2ND 번들 비중" value={`${q.secondPct}%`} sub={`${q.second}/${q.hs}건 · 상품수 기준`} />
+    <QualityMetricCard label="매출지표" value={`${q.revenuePct}%`} sub={`총 ${q.revenuePoints.toFixed(1)}P / HS ${q.hs}건`} />
+  </div>:null;
+
+  if(!isManager)return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">보조지표</div><div className="text-lg font-bold">판매 퀄리티 · {monthLabel(month)}</div><div className="text-[10px] text-gray-400 mt-1">평가점수에는 반영되지 않습니다.</div></div>{render(data[employee?.id])}</div>;
+
+  const stores=sortStoresByOpenOrder([...new Set(scoped.map(e=>e.branch))]);
+  const selectedStore=storeFilter||stores[0]||'';
+  const members=scoped.filter(e=>e.branch===selectedStore);
+  const agg=members.reduce((a,e)=>{const q=data[e.id];if(!q)return a;['hs','plan115','home','freeSmart','mnp','second','strategicPlan','insurance','strategicVas','sono','revenuePoints'].forEach(k=>a[k]=(a[k]||0)+Number(q[k]||0));return a},{});
+  const storeQ={...agg,plan115Pct:qualityPct(agg.plan115,agg.hs),homePct:qualityPct(agg.home,agg.hs),freeSmartPct:qualityPct(agg.freeSmart,agg.hs),mnpPct:qualityPct(agg.mnp,agg.hs),secondPct:qualityPct(agg.second,agg.hs),revenuePct:qualityPct(agg.revenuePoints,agg.hs)};
+  return <div className="space-y-3"><div className="flex justify-between items-end gap-2"><div><div className="text-xs text-violet-600 font-semibold">판매 퀄리티</div><div className="text-lg font-bold">매장/직원 보조지표</div></div><select value={selectedStore} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(st=><option key={st} value={st}>{displayStoreName(st)}</option>)}</select></div>
+    <div className="bg-violet-50/50 border border-violet-100 rounded-xl p-3"><div className="text-sm font-bold mb-2">{displayStoreName(selectedStore)} 전체</div>{render(storeQ)}</div>
+    <div className="space-y-2">{members.map(e=><div key={e.id} className="bg-white border rounded-xl p-3"><div className="font-bold text-sm mb-2">{e.name}</div>{render(data[e.id])}</div>)}</div>
+  </div>;
+}
+
 function EvaluationTab({ month, employee, config, isManagerView=false, canFinalApprove=false, employees=[], rows=[], authUserId, canSwitchStores=false, loginBranch='' }){
   const [mode,setMode]=useState('career');
   const managerEligible=isManagerView;
-  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">평가</div><div className="text-xl font-bold text-gray-900">커리어 등급</div></div>{managerEligible&&<div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('career')} className={`py-2 rounded-lg text-xs font-bold ${mode==='career'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 커리어 등급</button><button onClick={()=>setMode('manager')} className={`py-2 rounded-lg text-xs font-bold ${mode==='manager'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>관리자 평가</button></div>}{mode==='career'?<CareerEvaluationPanel employee={employee} month={month} config={config} canManage={managerEligible} canFinalApprove={canFinalApprove} managerScopeEmployees={employees}/>:<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch}/>}</div>;
+  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">평가</div><div className="text-xl font-bold text-gray-900">{mode==='quality'?'판매 퀄리티':'커리어 등급'}</div></div><div className={`grid ${managerEligible?'grid-cols-3':'grid-cols-2'} bg-gray-100 rounded-xl p-1 gap-1`}><button onClick={()=>setMode('career')} className={`py-2 rounded-lg text-xs font-bold ${mode==='career'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 커리어 등급</button>{managerEligible&&<button onClick={()=>setMode('manager')} className={`py-2 rounded-lg text-xs font-bold ${mode==='manager'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>관리자 평가</button>}<button onClick={()=>setMode('quality')} className={`py-2 rounded-lg text-xs font-bold ${mode==='quality'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>판매 퀄리티</button></div>{mode==='career'?<CareerEvaluationPanel employee={employee} month={month} config={config} canManage={managerEligible} canFinalApprove={canFinalApprove} managerScopeEmployees={employees}/>:mode==='manager'?<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch}/>:<SalesQualityPanel month={month} employee={employee} employees={employees} isManager={managerEligible} loginBranch={loginBranch} canSwitchStores={canSwitchStores}/>}</div>;
 }
 
 
@@ -3053,8 +3136,15 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
 const HOME_ORDER_PRODUCTS = [
   { key: 'homeOnly', label: '홈 단독' },
   { key: 'homeTv', label: '홈+TV 동시청약' },
+  { key: 'internet1g', label: '인터넷 1GB' },
+  { key: 'internet500', label: '인터넷 500MB' },
+  { key: 'internet100', label: '인터넷 100MB' },
   { key: 'tvFree', label: 'TV프리(부)' },
   { key: 'smartHome', label: '스마트홈' },
+  { key: 'subSetTop', label: 'TV부셋탑' },
+  { key: 'simulNewChange', label: '홈 + HS 신규/기변 동시판매' },
+  { key: 'simulMnp', label: '홈 + HS MNP 동시판매' },
+  { key: 'simulUsedMnp', label: '홈 + 중고MNP 동시판매' },
 ];
 
 function homeOrderMeta(groupKey, itemKey) {
@@ -5021,6 +5111,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
   const [mobileTargetPlan,setMobileTargetPlan]=useState('');
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
+  const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
   // v21.18: 2ND 번들 회선별 VAS를 따로 기록합니다. { [bundleKey]: [vasKey, ...] }
   const [mobileBundleVasMap,setMobileBundleVasMap]=useState({});
@@ -5830,6 +5921,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCustomDueDate('');
     setMobileTargetPlan('');
     setMobileVasKeys([]);
+    setMobileStrategicPlan(false);
     setMobileBundle2ndKeys([]);
     setMobileBundleVasMap({});
     setMobileBundleSaleTypeMap({});
@@ -5916,7 +6008,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         (mobileBundle2ndKeys||[]).forEach(k=>{bundle2nd[k]=Number(bundle2nd[k]||0)+1});
         const mnpBundle={...(base.groups?.mnpBundle||{})};
         if(oldMeta.usedMnpBundle)mnpBundle.usedMnpBundle=Math.max(0,Number(mnpBundle.usedMnpBundle||0)-1);
-        if(mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
+        if(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
 
         const oldSp=oldMeta.specialPolicy||editingSale.source_meta?.specialPolicy||{};
         const oldFree=bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{});
@@ -5934,7 +6026,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const nextMeta=withCurrentSaleSchema({
           ...(editingSale.source_meta||{}),
           legacySchemaVersion:saleSchemaVersion(editingSale),
-          ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
+          ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
         });
 
@@ -6011,7 +6103,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
-        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,
+        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,exceptionRequestedAmount:Number(mobileSpecialExceptionAmount||0)||null,exceptionStatus:Number(mobileSpecialExceptionAmount||0)>0?'pending':null} : null}
       });
       if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending'})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
@@ -6059,7 +6151,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const replacement=requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:mobileUsedMnpBundle,specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
         }).eq('id',saved.saleId);
         saved._special={matrixFee,vasFee,replacement};
       }
@@ -6081,7 +6173,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           bundle2nd[k]=Number(bundle2nd[k]||0)+1;
         });
         const mnpBundle={...(base.groups?.mnpBundle||{})};
-        if(mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
+        if(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
 
         const convertedDay={
           ...base,
@@ -6098,7 +6190,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         commitMobileOne(
           mobileSaleDraft.ri,
           mobileSaleDraft.ci,
-          { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:mobileUsedMnpBundle,
+          { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
             specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
             bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
         );
@@ -6646,6 +6738,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             </div>
 
+            {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers && Number(mobileSaleDraft.ci)<=1 && (
+              <div className="mt-3">
+                <button type="button" onClick={()=>setMobileStrategicPlan(v=>!v)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs ${mobileStrategicPlan?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-white border-gray-100 text-gray-600'}`}>
+                  <span className="font-semibold">{mobileStrategicPlan?'✓ ':''}본사 전략요금제</span>
+                  <span className="float-right text-[10px] text-gray-400">매출지표 +0.5P</span>
+                </button>
+                <div className="text-[9px] text-gray-400 mt-1">105군 이상 중 당월 본사 전략요금제에 해당할 때만 체크해주세요.</div>
+              </div>
+            )}
+
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">
                 3. 메인회선 전략 부가서비스(VAS) <span className="font-normal text-gray-400">· 복수 선택 가능</span>
@@ -6686,14 +6789,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             </div>
 
-            {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.dailyLabel === 'SIM MNP' && (
+            {Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && (
               <div className="mt-4">
-                <div className="text-xs font-semibold text-gray-600 mb-2">SIM MNP 추가 선택</div>
+                <div className="text-xs font-semibold text-gray-600 mb-2">4. 중고 MNP 결합 인센티브</div>
                 <button type="button" onClick={()=>setMobileUsedMnpBundle(v=>!v)}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs ${mobileUsedMnpBundle?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
-                  <span className="font-semibold">{mobileUsedMnpBundle?'✓ ':''}중고 MNP 결합 활성화</span>
-                  <span className="float-right text-[10px] text-gray-400">61군↑ 개통·결합완료</span>
+                  <span className="font-semibold">{mobileUsedMnpBundle?'✓ ':''}중고 MNP 61군↑ 결합</span>
+                  <span className="float-right text-[10px] text-violet-600 font-bold">+{won(Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||100000))}</span>
                 </button>
+                <div className="text-[10px] text-gray-400 mt-1.5">SIM MNP(선약) · 61군 이상 · 개통 및 결합완료 건만 체크해주세요.</div>
               </div>
             )}
 
@@ -8509,6 +8613,15 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
   </div>;
 }
 
+
+function AdminExpenseOverview({month,employees=[],loginBranch='',canSwitchStores=false}){
+  const scoped=(employees||[]).filter(e=>canSwitchStores||!loginBranch?true:e.branch===loginBranch);
+  const [rows,setRows]=useState([]),[loading,setLoading]=useState(true);
+  useEffect(()=>{const ids=scoped.map(e=>e.id);if(!ids.length){setRows([]);setLoading(false);return}(async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;const {data}=await supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date',{ascending:false});setRows(data||[]);setLoading(false)})()},[month,scoped.map(e=>e.id).join('|')]);
+  const total=rows.reduce((a,x)=>a+Number(x.amount||0),0);
+  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
+}
+
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
@@ -8520,6 +8633,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'homeCare', label: '홈 케어', icon: Home },
     { key: 'employees', label: '직원 관리', icon: Users },
     { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck },
+    { key: 'expenses', label: '영업비용/오퍼', icon: Wallet },
 
     { key: 'spot', label: '스팟', icon: Zap },
     { key: 'recognition', label: '인정', icon: Award },
@@ -8674,6 +8788,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
+      {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
