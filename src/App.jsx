@@ -1047,6 +1047,10 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.77: v21.76 홈 예상 인센티브 유지 + 관리자 영업비용/오퍼 조회 오류 가시화. sales_expenses RLS 보완 SQL 동봉. 전체 연결부 회귀점검 기준 적용. */
+/* v21.76: 홈 판매카드 예상 인센티브 표시 수정. 설치예정 포함 월 전체 홈 입력으로 예상 그레이드/단독/TV프리/스마트홈/동시판매를 계산하되 실제 급여·정산은 completed만 반영. 관련 경로 회귀점검. */
+/* v21.75: 관리자 수동 배지/인정 메뉴 제거. 점장 PICK→성장왕(월 후반 HS 일평균 30%↑), 팀플레이어→올라운드 세일즈(HS·홈·프리·스홈·2ND 모두 판매), 미소 MVP→HS·홈·생산성 종합순위 1위 자동 부여. */
+/* v21.74: 중고 MNP 61군↑ 결합 인센티브를 내역에서 '중고 MNP 결합 수수료'로 독립 분리. 모바일 관련 수수료 세부/합계에 표시하되 총 급여에는 기존 mnpBundlePay를 중복 가산하지 않음. */
 /* v21.73: 내 입력 실적 요약 오류 수정(homeProductLabel undefined 제거). 홈 상품 미등록 라벨도 안전하게 표시하여 모바일/VAS/2ND/홈 집계 전체가 중단되지 않도록 수정. */
 /* v21.72: 내 입력 실적 요약 직원 ID 연결 수정(auth UUID 대신 실제 employee ID 우선), 조회 오류 표시 추가. */
 /* v21.71: 직원 내역 상단 '내 입력 실적 요약' 추가(모바일/VAS/2ND/홈 월 누적), 고객관리 홈 설치·개통 진행관리 항상 펼침. */
@@ -2844,12 +2848,12 @@ const BADGE_DEFS = [
   { key: 'tenure24', icon: '🌳', name: '뿌리내림', rarity: 'RARE', hidden: false, desc: '근속 24개월', auto: true },
   { key: 'tenure36', icon: '🌲', name: '뿌리 깊은 미소', rarity: 'EPIC', hidden: false, desc: '근속 36개월', auto: true },
   { key: 'tenure60', icon: '🏛', name: '미소 베테랑', rarity: 'LEGEND', hidden: false, desc: '근속 60개월', auto: true },
-  { key: 'special_pick', icon: '⭐', name: '점장 PICK', rarity: 'RARE', hidden: false, desc: '점장이 특별 수여', auto: false },
-  { key: 'special_team', icon: '🤝', name: '팀플레이어', rarity: 'EPIC', hidden: false, desc: '협업·지원 공로로 관리자 수여', auto: false },
-  { key: 'special_mvp', icon: '🏆', name: '미소 MVP', rarity: 'LEGEND', hidden: false, desc: '회사 차원의 특별 MVP 선정', auto: false }
+  { key: 'special_pick', icon: '📈', name: '성장왕', rarity: 'RARE', hidden: false, desc: '월 후반 HS 페이스가 전반보다 크게 상승', auto: true },
+  { key: 'special_team', icon: '🎯', name: '올라운드 세일즈', rarity: 'EPIC', hidden: false, desc: 'HS·홈·프리·스홈·2ND를 모두 판매', auto: true },
+  { key: 'special_mvp', icon: '🏆', name: '미소 MVP', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 종합 순위 월 1위', auto: true }
 ];
 
-const SPECIAL_BADGE_KEYS = ['special_pick', 'special_team', 'special_mvp'];
+const SPECIAL_BADGE_KEYS = [];
 
 function badgeDefOf(key) {
   return BADGE_DEFS.find((b) => b.key === key) || null;
@@ -2890,11 +2894,40 @@ function evaluateAutomaticBadges({
   if(hr&&hr<=3&&homer&&homer<=3&&pr&&pr<=3)earned.add('all_top3');
   if(hr===1&&homer===1&&pr===1)earned.add('grand_slam');
 
-  Object.entries(dailyDays||{}).forEach(([,raw])=>{
+  // v21.75 자동 배지
+  // 올라운드 세일즈: 앱에서 객관적으로 확인 가능한 핵심 판매 카테고리를 모두 경험
+  if(hs>0&&home>0&&free>0&&smart>0&&second>0)earned.add('special_team');
+
+  // 미소 MVP: HS/홈/생산성 순위 합이 가장 낮은 직원 1명 (동률은 HS→홈→생산성 순)
+  {
+    const active=[...(competitionRows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch));
+    const rankOf=(metric,row)=>{
+      const vals=active.map(x=>Number(metric.value(x)||0));
+      const mine=Number(metric.value(row)||0);
+      return mine>0 ? 1+vals.filter(v=>v>mine).length : active.length+1;
+    };
+    const hm=MONTHLY_RANK_METRICS.find(x=>x.key==='hs');
+    const hom=MONTHLY_RANK_METRICS.find(x=>x.key==='home');
+    const pm=MONTHLY_RANK_METRICS.find(x=>x.key==='productivity');
+    if(hm&&hom&&pm&&active.length){
+      const ranked=active.map(r=>({r,score:rankOf(hm,r)+rankOf(hom,r)+rankOf(pm,r),hs:Number(hm.value(r)||0),home:Number(hom.value(r)||0),prod:Number(pm.value(r)||0)}))
+        .filter(x=>x.hs>0)
+        .sort((a,b)=>a.score-b.score||b.hs-a.hs||b.home-a.home||b.prod-a.prod);
+      if(ranked[0]?.r?.id===userId)earned.add('special_mvp');
+    }
+  }
+
+  let firstHalfHs=0,secondHalfHs=0,firstHalfDays=0,secondHalfDays=0;
+  Object.entries(dailyDays||{}).forEach(([dayKey,raw])=>{
     const d=normalizeDay(raw);
     const dhs=[0,1,2,3,4].reduce((z,ri)=>z+(d.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
     if(dhs>=5)earned.add('day_hs5'); if(dhs>=8)earned.add('day_hs8'); if(dhs>=10)earned.add('day_hs10');
+    const dayNum=Number(String(dayKey).slice(-2))||Number(dayKey)||0;
+    if(dayNum>=1&&dayNum<=15){firstHalfHs+=dhs;firstHalfDays++;}
+    else if(dayNum>=16){secondHalfHs+=dhs;secondHalfDays++;}
   });
+  const firstPace=firstHalfDays?firstHalfHs/firstHalfDays:0, secondPace=secondHalfDays?secondHalfHs/secondHalfDays:0;
+  if(firstHalfHs>0&&secondHalfHs>0&&secondPace>=firstPace*1.3)earned.add('special_pick');
   const actuals=getPersonalGoalActuals(mergedDraft,pay);
   const tg=Number(personalGoals?.tailored||0);
   if(tg>0&&actuals.tailored>=tg)earned.add('upsell_goal100');
@@ -5102,10 +5135,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
               <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
+              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
             </button>
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
+              {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
               {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
               {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
@@ -5258,6 +5292,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [extraAmount,setExtraAmount]=useState('');
   const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
   const [daySales,setDaySales]=useState([]);
+  const [homePreviewPolicy,setHomePreviewPolicy]=useState(null); // 설치예정 포함, 입력건 예상 홈 인센티브
   const [saleIncentiveOpen,setSaleIncentiveOpen]=useState(null);
   const [daySalesLoading,setDaySalesLoading]=useState(false);
   const [legacyEditorOpen,setLegacyEditorOpen]=useState(false);
@@ -5401,15 +5436,32 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!currentEmp?.id)return;
     setDaySalesLoading(true);
     const saleDate=`${month}-${selectedDay}`;
-    const {data,error}=await supabase
-      .from('customer_sales')
-      .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
-      .eq('user_id',currentEmp.id)
-      .eq('sale_date',saleDate)
-      .order('created_at',{ascending:false});
-    if(!error)setDaySales(data||[]);
+    const [yy,mm]=month.split('-').map(Number),next=new Date(yy,mm,1);
+    const monthTo=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+    const [saleRes,homeRes]=await Promise.all([
+      supabase.from('customer_sales')
+        .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
+        .eq('user_id',currentEmp.id)
+        .eq('sale_date',saleDate)
+        .order('created_at',{ascending:false}),
+      supabase.from('home_orders')
+        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,status,source_work_date,actual_install_date')
+        .eq('user_id',currentEmp.id)
+        .gte('source_work_date',`${month}-01`)
+        .lt('source_work_date',monthTo)
+    ]);
+    if(!saleRes.error)setDaySales(saleRes.data||[]);
+    if(!homeRes.error){
+      // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
+      // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
+      const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
+      setHomePreviewPolicy(calculateHomePolicyFromOrders(previewOrders,config));
+    }else{
+      console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
+      setHomePreviewPolicy(null);
+    }
     setDaySalesLoading(false);
-  },[currentEmp?.id,month,selectedDay]);
+  },[currentEmp?.id,month,selectedDay,config]);
 
   useEffect(()=>{loadDaySales()},[loadDaySales]);
 
@@ -6412,7 +6464,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     }else if(sale?.source_type==='home_order'){
       const customer=sale.customers?.customer_name||'고객';
       const date=String(sale.sale_date||'').slice(0,10);
-      (pay?.homePolicy?.details||[]).filter(x=>String(x.date||'')===date&&String(x.customer||'')===customer).forEach(x=>{
+      const policyDetails=(homePreviewPolicy?.details||pay?.homePolicy?.details||[]);
+      policyDetails.filter(x=>String(x.date||'')===date&&String(x.customer||'')===customer).forEach(x=>{
         if(Number(x.amount||0)!==0)rows.push([x.item,Number(x.amount)]);
       });
     }
@@ -6615,9 +6668,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                               className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
                               {inc.total>0?`+${won(inc.total)}`:'0원'}
                             </button>
-                            <div className="text-[9px] text-gray-400">인센티브</div>
+                            <div className="text-[9px] text-gray-400">예상 인센티브</div>
                             {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
-                              <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
+                              <div className="text-[10px] font-bold text-gray-700 mb-1">이 판매건 예상 인센티브</div><div className="text-[9px] text-gray-400 mb-2">설치예정 홈은 현재 월 입력 기준으로 미리 계산하며, 실제 지급은 설치완료 후 반영돼요.</div>
                               {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
                             </div>}
                           </div>
@@ -8439,7 +8492,7 @@ function SettlementReview({ month, rows, employees, config }) {
           Object.entries(meta.bundle2ndKeys||[]).forEach(()=>{});
           (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'2ND 번들 유치 수수료',amount:Number(it.rate),note:it.label||k});});
           Object.entries(meta.bundleVasMap||{}).forEach(([bk,keys])=>(keys||[]).forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:`2ND · ${it.label||k}${(meta.bundleSaleTypeMap?.[bk]||'normal')==='free'?' · 무료판매 제외대상':''}`});}));
-          if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고MNP 결합',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
+          if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고 MNP 결합 수수료',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
           const sp=meta.specialPolicy||{};
           if(sp.policyId){
             const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
@@ -8520,7 +8573,7 @@ function SettlementReview({ month, rows, employees, config }) {
       ['홈 단독·부가 수수료',p.homeFlatPay],
       ['홈 동시판매·부셋탑',p.homeAddonPay],
       ['인터넷 재약정',p.renewPay],
-      ['중고MNP 결합',p.mnpBundlePay],
+      ['중고 MNP 결합 수수료',p.mnpBundlePay],
       ['소노',p.sonoPay],
       ['고객등록 보너스',p.custRegBonus],
       ['맞춤제안 건수',p.tailoredBonus],
@@ -8733,10 +8786,21 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
 
 function AdminExpenseOverview({month,employees=[],loginBranch='',canSwitchStores=false}){
   const scoped=(employees||[]).filter(e=>canSwitchStores||!loginBranch?true:e.branch===loginBranch);
-  const [rows,setRows]=useState([]),[loading,setLoading]=useState(true);
-  useEffect(()=>{const ids=scoped.map(e=>e.id);if(!ids.length){setRows([]);setLoading(false);return}(async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;const {data}=await supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date',{ascending:false});setRows(data||[]);setLoading(false)})()},[month,scoped.map(e=>e.id).join('|')]);
+  const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
+  useEffect(()=>{
+    const ids=scoped.map(e=>e.id);
+    if(!ids.length){setRows([]);setLoadError('');setLoading(false);return}
+    (async()=>{
+      setLoading(true);setLoadError('');
+      const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
+      const {data,error}=await supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date',{ascending:false});
+      if(error){console.error('ADMIN EXPENSE LOAD ERROR',error);setRows([]);setLoadError(friendlyError(error));}
+      else setRows(data||[]);
+      setLoading(false);
+    })();
+  },[month,scoped.map(e=>e.id).join('|')]);
   const total=rows.reduce((a,x)=>a+Number(x.amount||0),0);
-  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
+  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:loadError?<div className="p-4"><div className="text-sm font-bold text-red-500">영업비용을 불러오지 못했어요.</div><div className="text-[11px] text-red-400 mt-1">{loadError}</div><div className="text-[10px] text-gray-400 mt-2">Supabase의 sales_expenses 조회 정책(RLS)을 확인해주세요.</div></div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
 }
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
@@ -8753,7 +8817,6 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'expenses', label: '영업비용/오퍼', icon: Wallet },
 
     { key: 'spot', label: '스팟', icon: Zap },
-    { key: 'recognition', label: '인정', icon: Award },
     { key: 'history', label: '변경 이력', icon: History },
     ...(isFullAdmin ? [
       { key: 'settlement', label: '정산 검토', icon: Wallet },
@@ -8909,10 +8972,6 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
-      {adminTab === 'recognition' && (
-        <SpecialBadgeAwardPanel employees={employees} authUserId={authUserId} />
-      )}
-
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
       {adminTab === 'employees' && (
