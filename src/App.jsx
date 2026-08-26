@@ -1047,6 +1047,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 */
 /* v21.51: 당월 실적 초기화 기능을 직원 내역 하단에서 일일 실적 입력 화면 하단 '실적 관리' 영역으로 이동. 개인/관리자 달력 HS·SIM MNP·홈 표시 유지. */
 /* v21.52: 관리자 매장 정렬 1~13호점 통일 + 인터넷 재약정 구조화 입력/자동 계산. */
+/* v21.73: 내 입력 실적 요약 오류 수정(homeProductLabel undefined 제거). 홈 상품 미등록 라벨도 안전하게 표시하여 모바일/VAS/2ND/홈 집계 전체가 중단되지 않도록 수정. */
 /* v21.72: 내 입력 실적 요약 직원 ID 연결 수정(auth UUID 대신 실제 employee ID 우선), 조회 오류 표시 추가. */
 /* v21.71: 직원 내역 상단 '내 입력 실적 요약' 추가(모바일/VAS/2ND/홈 월 누적), 고객관리 홈 설치·개통 진행관리 항상 펼침. */
 /* v21.70: 관리자 판매 퀄리티 백지화 수정. 0건/빈 매장/조회 오류 시에도 안전하게 0% 지표를 렌더링. */
@@ -4751,7 +4752,13 @@ function MyInputSummary({userId,month,config}){
       });
       validHomes.forEach(x=>{
         const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'홈+TV 동시청약',tvFree:'TV프리(부)',smartHome:'스마트홈'};
-        inc(home,labels[x.product_type]||homeProductLabel(x.product_type)||x.product_type);
+        const fallbackLabel=String(x.product_type||'홈 기타')
+          .replace(/^internet1g$/i,'인터넷 1GB')
+          .replace(/^internet500$/i,'인터넷 500MB')
+          .replace(/^internet100$/i,'인터넷 100MB')
+          .replace(/^simulNewChange$/i,'홈 + HS 신규/기변 동시판매')
+          .replace(/^simulMnp$/i,'홈 + HS MNP 동시판매');
+        inc(home,labels[x.product_type]||fallbackLabel);
       });
       const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
       const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),totalHs,totalHome:validHomes.filter(x=>['internet1g','internet500','internet100','homeOnly','homeTv'].includes(x.product_type)).length,totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
