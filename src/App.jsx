@@ -8845,7 +8845,9 @@ function headOfficeScores(metrics,config,month){
   const extraKpi=Number(metrics.home||0)*kpiRate('kpiHome')+Number(metrics.tv||0)*kpiRate('kpiTv')
     +Number(metrics.subSetTop||0)*kpiRate('kpiTvSetTop')+Number(metrics.smartHome||0)*kpiRate('kpiSmartHome')
     +Number(metrics.internetRenew||0)*kpiRate('kpiInternetRenew')+Number(metrics.tvRenew||0)*kpiRate('kpiTvRenew');
-  return {gradePoints:pay.mobilePoints,kpiScore:pay.kpiScore+extraKpi,hs:[0,1,2,3,4].reduce((s,ri)=>s+matrixTotalAt(metrics.matrix,ri),0),second:matrixTotalAt(metrics.matrix,7)};
+  const homeGradePoints=Number(metrics.home||0)+Number(metrics.tv||0)+Number(metrics.smartHome||0)*0.5;
+  const gradePoints=pay.mobilePoints+(pay.mobilePoints>ADDON_GATE?homeGradePoints:0);
+  return {gradePoints,kpiScore:pay.kpiScore+extraKpi,hs:[0,1,2,3,4].reduce((s,ri)=>s+matrixTotalAt(metrics.matrix,ri),0),second:matrixTotalAt(metrics.matrix,7)};
 }
 
 function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
