@@ -781,7 +781,12 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
     ? supportCap
     : Math.min(Number(bucket?.rate || 0) * activityCount, supportCap);
 
-  const mobilePoints = sumPoint(draft.mobilePoint || {}, mobileItems);
+  // 2ND 성과등급P는 단독/번들 구분 없이 동일하게 인정합니다.
+  // 단독은 mobilePoint.secondOnly에 포함되고, 번들은 bundle2nd에 별도 저장되므로
+  // 번들 건수에 현재 2ND 성과등급 배점을 곱해 추가합니다. 무료판매도 실적은 인정됩니다.
+  const secondPointRate = Number(mobileItems.find((item) => item.key === 'secondOnly')?.point || 0);
+  const bundle2ndPoints = bundle2ndActivityCount * secondPointRate;
+  const mobilePoints = sumPoint(draft.mobilePoint || {}, mobileItems) + bundle2ndPoints;
   const homeAddonPoints = sumPoint(draft.homeBase || {}, HOME_BASE_ITEMS)
     + Number(draft.homeFlat?.tvFree || 0) * 0.5
     + Number(draft.homeFlat?.smartHome || 0) * 0.5;
@@ -887,7 +892,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
 
   return {
     months, bucket, activityCount, baseActivityCount, bundle2ndActivityCount, tenurePay,
-    mobilePoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
+    mobilePoints, bundle2ndPoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
     matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay,
     rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal,
