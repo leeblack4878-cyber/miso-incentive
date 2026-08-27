@@ -8460,22 +8460,23 @@ function AdminManagementAlerts({ pendingCount, employees, onGo }) {
 }
 
 function SettlementReview({ month, rows, employees, config }) {
-  const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({});
+  const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({}),[headOfficeMap,setHeadOfficeMap]=useState({});
   const [detailUser,setDetailUser]=useState(null),[detailRows,setDetailRows]=useState([]),[detailLoading,setDetailLoading]=useState(false);
   useEffect(()=>{
     (async()=>{
       const ids=(rows||[]).map(r=>r.id);if(!ids.length)return;
       const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-      const [{data:s},{data:e},{data:r}]=await Promise.all([
+      const [{data:s},{data:e},{data:r},{data:h}]=await Promise.all([
         supabase.from('spot_claims').select('user_id,final_amount,direct_amount,source_context,spot_policies(amount)').in('user_id',ids).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to),
         supabase.from('sales_expenses').select('user_id,amount').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
-        supabase.from('settlement_reviews').select('*').eq('month',month).in('user_id',ids)
+        supabase.from('settlement_reviews').select('*').eq('month',month).in('user_id',ids),
+        supabase.from('head_office_performance').select('user_id,as_of_date,metrics,vas_review,note').eq('month',month).in('user_id',ids)
       ]);
       const sm={},em={},stm={};
       (s||[]).filter(x=>x.source_context!=='mobile').forEach(x=>sm[x.user_id]=(sm[x.user_id]||0)+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0));
       (e||[]).forEach(x=>em[x.user_id]=(em[x.user_id]||0)+Number(x.amount||0));
       (r||[]).forEach(x=>stm[x.user_id]=x.status);
-      setSpotMap(sm);setExpenseMap(em);setStatusMap(stm);
+      setSpotMap(sm);setExpenseMap(em);setStatusMap(stm);setHeadOfficeMap(Object.fromEntries((h||[]).map(x=>[x.user_id,x])));
     })();
   },[month,rows]);
 
@@ -8608,11 +8609,14 @@ function SettlementReview({ month, rows, employees, config }) {
     </div>
     <div className="bg-white rounded-xl border overflow-hidden divide-y">
       {(rows||[]).map(r=>{
-        const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense,status=statusMap[r.id]||'unreviewed';
+        const spot=spotMap[r.id]||0,expense=expenseMap[r.id]||0,net=r.pay.total+spot-expense,status=statusMap[r.id]||'unreviewed',hq=headOfficeMap[r.id];
+        const hqMetrics=hq?normalizeHeadOfficeMetrics(hq.metrics):null,hqScore=hqMetrics?headOfficeScores(hqMetrics,config,month):null;
+        const inputHs=hsCount(r.draft),inputSecond=matrixRowCount(r.draft,7)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
         return <div key={r.id} className="p-4">
           <button onClick={()=>loadDetail(r)} className="w-full text-left">
             <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div><div className="text-[10px] text-violet-500 mt-1">상세 산출내역 보기 ›</div></div><div className="text-right"><div className="font-bold text-violet-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
           </button>
+          {hqScore?<div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-800"><div className="font-semibold">본사 데이터 {hq.as_of_date} 기준</div><div className="mt-1">HS 직원 {fmtCount(inputHs)} / 본사 {fmtCount(hqScore.hs)} <b>({hqScore.hs-inputHs>0?'+':''}{fmtCount(hqScore.hs-inputHs)})</b> · 2ND 직원 {fmtCount(inputSecond)} / 본사 {fmtCount(hqScore.second)} <b>({hqScore.second-inputSecond>0?'+':''}{fmtCount(hqScore.second-inputSecond)})</b></div><div className="mt-0.5">성과P 직원 {fmtNum(r.pay?.totalPoints,1)}P / 본사 {fmtNum(hqScore.gradePoints,1)}P · 생산성 직원 {fmtNum(r.pay?.kpiScore,1)}P / 본사 {fmtNum(hqScore.kpiScore,1)}P</div></div>:<div className="mt-2 text-[10px] text-gray-300">본사 데이터 미등록 · 직원 입력 기준으로 검토</div>}
           <div className="grid grid-cols-4 gap-1 mt-3">
             {[['unreviewed','미검토'],['reviewing','검토중'],['checked','확인완료'],['final','정산확정']].map(([k,l])=><button key={k} onClick={()=>setStatus(r.id,k)} className={`py-1.5 rounded text-[10px] font-semibold ${status===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
           </div>
@@ -8821,6 +8825,68 @@ function AdminExpenseOverview({month,employees=[],loginBranch='',canSwitchStores
   return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:loadError?<div className="p-4"><div className="text-sm font-bold text-red-500">영업비용을 불러오지 못했어요.</div><div className="text-[11px] text-red-400 mt-1">{loadError}</div><div className="text-[10px] text-gray-400 mt-2">Supabase의 sales_expenses 조회 정책(RLS)을 확인해주세요.</div></div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
 }
 
+const HEAD_OFFICE_EXTRA_FIELDS = [
+  ['home','홈'],['tv','TV(부)'],['subSetTop','부셋탑'],['smartHome','스마트홈'],
+  ['internetRenew','인터넷 재약정'],['tvRenew','TV 재약정'],['sono','소노'],
+];
+function emptyHeadOfficeMetrics(){ return {matrix:emptyDayMatrix(),...Object.fromEntries(HEAD_OFFICE_EXTRA_FIELDS.map(([k])=>[k,0]))}; }
+function normalizeHeadOfficeMetrics(raw={}){
+  const base=emptyHeadOfficeMetrics();
+  const matrix=emptyDayMatrix();
+  (raw.matrix||[]).forEach((row,ri)=>(row||[]).forEach((v,ci)=>{if(matrix[ri]&&ci<matrix[ri].length)matrix[ri][ci]=Number(v||0)}));
+  return {...base,...raw,matrix};
+}
+function matrixTotalAt(matrix,ri){return (matrix?.[ri]||[]).reduce((s,v)=>s+Number(v||0),0)}
+function headOfficeScores(metrics,config,month){
+  const d=emptyDay();d.matrix=normalizeHeadOfficeMetrics(metrics).matrix;
+  const merged=applyDailyToDraft(emptyDraft(),{'01':d},month,config.categoryMap,config.gibyeonColumnMap);
+  const pay=computePay(merged,'기타','2000-01-01',month,config,0);
+  const kpiRate=(key)=>Number((config.kpiItems||DEFAULT_KPI_ITEMS).find(x=>x.key===key)?.point||0);
+  const extraKpi=Number(metrics.home||0)*kpiRate('kpiHome')+Number(metrics.tv||0)*kpiRate('kpiTv')
+    +Number(metrics.subSetTop||0)*kpiRate('kpiTvSetTop')+Number(metrics.smartHome||0)*kpiRate('kpiSmartHome')
+    +Number(metrics.internetRenew||0)*kpiRate('kpiInternetRenew')+Number(metrics.tvRenew||0)*kpiRate('kpiTvRenew');
+  return {gradePoints:pay.mobilePoints,kpiScore:pay.kpiScore+extraKpi,hs:[0,1,2,3,4].reduce((s,ri)=>s+matrixTotalAt(metrics.matrix,ri),0),second:matrixTotalAt(metrics.matrix,7)};
+}
+
+function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
+  const salesEmployees=(employees||[]).filter(e=>!NON_SALES_STORES.includes(e.branch));
+  const [records,setRecords]=useState({}),[selectedId,setSelectedId]=useState(salesEmployees[0]?.id||''),[storeFilter,setStoreFilter]=useState('');
+  const [asOfDate,setAsOfDate]=useState(`${month}-${String(Math.min(new Date().getDate(),daysInMonth(month))).padStart(2,'0')}`);
+  const [metrics,setMetrics]=useState(emptyHeadOfficeMetrics()),[vasReview,setVasReview]=useState({}),[note,setNote]=useState(''),[saving,setSaving]=useState(false),[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{setLoading(true);const {data,error}=await supabase.from('head_office_performance').select('*').eq('month',month);if(error){alert(`본사 데이터 불러오기 실패: ${friendlyError(error)}`);setRecords({})}else setRecords(Object.fromEntries((data||[]).map(x=>[x.user_id,x])));setLoading(false)},[month]);
+  useEffect(()=>{load()},[load]);
+  useEffect(()=>{setAsOfDate(`${month}-${String(Math.min(new Date().getDate(),daysInMonth(month))).padStart(2,'0')}`)},[month]);
+  useEffect(()=>{const rec=records[selectedId];setMetrics(normalizeHeadOfficeMetrics(rec?.metrics||{}));setVasReview(rec?.vas_review||{});setNote(rec?.note||'');if(rec?.as_of_date)setAsOfDate(rec.as_of_date)},[selectedId,records]);
+  const visible=salesEmployees.filter(e=>!storeFilter||e.branch===storeFilter);
+  useEffect(()=>{if(visible.length&&!visible.some(e=>e.id===selectedId))setSelectedId(visible[0].id)},[storeFilter,visible.map(e=>e.id).join('|')]); // eslint-disable-line
+  const selected=salesEmployees.find(e=>e.id===selectedId),employeeRow=(rows||[]).find(r=>r.id===selectedId);
+  const official=headOfficeScores(metrics,config,month);
+  const employee={hs:hsCount(employeeRow?.draft||{}),second:matrixRowCount(employeeRow?.draft||{},7)+Object.values(employeeRow?.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0),gradePoints:Number(employeeRow?.pay?.totalPoints||0),kpiScore:Number(employeeRow?.pay?.kpiScore||0)};
+  const stores=sortStoresByOpenOrder([...new Set(salesEmployees.map(e=>e.branch))]);
+  const updateMatrix=(ri,ci,value)=>setMetrics(v=>{const matrix=v.matrix.map(r=>[...r]);matrix[ri][ci]=Math.max(0,Number(value||0));return {...v,matrix}});
+  const save=async()=>{if(!selected)return;setSaving(true);const payload={month,user_id:selected.id,store_name:selected.branch,as_of_date:asOfDate,metrics,vas_review:vasReview,note:note.trim()||null,updated_by:authUserId,updated_at:new Date().toISOString()};const {error}=await supabase.from('head_office_performance').upsert(payload,{onConflict:'month,user_id'});setSaving(false);if(error)return alert(`본사 데이터 저장 실패: ${friendlyError(error)}`);await load();alert('본사 데이터를 저장했어요. 직원 입력 원본과 급여 계산은 변경하지 않았습니다.')};
+  const employeeVas=employeeRow?.draft?.vas||{};
+  return <div className="space-y-3">
+    <div><div className="text-xs text-violet-600 font-semibold">본사 데이터 기준</div><div className="text-xl font-bold">개인별 누적 실적 대조</div><div className="text-[10px] text-gray-400 mt-1">본사에서 확인한 월 누적값을 입력합니다. 급여는 직원 상세입력 기준을 유지하고 정산 검토에서 차이를 확인합니다.</div></div>
+    <div className="bg-white border rounded-xl p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <select value={storeFilter} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"><option value="">전체 매장</option>{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>
+      <select value={selectedId} onChange={e=>setSelectedId(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{visible.map(e=><option key={e.id} value={e.id}>{e.name} · {displayStoreName(e.branch)}</option>)}</select>
+      <input type="date" value={asOfDate} onChange={e=>setAsOfDate(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"/>
+      <button onClick={save} disabled={saving||loading||!selected} className="rounded-lg bg-violet-600 text-white text-xs font-bold px-3 py-2 disabled:opacity-40">{saving?'저장 중':'본사 데이터 저장'}</button>
+    </div>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {[['HS',employee.hs,official.hs,'건'],['2ND',employee.second,official.second,'건'],['성과등급P',employee.gradePoints,official.gradePoints,'P'],['생산성P',employee.kpiScore,official.kpiScore,'P']].map(([label,input,head,unit])=><div key={label} className="bg-white border rounded-xl p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="text-sm font-bold mt-1">본사 {fmtNum(head,1)}{unit}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 {fmtNum(input,1)}{unit} · 차이 {Number(head-input)>=0?'+':''}{fmtNum(head-input,1)}{unit}</div></div>)}
+    </div>
+    <div className="bg-white border rounded-xl overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="font-bold text-sm">가입유형·요금제군 누적</div><div className="text-[10px] text-gray-400">기변A/B/C를 포함해 본사에서 확인한 개인별 월 누적 건수를 입력하세요.</div></div>
+      <div className="overflow-x-auto"><table className="min-w-[850px] w-full text-xs"><thead><tr className="bg-gray-50"><th className="text-left p-2 sticky left-0 bg-gray-50">가입유형</th>{MATRIX_COLS.map(c=><th key={c} className="p-2 text-gray-500"><ColHeader label={c}/></th>)}<th className="p-2">직원입력</th><th className="p-2">차이</th></tr></thead><tbody>{MATRIX_ROW_DEFS.map((rd,ri)=>{const input=matrixTotalAt(employeeRow?.draft?.matrix,ri)+(ri===7?Object.values(employeeRow?.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0):0),head=matrixTotalAt(metrics.matrix,ri);return <tr key={rd.label} className="border-t"><td className="p-2 font-semibold sticky left-0 bg-white whitespace-nowrap">{rd.label}</td>{MATRIX_COLS.map((c,ci)=><td key={c} className="p-1">{rd.hasTiers||ci===0?<input type="number" min="0" value={metrics.matrix[ri]?.[ci]||''} onChange={e=>updateMatrix(ri,ci,e.target.value)} className="w-full min-w-[70px] border rounded px-2 py-1.5 text-right"/>:<div className="text-center text-gray-200">—</div>}</td>)}<td className="p-2 text-right">{fmtCount(input)}</td><td className={`p-2 text-right font-bold ${head-input===0?'text-gray-400':head-input>0?'text-blue-600':'text-red-500'}`}>{head-input>0?'+':''}{fmtCount(head-input)}</td></tr>})}</tbody></table></div>
+    </div>
+    <div className="bg-white border rounded-xl p-4"><div className="font-bold text-sm">홈·기타 본사 누적</div><div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">{HEAD_OFFICE_EXTRA_FIELDS.map(([key,label])=><label key={key} className="text-[10px] text-gray-500">{label}<input type="number" min="0" value={metrics[key]||''} onChange={e=>setMetrics(v=>({...v,[key]:Math.max(0,Number(e.target.value||0))}))} className="mt-1 w-full border rounded-lg px-2 py-2 text-xs text-right"/></label>)}</div></div>
+    <div className="bg-white border rounded-xl p-4"><div className="font-bold text-sm">VAS 입력값 · 관리자 검토</div><div className="text-[10px] text-gray-400 mt-1">매출지표에는 직원 입력 VAS를 우선 사용합니다. 검토값은 비교용이며 급여를 변경하지 않습니다.</div><div className="space-y-2 mt-3">{(config.vas||DEFAULT_VAS).map(v=>{const input=Number(employeeVas[v.key]||0),reviewed=vasReview[v.key];return <div key={v.key} className="grid grid-cols-[1fr_75px_90px_65px] items-center gap-2"><div className="text-xs text-gray-600 truncate">{v.label}</div><div className="text-[10px] text-gray-400 text-right">입력 {fmtCount(input)}</div><input type="number" min="0" placeholder="검토 전" value={reviewed??''} onChange={e=>setVasReview(prev=>{const next={...prev};if(e.target.value==='')delete next[v.key];else next[v.key]=Math.max(0,Number(e.target.value));return next})} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><div className={`text-[10px] text-right ${reviewed===undefined?'text-gray-300':Number(reviewed)-input===0?'text-gray-400':'text-red-500'}`}>{reviewed===undefined?'미검토':`차이 ${Number(reviewed)-input>0?'+':''}${fmtCount(Number(reviewed)-input)}`}</div></div>})}</div></div>
+    <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="본사 반영 시점·차이 사유 메모" className="w-full bg-white border rounded-xl p-3 text-xs min-h-[72px]"/>
+  </div>;
+}
+
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
@@ -8837,13 +8903,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'spot', label: '스팟', icon: Zap },
     { key: 'history', label: '변경 이력', icon: History },
     ...(isFullAdmin ? [
+      { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud },
       { key: 'settlement', label: '정산 검토', icon: Wallet },
       { key: 'rates', label: '지급기준 관리', icon: Settings },
       { key: 'permissions', label: '권한 관리', icon: ShieldCheck },
     ] : []),
   ];
   useEffect(() => {
-    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement') && !isFullAdmin) setAdminTab('dashboard');
+    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
 
   const downloadCSV = () => {
@@ -8989,6 +9056,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
+      {adminTab === 'headOfficeData' && isFullAdmin && <HeadOfficeDataPanel month={month} employees={employees} rows={rows} config={config} authUserId={authUserId} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
