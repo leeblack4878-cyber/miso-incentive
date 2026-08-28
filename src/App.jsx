@@ -17,6 +17,11 @@ import {
 
 let feedbackBridge={toast:null,confirm:null};
 function showAppToast(message,{tone='success',title=''}={}){feedbackBridge.toast?.({message,title,tone})}
+function showLegacyAlert(message){
+  const text=String(message||'');
+  const isError=/실패|오류|못했|입력해주세요|선택해주세요|없어요|할 수 없|권한|마감된/.test(text);
+  showAppToast(text,{tone:isError?'error':'info',title:isError?'확인해주세요':'안내'});
+}
 function showAppConfirm(options={}){
   if(!feedbackBridge.confirm)return Promise.resolve(window.confirm(options.message||options.title||'계속할까요?'));
   return feedbackBridge.confirm(options);
@@ -1638,7 +1643,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   };
 
   const addEmployee = async () => {
-    window.alert('직원 계정 생성은 현재 Supabase Authentication → Users에서 먼저 생성해주세요. 다음 단계에서 관리자 화면의 직원 초대 기능으로 연결할 예정입니다.');
+    showLegacyAlert('직원 계정 생성은 현재 Supabase Authentication → Users에서 먼저 생성해주세요. 다음 단계에서 관리자 화면의 직원 초대 기능으로 연결할 예정입니다.');
   };
 
   const updateEmployee = async (id, patch) => {
@@ -2094,7 +2099,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
   const addEvent=async()=>{
     if(!selected?.id||!canManage)return;
     const {error}=await supabase.from('career_eval_penalties').insert({user_id:selected.id,event_date:eventDate,event_type:eventType,count:Math.max(1,Number(count||1)),note:note.trim()||null,status:'active'});
-    if(error)return alert(`평가 내역 저장 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`평가 내역 저장 실패: ${friendlyError(error)}`);
     setNote('');setCount(1);const {data}=await supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false});setEvents(data||[]);
   };
   const cancelEvent=async(id)=>{if(!canManage)return;await supabase.from('career_eval_penalties').update({status:'cancelled'}).eq('id',id);setEvents(v=>v.map(x=>x.id===id?{...x,status:'cancelled'}:x));};
@@ -2102,7 +2107,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
     if(!canManage)return;
     const nextFail=streakFail;
     const payload={quarter:quarter.key,user_id:selected.id,score,result:pass?'PASS':'FAIL',action,consecutive_fail_count:nextFail};
-    const {error}=await supabase.from('career_eval_decisions').upsert(payload,{onConflict:'quarter,user_id'});if(error)return alert(friendlyError(error));setDecision({...decision,...payload});
+    const {error}=await supabase.from('career_eval_decisions').upsert(payload,{onConflict:'quarter,user_id'});if(error)return showLegacyAlert(friendlyError(error));setDecision({...decision,...payload});
   };
   const typeLabel={nps_negative:'NPS 비추천/강한 비추천',label:'꼬리표',home_no_experience:'홈 무체험'};
   return <div className="space-y-3">
@@ -2185,8 +2190,8 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const verifiedAt=snap?.verified_at?new Date(snap.verified_at).toLocaleString('ko-KR'):'미확인';
   const setVerified=(key,val)=>setSnap(v=>({...v,verified_metrics:{...(v.verified_metrics||{}),[key]:Number(val||0)}}));
   const setExt=(key,val)=>setSnap(v=>({...v,external_inputs:{...(v.external_inputs||{}),[key]:val}}));
-  const saveSnapshot=async()=>{setSaving(true);const payload={month,store_name:activeStore,verified_metrics:{...live,...(snap.verified_metrics||{})},external_inputs:{...(snap.external_inputs||{})},verified_by:authUserId,verified_at:new Date().toISOString()};const {error}=await supabase.from('manager_eval_monthly').upsert(payload,{onConflict:'month,store_name'});setSaving(false);if(error)return alert(friendlyError(error));setSnap(payload);};
-  const saveAa=async()=>{setSaving(true);const {error}=await supabase.from('aa_impact_monthly').upsert({month,metrics:aaConfig,updated_by:authUserId},{onConflict:'month'});setSaving(false);if(error)return alert(friendlyError(error));alert('AA임팩트 월 목표를 저장했어요.');};
+  const saveSnapshot=async()=>{setSaving(true);const payload={month,store_name:activeStore,verified_metrics:{...live,...(snap.verified_metrics||{})},external_inputs:{...(snap.external_inputs||{})},verified_by:authUserId,verified_at:new Date().toISOString()};const {error}=await supabase.from('manager_eval_monthly').upsert(payload,{onConflict:'month,store_name'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));setSnap(payload);};
+  const saveAa=async()=>{setSaving(true);const {error}=await supabase.from('aa_impact_monthly').upsert({month,metrics:aaConfig,updated_by:authUserId},{onConflict:'month'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));showLegacyAlert('AA임팩트 월 목표를 저장했어요.');};
   return <div className="space-y-3">
     <div className={`grid gap-2 ${canSwitchStores?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='dashboard'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='settings'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>
     {canSwitchStores&&<select value={activeStore} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>}
@@ -3277,12 +3282,12 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       setHomeActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
       return;
     }
-    if (!window.confirm('취소 처리할까요?')) return;
+    if (!await showAppConfirm({title:'홈 청약을 취소할까요?',message:'취소 건은 실적 요약과 정산 대상에서 제외됩니다.',confirmLabel:'취소 처리',tone:'danger'})) return;
     const now = new Date().toISOString();
     const { error } = await supabase.from('home_orders').update({
       status:'cancelled', cancelled_at:now, updated_at:now
     }).eq('id',order.id).eq('user_id',userId);
-    if (error) return alert(`상태 변경 실패: ${friendlyError(error)}`);
+    if (error) return showLegacyAlert(`상태 변경 실패: ${friendlyError(error)}`);
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
       message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel}`,
@@ -3304,7 +3309,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
         const next={...base,groups:{...base.groups,[order.source_group]:{
           ...(base.groups?.[order.source_group]||{}),[order.source_key]:current+1}}};
         const ok=await saveDailyDay(completionDay,next);
-        if (!ok) return alert('확정 실적 반영에 실패했어요. 다시 시도해주세요.');
+        if (!ok) return showLegacyAlert('확정 실적 반영에 실패했어요. 다시 시도해주세요.');
       } else {
         const completionWorkDate = `${completionMonth}-${completionDay}`;
         const { data: rec, error: loadError } = await supabase
@@ -3315,7 +3320,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
           .maybeSingle();
 
         if (loadError) {
-          return alert(`완료일 실적 불러오기 실패: ${friendlyError(loadError)}`);
+          return showLegacyAlert(`완료일 실적 불러오기 실패: ${friendlyError(loadError)}`);
         }
 
         const base = normalizeDay(rec?.data);
@@ -3342,7 +3347,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
             { onConflict: 'user_id,work_date' }
           );
 
-        if (de) return alert(`확정 실적 반영 실패: ${friendlyError(de)}`);
+        if (de) return showLegacyAlert(`확정 실적 반영 실패: ${friendlyError(de)}`);
       }
     }
 
@@ -3350,7 +3355,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
     const {error}=await supabase.from('home_orders').update({
       status:'completed',completed_at:completedAt,actual_install_date:homeActualCompleteDate,updated_at:new Date().toISOString()
     }).eq('id',order.id).eq('user_id',userId);
-    if(error)return alert(`완료 처리 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`완료 처리 실패: ${friendlyError(error)}`);
 
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
@@ -3388,7 +3393,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       setHomeScheduleDate('');
       await load();
     }catch(e){
-      alert(`설치 예정일 수정 실패: ${friendlyError(e)}`);
+      showLegacyAlert(`설치 예정일 수정 실패: ${friendlyError(e)}`);
     }finally{
       setHomeCareActionSaving(false);
     }
@@ -3433,7 +3438,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
     const msg=isCompleted
       ? '완료 처리를 취소하고 다시 진행중으로 돌릴까요?\n완료일에 반영된 확정 실적도 함께 원복됩니다.'
       : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?';
-    if(!window.confirm(msg))return;
+    if(!await showAppConfirm({title:isCompleted?'완료 처리를 되돌릴까요?':'취소 처리를 되돌릴까요?',message:msg,confirmLabel:'진행중으로 변경'}))return;
 
     setHomeCareActionSaving(true);
     try{
@@ -3448,7 +3453,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay }) {
       if(error)throw error;
       await load();
     }catch(e){
-      alert(`상태 되돌리기 실패: ${friendlyError(e)}`);
+      showLegacyAlert(`상태 되돌리기 실패: ${friendlyError(e)}`);
     }finally{
       setHomeCareActionSaving(false);
     }
@@ -4014,27 +4019,27 @@ function SpotClaimPanel({ userId, month, claimDate }) {
   useEffect(()=>{load()},[load]);
 
   const addPolicyClaim=async()=>{
-    if(!policyId)return alert('스팟 정책을 선택해주세요.');
+    if(!policyId)return showLegacyAlert('스팟 정책을 선택해주세요.');
     const {error}=await supabase.from('spot_claims').insert({
       policy_id:policyId,user_id:userId,
       claim_date:claimDate||new Date().toISOString().slice(0,10),
       customer_name:customer.trim()||null,status:'pending',source_context:'mobile'
     });
-    if(error)return alert(`스팟 신청 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`스팟 신청 실패: ${friendlyError(error)}`);
     setCustomer('');setPolicyId('');load();
   };
 
   const addDirect=async()=>{
     const title=directTitle.trim(), amount=Number(directAmount);
-    if(!title)return alert('스팟 정책명을 입력해주세요.');
-    if(!amount||amount<=0)return alert('추가 금액을 입력해주세요.');
+    if(!title)return showLegacyAlert('스팟 정책명을 입력해주세요.');
+    if(!amount||amount<=0)return showLegacyAlert('추가 금액을 입력해주세요.');
     const {error}=await supabase.from('spot_claims').insert({
       policy_id:null,user_id:userId,
       claim_date:claimDate||new Date().toISOString().slice(0,10),
       customer_name:customer.trim()||null,status:'pending',
       direct_title:title,direct_amount:amount,direct_memo:directMemo.trim()||null,source_context:'mobile'
     });
-    if(error)return alert(`스팟 직접 입력 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`스팟 직접 입력 실패: ${friendlyError(error)}`);
     setDirectTitle('');setDirectAmount('');setDirectMemo('');setCustomer('');setDirectOpen(false);load();
   };
 
@@ -4121,8 +4126,8 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
     };
     const {error}=await supabase.from('store_goals')
       .upsert(payload,{onConflict:'month,store_name'});
-    if(error)return alert(`매장 목표 저장 실패: ${friendlyError(error)}`);
-    alert('매장 목표를 저장했어요.');
+    if(error)return showLegacyAlert(`매장 목표 저장 실패: ${friendlyError(error)}`);
+    showLegacyAlert('매장 목표를 저장했어요.');
     load();
   };
 
@@ -4242,9 +4247,9 @@ function SpecialSalePolicyAdmin({ authUserId }) {
     let ps=[],cs=[]; if(uids.length){const {data}=await supabase.from('profiles').select('id,name,store_name').in('id',uids);ps=data||[];} if(cids.length){const {data}=await supabase.from('customers').select('id,customer_name').in('id',cids);cs=data||[];}
     const pm=Object.fromEntries(ps.map(x=>[x.id,x])),cm=Object.fromEntries(cs.map(x=>[x.id,x])); setPending(candidates.map(x=>({...x,profiles:pm[x.user_id],customers:cm[x.customer_id]})));
   },[]); useEffect(()=>{load()},[load]);
-  const add=async()=>{if(!form.title||!form.start_date||!form.end_date)return alert('정책명과 기간을 입력해주세요.');const {error}=await supabase.from('special_sale_policies').insert({...form,replacement_amount:Number(form.replacement_amount||0),created_by:authUserId});if(error)return alert(friendlyError(error));setForm({title:'',start_date:'',end_date:'',replacement_amount:'20000',description:''});load();};
+  const add=async()=>{if(!form.title||!form.start_date||!form.end_date)return showLegacyAlert('정책명과 기간을 입력해주세요.');const {error}=await supabase.from('special_sale_policies').insert({...form,replacement_amount:Number(form.replacement_amount||0),created_by:authUserId});if(error)return showLegacyAlert(friendlyError(error));setForm({title:'',start_date:'',end_date:'',replacement_amount:'20000',description:''});load();};
   const toggle=async(r)=>{await supabase.from('special_sale_policies').update({active:!r.active,updated_at:new Date().toISOString()}).eq('id',r.id);load();};
-  const decide=async(sale,approve)=>{const sp=sale.source_meta?.specialPolicy||{},amt=approve?Number(sp.exceptionRequestedAmount||0):Number(sp.replacementAmount||0);const {data:dr,error}=await supabase.from('daily_records').select('data').eq('user_id',sale.user_id).eq('work_date',sale.sale_date).maybeSingle();if(error)return alert(friendlyError(error));const d=normalizeDay(dr?.data);const old=Number(d.specialReplacementPay||0);const next={...d,specialReplacementPay:old+amt};const {error:uErr}=await supabase.from('daily_records').upsert({user_id:sale.user_id,work_date:sale.sale_date,data:next,updated_at:new Date().toISOString()},{onConflict:'user_id,work_date'});if(uErr)return alert(friendlyError(uErr));const meta={...sale.source_meta,specialPolicy:{...sp,exceptionStatus:approve?'approved':'rejected',exceptionApprovedAmount:amt,reviewedBy:authUserId,reviewedAt:new Date().toISOString()}};await supabase.from('customer_sales').update({source_meta:meta}).eq('id',sale.id);load();};
+  const decide=async(sale,approve)=>{const sp=sale.source_meta?.specialPolicy||{},amt=approve?Number(sp.exceptionRequestedAmount||0):Number(sp.replacementAmount||0);const {data:dr,error}=await supabase.from('daily_records').select('data').eq('user_id',sale.user_id).eq('work_date',sale.sale_date).maybeSingle();if(error)return showLegacyAlert(friendlyError(error));const d=normalizeDay(dr?.data);const old=Number(d.specialReplacementPay||0);const next={...d,specialReplacementPay:old+amt};const {error:uErr}=await supabase.from('daily_records').upsert({user_id:sale.user_id,work_date:sale.sale_date,data:next,updated_at:new Date().toISOString()},{onConflict:'user_id,work_date'});if(uErr)return showLegacyAlert(friendlyError(uErr));const meta={...sale.source_meta,specialPolicy:{...sp,exceptionStatus:approve?'approved':'rejected',exceptionApprovedAmount:amt,reviewedBy:authUserId,reviewedAt:new Date().toISOString()}};await supabase.from('customer_sales').update({source_meta:meta}).eq('id',sale.id);load();};
   return <div className="space-y-3"><div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="font-bold text-sm">🏷️ 특판·지인판매 정책</div><div className="text-xs text-gray-500 mt-1">최고관리자만 정책을 만들어요. 실적은 인정하고 요금제/VAS 수수료 대신 대체 인센티브를 적용합니다.</div><div className="grid grid-cols-2 gap-2 mt-3"><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="정책명" className="border rounded p-2 text-xs"/><input value={fmtInputNumber(form.replacement_amount)} onChange={e=>setForm({...form,replacement_amount:e.target.value.replace(/\D/g,'')})} placeholder="건당 대체 지급금액" className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="설명 (선택)" className="mt-2 w-full border rounded p-2 text-xs"/><button onClick={add} className="mt-2 w-full bg-amber-500 text-white rounded-lg py-2 text-xs font-bold">정책 추가</button><div className="mt-3 divide-y">{rows.map(r=><div key={r.id} className="py-2 flex justify-between text-xs"><div><b>{r.title}</b> · {won(r.replacement_amount)}<div className="text-[10px] text-gray-400">{r.start_date}~{r.end_date}</div></div><button onClick={()=>toggle(r)} className={r.active?'text-emerald-600':'text-gray-400'}>{r.active?'활성':'비활성'}</button></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">예외 지급금액 승인 {pending.length}건</div>{pending.length===0?<div className="py-6 text-center text-xs text-gray-400">승인 대기 예외금액이 없어요.</div>:pending.map(x=><div key={x.id} className="p-3 border-b text-xs"><b>{x.profiles?.name||'직원'} · {x.customers?.customer_name||'고객'}</b><div className="mt-1 text-gray-500">{x.metric_label} · 요청 {won(x.source_meta?.specialPolicy?.exceptionRequestedAmount)}</div><div className="grid grid-cols-2 gap-2 mt-2"><button onClick={()=>decide(x,false)} className="py-2 bg-gray-100 rounded">기본금액 적용</button><button onClick={()=>decide(x,true)} className="py-2 bg-amber-500 text-white rounded font-bold">요청금액 승인</button></div></div>)}</div></div>;
 }
 
@@ -4274,14 +4279,14 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
   },[]);
   useEffect(()=>{load()},[load]);
 
-  const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return alert('정책명, 금액, 기간을 입력해주세요.');
+  const add=async()=>{if(!form.title||!form.amount||!form.start_date||!form.end_date)return showLegacyAlert('정책명, 금액, 기간을 입력해주세요.');
     const {error}=await supabase.from('spot_policies').insert({
       ...form,
       amount:Number(form.amount),
       threshold:form.threshold?Number(form.threshold):null,
       created_by:authUserId
     });
-    if(error)return alert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:'',rule_type:'per_unit',condition_metric:'hs',threshold:'',reward_metric:'hs',threshold_scope:'all'});load()};
+    if(error)return showLegacyAlert(friendlyError(error));setForm({title:'',amount:'',start_date:'',end_date:'',description:'',rule_type:'per_unit',condition_metric:'hs',threshold:'',reward_metric:'hs',threshold_scope:'all'});load()};
 
   const savePolicy=async(id)=>{
     const p={...editPolicy,amount:Number(editPolicy.amount||0)};
@@ -4294,20 +4299,20 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
       reward_metric:p.reward_metric||null,
       threshold_scope:p.threshold_scope||'all'
     }).eq('id',id);
-    if(error)return alert(`정책 수정 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`정책 수정 실패: ${friendlyError(error)}`);
     setEditingPolicyId(null);setEditPolicy({});load();
   };
 
   const decide=async(id,status)=>{
     const edit=claimEdits[id]||{}, amount=Number(edit.amount||0);
-    if(status==='approved'&&amount<=0)return alert('최종 승인 금액을 입력해주세요.');
+    if(status==='approved'&&amount<=0)return showLegacyAlert('최종 승인 금액을 입력해주세요.');
     const {error}=await supabase.from('spot_claims').update({
       status,reviewed_by:authUserId,reviewed_at:new Date().toISOString(),
       final_amount:status==='approved'?amount:null,
       reviewed_title:String(edit.title||'').trim()||null,
       reviewed_memo:String(edit.memo||'').trim()||null
     }).eq('id',id);
-    if(error)return alert(`스팟 처리 실패: ${friendlyError(error)}`);load();
+    if(error)return showLegacyAlert(`스팟 처리 실패: ${friendlyError(error)}`);load();
   };
 
   const pendingClaims=claims.filter(c=>c.status==='pending'); const doneClaims=claims.filter(c=>c.status!=='pending');
@@ -4526,6 +4531,8 @@ function CustomerCareManager({ userId, month, homeProps }) {
   const [filter,setFilter]=useState('todo');
   const [query,setQuery]=useState('');
   const [loading,setLoading]=useState(true);
+  const [rescheduleTask,setRescheduleTask]=useState(null);
+  const [rescheduleDate,setRescheduleDate]=useState('');
 
   const load=useCallback(async()=>{
     if(!userId)return;
@@ -4642,7 +4649,7 @@ function CustomerCareManager({ userId, month, homeProps }) {
                <div className="grid grid-cols-3 gap-1.5 mt-3">
                  <button onClick={()=>complete(t)} className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">처리완료</button>
                  <button onClick={()=>updateTask(t,{status:'pending',due_date:addDaysDate(today,1)})} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">내일 다시</button>
-                 <button onClick={()=>{const d=window.prompt('다시 연락할 날짜를 YYYY-MM-DD로 입력해주세요.',t.due_date);if(d)updateTask(t,{status:'pending',due_date:d})}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
+                 <button onClick={()=>{setRescheduleTask(t);setRescheduleDate(t.due_date||today)}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
                </div>
              )}
            </div>
@@ -4657,6 +4664,7 @@ function CustomerCareManager({ userId, month, homeProps }) {
       </div>
       <div><HomeOrderManager {...homeProps}/></div>
     </div>
+    {rescheduleTask&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setRescheduleTask(null)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className="text-lg font-bold text-gray-900">약속 날짜를 변경할까요?</div><div className="text-xs text-gray-500 mt-1">고객에게 다시 연락할 날짜를 선택해주세요.</div><input type="date" value={rescheduleDate} onChange={e=>setRescheduleDate(e.target.value)} className="mt-4 w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setRescheduleTask(null)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button onClick={async()=>{if(!rescheduleDate)return showAppToast('변경할 날짜를 선택해주세요.',{tone:'error'});await updateTask(rescheduleTask,{status:'pending',due_date:rescheduleDate});setRescheduleTask(null)}} className="py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">날짜 변경</button></div></div></div>}
   </div>;
 }
 
@@ -4769,7 +4777,7 @@ function MyInputSummary({userId,month,config}){
   const [open,setOpen]=useState(false);
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState('');
-  const [summary,setSummary]=useState({mobile:[],vas:[],second:[],home:[],homePending:[],totalHs:0,totalHome:0,totalHomePending:0,totalVas:0,totalSecond:0});
+  const [summary,setSummary]=useState({mobile:[],strategicVas:[],insurance:[],second:[],home:[],homePending:[],totalHs:0,totalHome:0,totalHomePending:0,totalStrategicPlan:0,totalStrategicVas:0,totalInsurance:0,totalSecond:0});
 
   useEffect(()=>{
     if(!userId)return;
@@ -4791,8 +4799,8 @@ function MyInputSummary({userId,month,config}){
       }
       setLoadError('');
       const inc=(o,k,n=1)=>{if(k)o[k]=Number(o[k]||0)+n};
-      const mobile={},vas={},second={},home={},homePending={};
-      let totalHs=0;
+      const mobile={},strategicVas={},insurance={},second={},home={},homePending={};
+      let totalHs=0,totalStrategicPlan=0;
       (sales||[]).filter(x=>x.source_type==='mobile').forEach(x=>{
         const meta=x.source_meta||{}, ri=Number(meta.ri), ci=Number(meta.ci);
         const rd=MATRIX_ROW_DEFS[ri];
@@ -4800,10 +4808,12 @@ function MyInputSummary({userId,month,config}){
         const label=rd.hasTiers?`${rd.dailyLabel||rd.label} · ${MATRIX_COLS[ci]||''}`:(rd.dailyLabel||rd.label);
         inc(mobile,label);
         if(HS_PARTS.some(p=>p.idx===ri))totalHs++;
+        if(meta.strategicPlan)totalStrategicPlan++;
         [...(meta.vasKeys||[]),...Object.values(meta.bundleVasMap||{}).flat()].forEach(k=>{
           if(k==='vasNone')return;
           const v=(config.vas||[]).find(z=>z.key===k);
-          inc(vas,v?.label||k);
+          if(k==='vasPhonePass'||k==='vasSafePass')inc(insurance,v?.label||k);
+          else inc(strategicVas,v?.label||k);
         });
         (meta.bundle2ndKeys||[]).forEach(k=>{
           const v=(config.bundle2nd||[]).find(z=>z.key===k);
@@ -4829,7 +4839,7 @@ function MyInputSummary({userId,month,config}){
       // 홈은 한 고객 묶음이 홈+TV/인터넷/동시판매 등 여러 행으로 저장되므로
       // 같은 날짜+고객을 핵심 판매 1건으로 계산합니다.
       const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
-      const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),homePending:arr(homePending),totalHs,totalHome:homeBundleCount(completedHomes),totalHomePending:homeBundleCount(pendingHomes),totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
+      const result={mobile:arr(mobile),strategicVas:arr(strategicVas),insurance:arr(insurance),second:arr(second),home:arr(home),homePending:arr(homePending),totalHs,totalHome:homeBundleCount(completedHomes),totalHomePending:homeBundleCount(pendingHomes),totalStrategicPlan,totalStrategicVas:Object.values(strategicVas).reduce((a,v)=>a+v,0),totalInsurance:Object.values(insurance).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
       setSummary(result);setLoading(false);
     })().catch(e=>{console.error('INPUT SUMMARY LOAD ERROR',e);if(alive){setLoadError(friendlyError(e));setLoading(false)}});
     return()=>{alive=false};
@@ -4843,22 +4853,21 @@ function MyInputSummary({userId,month,config}){
         <div><div className="text-sm font-bold text-gray-900">내 입력 실적 요약</div><div className="text-[10px] text-gray-400 mt-0.5">내가 직접 등록한 월 누적 실적을 확인해요.</div></div>
         <ChevronDown size={16} className={`text-gray-400 transition ${open?'rotate-180':''}`}/>
       </div>
-      <div className="flex flex-wrap gap-1.5 mt-2">
-        <span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">HS {summary.totalHs}건</span>
-        <span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 {summary.totalHome}건</span>
-        {summary.totalHomePending>0&&<span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">홈 대기 {summary.totalHomePending}건</span>}
-        <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">VAS {summary.totalVas}건</span>
-        <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span>
+      <div className="mt-2 space-y-1.5">
+        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">HS {summary.totalHs}건</span><span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 상품 {summary.totalHome}건</span>{summary.totalHomePending>0&&<span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">홈 대기 {summary.totalHomePending}건</span>}</div>
+        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">전략요금제 {summary.totalStrategicPlan}건</span><span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">전략 VAS {summary.totalStrategicVas}건</span><span className="px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">보험·케어 {summary.totalInsurance}건</span><span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span></div>
       </div>
     </button>
     {open&&<div className="border-t border-gray-50 px-4 py-2 divide-y divide-gray-50">
       {loading?<div className="py-5 text-center text-xs text-gray-400">입력 실적을 불러오는 중...</div>:loadError?<div className="py-5 text-center text-xs text-red-500">실적 요약을 불러오지 못했어요 · {loadError}</div>:<>
         <Group title="모바일" rows={summary.mobile}/>
-        <Group title="VAS" rows={summary.vas}/>
+        {summary.totalStrategicPlan>0&&<Group title="전략요금제" rows={[{label:'본사 전략요금제',count:summary.totalStrategicPlan}]}/>}
+        <Group title="전략 VAS" rows={summary.strategicVas}/>
+        <Group title="보험·케어" rows={summary.insurance}/>
         <Group title="2ND" rows={summary.second}/>
-        <Group title="홈" rows={summary.home}/>
+        <Group title="홈 상품" rows={summary.home}/>
         <Group title="홈 설치대기" rows={summary.homePending}/>
-        {!summary.mobile.length&&!summary.vas.length&&!summary.second.length&&!summary.home.length&&!summary.homePending.length&&<div className="py-5 text-center text-xs text-gray-400">이번 달 입력 실적이 없어요.</div>}
+        {!summary.mobile.length&&!summary.strategicVas.length&&!summary.insurance.length&&!summary.second.length&&!summary.home.length&&!summary.homePending.length&&<div className="py-5 text-center text-xs text-gray-400">이번 달 입력 실적이 없어요.</div>}
       </>}
     </div>}
   </div>;
@@ -4991,9 +5000,9 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   },[authUser?.id,month,dailyDays]);
 
   const resetOwnMonthPerformance=async()=>{
-    if(monthLocked)return alert('마감된 월은 초기화할 수 없어요.');
+    if(monthLocked)return showLegacyAlert('마감된 월은 초기화할 수 없어요.');
     if(String(resetPhrase).trim()!=='당월실적초기화')return;
-    if(!authUser?.id || currentEmp?.id!==authUser.id)return alert('본인의 실적만 초기화할 수 있어요.');
+    if(!authUser?.id || currentEmp?.id!==authUser.id)return showLegacyAlert('본인의 실적만 초기화할 수 있어요.');
     setResetBusy(true);
     try{
       const {data,error}=await supabase.rpc('reset_my_month_performance',{
@@ -5001,10 +5010,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         p_confirm_phrase:'당월실적초기화'
       });
       if(error)throw error;
-      alert(`${monthLabel(month)} 실적을 초기화했어요.\n초기화 직전 데이터는 백업되었습니다.`);
+      showLegacyAlert(`${monthLabel(month)} 실적을 초기화했어요.\n초기화 직전 데이터는 백업되었습니다.`);
       window.location.reload();
     }catch(e){
-      alert(`실적 초기화 실패: ${friendlyError(e)}`);
+      showLegacyAlert(`실적 초기화 실패: ${friendlyError(e)}`);
       setResetBusy(false);
     }
   };
@@ -5577,7 +5586,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
     if(sale.source_type==='home_order'){
       const {data:hs,error:hErr}=await supabase.from('customer_sales').select('id,source_ref').eq('user_id',currentEmp?.id).eq('sale_date',sale.sale_date).eq('customer_id',sale.customer_id).eq('source_type','home_order');
-      if(hErr)return alert(friendlyError(hErr));
+      if(hErr)return showLegacyAlert(friendlyError(hErr));
       const ids=(hs||[]).map(x=>x.id),refs=(hs||[]).map(x=>x.source_ref).filter(Boolean); let orders=[];
       if(refs.length){const {data:o}=await supabase.from('home_orders').select('*').in('id',refs);orders=o||[];}
       const base=normalizeDay(day),groups={...base.groups};
@@ -5610,7 +5619,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     }
     await supabase.from('customer_tasks').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
     await supabase.from('sales_expenses').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
-    const {error}=await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id); if(error)return alert(`판매 삭제 실패: ${friendlyError(error)}`); loadDaySales();
+    const {error}=await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id); if(error)return showLegacyAlert(`판매 삭제 실패: ${friendlyError(error)}`); loadDaySales();
   };
 
   const openHomeOrder = (groupKey = null, itemKey = null) => {
@@ -5641,7 +5650,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const sourceWorkDate=`${month}-${selectedDay}`;
     let linkedCustomerId=null;
     try { linkedCustomerId=await ensureCustomer(currentEmp.id,customer,sourceWorkDate); }
-    catch(e){ return alert(`고객 저장 실패: ${friendlyError(e)}`); }
+    catch(e){ return showLegacyAlert(`고객 저장 실패: ${friendlyError(e)}`); }
 
     // 실제 판매 구성을 기존 정산 그룹으로 자동 변환
     const products=[];
@@ -6103,10 +6112,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const {data:homeSales,error:hsErr}=await supabase.from('customer_sales')
         .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
         .eq('user_id',currentEmp?.id).eq('sale_date',saleDate).eq('customer_id',sale.customer_id).eq('source_type','home_order');
-      if(hsErr)return alert(`홈 판매정보 조회 실패: ${friendlyError(hsErr)}`);
+      if(hsErr)return showLegacyAlert(`홈 판매정보 조회 실패: ${friendlyError(hsErr)}`);
       const refs=(homeSales||[]).map(x=>x.source_ref).filter(Boolean);
       let orders=[];
-      if(refs.length){ const {data:o,error:oErr}=await supabase.from('home_orders').select('*').in('id',refs); if(oErr)return alert(`홈 주문 조회 실패: ${friendlyError(oErr)}`); orders=o||[]; }
+      if(refs.length){ const {data:o,error:oErr}=await supabase.from('home_orders').select('*').in('id',refs); if(oErr)return showLegacyAlert(`홈 주문 조회 실패: ${friendlyError(oErr)}`); orders=o||[]; }
       setEditingHomeSales(homeSales||[]);
       setHomeOrderDraft({unified:true,editing:true,label:'홈 판매건 수정',legacy:(homeSales||[]).some(legacySaleBadge)});
       setHomeCustomerName(sale.customers?.customer_name||'');
@@ -6137,9 +6146,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       return;
     }
     const inferredLegacyMobile=inferMobileMeta(sale);
-    if(sale.source_type!=='mobile' && !inferredLegacyMobile)return alert('이 판매유형은 아직 수정할 수 없어요.');
+    if(sale.source_type!=='mobile' && !inferredLegacyMobile)return showLegacyAlert('이 판매유형은 아직 수정할 수 없어요.');
     const meta=inferredLegacyMobile;
-    if(!meta)return alert('이전 버전 판매건이라 가입구분을 확인할 수 없어요.');
+    if(!meta)return showLegacyAlert('이전 버전 판매건이라 가입구분을 확인할 수 없어요.');
 
     setEditingSale(sale);
     setMobileSaleDraft({ri:meta.ri,ci:meta.ci,label:mobileLabelFor(meta.ri,meta.ci)});
@@ -6254,7 +6263,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
-      return alert(specialPolicies.length
+      return showLegacyAlert(specialPolicies.length
         ? '특판·지인판매에 적용할 정책을 선택해주세요.'
         : '현재 적용 가능한 특판·지인판매 정책이 없어요. 관리자에게 정책 등록을 요청해주세요.');
     }
@@ -6526,7 +6535,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const {data,error}=await supabase.from('customer_sales')
       .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
       .eq('id',toast.customerSaleId).eq('user_id',currentEmp?.id).maybeSingle();
-    if(error||!data)return alert('방금 등록한 판매건을 불러오지 못했어요. 아래 판매 내역에서 수정해주세요.');
+    if(error||!data)return showLegacyAlert('방금 등록한 판매건을 불러오지 못했어요. 아래 판매 내역에서 수정해주세요.');
     setToast(null);
     await openEditSale(data);
   };
@@ -8621,7 +8630,7 @@ function SettlementReview({ month, rows, employees, config }) {
 
   const setStatus=async(userId,status)=>{
     const {error}=await supabase.from('settlement_reviews').upsert({month,user_id:userId,status,updated_at:new Date().toISOString()},{onConflict:'month,user_id'});
-    if(error)return alert(`정산 상태 저장 실패: ${friendlyError(error)}`);
+    if(error)return showLegacyAlert(`정산 상태 저장 실패: ${friendlyError(error)}`);
     setStatusMap({...statusMap,[userId]:status});
   };
 
@@ -8670,13 +8679,13 @@ function SettlementReview({ month, rows, employees, config }) {
       (expensesRes.data||[]).forEach(x=>ledger.push({date:x.expense_date,customer:x.customer_name||'이름 없음',type:'영업비용',item:x.category||'영업비용',amount:-Number(x.amount||0),note:x.memo||'비용 차감'}));
       ledger.sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.customer).localeCompare(String(b.customer)));
       setDetailRows(ledger);
-    }catch(e){alert(`상세 산출내역 불러오기 실패: ${friendlyError(e)}`);}
+    }catch(e){showLegacyAlert(`상세 산출내역 불러오기 실패: ${friendlyError(e)}`);}
     finally{setDetailLoading(false);}
   };
 
   // 관계 조인을 사용하지 않고 프로필을 별도 매핑해 schema-cache 오류를 피합니다.
   const exportRaw=async()=>{
-    const ids=(rows||[]).map(r=>r.id);if(!ids.length)return alert('정산 대상 직원이 없어요.');
+    const ids=(rows||[]).map(r=>r.id);if(!ids.length)return showLegacyAlert('정산 대상 직원이 없어요.');
     const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
     try {
       const results=await Promise.all([
@@ -8706,7 +8715,7 @@ function SettlementReview({ month, rows, employees, config }) {
       const csv='\uFEFF'+rowsCsv.map(r=>r.map(esc).join(',')).join('\r\n');
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');
       a.href=url;a.download=`정산_검증_RAW_${month}.csv`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
-    } catch(e) { alert(`정산 RAW 생성 실패: ${friendlyError(e)}`); }
+    } catch(e) { showLegacyAlert(`정산 RAW 생성 실패: ${friendlyError(e)}`); }
   };
 
   const detailSummary=detailUser?(()=>{
@@ -8997,7 +9006,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   const defaultAsOf=()=>`${month}-${String(Math.min(new Date().getDate(),daysInMonth(month))).padStart(2,'0')}`;
   const [asOfDate,setAsOfDate]=useState(defaultAsOf());
   const [metrics,setMetrics]=useState(emptyHeadOfficeMetrics()),[vasReview,setVasReview]=useState({}),[note,setNote]=useState(''),[saving,setSaving]=useState(false),[loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{setLoading(true);const [p,s]=await Promise.all([supabase.from('head_office_performance').select('*').eq('month',month),supabase.from('head_office_store_performance').select('*').eq('month',month)]);if(p.error||s.error){alert(`본사 데이터 불러오기 실패: ${friendlyError(p.error||s.error)}`)}setPersonalRecords(Object.fromEntries((p.data||[]).map(x=>[x.user_id,x])));setStoreRecords(Object.fromEntries((s.data||[]).map(x=>[x.store_name,x])));setLoading(false)},[month]);
+  const load=useCallback(async()=>{setLoading(true);const [p,s]=await Promise.all([supabase.from('head_office_performance').select('*').eq('month',month),supabase.from('head_office_store_performance').select('*').eq('month',month)]);if(p.error||s.error){showLegacyAlert(`본사 데이터 불러오기 실패: ${friendlyError(p.error||s.error)}`)}setPersonalRecords(Object.fromEntries((p.data||[]).map(x=>[x.user_id,x])));setStoreRecords(Object.fromEntries((s.data||[]).map(x=>[x.store_name,x])));setLoading(false)},[month]);
   useEffect(()=>{load()},[load]);
   useEffect(()=>{setAsOfDate(defaultAsOf())},[month]); // eslint-disable-line
   const visible=salesEmployees.filter(e=>e.branch===selectedStore);
@@ -9022,7 +9031,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   const official=headOfficeScores(metrics,config,month);
   const employee={hs:targetRows.reduce((s,r)=>s+hsCount(r.draft||{}),0),second:matrixTotalAt(inputMatrix,7)+bundleCount,gradePoints:targetRows.reduce((s,r)=>s+Number(r.pay?.totalPoints||0),0),kpiScore:targetRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0)};
   const updateMatrix=(ri,ci,value)=>setMetrics(v=>{const matrix=v.matrix.map(r=>[...r]);matrix[ri][ci]=Math.max(0,Number(value||0));return {...v,matrix}});
-  const save=async()=>{const isStore=mode==='store';if((isStore&&!selectedStore)||(!isStore&&!selected))return;setSaving(true);const common={month,store_name:isStore?selectedStore:selected.branch,as_of_date:asOfDate,metrics,vas_review:vasReview,note:note.trim()||null,updated_by:authUserId,updated_at:new Date().toISOString()};const payload=isStore?common:{...common,user_id:selected.id};const table=isStore?'head_office_store_performance':'head_office_performance',conflict=isStore?'month,store_name':'month,user_id';const {error}=await supabase.from(table).upsert(payload,{onConflict:conflict});setSaving(false);if(error)return alert(`본사 데이터 저장 실패: ${friendlyError(error)}`);await load();alert(`${isStore?'매장':'개인'} 본사 데이터를 저장했어요. 개인 실적과 급여 계산은 변경하지 않았습니다.`)};
+  const save=async()=>{const isStore=mode==='store';if((isStore&&!selectedStore)||(!isStore&&!selected))return;setSaving(true);const common={month,store_name:isStore?selectedStore:selected.branch,as_of_date:asOfDate,metrics,vas_review:vasReview,note:note.trim()||null,updated_by:authUserId,updated_at:new Date().toISOString()};const payload=isStore?common:{...common,user_id:selected.id};const table=isStore?'head_office_store_performance':'head_office_performance',conflict=isStore?'month,store_name':'month,user_id';const {error}=await supabase.from(table).upsert(payload,{onConflict:conflict});setSaving(false);if(error)return showLegacyAlert(`본사 데이터 저장 실패: ${friendlyError(error)}`);await load();showLegacyAlert(`${isStore?'매장':'개인'} 본사 데이터를 저장했어요. 개인 실적과 급여 계산은 변경하지 않았습니다.`)};
   return <div className="space-y-3">
     <div><div className="text-xs text-violet-600 font-semibold">본사 데이터 기준</div><div className="text-xl font-bold">{mode==='store'?'매장별':'개인별'} 누적 실적 대조</div><div className="text-[10px] text-gray-400 mt-1">매장 기준이 기본입니다. 개인 기준은 개인별 본사 자료가 있을 때만 선택하세요. 급여와 직원 입력 원본은 변경하지 않습니다.</div></div>
     <div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>매장 기준</button><button onClick={()=>setMode('personal')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 기준</button></div>
@@ -9047,26 +9056,25 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
-    { key: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-    { key: 'storeGoals', label: '매장 목표', icon: Target },
-    { key: 'performance', label: '실적 순위', icon: Trophy },
-    { key: 'evaluation', label: '평가', icon: ClipboardCheck },
-
-    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList },
-    { key: 'homeCare', label: '홈 케어', icon: Home },
-    { key: 'employees', label: '직원 관리', icon: Users },
-    { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck },
-    { key: 'expenses', label: '영업비용/오퍼', icon: Wallet },
-
-    { key: 'spot', label: '스팟', icon: Zap },
-    { key: 'history', label: '변경 이력', icon: History },
+    { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
+    { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
+    { key: 'evaluation', label: '평가', icon: ClipboardCheck, group:'현황' },
+    { key: 'storeGoals', label: '매장 목표', icon: Target, group:'현황' },
+    { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, group:'실적 관리' },
+    { key: 'history', label: '변경 이력', icon: History, group:'실적 관리' },
+    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, group:'고객 · 홈' },
+    { key: 'homeCare', label: '홈 케어', icon: Home, group:'고객 · 홈' },
+    { key: 'expenses', label: '영업비용/오퍼', icon: Wallet, group:'비용 · 승인' },
+    { key: 'spot', label: '스팟 승인', icon: Zap, group:'비용 · 승인' },
+    { key: 'employees', label: '직원 관리', icon: Users, group:'설정' },
     ...(isFullAdmin ? [
-      { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud },
-      { key: 'settlement', label: '정산 검토', icon: Wallet },
-      { key: 'rates', label: '지급기준 관리', icon: Settings },
-      { key: 'permissions', label: '권한 관리', icon: ShieldCheck },
+      { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud, group:'실적 관리' },
+      { key: 'settlement', label: '정산 검토', icon: Wallet, group:'정산' },
+      { key: 'rates', label: '지급기준 관리', icon: Settings, group:'설정' },
+      { key: 'permissions', label: '권한 관리', icon: ShieldCheck, group:'설정' },
     ] : []),
   ];
+  const TAB_GROUPS=['현황','실적 관리','고객 · 홈','비용 · 승인','정산','설정'];
   useEffect(() => {
     if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
@@ -9087,13 +9095,9 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-5">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div className="flex bg-white border border-gray-200 rounded-lg p-0.5 flex-wrap">
-          {TABS.map((n) => (
-            <button key={n.key} onClick={() => setAdminTab(n.key)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${adminTab === n.key ? 'bg-violet-600 text-white' : 'text-gray-500'}`}>
-              <n.icon size={14} /> {n.label}
-            </button>
-          ))}
+      <div className="mb-4 space-y-3">
+        <div className="bg-white border border-gray-200 rounded-2xl p-2 space-y-2">
+          {TAB_GROUPS.map(group=>{const items=TABS.filter(x=>x.group===group);if(!items.length)return null;return <div key={group} className="grid grid-cols-[58px_1fr] gap-2 items-start"><div className="text-[9px] font-bold text-gray-400 pt-2 px-1">{group}</div><div className="flex flex-wrap gap-1">{items.map(n=><button key={n.key} onClick={()=>setAdminTab(n.key)} className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition ${adminTab===n.key?'bg-violet-600 text-white shadow-sm':'bg-gray-50 text-gray-600 hover:bg-violet-50'}`}><n.icon size={13}/>{n.label}</button>)}</div></div>})}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -9588,7 +9592,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
           {stores.map((s) => (
             <span key={s} className="flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full">
               {s}
-              <button onClick={() => { if (window.confirm(`"${s}" 매장을 정말 삭제할까요?\n이 매장으로 등록된 직원들의 실적 화면에는 영향이 없지만, 앞으로 이 매장은 새 직원 등록·회원가입 목록에서 사라져요.`)) removeStore(s); }} className="text-gray-400 hover:text-red-500">×</button>
+              <button onClick={async() => { if(await showAppConfirm({title:`${s} 매장을 삭제할까요?`,message:'기존 직원 실적은 유지되지만 새 직원 등록·회원가입의 매장 목록에서는 사라집니다.',confirmLabel:'매장 삭제',tone:'danger'})) removeStore(s); }} className="text-gray-400 hover:text-red-500">×</button>
             </span>
           ))}
         </div>
@@ -9658,14 +9662,8 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                     수정
                   </button>
                   <button
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `"${e.name}"님을 비활성화할까요?\n로그인·직원 목록에서 바로 빠지고, 실적 기록은 그대로 안전하게 남아요. 필요하면 나중에 다시 활성화할 수 있어요.`
-                        )
-                      ) {
-                        removeEmployee(e.id);
-                      }
+                    onClick={async() => {
+                      if(await showAppConfirm({title:`${e.name}님을 비활성화할까요?`,message:'로그인·직원 목록에서는 빠지지만 기존 실적 기록은 유지되며 나중에 다시 활성화할 수 있습니다.',confirmLabel:'비활성화',tone:'danger'})) removeEmployee(e.id);
                     }}
                     className="shrink-0 w-8 h-8 rounded-md bg-red-50 text-red-500 flex items-center justify-center"
                   >
