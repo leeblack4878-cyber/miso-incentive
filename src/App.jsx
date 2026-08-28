@@ -7027,7 +7027,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       </div>
                       <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
                       <div className="grid grid-cols-1 gap-1">
-                        {[...(config.vas || DEFAULT_VAS),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
+                        {[...(config.vas || DEFAULT_VAS).filter(vas=>vas.key!=='vasKyobo'&&vas.key!=='vasVcolor'),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
                           const vasSelected=bundleVasKeys.includes(vas.key);
                           return <button key={vas.key} type="button" onClick={()=>setMobileBundleVasMap(prev=>{
                             const current=prev[v.key]||[];
