@@ -390,6 +390,13 @@ const DEFAULT_VAS = [
   { key: 'vasSafePass', label: '폰안심패스', rate: 0 },
 ];
 
+// 운영 DB에 저장된 이전 VAS 설정에도 새 기본 항목을 보강하되,
+// 관리자가 수정한 명칭·금액과 별도 추가 항목은 그대로 유지한다.
+const mergeDefaultVas = (saved=[]) => [
+  ...DEFAULT_VAS.map(def => ({ ...def, ...(saved||[]).find(item => item.key===def.key) })),
+  ...(saved||[]).filter(item => !DEFAULT_VAS.some(def => def.key===item.key)),
+];
+
 const DEFAULT_BUNDLE2ND = [
   { key: 'b_L335', label: '2ND · L335', rate: 200000 },
   { key: 'b_X216', label: '2ND · X216', rate: 200000 },
@@ -1271,7 +1278,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'config').maybeSingle();
       if (error) throw error;
       if (data && data.value) {
-        setConfig({ ...defaultConfig(), ...data.value });
+        setConfig({ ...defaultConfig(), ...data.value, vas: mergeDefaultVas(data.value.vas) });
       } else {
         const def = defaultConfig();
         await supabase.from('app_config').upsert({ config_key: 'config', value: def }, { onConflict: 'config_key' });
