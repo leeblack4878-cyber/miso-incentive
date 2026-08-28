@@ -2892,6 +2892,40 @@ const BADGE_DEFS = [
 
 const SPECIAL_BADGE_KEYS = [];
 
+const ENCOURAGEMENT_MESSAGES = [
+  '오늘의 한 걸음이 이번 달의 흐름을 바꿔요.', '잘하고 있어요. 속도보다 방향이 더 중요해요.',
+  '작은 성과도 쌓이면 분명한 실력이 됩니다.', '지금의 꾸준함은 월말에 숫자로 보여요.',
+  '어제보다 한 걸음이면 충분해요.', '조급해하지 않아도 괜찮아요. 당신의 페이스가 있어요.',
+  '힘든 날에도 계속해온 것 자체가 능력이에요.', '오늘의 집중이 내일의 자신감을 만듭니다.',
+  '한 번의 좋은 상담이 하루의 분위기를 바꿀 수 있어요.', '완벽하지 않아도 계속하면 반드시 나아가요.',
+  '당신이 쌓은 경험은 사라지지 않아요.', '결과가 더딘 날에도 성장은 계속되고 있어요.',
+  '기회는 준비된 오늘 속에서 시작돼요.', '할 수 있다는 믿음도 중요한 실력입니다.',
+  '오늘도 충분히 잘해낼 준비가 되어 있어요.', '포기하지 않은 하루는 실패한 하루가 아니에요.',
+  '작은 친절 하나가 좋은 고객을 남겨요.', '진심은 늦더라도 반드시 전해집니다.',
+  '당신만의 강점은 비교할 수 없는 자산이에요.', '지금까지 온 길만 봐도 충분히 대단해요.',
+  '조금 느려도 멈추지 않으면 결국 도착해요.', '어려운 순간은 실력이 자라는 순간이기도 해요.',
+  '오늘의 도전이 내일의 익숙함이 됩니다.', '좋은 흐름은 한 건의 시작에서 만들어져요.',
+  '스스로를 믿어준 만큼 더 멀리 갈 수 있어요.', '당신의 노력은 생각보다 많은 사람에게 힘이 돼요.',
+  '실수는 멈추라는 신호가 아니라 배우라는 신호예요.', '한계를 정하지 않으면 가능성도 닫히지 않아요.',
+  '오늘 할 수 있는 것부터 차분히 시작해봐요.', '지친 날에는 버티는 것도 훌륭한 전진이에요.',
+  '좋은 결과는 좋은 태도에서 시작됩니다.', '당신의 성실함은 이미 강력한 경쟁력이에요.',
+  '한 사람의 신뢰를 얻는 일이 가장 큰 성과일 수 있어요.', '평범한 하루를 꾸준히 보내는 사람이 결국 강해져요.',
+  '지금 부족한 것은 앞으로 채울 수 있다는 뜻이에요.', '오늘의 경험은 다음 상담의 자신감이 됩니다.',
+  '당신에게는 다시 흐름을 만들 힘이 있어요.', '비교보다 성장에 집중하면 마음도 실력도 단단해져요.',
+  '해낸 일들을 잊지 마세요. 이미 많이 성장했어요.', '좋은 날은 기다리는 것이 아니라 조금씩 만드는 거예요.',
+  '한 번 더 시도하는 용기가 차이를 만듭니다.', '당신의 가능성은 오늘의 숫자보다 훨씬 커요.',
+  '쉬어가도 괜찮아요. 다시 시작할 힘을 모으는 중이에요.', '오늘도 누군가에게 좋은 기억을 남길 수 있어요.',
+  '목표가 멀어 보여도 오늘의 한 건은 분명히 가까워진 거리예요.', '흔들려도 방향을 잃지 않으면 괜찮아요.',
+  '스스로에게 건네는 응원이 가장 오래갑니다.', '당신이 가진 열정은 다시 불붙을 수 있어요.',
+  '꾸준한 사람에게 결국 기회가 머뭅니다.', '오늘도 당신답게, 차분하고 힘있게 나아가요.'
+];
+
+function dailyEncouragement(userId=''){
+  const day=new Date().toISOString().slice(0,10);
+  const seed=`${day}-${userId}`.split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0);
+  return ENCOURAGEMENT_MESSAGES[seed%ENCOURAGEMENT_MESSAGES.length];
+}
+
 function badgeDefOf(key) {
   return BADGE_DEFS.find((b) => b.key === key) || null;
 }
@@ -3043,12 +3077,14 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
   );
 }
 
-function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}) {
+function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp}) {
   const [storedBadges,setStoredBadges]=useState([]);
   const [titleKey,setTitleKey]=useState('');
   const [loadingBadges,setLoadingBadges]=useState(true);
   const [showCollection,setShowCollection]=useState(false);
   const [filter,setFilter]=useState('all');
+  const [avatarUrl,setAvatarUrl]=useState('');
+  const [avatarBusy,setAvatarBusy]=useState(false);
   const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId]);
   const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
   const loadBadges=useCallback(async()=>{
@@ -3071,18 +3107,56 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const visible=BADGE_DEFS.filter(b=>filter==='earned'?earnedKeys.has(b.key):filter==='locked'?!earnedKeys.has(b.key):filter==='legend'?b.rarity==='LEGEND':true);
   const earnedRow=storedBadges.find(r=>r.badge_key===titleKey);
 
+  useEffect(()=>{
+    if(!userId)return;
+    let alive=true,objectUrl='';
+    (async()=>{
+      const {data}=await supabase.from('profiles').select('avatar_path').eq('id',userId).maybeSingle();
+      const path=data?.avatar_path||'';
+      if(!alive)return;
+      if(path){const {data:file}=await supabase.storage.from('profile-avatars').download(path);if(file&&alive){objectUrl=URL.createObjectURL(file);setAvatarUrl(objectUrl)}}
+    })();
+    return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
+  },[userId]);
+
+  const uploadAvatar=async(event)=>{
+    const file=event.target.files?.[0];event.target.value='';
+    if(!file)return;
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type))return showAppToast('JPG, PNG, WEBP 사진만 등록할 수 있어요.',{tone:'error'});
+    if(file.size>3*1024*1024)return showAppToast('프로필 사진은 3MB 이하로 선택해주세요.',{tone:'error'});
+    setAvatarBusy(true);
+    const path=`${userId}/avatar`;
+    const {error:uploadError}=await supabase.storage.from('profile-avatars').upload(path,file,{upsert:true,contentType:file.type,cacheControl:'3600'});
+    if(uploadError){setAvatarBusy(false);return showAppToast(friendlyError(uploadError),{tone:'error',title:'사진 등록 실패'})}
+    const {error:updateError}=await supabase.from('profiles').update({avatar_path:path,updated_at:new Date().toISOString()}).eq('id',userId);
+    if(updateError){setAvatarBusy(false);return showAppToast(friendlyError(updateError),{tone:'error',title:'프로필 저장 실패'})}
+    const {data:downloaded}=await supabase.storage.from('profile-avatars').download(path);
+    if(downloaded){if(avatarUrl)URL.revokeObjectURL(avatarUrl);setAvatarUrl(URL.createObjectURL(downloaded))}
+    setAvatarBusy(false);showAppToast('프로필 사진을 등록했어요.');
+  };
+
   return <>
-    <button type="button" onClick={()=>setShowCollection(true)} className="w-full bg-white rounded-xl border border-gray-100 p-3.5 flex items-center justify-between text-left">
-      <div className="flex items-center gap-3 min-w-0">
-        <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-xl">{titleDef?.icon||'🏅'}</div>
-        <div className="min-w-0">
-          <div className="text-[10px] text-gray-400">대표 배지</div>
-          <div className="text-sm font-bold text-gray-800 truncate">{titleDef?.name||'대표 배지를 선택해보세요'}</div>
-          {titleDef&&earnedRow?.earned_at&&<div className="text-[9px] text-gray-400 mt-0.5">{fmtShortDate(earnedRow.earned_at)} 획득</div>}
+    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
+      <div className="flex items-start gap-3">
+        <label className="relative w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
+          {avatarUrl?<img src={avatarUrl} alt="내 프로필" className="w-full h-full object-cover"/>:<span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>}
+          <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
+        </label>
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-bold truncate">{currentEmp?.name||'직원'}님, 오늘도 응원해요</div>
+          <div className="text-[10px] text-violet-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
+          <button type="button" onClick={()=>setShowCollection(true)} className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
+            <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'대표 배지 선택'}</span><span className="text-violet-100">›</span>
+          </button>
         </div>
       </div>
-      <div className="text-right shrink-0"><div className="text-xs font-bold text-violet-600">{fmtCount(earnedKeys.size)} / 100</div><div className="text-[9px] text-gray-400">배지 〉</div></div>
-    </button>
+      <div className="mt-4 pt-3 border-t border-white/15">
+        <div className="text-[9px] text-violet-100/75">오늘의 응원</div>
+        <div className="text-sm font-bold leading-relaxed mt-1">“{dailyEncouragement(userId)}”</div>
+      </div>
+      <div className="flex justify-between mt-3 text-[9px] text-violet-100/75"><span>대표 배지는 획득한 배지 중 선택할 수 있어요.</span><span>{fmtCount(earnedKeys.size)} / 100</span></div>
+    </div>
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
       <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
@@ -5080,8 +5154,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
+            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
             <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput} onGoCare={()=>setTab('customerCare')} onGoInput={()=>setTab('daily')} />
-            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
               <div className="flex items-start justify-between gap-3">
