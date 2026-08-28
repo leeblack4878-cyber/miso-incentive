@@ -9,6 +9,31 @@ import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
 import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
+import {
+  SECOND_PERFORMANCE_POINT, allowedSecondVas, secondPerformancePoints,
+  summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
+  mergeSaleMetaPreservingLegacy,
+} from './policyRules';
+
+let feedbackBridge={toast:null,confirm:null};
+function showAppToast(message,{tone='success',title=''}={}){feedbackBridge.toast?.({message,title,tone})}
+function showAppConfirm(options={}){
+  if(!feedbackBridge.confirm)return Promise.resolve(window.confirm(options.message||options.title||'계속할까요?'));
+  return feedbackBridge.confirm(options);
+}
+function AppFeedbackHost(){
+  const [toasts,setToasts]=useState([]),[dialog,setDialog]=useState(null);
+  useEffect(()=>{
+    feedbackBridge.toast=(item)=>{const id=Date.now()+Math.random();setToasts(v=>[...v,{...item,id}]);setTimeout(()=>setToasts(v=>v.filter(x=>x.id!==id)),3200)};
+    feedbackBridge.confirm=(options)=>new Promise(resolve=>setDialog({...options,resolve}));
+    return()=>{feedbackBridge={toast:null,confirm:null}};
+  },[]);
+  const finish=value=>{dialog?.resolve?.(value);setDialog(null)};
+  return <>
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[120] w-[calc(100%-24px)] max-w-sm space-y-2 pointer-events-none">{toasts.map(t=><div key={t.id} className={`pointer-events-auto rounded-2xl px-4 py-3 shadow-xl border ${t.tone==='error'?'bg-red-600 border-red-500 text-white':t.tone==='info'?'bg-gray-900 border-gray-800 text-white':'bg-emerald-600 border-emerald-500 text-white'}`}><div className="text-xs font-bold">{t.title|| (t.tone==='error'?'처리하지 못했어요':'처리 완료')}</div><div className="text-[11px] opacity-90 mt-0.5">{t.message}</div></div>)}</div>
+    {dialog&&<div className="fixed inset-0 z-[125] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>finish(false)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${dialog.tone==='danger'?'bg-red-50 text-red-500':'bg-violet-50 text-violet-600'}`}><AlertTriangle size={20}/></div><div className="text-lg font-bold text-gray-900 mt-3">{dialog.title||'확인해주세요'}</div><div className="text-xs text-gray-500 mt-2 whitespace-pre-line leading-relaxed">{dialog.message}</div><div className="grid grid-cols-2 gap-2 mt-5"><button onClick={()=>finish(false)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">{dialog.cancelLabel||'돌아가기'}</button><button onClick={()=>finish(true)} className={`py-3 rounded-xl text-white text-sm font-bold ${dialog.tone==='danger'?'bg-red-500':'bg-violet-600'}`}>{dialog.confirmLabel||'확인'}</button></div></div></div>}
+  </>;
+}
 
 /* v21.26: 2ND 번들별 일반/무료판매 구분. 무료판매는 실적/KPI 인정, 번들+해당 VAS 인센티브 제외. */
 
@@ -103,7 +128,7 @@ const DEFAULT_MOBILE_POINT_ITEMS = [
   { key: 'gibyeonWeak', label: '기변 (약자요금제)', point: 0.5, countsTenure: true },
   { key: 'gibyeonLVC', label: '기변 (85군 미만)', point: 0.3, countsTenure: true },
   { key: 'usedMnp', label: '중고 MNP (선약가입건)', point: 1, countsTenure: true },
-  { key: 'secondOnly', label: '2ND단독', point: 0.2, countsTenure: true },
+  { key: 'secondOnly', label: '2ND단독', point: SECOND_PERFORMANCE_POINT, countsTenure: true },
 ];
 
 const DEFAULT_KPI_ITEMS = [
@@ -792,7 +817,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   // 단독은 mobilePoint.secondOnly에 포함되고, 번들은 bundle2nd에 별도 저장되므로
   // 번들 건수에 현재 2ND 성과등급 배점을 곱해 추가합니다. 무료판매도 실적은 인정됩니다.
   const secondPointRate = Number(mobileItems.find((item) => item.key === 'secondOnly')?.point || 0);
-  const bundle2ndPoints = bundle2ndActivityCount * secondPointRate;
+  const bundle2ndPoints = secondPerformancePoints({bundleCounts:draft.bundle2nd||{}}) * (secondPointRate / SECOND_PERFORMANCE_POINT);
   const mobilePoints = sumPoint(draft.mobilePoint || {}, mobileItems) + bundle2ndPoints;
   const homeAddonPoints = sumPoint(draft.homeBase || {}, HOME_BASE_ITEMS)
     + Number(draft.homeFlat?.tvFree || 0) * 0.5
@@ -1867,6 +1892,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
+      <AppFeedbackHost />
       {exitHint && (
         <div className="fixed left-1/2 bottom-6 -translate-x-1/2 z-[100] w-[calc(100%-32px)] max-w-sm">
           <div className="bg-gray-900/95 text-white text-sm font-medium text-center rounded-xl px-4 py-3 shadow-xl">
@@ -2223,14 +2249,7 @@ function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
     if(o.product_type==='smartHome')smart++;
   });
 
-  let insurance=0, strategicVas=0;
-  mobile.forEach(x=>{
-    const all=[...(x.source_meta?.vasKeys||[]),...Object.values(x.source_meta?.bundleVasMap||{}).flat()];
-    all.forEach(k=>{
-      if(k==='vasPhonePass'||k==='vasSafePass')insurance++;
-      if(k==='vasKyobo'||k==='vasVcolor')strategicVas++;
-    });
-  });
+  const {insurance,strategicVas}=summarizeVasQuality(mobile);
   const revenuePoints=strategicPlan*.5+insurance*.8+strategicVas*1+Number(sonoCount||0)*2;
   return {hs,plan115,home:internetKeys.size,freeSmart:free+smart,mnp,second,strategicPlan,insurance,strategicVas,sono:Number(sonoCount||0),revenuePoints,
     plan115Pct:qualityPct(plan115,hs),homePct:qualityPct(internetKeys.size,hs),freeSmartPct:qualityPct(free+smart,hs),mnpPct:qualityPct(mnp,hs),secondPct:qualityPct(second,hs),revenuePct:qualityPct(revenuePoints,hs)};
@@ -3942,12 +3961,12 @@ function SalesExpensePanel({ userId, month, onTotal }) {
   useEffect(()=>{load()},[load]);
   useEffect(()=>setForm(f=>({...f,expense_date:`${month}-${String(new Date().getDate()).padStart(2,'0')}`})),[month]);
   const add=async()=>{
-    const amount=Number(form.amount); if(!amount||amount<=0)return alert('비용 금액을 입력해주세요.');
+    const amount=Number(form.amount); if(!amount||amount<=0)return showAppToast('비용 금액을 입력해주세요.',{tone:'error'});
     const {error}=await supabase.from('sales_expenses').insert({...form,amount,user_id:userId,customer_name:form.customer_name.trim()||null,memo:form.memo.trim()||null});
-    if(error)return alert(`비용 등록 실패: ${friendlyError(error)}`);
+    if(error)return showAppToast(friendlyError(error),{tone:'error',title:'비용 등록 실패'});
     setForm(f=>({...f,amount:'',customer_name:'',memo:''}));load();
   };
-  const remove=async(id)=>{if(!window.confirm('이 비용을 삭제할까요?'))return;await supabase.from('sales_expenses').delete().eq('id',id).eq('user_id',userId);load()};
+  const remove=async(id)=>{if(!await showAppConfirm({title:'영업비용을 삭제할까요?',message:'삭제하면 이번 달 비용 합계에서도 즉시 빠집니다.',confirmLabel:'비용 삭제',tone:'danger'}))return;await supabase.from('sales_expenses').delete().eq('id',id).eq('user_id',userId);showAppToast('영업비용을 삭제했어요.');load()};
   const total=items.reduce((s,x)=>s+Number(x.amount||0),0);
   return <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between items-center text-left">
@@ -4533,18 +4552,18 @@ function CustomerCareManager({ userId, month, homeProps }) {
     const {error}=await supabase.from('customer_tasks')
       .update({...patch,updated_at:new Date().toISOString()})
       .eq('id',t.id).eq('user_id',userId);
-    if(error)return alert(`고객 약속 수정 실패: ${friendlyError(error)}`);
+    if(error)return showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 수정 실패'});
     load();
   };
 
   const complete=async(t)=>{
     const name=customerMap[t.customer_id]?.customer_name||'고객';
-    if(!window.confirm(`${name} · ${t.title}\n\n정말 처리 완료할까요?\n완료 내역에서 다시 되돌릴 수 있어요.`))return;
+    if(!await showAppConfirm({title:'고객 약속을 완료할까요?',message:`${name} · ${t.title}\n완료 내역에서 다시 되돌릴 수 있어요.`,confirmLabel:'완료 처리'}))return;
     await updateTask(t,{status:'completed',completed_at:new Date().toISOString()});
   };
 
   const undoComplete=async(t)=>{
-    if(!window.confirm('완료 처리를 취소하고 다시 할 일로 돌릴까요?'))return;
+    if(!await showAppConfirm({title:'다시 할 일로 돌릴까요?',message:'완료 표시가 취소되고 고객 약속 목록에 다시 나타납니다.',confirmLabel:'되돌리기'}))return;
     await updateTask(t,{status:'pending',completed_at:null});
   };
 
@@ -4792,12 +4811,9 @@ function MyInputSummary({userId,month,config}){
         });
         if(meta.usedMnpBundle)inc(mobile,'중고 MNP 61군↑ 결합');
       });
-      const validHomes=(homes||[]).filter(x=>{
-        const d=String(x.source_work_date||x.actual_install_date||'').slice(0,7);
-        return d===month&&x.status!=='cancelled';
-      });
-      const completedHomes=validHomes.filter(x=>x.status==='completed');
-      const pendingHomes=validHomes.filter(x=>x.status==='pending');
+      const validHomes=homeOrdersForMonth(homes||[],month);
+      const completedHomes=homeOrdersForMonth(validHomes,month,'completed');
+      const pendingHomes=homeOrdersForMonth(validHomes,month,'pending');
       const addHomeRows=(rows,target)=>rows.forEach(x=>{
         const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'홈+TV 동시청약',tvFree:'TV프리(부)',smartHome:'스마트홈'};
         const fallbackLabel=String(x.product_type||'홈 기타')
@@ -4812,10 +4828,6 @@ function MyInputSummary({userId,month,config}){
       addHomeRows(pendingHomes,homePending);
       // 홈은 한 고객 묶음이 홈+TV/인터넷/동시판매 등 여러 행으로 저장되므로
       // 같은 날짜+고객을 핵심 판매 1건으로 계산합니다.
-      const homeBundleCount=rows=>new Set(rows.map(x=>{
-        const date=String(x.source_work_date||x.actual_install_date||'').slice(0,10);
-        return `${date}|${x.customer_id||x.customer_name||x.id}`;
-      })).size;
       const arr=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]).map(([label,count])=>({label,count}));
       const result={mobile:arr(mobile),vas:arr(vas),second:arr(second),home:arr(home),homePending:arr(homePending),totalHs,totalHome:homeBundleCount(completedHomes),totalHomePending:homeBundleCount(pendingHomes),totalVas:Object.values(vas).reduce((a,v)=>a+v,0),totalSecond:Object.values(second).reduce((a,v)=>a+v,0)};
       setSummary(result);setLoading(false);
@@ -4907,6 +4919,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
   const [homeApprovalPending,setHomeApprovalPending]=useState(0);
+  const [approvalRows,setApprovalRows]=useState([]);
+  const [approvalOpen,setApprovalOpen]=useState(false);
   const [homeTodayInputCount,setHomeTodayInputCount]=useState(0);
   const [showClosingAmount,setShowClosingAmount]=useState(false);
   const [historyOpen,setHistoryOpen]=useState({mobile:false,home:false,spot:false,expense:false});
@@ -4953,8 +4967,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         const todayDate=`${todayKey}-${String(now.getDate()).padStart(2,'0')}`;
 
         const [spotRes,saleRes,todayRes]=await Promise.all([
-          supabase.from('spot_claims').select('id').eq('user_id',authUser.id).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
-          supabase.from('customer_sales').select('id,source_meta').eq('user_id',authUser.id).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
+          supabase.from('spot_claims').select('id,claim_date,customer_name,source_context,direct_title,direct_amount,spot_policies(title,amount)').eq('user_id',authUser.id).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
+          supabase.from('customer_sales').select('id,sale_date,metric_label,source_meta,customers(customer_name)').eq('user_id',authUser.id).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
           todayKey===month
             ? supabase.from('customer_sales').select('id').eq('user_id',authUser.id).eq('sale_date',todayDate)
             : Promise.resolve({data:[],error:null})
@@ -4963,10 +4977,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         const specialPending=(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').length;
         if(alive){
           setHomeApprovalPending((spotRes.data||[]).length+specialPending);
+          setApprovalRows([
+            ...(spotRes.data||[]).map(x=>({id:`spot-${x.id}`,kind:'spot',date:x.claim_date,customer:x.customer_name||'고객명 없음',title:x.direct_title||x.spot_policies?.title||'스팟 인센티브',amount:Number(x.direct_amount??x.spot_policies?.amount??0),statusLabel:'관리자 승인 대기'})),
+            ...(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').map(x=>({id:`special-${x.id}`,kind:'special',date:x.sale_date,customer:x.customers?.customer_name||'고객명 없음',title:`특판 예외금액 · ${x.metric_label||'모바일'}`,amount:Number(x.source_meta?.specialPolicy?.exceptionRequestedAmount||0),statusLabel:'예외금액 승인 대기'}))
+          ]);
           setHomeTodayInputCount((todayRes.data||[]).length);
         }
       }catch(e){
-        if(alive){setHomeApprovalPending(0);setHomeTodayInputCount(0);}
+        if(alive){setHomeApprovalPending(0);setApprovalRows([]);setHomeTodayInputCount(0);}
       }
     })();
     return()=>{alive=false};
@@ -5094,7 +5112,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
                 <button onClick={()=>setShowNet(v=>!v)} className="text-[10px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
                   {showNet?'영업비용 차감 전 보기':`영업비용 ${won(expenseTotal)} 차감`}
                 </button>
-                <div className={`text-[9px] font-semibold px-2 py-1 rounded-full border ${homeInputStatus.cls}`}>{homeInputStatus.label}</div>
+                <button type="button" onClick={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('daily')} className={`text-[9px] font-semibold px-2 py-1 rounded-full border ${homeInputStatus.cls}`}>{homeInputStatus.label}{homeApprovalPending>0?' ›':''}</button>
               </div>
             </div>
 
@@ -5104,6 +5122,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
                 <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
                 <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
                 <button type="button" onClick={()=>setShowClosingAmount(false)} className="w-full mt-5 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">확인</button>
+              </div>
+            </div>}
+
+            {approvalOpen&&<div className="fixed inset-0 z-[96] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setApprovalOpen(false)}>
+              <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
+                <div className="p-5 border-b"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-amber-600">승인 전 금액은 아직 미반영</div><div className="text-lg font-bold text-gray-900 mt-0.5">승인 대기 {approvalRows.length}건</div><div className="text-[10px] text-gray-400 mt-1">관리자가 확인하면 예상 수수료에 반영돼요.</div></div><button onClick={()=>setApprovalOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div></div>
+                <div className="overflow-y-auto max-h-[55vh] divide-y">{approvalRows.map(x=><div key={x.id} className="p-4"><div className="flex justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{x.title}</div><div className="text-[10px] text-gray-400 mt-1">{x.date} · {x.customer}</div><div className="text-[10px] text-amber-600 mt-1">{x.statusLabel}</div></div><b className="text-sm text-gray-900 shrink-0">{won(x.amount)}</b></div></div>)}</div>
+                <div className="p-4 bg-amber-50"><div className="text-center text-[11px] text-amber-800 font-semibold">아직 관리자가 확인 중이에요. 점장님께 살짝 콕 찔러볼까요? 😆</div><button onClick={()=>setApprovalOpen(false)} className="w-full mt-3 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold">확인했어요</button></div>
               </div>
             </div>}
 
@@ -5382,10 +5408,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const dayMatrix = day.matrix;
   const isDayOff = !!day.dayOff;
 
-  const setDayOff = (nextOff) => {
+  const setDayOff = async (nextOff) => {
     if (locked) return;
     if (nextOff && dayHasData(day)) {
-      const ok = window.confirm('이 날짜에는 이미 실적이 입력되어 있어요. 휴무로 표시해도 실적 데이터는 그대로 남습니다. 계속할까요?');
+      const ok = await showAppConfirm({title:'실적이 있는 날짜예요',message:'휴무로 표시해도 입력된 실적은 그대로 유지됩니다.',confirmLabel:'휴무로 표시',tone:'warning'});
       if (!ok) return;
     }
     const next = { ...normalizeDay(day), dayOff: nextOff };
@@ -5472,8 +5498,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     applyHouseholdRenewItems(items);
     setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm());
   };
-  const deleteHouseholdRenew=(idx)=>{
-    if(!window.confirm('이 재약정 실적을 삭제할까요?'))return;
+  const deleteHouseholdRenew=async(idx)=>{
+    if(!await showAppConfirm({title:'재약정 실적을 삭제할까요?',message:'삭제하면 해당 재약정 건수와 수수료가 함께 빠집니다.',confirmLabel:'삭제',tone:'danger'}))return;
     const items=(day.householdRenewals||[]).filter((_,i)=>i!==idx);
     applyHouseholdRenewItems(items);
   };
@@ -5546,7 +5572,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const deleteSale=async(sale)=>{
     const name=sale.customers?.customer_name||'고객';
     const bundleText=sale.source_type==='home_order'?'이 고객의 같은 날 홈 판매 묶음을 삭제할까요?':'이 판매 건을 삭제할까요?';
-    if(!window.confirm(`${name} · ${sale.metric_label}\n\n${bundleText}\n연결된 고객 약속/영업비용도 함께 정리됩니다.`))return;
+    if(!await showAppConfirm({title:'판매건을 삭제할까요?',message:`${name} · ${sale.metric_label}\n${bundleText}\n연결된 고객 약속과 영업비용도 함께 삭제됩니다.`,confirmLabel:'판매건 삭제',tone:'danger'}))return;
     const meta=sale.source_meta||{};
 
     if(sale.source_type==='home_order'){
@@ -5605,12 +5631,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const submitHomeOrder = async () => {
     if (!homeOrderDraft || !currentEmp?.id || locked) return;
     const customer = homeCustomerName.trim();
-    if (!customer) return alert('고객명을 입력해야 등록할 수 있어요.');
-    if (!homeNetworkType) return alert('가정망 또는 소호망을 선택해주세요.');
-    if (!homeInternet && !homeMainTv && !homeSubTv && !homeSmartHome) return alert('판매한 홈 상품을 하나 이상 선택해주세요.');
-    if (homeMainTv && !homeInternet) return alert('TV(주)는 인터넷 가입과 함께 선택해주세요.');
-    if (homeInternet && !homeInternetSpeed) return alert('인터넷 속도(100MB / 500MB / 1GB)를 선택해주세요.');
-    if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return alert('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.');
+    if (!customer) return showAppToast('고객명을 입력해야 등록할 수 있어요.',{tone:'error'});
+    if (!homeNetworkType) return showAppToast('가정망 또는 소호망을 선택해주세요.',{tone:'error'});
+    if (!homeInternet && !homeMainTv && !homeSubTv && !homeSmartHome) return showAppToast('판매한 홈 상품을 하나 이상 선택해주세요.',{tone:'error'});
+    if (homeMainTv && !homeInternet) return showAppToast('TV(주)는 인터넷 가입과 함께 선택해주세요.',{tone:'error'});
+    if (homeInternet && !homeInternetSpeed) return showAppToast('인터넷 속도를 선택해주세요.',{tone:'error'});
+    if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'error'});
 
     const sourceWorkDate=`${month}-${selectedDay}`;
     let linkedCustomerId=null;
@@ -5734,7 +5760,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
-    }catch(e){ alert(`홈 상품 등록 실패: ${friendlyError(e)}`); }
+    }catch(e){ showAppToast(friendlyError(e),{tone:'error',title:'홈 상품 등록 실패'}); }
     finally{ setHomeOrderSaving(false); }
   };
 
@@ -6226,7 +6252,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const submitMobileSale = async () => {
     if(!mobileSaleDraft||!currentEmp?.id)return;
     const customer=mobileCustomerName.trim();
-    if(!customer)return alert('고객명을 입력해야 실적을 등록할 수 있어요.');
+    if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
       return alert(specialPolicies.length
         ? '특판·지인판매에 적용할 정책을 선택해주세요.'
@@ -6278,12 +6304,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const req=Number(mobileSpecialExceptionAmount||0);
         const newReplacement=mobileSpecialPolicyId?(req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
-        const nextMeta=withCurrentSaleSchema({
-          ...(editingSale.source_meta||{}),
+        const nextMeta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale.source_meta||{}, {
           legacySchemaVersion:saleSchemaVersion(editingSale),
           ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
-        });
+        }));
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
           .update({
@@ -6341,7 +6366,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         setEditingSale(null);
         setEditingCompletedTaskCount(0);
         setTimeout(loadDaySales,150);
-        alert('판매건과 고객 약속을 수정했어요.');
+        showAppToast('판매건과 고객 약속을 수정했어요.');
         return;
       }
 
@@ -6458,7 +6483,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileSpecialExceptionAmount('');
       setTimeout(loadDaySales,150);
     }catch(e){
-      alert(`${editingSale?'판매건 수정':'고객/실적 등록'} 실패: ${friendlyError(e)}`);
+      showAppToast(friendlyError(e),{tone:'error',title:editingSale?'판매건 수정 실패':'고객/실적 등록 실패'});
     }finally{
       setMobileSaleSaving(false);
     }
@@ -7107,7 +7132,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                         setMobileBundleSaleTypeMap(m=>{const n={...m};delete n[v.key];return n;});
                         return prev.filter(k=>k!==v.key);
                       }
-                      if(prev.length>=2){ alert('2ND 번들판매는 최대 2개까지 선택할 수 있어요.'); return prev; }
+                      if(prev.length>=2){ showAppToast('2ND 판매는 최대 2개까지 선택할 수 있어요.',{tone:'info'}); return prev; }
                       setMobileBundleSaleTypeMap(m=>({...m,[v.key]:m[v.key]||'normal'}));
                       return [...prev,v.key];
                     })} className={`w-full text-left px-3 py-2.5 text-xs ${selected?'text-violet-700':'text-gray-600'}`}>
@@ -7132,7 +7157,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       </div>
                       <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
                       <div className="grid grid-cols-1 gap-1">
-                        {[...(config.vas || DEFAULT_VAS).filter(vas=>vas.key!=='vasKyobo'&&vas.key!=='vasVcolor'),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
+                        {[...allowedSecondVas(config.vas || DEFAULT_VAS),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
                           const vasSelected=bundleVasKeys.includes(vas.key);
                           return <button key={vas.key} type="button" onClick={()=>setMobileBundleVasMap(prev=>{
                             const current=prev[v.key]||[];
@@ -7323,7 +7348,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <div className="text-xs font-semibold text-gray-600 mb-2">4. 판매 상품 <span className="font-normal text-gray-400">· 필요한 것만 선택</span></div>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
-                <button type="button" onClick={()=>{if(!homeInternet)return alert('TV(주)는 인터넷과 함께 선택해주세요.');setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
+                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
                 <button type="button" onClick={()=>setHomeSubTv(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSubTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSubTv?'✓ ':''}TV(부)</button>
                 <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSmartHome?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
@@ -7335,7 +7360,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="mt-4 rounded-xl border border-gray-100 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">5. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
               <div className="grid grid-cols-1 gap-2">
-                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return alert('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.');setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
+                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
               </div>
               {homeMobileSimul==='usedMnp'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">✓ 중고 MNP 85군↑ 선약 동시판매 · 가정망에서만 적용</div>}
             </div>
