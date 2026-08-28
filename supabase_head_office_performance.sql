@@ -24,6 +24,11 @@ create policy head_office_performance_admin_select on public.head_office_perform
 for select to authenticated
 using (exists (select 1 from public.profiles p where p.id=(select auth.uid()) and p.role='admin'));
 
+-- 직원 화면에서는 본인 본사 데이터만 정산 대조용으로 조회할 수 있습니다.
+create policy head_office_performance_own_select on public.head_office_performance
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
 create policy head_office_performance_admin_insert on public.head_office_performance
 for insert to authenticated
 with check (
