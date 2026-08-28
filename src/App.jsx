@@ -4852,6 +4852,55 @@ function MyInputSummary({userId,month,config}){
   </div>;
 }
 
+function TodayWorkCard({userId,onGoCare,onGoInput,todayInputDone=false}){
+  const [state,setState]=useState({loading:true,todayTasks:0,overdue:0,installs:0,unscheduled:0});
+  useEffect(()=>{
+    if(!userId)return;
+    let alive=true;
+    (async()=>{
+      const today=new Date().toISOString().slice(0,10);
+      const [{data:tasks,error:te},{data:homes,error:he}]=await Promise.all([
+        supabase.from('customer_tasks').select('id,due_date,status').eq('user_id',userId).neq('status','completed'),
+        supabase.from('home_orders').select('id,customer_id,customer_name,planned_install_date,status,source_work_date').eq('user_id',userId).eq('status','pending')
+      ]);
+      if(!alive)return;
+      if(te||he){setState(v=>({...v,loading:false}));return;}
+      const pending=tasks||[];
+      const homeBundles=new Map();
+      (homes||[]).forEach(x=>{const key=`${x.source_work_date||''}|${x.customer_id||x.customer_name||x.id}`;if(!homeBundles.has(key))homeBundles.set(key,x)});
+      const orders=[...homeBundles.values()];
+      setState({loading:false,todayTasks:pending.filter(x=>x.due_date===today).length,overdue:pending.filter(x=>x.due_date&&x.due_date<today).length,installs:orders.filter(x=>String(x.planned_install_date||'').slice(0,10)===today).length,unscheduled:orders.filter(x=>!x.planned_install_date).length});
+    })();
+    return()=>{alive=false};
+  },[userId]);
+  const items=[['오늘 고객 약속',state.todayTasks],['기한 경과',state.overdue],['오늘 홈 설치',state.installs],['일정 미정 홈',state.unscheduled]];
+  return <div className="bg-white rounded-2xl border border-gray-100 p-4">
+    <div className="flex items-center justify-between"><div><div className="text-[10px] font-bold text-violet-600">오늘 할 일</div><div className="text-sm font-bold text-gray-900 mt-0.5">먼저 확인할 업무</div></div><button onClick={onGoInput} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold ${todayInputDone?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{todayInputDone?'오늘 실적 입력 완료':'오늘 실적 미입력'}</button></div>
+    <button onClick={onGoCare} className="w-full grid grid-cols-4 gap-1.5 mt-3 text-center">
+      {items.map(([label,count])=><div key={label} className={`rounded-xl px-1 py-2.5 ${Number(count)>0?'bg-violet-50':'bg-gray-50'}`}><div className={`text-lg font-black ${Number(count)>0?'text-violet-700':'text-gray-300'}`}>{state.loading?'·':count}</div><div className="text-[9px] text-gray-500 mt-0.5 leading-tight">{label}</div></div>)}
+    </button>
+    <button onClick={onGoCare} className="w-full mt-2 text-[10px] font-semibold text-violet-600 text-right">고객관리에서 확인 ›</button>
+  </div>;
+}
+
+function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
+  const [hq,setHq]=useState(undefined);
+  useEffect(()=>{
+    if(!userId)return;
+    let alive=true;
+    (async()=>{const {data,error}=await supabase.from('head_office_performance').select('metrics,as_of_date').eq('user_id',userId).eq('month',month).maybeSingle();if(alive)setHq(error?null:(data||null));})();
+    return()=>{alive=false};
+  },[userId,month]);
+  const input={hs:hsCount(mergedDraft),second:matrixRowCount(mergedDraft,7)+Object.values(mergedDraft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0),gradePoints:Number(pay?.totalPoints||0)};
+  const metrics=hq?.metrics?normalizeHeadOfficeMetrics(hq.metrics):null;
+  const official=metrics?headOfficeScores(metrics,config,month):null;
+  const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
+  return <div className="bg-white rounded-2xl border border-gray-100 p-4">
+    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시합니다.</div>}
+  </div>;
+}
+
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [showNet,setShowNet]=useState(false);
@@ -5004,6 +5053,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
+            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput} onGoCare={()=>setTab('customerCare')} onGoInput={()=>setTab('daily')} />
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
@@ -5056,6 +5106,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
                 <button type="button" onClick={()=>setShowClosingAmount(false)} className="w-full mt-5 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">확인</button>
               </div>
             </div>}
+
+            <EmployeeHeadOfficeComparison userId={authUser?.id} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <MonthlyPerformanceRankingCard
@@ -5243,7 +5295,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
   const [inputCategory, setInputCategory] = useState(null); // mobile | home | extra
   const [toast, setToast] = useState(null);         // 등록 피드백 카드
-  const [saveState, setSaveState] = useState('idle'); // idle | pending | saved
+  const [saveState, setSaveState] = useState('idle'); // idle | pending | saved | error
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeNetworkType, setHomeNetworkType] = useState('');
@@ -5289,6 +5341,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
+  const [mobileBundleSearch,setMobileBundleSearch]=useState('');
   // v21.18: 2ND 번들 회선별 VAS를 따로 기록합니다. { [bundleKey]: [vasKey, ...] }
   const [mobileBundleVasMap,setMobileBundleVasMap]=useState({});
   const [mobileBundleSaleTypeMap,setMobileBundleSaleTypeMap]=useState({}); // {bundleKey:'normal'|'free'}
@@ -5355,7 +5408,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setTimeout(()=>setSaveState('idle'),1200);
     }else{
       pendingRef.current=p;
-      setSaveState('pending');
+      setSaveState('error');
     }
   }, [saveDailyDay]);
   flushRef.current = flush;
@@ -5676,6 +5729,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       }
 
       notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,payload:{employee_id:currentEmp.id,customer_name:customer,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
+      const resultId=`home-${Date.now()}`;
+      setToast({id:resultId,source:'home',kind:'normal',customerName:customer,label:products.map(p=>p.label).join(' + '),title:'홈 판매 등록 완료',sub:homeDirectComplete?'설치완료 실적으로 반영했어요':'설치대기로 등록했어요',promiseCount:homePromiseRows.length,customerSaleId:primarySaleId,pointDelta:0});
+      setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
     }catch(e){ alert(`홈 상품 등록 실패: ${friendlyError(e)}`); }
@@ -5811,12 +5867,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const toastId = `${Date.now()}-${ri}-${ci}`;
     setToast({
       id: toastId,
+      source:'mobile',
       label,
       ri,
       ci,
       ...feedback,
       payDelta,
+      pointDelta:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),
       currentTotal: afterPay.total,
+      customerName:customerMeta.customerName||'',
+      promiseCount:Number(customerMeta.promiseCount||0),
       customerSaleId: customerMeta.saleId || null,
       vasKeys: Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [],
       specialMatrixOffset:Number(customerMeta.specialMatrixOffset||0),specialVasOffset:Number(customerMeta.specialVasOffset||0),specialReplacementPay:Number(customerMeta.specialReplacementPay||0),
@@ -5826,7 +5886,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
     setTimeout(() => {
       setToast((t) => (t && t.id === toastId ? null : t));
-    }, 4200);
+    }, 10000);
   };
 
 
@@ -6117,6 +6177,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileVasKeys([]);
     setMobileStrategicPlan(false);
     setMobileBundle2ndKeys([]);
+    setMobileBundleSearch('');
     setMobileBundleVasMap({});
     setMobileBundleSaleTypeMap({});
     setMobileUsedMnpBundle(false);
@@ -6384,7 +6445,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         commitMobileOne(
           mobileSaleDraft.ri,
           mobileSaleDraft.ci,
-          { saleId:saved.saleId, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
             specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
             bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
         );
@@ -6433,6 +6494,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       await supabase.from('customer_sales').delete().eq('id',toast.customerSaleId).eq('user_id',currentEmp?.id);
     }
     setToast(null);
+  };
+
+  const editToastSale=async()=>{
+    if(!toast?.customerSaleId)return;
+    const {data,error}=await supabase.from('customer_sales')
+      .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
+      .eq('id',toast.customerSaleId).eq('user_id',currentEmp?.id).maybeSingle();
+    if(error||!data)return alert('방금 등록한 판매건을 불러오지 못했어요. 아래 판매 내역에서 수정해주세요.');
+    setToast(null);
+    await openEditSale(data);
   };
 
   const groupSum = (rec) => DAILY_GROUP_KEYS.reduce((s, gk) => s + Object.values(rec.groups[gk] || {}).reduce((gs, v) => gs + (v || 0), 0), 0)
@@ -6497,6 +6568,31 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const total=rows.reduce((a,[,v])=>a+Number(v||0),0);
     return {rows,total};
   };
+
+  const mobilePreview=(()=>{
+    if(!mobileSaleDraft)return null;
+    const base=normalizeDay(day),nextMatrix=base.matrix.map(r=>[...r]);
+    nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
+    const nextVas={...(base.groups?.vas||{})};
+    [...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].forEach(k=>{if(k!=='vasNone')nextVas[k]=Number(nextVas[k]||0)+1});
+    const nextBundle={...(base.groups?.bundle2nd||{})};mobileBundle2ndKeys.forEach(k=>nextBundle[k]=Number(nextBundle[k]||0)+1);
+    const nextMnpBundle={...(base.groups?.mnpBundle||{})};if(Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle)nextMnpBundle.usedMnpBundle=Number(nextMnpBundle.usedMnpBundle||0)+1;
+    const free=bundleFreeAmounts();
+    const selectedPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
+    const specialMatrix=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
+    const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>(mobileBundleSaleTypeMap?.[bk]||'normal')==='free'?[]:(keys||[]));
+    const specialVas=mobileSaleKind==='special'&&mobileSpecialPolicyId?[...mobileVasKeys,...payableBundleVas].filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
+    const requested=Number(mobileSpecialExceptionAmount||0),replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?(requested>0?0:Number(selectedPolicy?.replacement_amount||0)):0;
+    const nextDay={...base,matrix:nextMatrix,groups:{...base.groups,vas:nextVas,bundle2nd:nextBundle,mnpBundle:nextMnpBundle},bundleFreeOffset:Number(base.bundleFreeOffset||0)+free.bundleOffset,bundleFreeVasOffset:Number(base.bundleFreeVasOffset||0)+free.vasOffset,specialMatrixOffset:Number(base.specialMatrixOffset||0)+specialMatrix,specialVasOffset:Number(base.specialVasOffset||0)+specialVas,specialReplacementPay:Number(base.specialReplacementPay||0)+replacement};
+    const beforeDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:base},month,config.categoryMap,config.gibyeonColumnMap);
+    const afterDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:nextDay},month,config.categoryMap,config.gibyeonColumnMap);
+    const beforePay=computePay(beforeDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
+    const afterPay=computePay(afterDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
+    const vasLabels=[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
+    const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
+    const promiseCount=mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
+    return {incentive:Math.max(0,Number(afterPay.total||0)-Number(beforePay.total||0)),points:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),vasLabels,secondLabels,promiseCount};
+  })();
 
   return (
     <div className="space-y-3 relative">
@@ -6834,6 +6930,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':legacyConversion?.kind==='mobile'?'이전 판매건 복원':'한 번에 판매 등록'}</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{legacyConversion?.kind==='mobile'?'모바일 실적 수정':'모바일 실적 입력'}</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
+            {!editingSale&&<div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-700">항목을 선택하는 동안에는 저장되지 않아요. 맨 아래 <b>실적 등록</b>을 눌러야 판매건·고객정보·약속이 함께 등록됩니다.</div>}
             {legacyConversion?.kind==='mobile'&&<div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[10px] text-amber-700">
               기존 데이터에서 확인된 값 · <b>{legacyConversion.title}{legacyConversion.detail?` · ${legacyConversion.detail}`:''}</b><br/>
               고객명·VAS·2ND 등 당시 저장되지 않은 값은 비워두었어요.
@@ -6998,8 +7095,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">5. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
+              <input value={mobileBundleSearch} onChange={e=>setMobileBundleSearch(e.target.value)} placeholder="2ND 기기명 검색" className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2.5 text-xs"/>
               <div className="grid grid-cols-1 gap-1.5">
-                {(config.bundle2nd || DEFAULT_BUNDLE2ND).map(v=>{
+                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
                   const bundleVasKeys=mobileBundleVasMap[v.key]||[];
                   return <div key={v.key} className={`rounded-xl border ${selected?'bg-violet-50 border-violet-200':'bg-white border-gray-100'}`}>
@@ -7151,13 +7249,20 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2 mt-5">
-              <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
-                className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
-              <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()}
-                className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
-                {mobileSaleSaving?(editingSale?'수정 중...':'등록 중...'):(editingSale?'수정 저장':'실적 등록')}
-              </button>
+            <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
+              {mobilePreview&&<div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5">
+                <div className="text-[10px] font-bold text-violet-700 truncate">{mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
+                <div className="text-[9px] text-violet-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
+                {!editingSale&&<div className="flex justify-between mt-1.5 text-[11px]"><b className="text-emerald-700">예상 인센티브 +{won(mobilePreview.incentive)}</b><b className="text-violet-700">성과P +{fmtNum(mobilePreview.points,1)}P</b></div>}
+              </div>}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
+                  className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
+                <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()}
+                  className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
+                  {mobileSaleSaving?(editingSale?'수정 중...':'판매건 등록 중...'):(editingSale?'수정 저장':'실적 등록')}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -7169,6 +7274,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="text-xs text-violet-500 font-semibold">한 번에 홈 판매 등록</div>
             <div className="text-lg font-bold text-gray-900 mt-1">홈 실적 입력</div>
             <div className="text-xs text-gray-400 mt-1">{month}-{selectedDay} 접수</div>
+            {!homeOrderDraft?.editing&&<div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-700">항목 선택만으로는 저장되지 않아요. 맨 아래 <b>등록</b>을 눌러야 홈 주문·고객정보·약속이 함께 등록됩니다.</div>}
 
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
               1. 고객명 <span className="text-red-500">*</span>
@@ -7274,7 +7380,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               체크하지 않으면 진행중으로 등록되고, 홈 진행관리에서 완료 처리할 수 있어요.
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mt-5">
+            <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
+            <div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5"><div className="text-[10px] font-bold text-violet-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-violet-500 mt-1">{[homeInternet&&(homeMainTv?'인터넷+TV(주)':`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -7297,6 +7405,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 {homeOrderSaving ? (homeOrderDraft?.editing?'수정 중...':'등록 중...') : (homeOrderDraft?.editing?'수정 저장':'등록')}
               </button>
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -7310,9 +7419,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           }`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[11px] opacity-60 mb-1">등록 완료 · {toast.label}</div>
+                <div className="text-[11px] opacity-60 mb-1">등록 완료 · {toast.customerName?`${toast.customerName} · `:''}{toast.label}</div>
                 <div className="text-base font-bold">{toast.title}</div>
                 <div className="text-xs opacity-75 mt-0.5">{toast.sub}</div>
+                <div className="text-[10px] opacity-70 mt-1">{toast.source==='mobile'?`성과P +${fmtNum(toast.pointDelta,1)}P`:''}{toast.promiseCount>0?`${toast.source==='mobile'?' · ':''}고객 약속 ${toast.promiseCount}건 등록`:''}</div>
 
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div>
@@ -7321,17 +7431,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                         예상 인센티브 +{won(toast.payDelta)}
                       </div>
                     )}
-                    <div className="text-[11px] opacity-60 mt-0.5">
-                      현재 예상 {won(toast.currentTotal)}
-                    </div>
+                    {toast.currentTotal!==undefined&&<div className="text-[11px] opacity-60 mt-0.5">현재 예상 {won(toast.currentTotal)}</div>}
                   </div>
 
-                  <button
-                    onClick={undoToast}
-                    className="shrink-0 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium"
-                  >
-                    되돌리기
-                  </button>
+                  <div className="flex gap-1.5">
+                    {toast.customerSaleId&&<button onClick={editToastSale} className="shrink-0 px-3 py-1.5 rounded-lg bg-white text-gray-900 text-xs font-bold">바로 수정</button>}
+                    {toast.source!=='home'&&<button onClick={undoToast} className="shrink-0 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-medium">되돌리기</button>}
+                  </div>
                 </div>
               </div>
             </div>
@@ -7381,6 +7487,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 }
 
 function DailySaveBadge({ state }) {
+  if (state === 'error') return <span className="flex items-center gap-1 text-[11px] text-red-600"><AlertTriangle size={11} />자동저장 실패 · 연결 확인</span>;
   if (state === 'pending') return <span className="flex items-center gap-1 text-[11px] text-amber-600"><UploadCloud size={11} />저장 대기 중</span>;
   if (state === 'saved') return <span className="flex items-center gap-1 text-[11px] text-emerald-600"><Check size={11} />저장됨</span>;
   return null;
