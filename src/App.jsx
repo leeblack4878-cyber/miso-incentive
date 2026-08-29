@@ -1135,6 +1135,15 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 export default function App({ authUser, authProfile, onSignOut }) {
   const [role, setRole] = useState('employee');
   const [notificationOpen,setNotificationOpen]=useState(false);
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    if(params.get('open')==='notifications'){
+      setNotificationOpen(true);
+      params.delete('open');
+      const query=params.toString();
+      window.history.replaceState({},'',`${window.location.pathname}${query?`?${query}`:''}${window.location.hash}`);
+    }
+  },[]);
   const [employees, setEmployees] = useState([]);
   const [empId, setEmpId] = useState('');
   const months = useMemo(() => lastMonths(24), []);
@@ -3848,6 +3857,48 @@ function NotificationBell({ userId, onOpen }) {
   );
 }
 
+const PUSH_VAPID_PUBLIC_KEY='BNGKgtt4ILN7tUC4mrsxlZskRco883ZWNSfgK82dZmHHEYME4vtfCnidY_cd_UuRKc8yYemLwBWYBs1ir0cYEG0';
+function pushKeyBytes(value){
+  const padding='='.repeat((4-value.length%4)%4),base64=(value+padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw=atob(base64);return Uint8Array.from([...raw].map(ch=>ch.charCodeAt(0)));
+}
+function PushNotificationSettings({userId}){
+  const supported='serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;
+  const [enabled,setEnabled]=useState(false),[busy,setBusy]=useState(true),[message,setMessage]=useState('');
+  const standalone=window.matchMedia?.('(display-mode: standalone)').matches||window.navigator.standalone===true;
+  useEffect(()=>{let alive=true;(async()=>{if(!supported){if(alive)setBusy(false);return}const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.getSubscription();if(alive){setEnabled(!!sub);setBusy(false)}})();return()=>{alive=false}},[supported,userId]);
+  const enable=async()=>{
+    if(!supported)return setMessage('이 기기에서는 푸시 알림을 지원하지 않아요.');
+    if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!standalone)return setMessage('아이폰은 먼저 Safari에서 홈 화면에 추가한 뒤, 미소페이 앱에서 켜주세요.');
+    setBusy(true);setMessage('');
+    try{
+      const permission=await Notification.requestPermission();
+      if(permission!=='granted')throw new Error('휴대폰 설정에서 미소페이 알림을 허용해주세요.');
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKeyBytes(PUSH_VAPID_PUBLIC_KEY)});
+      const json=sub.toJSON(),keys=json.keys||{};
+      const {error}=await supabase.from('push_subscriptions').upsert({user_id:userId,endpoint:json.endpoint,p256dh:keys.p256dh,auth:keys.auth,user_agent:navigator.userAgent,enabled:true,updated_at:new Date().toISOString()},{onConflict:'endpoint'});
+      if(error)throw error;
+      setEnabled(true);setMessage('알림을 켰어요. 테스트 알림을 눌러 확인해주세요.');
+    }catch(error){setMessage(friendlyError(error))}finally{setBusy(false)}
+  };
+  const disable=async()=>{
+    setBusy(true);setMessage('');
+    try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub){await supabase.from('push_subscriptions').delete().eq('endpoint',sub.endpoint).eq('user_id',userId);await sub.unsubscribe()}setEnabled(false);setMessage('이 기기의 알림을 껐어요.')}catch(error){setMessage(friendlyError(error))}finally{setBusy(false)}
+  };
+  const test=async()=>{
+    setBusy(true);setMessage('테스트 알림을 보내는 중이에요.');
+    const {error}=await supabase.from('notifications').insert({recipient_id:userId,actor_id:userId,type:'push_test',title:'미소페이 알림 테스트',message:'푸시 알림이 정상적으로 연결됐어요 🎉',payload:{screen:'notifications'}});
+    setMessage(error?friendlyError(error):'잠시 후 휴대폰 알림을 확인해주세요.');setBusy(false);
+  };
+  return <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">휴대폰 푸시 알림</div><div className="text-[11px] text-gray-500 mt-1">앱을 닫아도 승인 결과와 오늘 고객 약속을 알려드려요.</div></div><span className={`text-[10px] font-bold px-2 py-1 rounded-full ${enabled?'bg-emerald-100 text-emerald-700':'bg-gray-200 text-gray-500'}`}>{enabled?'켜짐':'꺼짐'}</span></div>
+    {!supported&&<div className="text-[11px] text-amber-700 mt-2">현재 브라우저에서는 지원되지 않아요. 설치한 미소페이 앱에서 다시 열어주세요.</div>}
+    {message&&<div className="text-[11px] text-violet-700 mt-2">{message}</div>}
+    <div className="flex gap-2 mt-3">{enabled?<><button disabled={busy} onClick={test} className="flex-1 rounded-xl bg-violet-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">테스트 알림</button><button disabled={busy} onClick={disable} className="rounded-xl bg-white border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-500 disabled:opacity-50">끄기</button></>:<button disabled={busy||!supported} onClick={enable} className="w-full rounded-xl bg-violet-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy?'확인 중...':'알림 받기'}</button>}</div>
+  </div>;
+}
+
 function NotificationCenter({ userId }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3924,6 +3975,7 @@ function NotificationCenter({ userId }) {
 
   return (
     <div className="space-y-3">
+      <PushNotificationSettings userId={userId} />
       <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between gap-3">
         <div>
           <div className="text-xs text-gray-400">내가 확인할 소식</div>

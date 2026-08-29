@@ -142,3 +142,18 @@ test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 �
   assert.match(sw, /event\.request\.mode === 'navigate'/);
   assert.match(sw, /fetch\(event\.request\)/);
 });
+
+test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 약속 예약을 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../sql/push_notifications.sql', import.meta.url), 'utf8');
+  assert.match(source, /pushManager\.subscribe/);
+  assert.match(source, /push_subscriptions/);
+  assert.match(source, /테스트 알림/);
+  assert.match(sw, /addEventListener\('push'/);
+  assert.match(sw, /notificationclick/);
+  assert.match(sw, /vibrate: \[180, 80, 180\]/);
+  assert.match(sql, /auth\.uid\(\)\) = user_id/);
+  assert.match(sql, /miso-due-customer-task-push/);
+  assert.match(sql, /'0 0 \* \* \*'/);
+});
