@@ -94,3 +94,11 @@ test('알림센터는 본인 조회와 관리 범위 발송 RLS를 함께 사용
   assert.match(sql, /notifications_insert_managed_employee/);
   assert.match(sql, /actor\.store_name = recipient\.store_name/);
 });
+
+test('스마트홈과 HS 동시판매는 고객 묶음당 추가 수수료를 한 번 반영한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /smartHomeSimulRate=.*key==='smartHomeSimul'/);
+  assert.match(source, /b\.types\.has\('smartHome'\)&&b\.simul!=='none'&&smartHomeSimulRate/);
+  assert.match(source, /homeAddonPay=simulPay\+smartHomeSimulPay\+subSetTopPay/);
+  assert.match(source, /item:'스마트홈 동시판매'/);
+});
