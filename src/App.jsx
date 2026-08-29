@@ -1112,6 +1112,7 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 
 export default function App({ authUser, authProfile, onSignOut }) {
   const [role, setRole] = useState('employee');
+  const [notificationOpen,setNotificationOpen]=useState(false);
   const [employees, setEmployees] = useState([]);
   const [empId, setEmpId] = useState('');
   const months = useMemo(() => lastMonths(24), []);
@@ -1925,6 +1926,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
               <div className="text-xs font-semibold text-gray-700">{authProfile?.name || authUser?.email}</div>
               <div className="text-[10px] text-gray-400">{ROLE_LABELS[authProfile?.role] || authProfile?.role}</div>
             </div>
+            <NotificationBell userId={authUser?.id} onOpen={()=>setNotificationOpen(true)} />
             {onSignOut && (
               <button onClick={onSignOut} title="로그아웃" className="text-gray-400 hover:text-red-500 p-1.5 shrink-0">
                 <LogOut size={16} />
@@ -1950,6 +1952,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
           </div>
         )}
       </div>
+
+      {notificationOpen&&<div className="fixed inset-0 z-[115] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setNotificationOpen(false)}>
+        <div className="w-full max-w-md max-h-[86vh] overflow-y-auto bg-gray-50 rounded-t-3xl sm:rounded-3xl p-4" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3"><div className="text-lg font-bold text-gray-900">알림센터</div><button onClick={()=>setNotificationOpen(false)} className="w-8 h-8 rounded-full bg-white text-gray-500">×</button></div>
+          <NotificationCenter userId={authUser?.id} />
+        </div>
+      </div>}
 
       {dbError && (
         <div className="max-w-5xl mx-auto px-4 pt-3">
@@ -3085,6 +3094,7 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const [filter,setFilter]=useState('all');
   const [avatarUrl,setAvatarUrl]=useState('');
   const [avatarBusy,setAvatarBusy]=useState(false);
+  const [celebration,setCelebration]=useState(null);
   const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId]);
   const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
   const loadBadges=useCallback(async()=>{
@@ -3100,8 +3110,21 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     if(!userId||loadingBadges)return;
     const have=new Set(storedBadges.map(r=>r.badge_key)); const missing=[...autoEarned].filter(k=>!have.has(k));
     if(!missing.length)return;
+    const first=badgeDefOf(missing[0]);
+    const onceKey=`miso-celebration-badge-${userId}-${missing[0]}`;
+    if(first&&!localStorage.getItem(onceKey)){localStorage.setItem(onceKey,'1');setCelebration({icon:first.icon,title:'새로운 배지 획득!',message:first.name})}
     (async()=>{for(const key of missing)await supabase.from('user_achievements').insert({user_id:userId,badge_key:key,awarded_by:null});await loadBadges()})();
   },[autoEarned,storedBadges,loadingBadges,userId,loadBadges]);
+  useEffect(()=>{
+    if(!userId||loadingBadges||celebration)return;
+    const hs=hsCount(mergedDraft||{}),rank=[...(competitionRows||[])].sort((a,b)=>Number(b.pay?.totalPoints||0)-Number(a.pay?.totalPoints||0)).findIndex(x=>x.id===userId)+1;
+    const events=[];
+    [40,30,20].forEach(v=>{if(hs>=v)events.push({key:`hs-${month}-${v}`,icon:'🔥',title:`HS ${v}건 돌파!`,message:'꾸준함이 멋진 기록을 만들었어요.'})});
+    if(pay?.gradeEligible&&pay?.grade&&pay.grade!=='D')events.push({key:`grade-${month}-${pay.grade}`,icon:'🏆',title:`${pay.grade}등급 달성!`,message:'한 단계 더 올라섰어요.'});
+    if(rank>0&&rank<=3)events.push({key:`rank-${month}-${rank}`,icon:rank===1?'🥇':rank===2?'🥈':'🥉',title:`전체 순위 TOP${rank} 진입!`,message:'지금의 좋은 흐름을 이어가요.'});
+    const next=events.find(x=>!localStorage.getItem(`miso-celebration-${userId}-${x.key}`));
+    if(next){events.forEach(x=>localStorage.setItem(`miso-celebration-${userId}-${x.key}`,'1'));setCelebration(next)}
+  },[userId,month,mergedDraft,pay?.grade,pay?.gradeEligible,competitionRows,loadingBadges,celebration]);
   const saveTitle=async(key)=>{if(!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(!error)setTitleKey(key)};
   const titleDef=badgeDefOf(titleKey);
   const visible=BADGE_DEFS.filter(b=>filter==='earned'?earnedKeys.has(b.key):filter==='locked'?!earnedKeys.has(b.key):filter==='legend'?b.rarity==='LEGEND':true);
@@ -3136,6 +3159,14 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   };
 
   return <>
+    {celebration&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-center justify-center p-5" onClick={()=>setCelebration(null)}>
+      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-violet-100 to-transparent" />
+        <div className="relative text-5xl">{celebration.icon}</div><div className="relative mt-3 text-xl font-black text-gray-900">{celebration.title}</div><div className="relative mt-2 text-sm text-gray-500">{celebration.message}</div>
+        <div className="relative mt-4 flex justify-center gap-2">{['●','◆','●','◆','●'].map((x,i)=><span key={i} className={`${i%2?'text-amber-400':'text-violet-400'} animate-bounce`} style={{animationDelay:`${i*80}ms`}}>{x}</span>)}</div>
+        <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">좋아요!</button>
+      </div>
+    </div>}
     <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
       <div className="flex items-start gap-3">
         <label className="relative w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
@@ -3830,7 +3861,7 @@ function NotificationCenter({ userId }) {
     <div className="space-y-3">
       <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center justify-between gap-3">
         <div>
-          <div className="text-xs text-gray-400">관리자 알림</div>
+          <div className="text-xs text-gray-400">내가 확인할 소식</div>
           <div className="text-base font-bold text-gray-900 mt-0.5">
             🔔 알림센터
           </div>
@@ -3937,6 +3968,12 @@ async function notifyStoreManagers({ actorId, type, title, message, payload = {}
   } catch (e) {
     console.error('NOTIFICATION ERROR:', e);
   }
+}
+
+async function notifyEmployee({actorId,recipientId,type,title,message,payload={}}){
+  if(!actorId||!recipientId)return;
+  const {error}=await supabase.from('notifications').insert({recipient_id:recipientId,actor_id:actorId,type,title,message,payload});
+  if(error)console.error('EMPLOYEE NOTIFICATION ERROR',error);
 }
 
 
@@ -4323,7 +4360,7 @@ function SpecialSalePolicyAdmin({ authUserId }) {
   },[]); useEffect(()=>{load()},[load]);
   const add=async()=>{if(!form.title||!form.start_date||!form.end_date)return showLegacyAlert('정책명과 기간을 입력해주세요.');const {error}=await supabase.from('special_sale_policies').insert({...form,replacement_amount:Number(form.replacement_amount||0),created_by:authUserId});if(error)return showLegacyAlert(friendlyError(error));setForm({title:'',start_date:'',end_date:'',replacement_amount:'20000',description:''});load();};
   const toggle=async(r)=>{await supabase.from('special_sale_policies').update({active:!r.active,updated_at:new Date().toISOString()}).eq('id',r.id);load();};
-  const decide=async(sale,approve)=>{const sp=sale.source_meta?.specialPolicy||{},amt=approve?Number(sp.exceptionRequestedAmount||0):Number(sp.replacementAmount||0);const {data:dr,error}=await supabase.from('daily_records').select('data').eq('user_id',sale.user_id).eq('work_date',sale.sale_date).maybeSingle();if(error)return showLegacyAlert(friendlyError(error));const d=normalizeDay(dr?.data);const old=Number(d.specialReplacementPay||0);const next={...d,specialReplacementPay:old+amt};const {error:uErr}=await supabase.from('daily_records').upsert({user_id:sale.user_id,work_date:sale.sale_date,data:next,updated_at:new Date().toISOString()},{onConflict:'user_id,work_date'});if(uErr)return showLegacyAlert(friendlyError(uErr));const meta={...sale.source_meta,specialPolicy:{...sp,exceptionStatus:approve?'approved':'rejected',exceptionApprovedAmount:amt,reviewedBy:authUserId,reviewedAt:new Date().toISOString()}};await supabase.from('customer_sales').update({source_meta:meta}).eq('id',sale.id);load();};
+  const decide=async(sale,approve)=>{const sp=sale.source_meta?.specialPolicy||{},amt=approve?Number(sp.exceptionRequestedAmount||0):Number(sp.replacementAmount||0);const {data:dr,error}=await supabase.from('daily_records').select('data').eq('user_id',sale.user_id).eq('work_date',sale.sale_date).maybeSingle();if(error)return showLegacyAlert(friendlyError(error));const d=normalizeDay(dr?.data);const old=Number(d.specialReplacementPay||0);const next={...d,specialReplacementPay:old+amt};const {error:uErr}=await supabase.from('daily_records').upsert({user_id:sale.user_id,work_date:sale.sale_date,data:next,updated_at:new Date().toISOString()},{onConflict:'user_id,work_date'});if(uErr)return showLegacyAlert(friendlyError(uErr));const meta={...sale.source_meta,specialPolicy:{...sp,exceptionStatus:approve?'approved':'rejected',exceptionApprovedAmount:amt,reviewedBy:authUserId,reviewedAt:new Date().toISOString()}};await supabase.from('customer_sales').update({source_meta:meta}).eq('id',sale.id);await notifyEmployee({actorId:authUserId,recipientId:sale.user_id,type:approve?'special_approved':'special_rejected',title:`특판 예외금액 ${approve?'승인':'처리 완료'}`,message:`${sale.metric_label} · ${won(amt)}`,payload:{sale_id:sale.id,status:approve?'approved':'rejected'}});load();};
   return <div className="space-y-3"><div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="font-bold text-sm">🏷️ 특판·지인판매 정책</div><div className="text-xs text-gray-500 mt-1">최고관리자만 정책을 만들어요. 실적은 인정하고 요금제/VAS 수수료 대신 대체 인센티브를 적용합니다.</div><div className="grid grid-cols-2 gap-2 mt-3"><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="정책명" className="border rounded p-2 text-xs"/><input value={fmtInputNumber(form.replacement_amount)} onChange={e=>setForm({...form,replacement_amount:e.target.value.replace(/\D/g,'')})} placeholder="건당 대체 지급금액" className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="설명 (선택)" className="mt-2 w-full border rounded p-2 text-xs"/><button onClick={add} className="mt-2 w-full bg-amber-500 text-white rounded-lg py-2 text-xs font-bold">정책 추가</button><div className="mt-3 divide-y">{rows.map(r=><div key={r.id} className="py-2 flex justify-between text-xs"><div><b>{r.title}</b> · {won(r.replacement_amount)}<div className="text-[10px] text-gray-400">{r.start_date}~{r.end_date}</div></div><button onClick={()=>toggle(r)} className={r.active?'text-emerald-600':'text-gray-400'}>{r.active?'활성':'비활성'}</button></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">예외 지급금액 승인 {pending.length}건</div>{pending.length===0?<div className="py-6 text-center text-xs text-gray-400">승인 대기 예외금액이 없어요.</div>:pending.map(x=><div key={x.id} className="p-3 border-b text-xs"><b>{x.profiles?.name||'직원'} · {x.customers?.customer_name||'고객'}</b><div className="mt-1 text-gray-500">{x.metric_label} · 요청 {won(x.source_meta?.specialPolicy?.exceptionRequestedAmount)}</div><div className="grid grid-cols-2 gap-2 mt-2"><button onClick={()=>decide(x,false)} className="py-2 bg-gray-100 rounded">기본금액 적용</button><button onClick={()=>decide(x,true)} className="py-2 bg-amber-500 text-white rounded font-bold">요청금액 승인</button></div></div>)}</div></div>;
 }
 
@@ -4386,7 +4423,10 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
       reviewed_title:String(edit.title||'').trim()||null,
       reviewed_memo:String(edit.memo||'').trim()||null
     }).eq('id',id);
-    if(error)return showLegacyAlert(`스팟 처리 실패: ${friendlyError(error)}`);load();
+    if(error)return showLegacyAlert(`스팟 처리 실패: ${friendlyError(error)}`);
+    const claim=claims.find(x=>x.id===id);
+    if(claim)await notifyEmployee({actorId:authUserId,recipientId:claim.user_id,type:status==='approved'?'spot_approved':'spot_rejected',title:`스팟 ${status==='approved'?'승인':'반려'}`,message:`${String(edit.title||'스팟')} · ${status==='approved'?won(amount):'반려됨'}`,payload:{claim_id:id,status}});
+    load();
   };
 
   const pendingClaims=claims.filter(c=>c.status==='pending'); const doneClaims=claims.filter(c=>c.status!=='pending');
@@ -4599,7 +4639,7 @@ function CareTemplatePicker({
   </div>;
 }
 
-function CustomerCareManager({ userId, month, homeProps }) {
+function CustomerCareManager({ userId, month, homeProps, navIntent }) {
   const [tasks,setTasks]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [filter,setFilter]=useState('todo');
@@ -4619,6 +4659,13 @@ function CustomerCareManager({ userId, month, homeProps }) {
   },[userId]);
 
   useEffect(()=>{load()},[load]);
+  useEffect(()=>{
+    if(!navIntent?.type)return;
+    if(navIntent.type==='today')setFilter('today');
+    if(navIntent.type==='overdue')setFilter('overdue');
+    if(navIntent.type==='all')setFilter('all');
+    if(navIntent.type==='home')setTimeout(()=>document.getElementById('employee-home-care')?.scrollIntoView({behavior:'smooth',block:'start'}),80);
+  },[navIntent]);
 
   const today=new Date().toISOString().slice(0,10);
   const visibleUntil=addDaysDate(today,7);
@@ -4690,7 +4737,7 @@ function CustomerCareManager({ userId, month, homeProps }) {
       {filter==='todo'&&<div className="text-[10px] text-gray-400 mt-2">할 일에는 오늘부터 7일 이내와 기한이 지난 약속만 보여요.</div>}
     </div>
 
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div id="employee-home-care" className="bg-white rounded-xl border border-gray-100 overflow-hidden scroll-mt-28">
       <div className="px-4 py-3 border-b border-gray-50">
         <div className="font-bold text-sm">📌 고객 약속 관리</div>
         <div className="text-xs text-gray-400 mt-0.5">가까운 일정부터 보여주고, 먼 일정은 전체 예정에서 확인해요.</div>
@@ -4947,7 +4994,7 @@ function MyInputSummary({userId,month,config}){
   </div>;
 }
 
-function TodayWorkCard({userId,onGoCare,onGoInput,todayInputDone=false}){
+function TodayWorkCard({userId,onNavigate,onGoInput,onOpenApprovals,todayInputDone=false,approvalPending=0,approvalDone=0}){
   const [state,setState]=useState({loading:true,todayTasks:0,overdue:0,installs:0,unscheduled:0});
   useEffect(()=>{
     if(!userId)return;
@@ -4968,13 +5015,17 @@ function TodayWorkCard({userId,onGoCare,onGoInput,todayInputDone=false}){
     })();
     return()=>{alive=false};
   },[userId]);
-  const items=[['오늘 고객 약속',state.todayTasks],['기한 경과',state.overdue],['오늘 홈 설치',state.installs],['일정 미정 홈',state.unscheduled]];
+  const items=[
+    ['오늘 고객 약속',state.todayTasks,'today'],['기한 경과',state.overdue,'overdue'],
+    ['오늘 홈 설치',state.installs,'home'],['일정 미정 홈',state.unscheduled,'home'],
+  ];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-center justify-between"><div><div className="text-[10px] font-bold text-violet-600">오늘 할 일</div><div className="text-sm font-bold text-gray-900 mt-0.5">먼저 확인할 업무</div></div><button onClick={onGoInput} className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold ${todayInputDone?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{todayInputDone?'오늘 실적 입력 완료':'오늘 실적 미입력'}</button></div>
-    <button onClick={onGoCare} className="w-full grid grid-cols-4 gap-1.5 mt-3 text-center">
-      {items.map(([label,count])=><div key={label} className={`rounded-xl px-1 py-2.5 ${Number(count)>0?'bg-violet-50':'bg-gray-50'}`}><div className={`text-lg font-black ${Number(count)>0?'text-violet-700':'text-gray-300'}`}>{state.loading?'·':count}</div><div className="text-[9px] text-gray-500 mt-0.5 leading-tight">{label}</div></div>)}
-    </button>
-    <button onClick={onGoCare} className="w-full mt-2 text-[10px] font-semibold text-violet-600 text-right">고객관리에서 확인 ›</button>
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 text-center">
+      {items.map(([label,count,type])=><button key={label} onClick={()=>onNavigate(type)} className={`rounded-xl px-1 py-2.5 ${Number(count)>0?'bg-violet-50':'bg-gray-50'}`}><div className={`text-lg font-black ${Number(count)>0?'text-violet-700':'text-gray-300'}`}>{state.loading?'·':count}</div><div className="text-[9px] text-gray-500 mt-0.5 leading-tight">{label} ›</div></button>)}
+    </div>
+    <button onClick={onOpenApprovals} className="w-full mt-2 rounded-xl bg-amber-50 px-3 py-2.5 flex items-center justify-between text-[11px]"><span className="font-semibold text-amber-800">승인 현황</span><span className="text-amber-700">대기 {approvalPending} · 완료 {approvalDone} ›</span></button>
+    {!todayInputDone&&<button onClick={onGoInput} className="w-full mt-2 rounded-xl bg-red-50 px-3 py-2.5 flex items-center justify-between text-[11px] text-red-700"><b>마감 전 확인할 누락</b><span>오늘 실적 미입력 ›</span></button>}
   </div>;
 }
 
@@ -5013,6 +5064,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [resetMonthOpen,setResetMonthOpen]=useState(false);
   const [resetPhrase,setResetPhrase]=useState('');
   const [resetBusy,setResetBusy]=useState(false);
+  const [careNavIntent,setCareNavIntent]=useState(null);
+  const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
   useEffect(() => {
     if (!authUser?.id) return;
     (async () => {
@@ -5158,7 +5211,9 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
           {employeeHomeMode==='personal' ? <>
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
-            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff} onGoCare={()=>setTab('customerCare')} onGoInput={()=>setTab('daily')} />
+            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff}
+              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
+              onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
               <div className="flex items-start justify-between gap-3">
@@ -5291,6 +5346,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <CustomerCareManager
             userId={authUser?.id}
             month={month}
+            navIntent={careNavIntent}
             homeProps={{
               userId:authUser?.id,
               month,
@@ -8757,34 +8813,46 @@ function AdminCustomerCareOverview({ employees, authUserId }) {
   </div>;
 }
 
-function AdminManagementAlerts({ pendingCount, employees, onGo }) {
-  const [counts,setCounts]=useState({customer:0,home:0,spot:0});
+function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dailyRecords, isFullAdmin, config }) {
+  const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0});
   useEffect(()=>{
     (async()=>{
       const today=new Date().toISOString().slice(0,10);
       const ids=(employees||[]).map(e=>e.id);
       if(!ids.length)return;
-      const [{data:t},{data:h},{data:s}]=await Promise.all([
+      const [{data:t},{data:h},{data:s},{data:p},{data:sr},{data:hq}]=await Promise.all([
         supabase.from('customer_tasks').select('id').in('user_id',ids).eq('status','pending').lt('due_date',today),
         supabase.from('home_orders').select('id').in('user_id',ids).eq('status','pending').lt('planned_install_date',today),
-        supabase.from('spot_claims').select('id').in('user_id',ids).eq('status','pending')
+        supabase.from('spot_claims').select('id').in('user_id',ids).eq('status','pending'),
+        supabase.from('profile_edit_requests').select('id').in('user_id',ids).eq('status','pending'),
+        supabase.from('settlement_reviews').select('user_id,status').eq('month',month).in('user_id',ids),
+        supabase.from('head_office_performance').select('user_id,metrics').eq('month',month).in('user_id',ids)
       ]);
-      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length});
+      const reviewed=new Set((sr||[]).filter(x=>x.status==='checked'||x.status==='final').map(x=>x.user_id));
+      const rowMap=Object.fromEntries((rows||[]).map(x=>[x.id,x]));
+      const hqDiff=(hq||[]).filter(x=>{const r=rowMap[x.user_id],m=x.metrics||{};return r&&(Number(headOfficeScores(normalizeHeadOfficeMetrics(m),config,month)?.hs||0)!==Number(hsCount(r.draft)||0))}).length;
+      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length,profile:(p||[]).length,settlement:Math.max(0,ids.length-reviewed.size),hqDiff});
     })();
-  },[employees]);
-  const total=counts.customer+counts.home+counts.spot;
+  },[employees,month,rows,config]);
+  const now=new Date(),todayKey=String(now.getDate()).padStart(2,'0');
+  const missing=monthKeyOf(now)===month?(employees||[]).filter(e=>{const d=normalizeDay(dailyRecords?.[e.id]?.[todayKey]);return !d.dayOff&&!dayHasData(d)}).length:0;
+  const total=Object.values(counts).reduce((a,v)=>a+Number(v||0),0)+missing+Number(pendingCount||0);
   return <div className="bg-white rounded-xl border border-violet-100 p-3">
     <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${fmtCount(total)}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
     {total>0&&<div className="grid grid-cols-2 gap-2 mt-3 text-xs">
+      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">오늘 입력 누락 <b className="float-right">{missing}</b></button>
       <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
       <button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>
-      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 점검 <b className="float-right">확인</b></button>
+      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount}</b></button>
+      {isFullAdmin&&<button onClick={()=>onGo('headOfficeData')} className="bg-blue-50 text-blue-700 rounded-lg p-2 text-left">본사 데이터 차이 <b className="float-right">{counts.hqDiff}</b></button>}
+      {isFullAdmin&&<button onClick={()=>onGo('settlement')} className="bg-emerald-50 text-emerald-700 rounded-lg p-2 text-left">정산 미검토 <b className="float-right">{counts.settlement}</b></button>}
+      <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-700 rounded-lg p-2 text-left">프로필 수정 요청 <b className="float-right">{counts.profile}</b></button>
     </div>}
   </div>;
 }
 
-function SettlementReview({ month, rows, employees, config }) {
+function SettlementReview({ month, rows, employees, config, authUserId }) {
   const [spotMap,setSpotMap]=useState({}),[expenseMap,setExpenseMap]=useState({}),[statusMap,setStatusMap]=useState({}),[headOfficeMap,setHeadOfficeMap]=useState({});
   const [detailUser,setDetailUser]=useState(null),[detailRows,setDetailRows]=useState([]),[detailLoading,setDetailLoading]=useState(false);
   useEffect(()=>{
@@ -8806,9 +8874,10 @@ function SettlementReview({ month, rows, employees, config }) {
   },[month,rows]);
 
   const setStatus=async(userId,status)=>{
-    const {error}=await supabase.from('settlement_reviews').upsert({month,user_id:userId,status,updated_at:new Date().toISOString()},{onConflict:'month,user_id'});
+    const {error}=await supabase.from('settlement_reviews').upsert({month,user_id:userId,status,reviewer_id:authUserId,updated_at:new Date().toISOString()},{onConflict:'month,user_id'});
     if(error)return showLegacyAlert(`정산 상태 저장 실패: ${friendlyError(error)}`);
     setStatusMap({...statusMap,[userId]:status});
+    if(status==='checked'||status==='final')await notifyEmployee({actorId:authUserId,recipientId:userId,type:'settlement_reviewed',title:status==='final'?'정산 확정 완료':'정산 검토 완료',message:`${monthLabel(month)} 정산 상태가 업데이트됐어요.`,payload:{month,status}});
   };
 
   const loadDetail=async(r)=>{
@@ -9300,7 +9369,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
       {adminTab === 'dashboard' && (
         <div className="space-y-4">
-          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={setAdminTab} />
+          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={setAdminTab} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} />
 
           <AdminPerformanceCalendar
             month={month}
@@ -9396,7 +9465,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
       {adminTab === 'headOfficeData' && isFullAdmin && <HeadOfficeDataPanel month={month} employees={employees} rows={rows} config={config} authUserId={authUserId} />}
-      {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} />}
+      {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
       {adminTab === 'employees' && (
