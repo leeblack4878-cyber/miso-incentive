@@ -2246,6 +2246,12 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
 
 
 function qualityPct(n,d){return d>0?Number((Number(n||0)/d*100).toFixed(1)):0}
+function mobileStrategicPoint({strategicPlan=false,vasKeys=[],bundleVasMap={}}={}){
+  const keys=[...(vasKeys||[]),...Object.values(bundleVasMap||{}).flat()];
+  const insurance=keys.filter(k=>k==='vasPhonePass'||k==='vasSafePass').length;
+  const strategicVas=keys.filter(k=>k==='vasKyobo'||k==='vasVcolor').length;
+  return Number(((strategicPlan?0.5:0)+insurance*0.8+strategicVas).toFixed(10));
+}
 function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
   const mobile=(sales||[]).filter(x=>x.source_type==='mobile');
   const hs=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))).length;
@@ -6083,6 +6089,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       activityPayDelta,
       bonusPayDelta,
       pointDelta:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),
+      strategicPointDelta:mobileStrategicPoint({strategicPlan:!!customerMeta.strategicPlan,vasKeys:customerMeta.vasKeys,bundleVasMap:customerMeta.bundleVasMap}),
+      productivityDelta:Number(afterPay.kpiScore||0)-Number(beforePay.kpiScore||0),
       currentTotal: afterPay.currentPerformanceAmount,
       customerName:customerMeta.customerName||'',
       promiseCount:Number(customerMeta.promiseCount||0),
@@ -6676,7 +6684,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         commitMobileOne(
           mobileSaleDraft.ri,
           mobileSaleDraft.ci,
-          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), strategicPlan:!!mobileStrategicPlan, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
             specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
             bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
         );
@@ -7660,7 +7668,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-[11px] opacity-60 mb-1">등록 완료 · {toast.customerName?`${toast.customerName} · `:''}{toast.label}</div>
                 <div className="text-base font-bold">{toast.title}</div>
                 <div className="text-xs opacity-75 mt-0.5">{toast.sub}</div>
-                <div className="text-[10px] opacity-70 mt-1">{toast.source==='mobile'?`성과P +${fmtNum(toast.pointDelta,1)}P`:''}{toast.promiseCount>0?`${toast.source==='mobile'?' · ':''}고객 약속 ${toast.promiseCount}건 등록`:''}</div>
+                <div className="text-[10px] opacity-70 mt-1">{toast.source==='mobile'?`성과P +${fmtNum(toast.pointDelta,1)}P · 전략P +${fmtNum(toast.strategicPointDelta,1)}P · 생산성 +${fmtNum(toast.productivityDelta,1)}P`:''}{toast.promiseCount>0?`${toast.source==='mobile'?' · ':''}고객 약속 ${toast.promiseCount}건 등록`:''}</div>
 
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div>
