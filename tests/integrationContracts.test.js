@@ -124,3 +124,21 @@ test('명예의 전당은 공개 프로필과 대표 배지를 보여주고 개�
   assert.match(sql, /user_id = \(select auth\.uid\(\)\)/);
   assert.match(sql, /char_length\(coalesce\(status_message, ''\)\) <= 40/);
 });
+
+test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src/main.jsx', import.meta.url), 'utf8');
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.name, '미소 인센티브');
+  assert.equal(manifest.icons.length, 2);
+  assert.match(html, /rel="manifest"/);
+  assert.match(html, /apple-touch-icon/);
+  assert.match(main, /serviceWorker\.register\('\/sw\.js'\)/);
+  assert.match(source, /beforeinstallprompt/);
+  assert.match(source, /홈 화면에 추가/);
+  assert.match(sw, /event\.request\.mode === 'navigate'/);
+  assert.match(sw, /fetch\(event\.request\)/);
+});
