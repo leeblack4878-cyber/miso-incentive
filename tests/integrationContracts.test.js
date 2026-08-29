@@ -102,3 +102,11 @@ test('스마트홈과 HS 동시판매는 고객 묶음당 추가 수수료를 �
   assert.match(source, /homeAddonPay=simulPay\+smartHomeSimulPay\+subSetTopPay/);
   assert.match(source, /item:'스마트홈 동시판매'/);
 });
+
+test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /strategicPointDelta:mobileStrategicPoint/);
+  assert.match(source, /productivityDelta:Number\(afterPay\.kpiScore/);
+  assert.match(source, /성과P \+\$\{fmtNum\(toast\.pointDelta,1\)\}P · 전략P \+\$\{fmtNum\(toast\.strategicPointDelta,1\)\}P · 생산성 \+\$\{fmtNum\(toast\.productivityDelta,1\)\}P/);
+  assert.match(source, /insurance\*0\.8\+strategicVas/);
+});
