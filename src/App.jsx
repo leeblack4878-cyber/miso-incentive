@@ -264,10 +264,11 @@ function calculateHomePolicyFromOrders(orders=[],config={}){
   const totalInternetCount=internetBundles.length;
   const gradeIdx=homeGradeIndex(totalInternetCount);
   const tierMin=gradeIdx>=0?HOME_GRADE_THRESHOLDS[gradeIdx]:0;
-  let gradePay=0,soloPay=0,simulPay=0,tvFreePay=0,smartHomePay=0,subSetTopPay=0;
+  let gradePay=0,soloPay=0,simulPay=0,tvFreePay=0,smartHomePay=0,smartHomeSimulPay=0,subSetTopPay=0;
   const details=[];
   const tvFreeRate=Number((config.homeFlat||DEFAULT_HOME_FLAT).find(x=>x.key==='tvFree')?.rate||0);
   const smartHomeRate=Number((config.homeFlat||DEFAULT_HOME_FLAT).find(x=>x.key==='smartHome')?.rate||0);
+  const smartHomeSimulRate=Number((config.homeAddon||DEFAULT_HOME_ADDON).find(x=>x.key==='smartHomeSimul')?.rate||0);
   const setTopRate=Number((config.homeAddon||DEFAULT_HOME_ADDON).find(x=>x.key==='addSetTop')?.rate||0);
 
   internetBundles.forEach(b=>{
@@ -298,6 +299,7 @@ function calculateHomePolicyFromOrders(orders=[],config={}){
     }
     if(b.types.has('tvFree')&&tvFreeRate){tvFreePay+=tvFreeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'TV프리(부)',amount:tvFreeRate,note:'부가 홈 수수료'});}
     if(b.types.has('smartHome')&&smartHomeRate){smartHomePay+=smartHomeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈',amount:smartHomeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('smartHome')&&b.simul!=='none'&&smartHomeSimulRate){smartHomeSimulPay+=smartHomeSimulRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈 동시판매',amount:smartHomeSimulRate,note:'스마트홈 + HS 동시판매 추가 수수료'});}
     if(b.types.has('subSetTop')&&setTopRate){subSetTopPay+=setTopRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'일반 부셋탑',amount:setTopRate,note:'부가 홈 수수료'});}
   });
 
@@ -309,14 +311,15 @@ function calculateHomePolicyFromOrders(orders=[],config={}){
     }
     if(b.types.has('tvFree')&&tvFreeRate){tvFreePay+=tvFreeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'TV프리(부)',amount:tvFreeRate,note:'부가 홈 수수료'});}
     if(b.types.has('smartHome')&&smartHomeRate){smartHomePay+=smartHomeRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈',amount:smartHomeRate,note:'부가 홈 수수료'});}
+    if(b.types.has('smartHome')&&b.simul!=='none'&&smartHomeSimulRate){smartHomeSimulPay+=smartHomeSimulRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'스마트홈 동시판매',amount:smartHomeSimulRate,note:'스마트홈 + HS 동시판매 추가 수수료'});}
     if(b.types.has('subSetTop')&&setTopRate){subSetTopPay+=setTopRate;details.push({date:b.date,customer:b.customer,type:'홈',item:'일반 부셋탑',amount:setTopRate,note:'부가 홈 수수료'});}
   });
 
   const homeFlatPay=soloPay+tvFreePay+smartHomePay;
-  const homeAddonPay=simulPay+subSetTopPay;
+  const homeAddonPay=simulPay+smartHomeSimulPay+subSetTopPay;
   return {
     source:'orders',totalInternetCount,tierMin,
-    gradePay,soloPay,simulPay,tvFreePay,smartHomePay,subSetTopPay,
+    gradePay,soloPay,simulPay,tvFreePay,smartHomePay,smartHomeSimulPay,subSetTopPay,
     homeFlatPay,homeAddonPay,total:gradePay+homeFlatPay+homeAddonPay,details
   };
 }
