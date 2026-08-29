@@ -57,3 +57,40 @@ test('판매 저장 피드백은 최저보장 마감액이 아닌 실제 누적 
   assert.match(source, /판매 인센티브.*활동지원금/);
   assert.doesNotMatch(source, /예상 인센티브 \+\{won\(toast\.payDelta\)\}/);
 });
+
+test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /goCustomerCare=\(type\)=>/);
+  assert.match(source, /navIntent\.type==='today'/);
+  assert.match(source, /navIntent\.type==='overdue'/);
+  assert.match(source, /navIntent\.type==='home'/);
+  assert.match(source, /마감 전 확인할 누락/);
+});
+
+test('관리자 홈은 처리할 업무를 실제 관리 메뉴에 연결한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  for (const tab of ['performanceApproval', 'customerCareAdmin', 'homeCare', 'spot', 'headOfficeData', 'settlement', 'employees']) {
+    assert.match(source, new RegExp(`onGo\\('${tab}'\\)`));
+  }
+  assert.match(source, /status==='checked'\|\|x\.status==='final'/);
+});
+
+test('중요한 성취 축하는 사용자별 한 번만 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /miso-celebration-badge-/);
+  assert.match(source, /HS \$\{v\}건 돌파!/);
+  assert.match(source, /전체 순위 TOP\$\{rank\} 진입!/);
+  assert.match(source, /새로운 배지 획득!/);
+});
+
+test('알림센터는 본인 조회와 관리 범위 발송 RLS를 함께 사용한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../supabase_employee_notifications.sql', import.meta.url), 'utf8');
+  assert.match(source, /<NotificationBell userId=\{authUser\?\.id\}/);
+  assert.match(source, /special_(approved|rejected)/);
+  assert.match(source, /spot_(approved|rejected)/);
+  assert.match(source, /settlement_reviewed/);
+  assert.match(sql, /notifications_insert_own_event/);
+  assert.match(sql, /notifications_insert_managed_employee/);
+  assert.match(sql, /actor\.store_name = recipient\.store_name/);
+});
