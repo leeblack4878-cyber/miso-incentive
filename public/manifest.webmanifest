@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "미소 인센티브",
-  "short_name": "미소 인센티브",
+  "name": "미소페이",
+  "short_name": "미소페이",
   "description": "미소모바일 실적·인센티브 관리",
   "start_url": "/",
   "scope": "/",

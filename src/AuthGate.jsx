@@ -298,7 +298,7 @@ export default function AuthGate({ children }) {
             <ShieldCheck size={22} />
           </div>
 
-          <h1 className="text-xl font-bold text-slate-900">MISO 인센티브</h1>
+          <h1 className="text-xl font-bold text-slate-900">미소페이</h1>
           <p className="text-sm text-slate-500 mt-1 mb-4">
             {mode === 'login' ? '직원 계정으로 로그인해주세요.' : '가입 신청 후 관리자 승인이 필요해요.'}
           </p>

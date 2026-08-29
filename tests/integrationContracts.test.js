@@ -132,7 +132,7 @@ test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 �
   const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
   const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
   assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.name, '미소 인센티브');
+  assert.equal(manifest.name, '미소페이');
   assert.equal(manifest.icons.length, 2);
   assert.match(html, /rel="manifest"/);
   assert.match(html, /apple-touch-icon/);
