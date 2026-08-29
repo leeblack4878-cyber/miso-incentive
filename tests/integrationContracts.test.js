@@ -49,3 +49,11 @@ test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () =
   assert.match(source, /todayIsDayOff[\s\S]*label:'오늘 휴무'/);
   assert.match(source, /todayInputDone=\{todayHasInput\|\|todayIsDayOff\}/);
 });
+
+test('판매 저장 피드백은 최저보장 마감액이 아닌 실제 누적 증가분을 사용한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /afterPay\.currentPerformanceAmount[\s\S]*beforePay\.currentPerformanceAmount/);
+  assert.match(source, /이번 판매로 총 \+\{won\(toast\.payDelta\)\}/);
+  assert.match(source, /판매 인센티브.*활동지원금/);
+  assert.doesNotMatch(source, /예상 인센티브 \+\{won\(toast\.payDelta\)\}/);
+});

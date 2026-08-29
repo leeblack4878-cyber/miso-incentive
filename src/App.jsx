@@ -5954,7 +5954,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
     const beforePay = computePay(beforeDraft, position, hireDate, month, config);
     const afterPay = computePay(afterDraft, position, hireDate, month, config);
-    const payDelta = Math.max(0, afterPay.total - beforePay.total);
+    // 저장 피드백은 최저보장과 비교한 마감 예상액이 아니라,
+    // 이번 판매로 실제 누적된 판매 인센티브·활동지원금·등급 보너스의 증가분을 보여줍니다.
+    const payDelta = Math.max(0, Number(afterPay.currentPerformanceAmount||0) - Number(beforePay.currentPerformanceAmount||0));
+    const salePayDelta = Math.max(0,
+      Number(afterPay.mobileMatrixPay||0)-Number(beforePay.mobileMatrixPay||0)
+      + Number(afterPay.vasPay||0)-Number(beforePay.vasPay||0)
+      + Number(afterPay.specialReplacementPay||0)-Number(beforePay.specialReplacementPay||0)
+      + Number(afterPay.mnpBundlePay||0)-Number(beforePay.mnpBundlePay||0)
+    );
+    const activityPayDelta = Math.max(0,Number(afterPay.tenurePay||0)-Number(beforePay.tenurePay||0));
+    const bonusPayDelta = Math.max(0,payDelta-salePayDelta-activityPayDelta);
 
     const rowDef = MATRIX_ROW_DEFS[ri];
     const label = rowDef.hasTiers
@@ -6010,8 +6020,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       ci,
       ...feedback,
       payDelta,
+      salePayDelta,
+      activityPayDelta,
+      bonusPayDelta,
       pointDelta:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),
-      currentTotal: afterPay.total,
+      currentTotal: afterPay.currentPerformanceAmount,
       customerName:customerMeta.customerName||'',
       promiseCount:Number(customerMeta.promiseCount||0),
       customerSaleId: customerMeta.saleId || null,
@@ -6751,7 +6764,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const vasLabels=[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
     const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
     const promiseCount=mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
-    return {incentive:Math.max(0,Number(afterPay.total||0)-Number(beforePay.total||0)),points:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),vasLabels,secondLabels,promiseCount};
+    return {incentive:Math.max(0,Number(afterPay.currentPerformanceAmount||0)-Number(beforePay.currentPerformanceAmount||0)),points:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),vasLabels,secondLabels,promiseCount};
   })();
 
   return (
@@ -7414,7 +7427,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-[10px] font-bold text-violet-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
                 <div className="text-[9px] text-violet-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
                 {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-violet-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
-                {!editingSale&&<div className="flex justify-between mt-1.5 text-[11px]"><b className="text-emerald-700">예상 인센티브 +{won(mobilePreview.incentive)}</b><b className="text-violet-700">성과P +{fmtNum(mobilePreview.points,1)}P</b></div>}
+                {!editingSale&&<div className="flex justify-between mt-1.5 text-[11px]"><b className="text-emerald-700">이번 판매 총 +{won(mobilePreview.incentive)}</b><b className="text-violet-700">성과P +{fmtNum(mobilePreview.points,1)}P</b></div>}
               </div>}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
@@ -7593,11 +7606,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <div>
                     {toast.payDelta > 0 && (
-                      <div className="text-sm font-bold text-emerald-300">
-                        예상 인센티브 +{won(toast.payDelta)}
-                      </div>
+                      <>
+                        <div className="text-sm font-bold text-emerald-300">이번 판매로 총 +{won(toast.payDelta)}</div>
+                        {toast.source==='mobile'&&<div className="text-[10px] opacity-70 mt-1">
+                          {[toast.salePayDelta>0&&`판매 인센티브 ${won(toast.salePayDelta)}`,toast.activityPayDelta>0&&`활동지원금 ${won(toast.activityPayDelta)}`,toast.bonusPayDelta>0&&`등급·추가보상 ${won(toast.bonusPayDelta)}`].filter(Boolean).join(' · ')}
+                        </div>}
+                      </>
                     )}
-                    {toast.currentTotal!==undefined&&<div className="text-[11px] opacity-60 mt-0.5">현재 예상 {won(toast.currentTotal)}</div>}
+                    {toast.currentTotal!==undefined&&<div className="text-[11px] opacity-60 mt-0.5">현재 누적 예상 {won(toast.currentTotal)}</div>}
                   </div>
 
                   <div className="flex gap-1.5">
