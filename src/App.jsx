@@ -5125,10 +5125,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const isCurrentHomeMonth=monthKeyOf(nowForHome)===month;
   const todayHomeKey=String(nowForHome.getDate()).padStart(2,'0');
   const todayHasInput=isCurrentHomeMonth && (homeTodayInputCount>0 || dayHasData(dailyDays?.[todayHomeKey]));
+  const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
   const homeInputStatus=homeApprovalPending>0
     ? {label:`승인 대기 ${fmtCount(homeApprovalPending)}건`, cls:'bg-amber-400/20 text-amber-50 border-amber-200/30'}
     : isCurrentHomeMonth
-      ? (todayHasInput
+      ? (todayIsDayOff
+          ? {label:'오늘 휴무', cls:'bg-sky-400/20 text-sky-50 border-sky-200/30'}
+          : todayHasInput
           ? {label:'입력 완료', cls:'bg-emerald-400/20 text-emerald-50 border-emerald-200/30'}
           : {label:'오늘 실적 미입력', cls:'bg-white/10 text-violet-100 border-white/15'})
       : {label:dayHasData(dailyDays?.[todayHomeKey])?'입력 완료':'입력 없음', cls:'bg-white/10 text-violet-100 border-white/15'};
@@ -5155,7 +5158,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
           {employeeHomeMode==='personal' ? <>
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
-            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput} onGoCare={()=>setTab('customerCare')} onGoInput={()=>setTab('daily')} />
+            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff} onGoCare={()=>setTab('customerCare')} onGoInput={()=>setTab('daily')} />
 
             <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
               <div className="flex items-start justify-between gap-3">
@@ -5417,6 +5420,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeSubTvType,setHomeSubTvType]=useState('normal');
   const [homeSmartHome,setHomeSmartHome]=useState(false);
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
+  const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
   const [homePlannedDate, setHomePlannedDate] = useState('');
   const [homeCareKeys,setHomeCareKeys]=useState([]);
   const [homeCustomTitle,setHomeCustomTitle]=useState('');
@@ -5486,6 +5490,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [legacyMatrixDraft,setLegacyMatrixDraft]=useState(null);
   // 구버전 집계 1건을 현재 모바일/홈 입력 UI로 복원하는 동안 원본 위치를 기억
   const [legacyConversion,setLegacyConversion]=useState(null);
+  const homeSubmitGuardRef=useRef(false);
+  const mobileSubmitGuardRef=useRef(false);
 
 
   const dayMatrix = day.matrix;
@@ -5704,6 +5710,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeSaleType('normal');
     setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
     setHomeDirectComplete(false);
+    setHomeActualCompleteDate('');
     setHomePlannedDate('');
     setHomeCareKeys([]); setHomeCustomTitle(''); setHomeCustomDueDate(''); setHomeTargetPlan('');
     setHomeSpotPolicyId(''); setHomeSpotDirectOpen(false); setHomeSpotDirectTitle(''); setHomeSpotDirectAmount(''); setHomeSpotDirectMemo('');
@@ -5712,7 +5719,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   };
 
   const submitHomeOrder = async () => {
-    if (!homeOrderDraft || !currentEmp?.id || locked) return;
+    if (!homeOrderDraft || !currentEmp?.id || locked || homeSubmitGuardRef.current) return;
     const customer = homeCustomerName.trim();
     if (!customer) return showAppToast('고객명을 입력해야 등록할 수 있어요.',{tone:'error'});
     if (!homeNetworkType) return showAppToast('가정망 또는 소호망을 선택해주세요.',{tone:'error'});
@@ -5720,12 +5727,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if (homeMainTv && !homeInternet) return showAppToast('TV(주)는 인터넷 가입과 함께 선택해주세요.',{tone:'error'});
     if (homeInternet && !homeInternetSpeed) return showAppToast('인터넷 속도를 선택해주세요.',{tone:'error'});
     if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'error'});
+    if (homeDirectComplete && !homeActualCompleteDate) return showAppToast('설치완료일을 입력해주세요.',{tone:'error'});
 
     const sourceWorkDate=`${month}-${selectedDay}`;
-    let linkedCustomerId=null;
-    try { linkedCustomerId=await ensureCustomer(currentEmp.id,customer,sourceWorkDate); }
-    catch(e){ return showLegacyAlert(`고객 저장 실패: ${friendlyError(e)}`); }
-
     // 실제 판매 구성을 기존 정산 그룹으로 자동 변환
     const products=[];
     if(homeInternet){
@@ -5751,6 +5755,30 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     }
     if(homeSmartHome) products.push({groupKey:'homeFlat',itemKey:'smartHome',productType:'smartHome',label:'스마트홈'});
 
+    const editingRefs=new Set((editingHomeSales||[]).map(x=>String(x.source_ref||'')));
+    const {data:possibleDuplicates,error:duplicateError}=await supabase.from('home_orders')
+      .select('id,customer_name,product_type,source_work_date,status')
+      .eq('user_id',currentEmp.id).eq('source_work_date',sourceWorkDate);
+    if(duplicateError)return showAppToast(`중복 확인 실패: ${friendlyError(duplicateError)}`,{tone:'error'});
+    const normalizedName=customer.replace(/\s+/g,'').toLowerCase();
+    const sameCustomer=(possibleDuplicates||[]).filter(x=>!editingRefs.has(String(x.id))&&String(x.customer_name||'').replace(/\s+/g,'').toLowerCase()===normalizedName);
+    const overlapping=sameCustomer.filter(x=>products.some(p=>p.productType===x.product_type));
+    if(sameCustomer.length){
+      const ok=await showAppConfirm({
+        title:overlapping.length?'중복 등록 가능성이 있어요':'같은 날 동일 고객이 있어요',
+        message:overlapping.length
+          ? `${sourceWorkDate} · ${customer}\n같은 홈 상품 ${overlapping.length}개가 이미 저장돼 있어요. 그래도 등록할까요?`
+          : `${sourceWorkDate} · ${customer}\n다른 홈 상품이 이미 저장돼 있어요. 추가 등록이 맞는지 확인해주세요.`,
+        confirmLabel:'확인 후 등록',tone:'warning'
+      });
+      if(!ok)return;
+    }
+
+    let linkedCustomerId=null;
+    try { linkedCustomerId=await ensureCustomer(currentEmp.id,customer,sourceWorkDate); }
+    catch(e){ return showLegacyAlert(`고객 저장 실패: ${friendlyError(e)}`); }
+
+    homeSubmitGuardRef.current=true;
     setHomeOrderSaving(true);
     try{
       const appliedAt=new Date(`${sourceWorkDate}T12:00:00`).toISOString();
@@ -5787,9 +5815,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           user_id:currentEmp.id,customer_name:customer,customer_id:linkedCustomerId,
           product_type:product.productType,network_type:homeNetworkType,sale_type:homeSaleType,
           status:homeDirectComplete?'completed':'pending',applied_at:appliedAt,
-          completed_at:homeDirectComplete?now:null,source_work_date:sourceWorkDate,
+          completed_at:homeDirectComplete?new Date(`${homeActualCompleteDate}T12:00:00`).toISOString():null,source_work_date:sourceWorkDate,
           source_group:product.groupKey,source_key:product.itemKey,
-          planned_install_date:homePlannedDate||null,actual_install_date:homeDirectComplete?sourceWorkDate:null,
+          planned_install_date:homePlannedDate||null,actual_install_date:homeDirectComplete?homeActualCompleteDate:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
         }).select('id').single();
         if(error)throw error;
@@ -5844,7 +5872,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
     }catch(e){ showAppToast(friendlyError(e),{tone:'error',title:'홈 상품 등록 실패'}); }
-    finally{ setHomeOrderSaving(false); }
+    finally{ homeSubmitGuardRef.current=false; setHomeOrderSaving(false); }
   };
 
   const submitExtraInput=async()=>{
@@ -6206,6 +6234,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setHomeSubTvType(compatOrders.some(o=>o.product_type==='tvFree')?'free':'normal');
       setHomeSmartHome(compatOrders.some(o=>o.product_type==='smartHome'));
       setHomeDirectComplete(compatOrders.length>0 && compatOrders.every(o=>o.status==='completed'));
+      setHomeActualCompleteDate(compatOrders.find(o=>o.actual_install_date)?.actual_install_date?.slice?.(0,10)||'');
       setHomePlannedDate(compatOrders.find(o=>o.planned_install_date)?.planned_install_date?.slice?.(0,10)||'');
       const primary=(homeSales||[])[0];
       if(primary){
@@ -6333,7 +6362,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   };
 
   const submitMobileSale = async () => {
-    if(!mobileSaleDraft||!currentEmp?.id)return;
+    if(!mobileSaleDraft||!currentEmp?.id||mobileSubmitGuardRef.current)return;
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
@@ -6342,6 +6371,28 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         : '현재 적용 가능한 특판·지인판매 정책이 없어요. 관리자에게 정책 등록을 요청해주세요.');
     }
     const saleDate=`${month}-${selectedDay}`;
+    const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
+    const invalidSecondVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bundle,keys])=>(keys||[]).filter(k=>!allowedSecondKeys.has(k)).map(k=>({bundle,key:k})));
+    if(invalidSecondVas.length)return showAppToast('2ND에서 선택할 수 없는 부가서비스가 포함돼 있어요. VAS를 다시 선택해주세요.',{tone:'error'});
+
+    const {data:existingSales,error:existingError}=await supabase.from('customer_sales')
+      .select('id,metric_label,source_type,customers(customer_name)')
+      .eq('user_id',currentEmp.id).eq('sale_date',saleDate);
+    if(existingError)return showAppToast(`중복 확인 실패: ${friendlyError(existingError)}`,{tone:'error'});
+    const normalizedName=customer.replace(/\s+/g,'').toLowerCase();
+    const sameCustomer=(existingSales||[]).filter(x=>x.id!==editingSale?.id&&String(x.customers?.customer_name||'').replace(/\s+/g,'').toLowerCase()===normalizedName);
+    const sameProduct=sameCustomer.filter(x=>x.metric_label===mobileSaleDraft.label);
+    if(sameCustomer.length){
+      const ok=await showAppConfirm({
+        title:sameProduct.length?'중복 등록 가능성이 있어요':'같은 날 동일 고객이 있어요',
+        message:sameProduct.length
+          ? `${saleDate} · ${customer} · ${mobileSaleDraft.label}\n동일한 판매건이 이미 있어요. 그래도 저장할까요?`
+          : `${saleDate} · ${customer}\n다른 판매건이 이미 있어요. 추가 등록이 맞는지 확인해주세요.`,
+        confirmLabel:'확인 후 저장',tone:'warning'
+      });
+      if(!ok)return;
+    }
+    mobileSubmitGuardRef.current=true;
     setMobileSaleSaving(true);
 
     try{
@@ -6568,6 +6619,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     }catch(e){
       showAppToast(friendlyError(e),{tone:'error',title:editingSale?'판매건 수정 실패':'고객/실적 등록 실패'});
     }finally{
+      mobileSubmitGuardRef.current=false;
       setMobileSaleSaving(false);
     }
   };
@@ -7359,8 +7411,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
               {mobilePreview&&<div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5">
-                <div className="text-[10px] font-bold text-violet-700 truncate">{mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
+                <div className="text-[10px] font-bold text-violet-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
                 <div className="text-[9px] text-violet-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
+                {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-violet-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
                 {!editingSale&&<div className="flex justify-between mt-1.5 text-[11px]"><b className="text-emerald-700">예상 인센티브 +{won(mobilePreview.incentive)}</b><b className="text-violet-700">성과P +{fmtNum(mobilePreview.points,1)}P</b></div>}
               </div>}
               <div className="grid grid-cols-2 gap-2">
@@ -7478,11 +7531,16 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <input
                 type="checkbox"
                 checked={homeDirectComplete}
-                onChange={(e) => setHomeDirectComplete(e.target.checked)}
+                onChange={(e) => {setHomeDirectComplete(e.target.checked);if(e.target.checked&&!homeActualCompleteDate)setHomeActualCompleteDate(`${month}-${selectedDay}`)}}
                 className="w-4 h-4"
               />
               지금 바로 설치/개통 완료된 건
             </label>
+
+            {homeDirectComplete&&<div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+              <label className="block text-xs font-semibold text-emerald-800 mb-1.5">설치완료일 <span className="text-red-500">*</span></label>
+              <input type="date" value={homeActualCompleteDate} onChange={e=>setHomeActualCompleteDate(e.target.value)} className="w-full border border-emerald-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
+            </div>}
 
             <div className="text-[11px] text-gray-400 mt-2">
               체크하지 않으면 진행중으로 등록되고, 홈 진행관리에서 완료 처리할 수 있어요.
@@ -8396,46 +8454,74 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
 /* ===================== 관리자 화면 ===================== */
 
 
-function AdminHomeCare({ employees }) {
+function AdminHomeCare({ employees, month }) {
   const [orders,setOrders]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [statusFilter,setStatusFilter]=useState('pending');
+  const [lastLoadedAt,setLastLoadedAt]=useState(null);
   const load=useCallback(async()=>{
     setLoading(true);
-    const {data,error}=await supabase.from('home_orders').select('*').eq('status','pending')
+    const [yy,mm]=String(month||monthKeyOf(new Date())).split('-').map(Number);
+    const nextMonth=`${new Date(yy,mm,1).getFullYear()}-${String(new Date(yy,mm,1).getMonth()+1).padStart(2,'0')}-01`;
+    const {data,error}=await supabase.from('home_orders').select('*')
+      .gte('source_work_date',`${month||monthKeyOf(new Date())}-01`).lt('source_work_date',nextMonth)
       .order('planned_install_date',{ascending:true,nullsFirst:false});
-    if(!error)setOrders(data||[]);
+    if(!error){setOrders(data||[]);setLastLoadedAt(new Date());}
     setLoading(false);
-  },[]);
-  useEffect(()=>{load();},[load]);
+  },[month]);
+  useEffect(()=>{
+    load();
+    const channel=supabase.channel(`admin-home-care-${month||'current'}`)
+      .on('postgres_changes',{event:'*',schema:'public',table:'home_orders'},()=>load()).subscribe();
+    const onFocus=()=>load();
+    window.addEventListener('focus',onFocus);
+    return()=>{window.removeEventListener('focus',onFocus);supabase.removeChannel(channel)};
+  },[load,month]);
 
   const empMap=Object.fromEntries((employees||[]).map(e=>[e.id,e]));
+  const grouped=useMemo(()=>{
+    const map=new Map();
+    (orders||[]).forEach(o=>{
+      const key=[o.user_id,o.source_work_date,o.customer_id||String(o.customer_name||'').replace(/\s+/g,''),o.status].join('|');
+      if(!map.has(key))map.set(key,{key,rows:[],...o});
+      map.get(key).rows.push(o);
+    });
+    return [...map.values()].map(g=>{
+      const unique=[...new Set(g.rows.map(o=>o.product_type))];
+      return {...g,productTypes:unique,duplicateCount:g.rows.length-unique.length};
+    });
+  },[orders]);
+  const visible=grouped.filter(g=>g.status===statusFilter);
   const today=new Date().toISOString().slice(0,10);
-  const overdue=orders.filter(o=>o.planned_install_date && String(o.planned_install_date).slice(0,10)<today);
-  const todayList=orders.filter(o=>String(o.planned_install_date||'').slice(0,10)===today);
-  const unscheduled=orders.filter(o=>!o.planned_install_date);
-  const householdCount=orders.filter(o=>o.network_type==='household').length;
-  const sohoCount=orders.filter(o=>o.network_type==='soho').length;
+  const pending=grouped.filter(o=>o.status==='pending');
+  const overdue=pending.filter(o=>o.planned_install_date && String(o.planned_install_date).slice(0,10)<today);
+  const todayList=pending.filter(o=>String(o.planned_install_date||'').slice(0,10)===today);
+  const unscheduled=pending.filter(o=>!o.planned_install_date);
+  const duplicateGroups=grouped.filter(o=>o.duplicateCount>0);
 
   if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">홈 케어 현황 불러오는 중...</div>;
 
   return <div className="space-y-3">
     <div className="grid grid-cols-3 gap-2">
-      {[['진행중',orders.length],['가정망',householdCount],['소호망',sohoCount],['오늘 설치',todayList.length],['예정일 경과',overdue.length],['일정 미정',unscheduled.length]].map(([l,v])=>
+      {[['진행중',pending.length],['설치완료',grouped.filter(x=>x.status==='completed').length],['취소',grouped.filter(x=>x.status==='cancelled').length],['오늘 설치',todayList.length],['예정일 경과',overdue.length],['중복 의심',duplicateGroups.length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
           <div className="text-lg font-bold">{v}</div><div className="text-[10px] text-gray-400">{l}</div>
         </div>)}
     </div>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">🏠 우리 매장 홈 케어</div>
-        <div className="text-xs text-gray-400">예정일이 지난 건부터 확인해보세요.</div></div>
-      {orders.length===0?<div className="py-10 text-center text-sm text-gray-400">진행중인 홈 청약이 없어요.</div>:
-        <div className="divide-y">{[...orders].sort((a,b)=>String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999'))).map(o=>{
+      <div className="px-4 py-3 border-b"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">🏠 우리 매장 홈 케어</div>
+        <div className="text-xs text-gray-400">상품 여러 개도 고객 1건으로 묶어 보여줘요.</div></div><button onClick={load} className="text-xs font-bold text-violet-600">↻ 새로고침</button></div>
+        <div className="flex gap-1.5 mt-3">{[['pending','진행중'],['completed','설치완료'],['cancelled','취소']].map(([k,l])=><button key={k} onClick={()=>setStatusFilter(k)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold ${statusFilter===k?'bg-violet-600 text-white':'bg-gray-100 text-gray-500'}`}>{l} {grouped.filter(x=>x.status===k).length}</button>)}</div>
+        {lastLoadedAt&&<div className="text-[9px] text-gray-300 mt-2">마지막 갱신 {lastLoadedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</div>}</div>
+      {visible.length===0?<div className="py-10 text-center text-sm text-gray-400">해당 홈 청약이 없어요.</div>:
+        <div className="divide-y">{[...visible].sort((a,b)=>String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999'))).map(o=>{
           const emp=empMap[o.user_id], p=o.planned_install_date?String(o.planned_install_date).slice(0,10):null;
-          const over=p&&p<today, isToday=p===today, prod=HOME_ORDER_PRODUCTS.find(x=>x.key===o.product_type)?.label||o.product_type;
-          return <div key={o.id} className="px-4 py-3">
+          const over=o.status==='pending'&&p&&p<today, isToday=p===today;
+          const products=o.productTypes.map(k=>HOME_ORDER_PRODUCTS.find(x=>x.key===k)?.label||k);
+          return <div key={o.key} className="px-4 py-3">
             <div className="flex justify-between gap-3"><div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="text-sm font-bold">{o.customer_name||'고객명 미입력'} · {prod}</div>
+                <div className="text-sm font-bold">{o.customer_name||'고객명 미입력'}</div>
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                   o.network_type==='soho'?'bg-blue-50 text-blue-600':
                   o.network_type==='household'?'bg-violet-50 text-violet-600':'bg-gray-100 text-gray-400'
@@ -8443,7 +8529,8 @@ function AdminHomeCare({ employees }) {
               </div>
               <div className="text-xs text-gray-500 mt-1">{emp?.name||'직원'} · {emp?.branch||''}</div></div>
               <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
-                {over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
+                {o.status==='completed'?'설치완료':o.status==='cancelled'?'취소':over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
+            <div className="flex flex-wrap gap-1 mt-2">{products.map(x=><span key={x} className="px-2 py-1 rounded-md bg-gray-50 text-[10px] text-gray-600">{x}</span>)}{o.duplicateCount>0&&<span className="px-2 py-1 rounded-md bg-red-50 text-[10px] font-bold text-red-600">중복 저장 의심 +{o.duplicateCount}</span>}</div>
             <div className="text-[11px] text-gray-400 mt-2">접수 {o.source_work_date||String(o.applied_at).slice(0,10)} · 설치예정 {p||'미정'}</div>
           </div>})}</div>}
     </div>
@@ -9287,7 +9374,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
       {adminTab === 'evaluation' && <EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} authUserId={authUserId} />}
-      {adminTab === 'homeCare' && <AdminHomeCare employees={employees} />}
+      {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
