@@ -3095,6 +3095,22 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
   );
 }
 
+function HallOfFame({rows,month}){
+  const [profiles,setProfiles]=useState({}),[titles,setTitles]=useState({}),[avatars,setAvatars]=useState({}),[selected,setSelected]=useState(null),[showAll,setShowAll]=useState(false);
+  const salesRows=useMemo(()=>[...(rows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch)),[rows]);
+  useEffect(()=>{let alive=true;const urls=[];(async()=>{const ids=salesRows.map(r=>r.id).filter(Boolean);if(!ids.length)return;const [{data:p},{data:t}]=await Promise.all([supabase.from('employee_public_profiles').select('user_id,avatar_path,status_message').in('user_id',ids),supabase.from('user_titles').select('user_id,badge_key').in('user_id',ids)]);if(!alive)return;setProfiles(Object.fromEntries((p||[]).map(x=>[x.user_id,x])));setTitles(Object.fromEntries((t||[]).map(x=>[x.user_id,x.badge_key])));const pairs=await Promise.all((p||[]).filter(x=>x.avatar_path).map(async x=>{const {data}=await supabase.storage.from('profile-avatars').download(x.avatar_path);if(!data)return null;const url=URL.createObjectURL(data);urls.push(url);return [x.user_id,url]}));if(alive)setAvatars(Object.fromEntries(pairs.filter(Boolean)))})();return()=>{alive=false;urls.forEach(URL.revokeObjectURL)}},[salesRows]);
+  if(!salesRows.length)return null;
+  const metric=(key)=>MONTHLY_RANK_METRICS.find(x=>x.key===key);
+  const leader=(key)=>[...salesRows].sort((a,b)=>Number(metric(key).value(b)||0)-Number(metric(key).value(a)||0))[0];
+  const rankSum=(r)=>['hs','home','productivity'].reduce((s,k)=>s+1+salesRows.filter(x=>Number(metric(k).value(x)||0)>Number(metric(k).value(r)||0)).length,0);
+  const mvp=[...salesRows].sort((a,b)=>rankSum(a)-rankSum(b)||hsCount(b.draft)-hsCount(a.draft))[0];
+  const title=(r)=>badgeDefOf(titles[r?.id]);
+  const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-violet-100 text-violet-700 flex items-center justify-center font-black shrink-0`}>{avatars[r?.id]?<img src={avatars[r.id]} alt="" className="w-full h-full object-cover"/>:String(r?.name||'?').slice(0,1)}</div>;
+  const profile=selected&&<div className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-violet-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-violet-50 px-4 py-3 text-sm text-violet-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',hsCount(selected.draft),'건'],['홈',metric('home').value(selected),'건'],['생산성',selected.pay?.kpiScore||0,'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
+  const cards=[['HS KING',leader('hs')],['홈 KING',leader('home')],['생산성 KING',leader('productivity')]];
+  return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이번 달 주인공들을 만나보세요</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-violet-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-violet-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
+}
+
 function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp}) {
   const [storedBadges,setStoredBadges]=useState([]);
   const [titleKey,setTitleKey]=useState('');
@@ -3103,6 +3119,9 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const [filter,setFilter]=useState('all');
   const [avatarUrl,setAvatarUrl]=useState('');
   const [avatarBusy,setAvatarBusy]=useState(false);
+  const [statusMessage,setStatusMessage]=useState('');
+  const [statusEditing,setStatusEditing]=useState(false);
+  const [statusBusy,setStatusBusy]=useState(false);
   const [celebration,setCelebration]=useState(null);
   const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId]);
   const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
@@ -3143,8 +3162,12 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     if(!userId)return;
     let alive=true,objectUrl='';
     (async()=>{
-      const {data}=await supabase.from('profiles').select('avatar_path').eq('id',userId).maybeSingle();
-      const path=data?.avatar_path||'';
+      const [{data},{data:publicProfile}]=await Promise.all([
+        supabase.from('profiles').select('avatar_path').eq('id',userId).maybeSingle(),
+        supabase.from('employee_public_profiles').select('avatar_path,status_message').eq('user_id',userId).maybeSingle()
+      ]);
+      const path=publicProfile?.avatar_path||data?.avatar_path||'';
+      setStatusMessage(publicProfile?.status_message||'');
       if(!alive)return;
       if(path){const {data:file}=await supabase.storage.from('profile-avatars').download(path);if(file&&alive){objectUrl=URL.createObjectURL(file);setAvatarUrl(objectUrl)}}
     })();
@@ -3162,9 +3185,17 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     if(uploadError){setAvatarBusy(false);return showAppToast(friendlyError(uploadError),{tone:'error',title:'사진 등록 실패'})}
     const {error:updateError}=await supabase.from('profiles').update({avatar_path:path,updated_at:new Date().toISOString()}).eq('id',userId);
     if(updateError){setAvatarBusy(false);return showAppToast(friendlyError(updateError),{tone:'error',title:'프로필 저장 실패'})}
+    const {error:publicError}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:path,status_message:statusMessage||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    if(publicError){setAvatarBusy(false);return showAppToast(friendlyError(publicError),{tone:'error',title:'공개 프로필 저장 실패'})}
     const {data:downloaded}=await supabase.storage.from('profile-avatars').download(path);
     if(downloaded){if(avatarUrl)URL.revokeObjectURL(avatarUrl);setAvatarUrl(URL.createObjectURL(downloaded))}
     setAvatarBusy(false);showAppToast('프로필 사진을 등록했어요.');
+  };
+  const saveStatus=async()=>{
+    const clean=String(statusMessage||'').trim().slice(0,40);setStatusBusy(true);
+    const {data:existing}=await supabase.from('employee_public_profiles').select('avatar_path').eq('user_id',userId).maybeSingle();
+    const {error}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:existing?.avatar_path||null,status_message:clean||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    setStatusBusy(false);if(error)return showAppToast(friendlyError(error),{tone:'error'});setStatusMessage(clean);setStatusEditing(false);showAppToast('공개 한줄 상태를 저장했어요.');
   };
 
   return <>
@@ -3194,6 +3225,11 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
       <div className="mt-4 pt-3 border-t border-white/15">
         <div className="text-[9px] text-violet-100/75">오늘의 응원</div>
         <div className="text-sm font-bold leading-relaxed mt-1">“{dailyEncouragement(userId)}”</div>
+        <div className="text-[9px] text-violet-100/60 mt-1">본인에게만 보여요.</div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-white/15">
+        <div className="flex justify-between"><div className="text-[9px] text-violet-100/75">동료에게 공개되는 나의 한줄 상태</div><button onClick={()=>setStatusEditing(v=>!v)} className="text-[9px] font-bold">{statusEditing?'닫기':'수정'}</button></div>
+        {statusEditing?<div className="mt-2 flex gap-2"><input maxLength={40} value={statusMessage} onChange={e=>setStatusMessage(e.target.value)} placeholder="동료에게 보여줄 한마디" className="min-w-0 flex-1 rounded-xl bg-white/15 border border-white/20 px-3 py-2 text-xs text-white placeholder:text-violet-200"/><button onClick={saveStatus} disabled={statusBusy} className="rounded-xl bg-white px-3 text-xs font-bold text-violet-700">{statusBusy?'저장중':'저장'}</button></div>:<div className="mt-1 text-xs font-semibold">{statusMessage?`“${statusMessage}”`:'아직 공개 상태를 작성하지 않았어요.'}</div>}
       </div>
       <div className="flex justify-between mt-3 text-[9px] text-violet-100/75"><span>대표 배지는 획득한 배지 중 선택할 수 있어요.</span><span>{fmtCount(earnedKeys.size)} / 100</span></div>
     </div>
@@ -5220,6 +5256,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
           {employeeHomeMode==='personal' ? <>
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
+            <HallOfFame rows={competitionRows} month={month} />
             <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff}
               approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
               onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
