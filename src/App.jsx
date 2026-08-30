@@ -10,9 +10,9 @@ import { friendlyError } from './errorMessages';
 import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 import {
-  SECOND_PERFORMANCE_POINT, allowedSecondVas, secondPerformancePoints,
+  SECOND_PERFORMANCE_POINT, allowedSecondVas,
   summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
-  mergeSaleMetaPreservingLegacy,
+  mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
 } from './policyRules';
 
 let feedbackBridge={toast:null,confirm:null};
@@ -834,21 +834,23 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const baseActivityCount = mobileItems
     .filter((i) => i.countsTenure !== false)
     .reduce((sum, item) => sum + Number(draft.mobilePoint?.[item.key] || 0), 0);
-  const bundle2ndActivityCount = Object.values(draft.bundle2nd || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const secondPolicy = calculateSecondPolicy({
+    secondOnlyCount: draft.mobilePoint?.secondOnly,
+    bundleCounts: draft.bundle2nd || {},
+    pointRate: Number(mobileItems.find((item) => item.key === 'secondOnly')?.point || 0),
+  });
+  const bundle2ndActivityCount = secondPolicy.bundled;
   const activityCount = baseActivityCount + bundle2ndActivityCount;
 
   const supportCap = Number(config.tenureCap ?? DEFAULT_ACTIVITY_SUPPORT_MAX);
   // 6개월 미만: 실적 무관 230만원
   // 6~12개월: 건당 20만원 / 12~24개월: 15만원 / 24개월 이상: 10만원, 공통 MAX 230만원
-  const tenurePay = months < 6
-    ? supportCap
-    : Math.min(Number(bucket?.rate || 0) * activityCount, supportCap);
+  const tenurePay = calculateActivitySupport({monthsEmployed:months,activityCount,rate:bucket?.rate,cap:supportCap});
 
   // 2ND 성과등급P는 단독/번들 구분 없이 동일하게 인정합니다.
   // 단독은 mobilePoint.secondOnly에 포함되고, 번들은 bundle2nd에 별도 저장되므로
   // 번들 건수에 현재 2ND 성과등급 배점을 곱해 추가합니다. 무료판매도 실적은 인정됩니다.
-  const secondPointRate = Number(mobileItems.find((item) => item.key === 'secondOnly')?.point || 0);
-  const bundle2ndPoints = secondPerformancePoints({bundleCounts:draft.bundle2nd||{}}) * (secondPointRate / SECOND_PERFORMANCE_POINT);
+  const bundle2ndPoints = Number((secondPolicy.bundled * Number(mobileItems.find((item) => item.key === 'secondOnly')?.point || 0)).toFixed(10));
   const mobilePoints = sumPoint(draft.mobilePoint || {}, mobileItems) + bundle2ndPoints;
   const homeAddonPoints = sumPoint(draft.homeBase || {}, HOME_BASE_ITEMS)
     + Number(draft.homeFlat?.tvFree || 0) * 0.5
