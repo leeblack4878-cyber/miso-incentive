@@ -2,6 +2,8 @@ export {
   SECOND_PERFORMANCE_POINT, INSURANCE_QUALITY_POINT, SECOND_ALLOWED_VAS_KEYS,
   allowedSecondVas, summarizeVasQuality, calculateSecondPolicy,
   calculateActivitySupport, calculateFreePhoneSpecialOutcome, summarizeHomeStatuses,
+  calculateFlatIncentive, calculateMatrixIncentive, calculateMobileCommissionParts,
+  buildHomeBundlesFromOrders, calculateHomePolicyFromOrders,
 } from './policyEngine.js';
 
 import { calculateSecondPolicy, summarizeHomeStatuses } from './policyEngine.js';
