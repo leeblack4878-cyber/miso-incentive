@@ -13,6 +13,8 @@ import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
   summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
+  calculateFlatIncentive, calculateMobileCommissionParts,
+  calculateHomePolicyFromOrders as calculateHomePolicyEngine,
 } from './policyRules';
 
 let feedbackBridge={toast:null,confirm:null};
@@ -874,19 +876,11 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
     ? Math.max(0, Math.min(1, (totalPoints - currentTierMin) / (nextGrade.min - currentTierMin)))
     : 1;
 
-  const matrixTotal = (draft.matrix || []).reduce(
-    (sum, row, ri) => sum + (row || []).reduce((rs, cnt, ci) => rs + Number(cnt || 0) * Number(config.matrix?.[ri]?.[ci] || 0), 0),
-    0
-  );
   const specialMatrixOffset = Number(draft.specialMatrixOffset || 0);
   const specialVasOffset = Number(draft.specialVasOffset || 0);
   const specialReplacementPay = Number(draft.specialReplacementPay || 0);
-  const adjustedMatrixTotal = Math.max(0, matrixTotal - specialMatrixOffset);
-
-  const rawBundle2ndTotal = sumFlat(draft.bundle2nd || {}, config.bundle2nd || []);
   const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
   const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
-  const bundle2ndTotal = Math.max(0, rawBundle2ndTotal - bundleFreeOffset);
 
   const homeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
     + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0)
@@ -894,8 +888,13 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
 
-  const rawVasPay = sumFlat(draft.vas || {}, config.vas || []);
-  const vasPay = Math.max(0, rawVasPay - specialVasOffset - bundleFreeVasOffset);
+  const commissionParts = calculateMobileCommissionParts({
+    matrix:draft.matrix||[],matrixRates:config.matrix||[],specialMatrixOffset,
+    vasCounts:draft.vas||{},vasRates:config.vas||[],specialVasOffset,bundleFreeVasOffset,
+    bundleCounts:draft.bundle2nd||{},bundleRates:config.bundle2nd||[],bundleFreeOffset,
+    penaltyFactor,
+  });
+  const {matrixTotal,adjustedMatrixTotal,rawBundle2ndTotal,bundle2ndTotal,rawVasPay,vasPay,mobilePlanPay,bundle2ndPay,mobileMatrixPay}=commissionParts;
 
   const positionAllowance = Number(config.positionAllowance?.[position] || 0);
   const activityPenalty = draft.activityTimeMet ? 0 : Number(config.basePenalty || 0);
@@ -904,9 +903,6 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   // 최저보장 비교 대상:
   // 영업 활동 지원 정책 + 요금제 + VAS + 2ND + 모바일 승인 스팟 + 직책수당
   // 특판·지인판매 대체 인센티브는 요금제/VAS 대체 성격이므로 모바일 비교 대상에 포함합니다.
-  const mobilePlanPay = adjustedMatrixTotal * penaltyFactor;
-  const bundle2ndPay = bundle2ndTotal * penaltyFactor;
-  const mobileMatrixPay = mobilePlanPay + bundle2ndPay;
   const approvedMobileSpotPay = Math.max(0, Number(mobileSpotPay || 0));
   const mobileGuaranteeBasis = tenurePay
     + mobileMatrixPay
@@ -926,15 +922,15 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const homePolicy = draft.homePolicy?.source==='orders' ? draft.homePolicy : null;
   const homeCaseCount = homePolicy ? Number(homePolicy.totalInternetCount||0) : legacyHomeTierCount;
   const homeGradePay = homePolicy ? Number(homePolicy.gradePay||0) : homeGradeTotal(legacyHomeTierCount, legacyHomeGradeQualCount, config.homeTiers);
-  const homeFlatPay = homePolicy ? Number(homePolicy.homeFlatPay||0) : sumFlat(draft.homeFlat || {}, config.homeFlat || []);
+  const homeFlatPay = homePolicy ? Number(homePolicy.homeFlatPay||0) : calculateFlatIncentive(draft.homeFlat || {}, config.homeFlat || []);
   const tvFreeRate = config.homeFlat.find((t) => t.key === 'tvFree')?.rate || 0;
   const smartHomeRate = config.homeFlat.find((t) => t.key === 'smartHome')?.rate || 0;
   const tvFreePay = homePolicy ? Number(homePolicy.tvFreePay||0) : Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
   const smartHomePay = homePolicy ? Number(homePolicy.smartHomePay||0) : Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
-  const homeAddonPay = homePolicy ? Number(homePolicy.homeAddonPay||0) : sumFlat(draft.homeAddon || {}, config.homeAddon || []);
-  const renewPay = Math.max(0, sumFlat(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
-  const mnpBundlePay = sumFlat(draft.mnpBundle || {}, config.mnpBundle || []);
-  const sonoPay = sumFlat(draft.sono || {}, config.sono || []);
+  const homeAddonPay = homePolicy ? Number(homePolicy.homeAddonPay||0) : calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []);
+  const renewPay = Math.max(0, calculateFlatIncentive(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
+  const mnpBundlePay = calculateFlatIncentive(draft.mnpBundle || {}, config.mnpBundle || []);
+  const sonoPay = calculateFlatIncentive(draft.sono || {}, config.sono || []);
   const custRegBonus = tierBonus(Number(draft.custRegCount || 0), config.custRegTiers);
   const tailoredBonus = tierBonus(Number(draft.tailoredCount || 0), config.tailoredTiers);
   const tailoredAmountBonus = Number(draft.tailoredAmount || 0);
@@ -1581,7 +1577,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     ids.forEach(id=>{
       const userOrders=(data||[]).filter(o=>o.user_id===id);
       const completed=userOrders.filter(o=>o.status==='completed');
-      mapped[id]=completed.length?calculateHomePolicyFromOrders(userOrders,config):null;
+      mapped[id]=completed.length?calculateHomePolicyEngine(userOrders,config):null;
     });
     setHomePolicyMap(mapped);
   },[config]);
@@ -5828,7 +5824,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
       // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
       const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
-      setHomePreviewPolicy(calculateHomePolicyFromOrders(previewOrders,config));
+      setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
     }else{
       console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
       setHomePreviewPolicy(null);
@@ -9021,7 +9017,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
       ]);
       const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
       const homeMap=Object.fromEntries((homeRes.data||[]).map(o=>[String(o.id),o]));
-      const detailHomePolicy=calculateHomePolicyFromOrders(homeRes.data||[],config);
+      const detailHomePolicy=calculateHomePolicyEngine(homeRes.data||[],config);
       const ledger=[];
       (salesRes.data||[]).forEach(x=>{
         const meta=x.source_meta||{}, customer=x.customers?.customer_name||'이름 없음';
