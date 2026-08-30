@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calculateSecondPolicy, calculateActivitySupport, calculateFreePhoneSpecialOutcome,
-  summarizeHomeStatuses, summarizeVasQuality,
+  summarizeHomeStatuses, summarizeVasQuality, calculateMobileCommissionParts,
+  calculateHomePolicyFromOrders,
 } from '../src/policyEngine.js';
 
 test('2ND 정책 조합표: 단독과 번들은 모두 실적·활동지원·성과P에 동일 반영된다', () => {
@@ -65,4 +66,62 @@ test('폰안심패스와 폰교체패스는 각각 보험 전략P 0.8P로 계산
   assert.equal(result.insurance, 2);
   assert.equal(result.insurancePoints, 1.6);
   assert.equal(result.strategicVas, 1);
+});
+
+test('요금제·VAS·보험·2ND 제외액과 홈 미판매 50% 규칙을 숫자로 계산한다', () => {
+  const result = calculateMobileCommissionParts({
+    matrix: [[2, 1]], matrixRates: [[50000, 30000]], specialMatrixOffset: 50000,
+    vasCounts: { insurance: 1, strategic: 2 },
+    vasRates: [{ key: 'insurance', rate: 10000 }, { key: 'strategic', rate: 20000 }],
+    specialVasOffset: 10000, bundleFreeVasOffset: 5000,
+    bundleCounts: { watch: 1 }, bundleRates: [{ key: 'watch', rate: 200000 }],
+    bundleFreeOffset: 50000, penaltyFactor: 0.5,
+  });
+  assert.equal(result.matrixTotal, 130000);
+  assert.equal(result.adjustedMatrixTotal, 80000);
+  assert.equal(result.rawVasPay, 50000);
+  assert.equal(result.vasPay, 35000);
+  assert.equal(result.rawBundle2ndTotal, 200000);
+  assert.equal(result.bundle2ndTotal, 150000);
+  assert.equal(result.mobilePlanPay, 40000);
+  assert.equal(result.bundle2ndPay, 75000);
+  assert.equal(result.mobileMatrixPay, 115000);
+});
+
+test('가정망 1GB+TV·MNP·스마트홈 동시판매 수수료는 고객 묶음당 70만원이다', () => {
+  const base = { customer_id: 'home-a', customer_name: '홈고객', source_work_date: '2026-08-10', status: 'completed', network_type: 'household' };
+  const result = calculateHomePolicyFromOrders([
+    { ...base, id: 1, product_type: 'internet1g' },
+    { ...base, id: 2, product_type: 'homeTv' },
+    { ...base, id: 3, product_type: 'simulMnp' },
+    { ...base, id: 4, product_type: 'smartHome' },
+  ]);
+  assert.equal(result.totalInternetCount, 1);
+  assert.equal(result.gradePay, 250000);
+  assert.equal(result.simulPay, 300000);
+  assert.equal(result.smartHomePay, 100000);
+  assert.equal(result.smartHomeSimulPay, 50000);
+  assert.equal(result.total, 700000);
+});
+
+test('가정망 500MB+TV 1건은 1건 구간 27만원이고 취소 건은 제외한다', () => {
+  const result = calculateHomePolicyFromOrders([
+    { id: 1, customer_id: 'a', source_work_date: '2026-08-10', status: 'completed', network_type: 'household', product_type: 'internet500' },
+    { id: 2, customer_id: 'a', source_work_date: '2026-08-10', status: 'completed', network_type: 'household', product_type: 'homeTv' },
+    { id: 3, customer_id: 'b', source_work_date: '2026-08-11', status: 'cancelled', network_type: 'soho', product_type: 'internet1g' },
+  ]);
+  assert.equal(result.totalInternetCount, 1);
+  assert.equal(result.gradePay, 270000);
+  assert.equal(result.total, 270000);
+});
+
+test('올인원 홈은 성과 묶음에는 남지만 수수료는 0원이다', () => {
+  const base = { customer_id: 'allinone', source_work_date: '2026-08-12', status: 'completed', sale_type: 'allinone', network_type: 'soho' };
+  const result = calculateHomePolicyFromOrders([
+    { ...base, id: 1, product_type: 'internet1g' },
+    { ...base, id: 2, product_type: 'homeTv' },
+    { ...base, id: 3, product_type: 'smartHome' },
+  ]);
+  assert.equal(result.totalInternetCount, 1);
+  assert.equal(result.total, 0);
 });
