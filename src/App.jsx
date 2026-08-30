@@ -68,6 +68,10 @@ function PwaInstallButton(){
    - DB audit trigger와 함께 원본 변경 이력을 보존
 */
 const CURRENT_SALE_SCHEMA_VERSION = 3;
+const FREE_PHONE_SPECIAL_TITLE = '무료폰 특가';
+function isFreePhoneSpecial(policy={}){
+  return policy?.policyType==='free_phone'||policy?.policy_type==='free_phone'||policy?.policyTitle===FREE_PHONE_SPECIAL_TITLE||policy?.title===FREE_PHONE_SPECIAL_TITLE;
+}
 
 function saleSchemaVersion(sale){
   return Number(sale?.schema_version || sale?.source_meta?.schemaVersion || 1);
@@ -6624,13 +6628,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         );
         const editAllVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
         const newVasFee=mobileSpecialPolicyId?editAllVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0;
-        const req=Number(mobileSpecialExceptionAmount||0);
-        const newReplacement=mobileSpecialPolicyId?(req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
+        const newIsFreePhone=isFreePhoneSpecial(newPolicy);
+        const req=newIsFreePhone?0:Number(mobileSpecialExceptionAmount||0);
+        const newReplacement=mobileSpecialPolicyId?(newIsFreePhone?0:req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
         const nextMeta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale.source_meta||{}, {
           legacySchemaVersion:saleSchemaVersion(editingSale),
           ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
-          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',replacementAmount:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:newIsFreePhone?'free_phone':'standard',replacementAmount:newIsFreePhone?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
         }));
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
@@ -6750,11 +6755,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         );
         const allVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
         const vasFee=allVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0);
-        const requested=Number(mobileSpecialExceptionAmount||0);
-        const replacement=requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
+        const freePhone=isFreePhoneSpecial(policy);
+        const requested=freePhone?0:Number(mobileSpecialExceptionAmount||0);
+        const replacement=freePhone?0:requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',replacementAmount:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',policyType:freePhone?'free_phone':'standard',replacementAmount:freePhone?0:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
         }).eq('id',saved.saleId);
         saved._special={matrixFee,vasFee,replacement};
       }
@@ -6901,8 +6907,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))rows.push(['중고MNP 결합',Number(it.rate)]);}
       const sp=meta.specialPolicy||{};
       if(sp.policyId){
-        if(plan)rows.push(['특판 요금제 제외',-plan]);
-        if(Number(sp.normalVasFee||0))rows.push(['특판 VAS 제외',-Number(sp.normalVasFee)]);
+        const freePhone=isFreePhoneSpecial(sp),prefix=freePhone?'무료폰 특가':'특판';
+        if(plan)rows.push([`${prefix} 요금제 제외`,-plan]);
+        if(Number(sp.normalVasFee||0))rows.push([`${prefix} VAS·보험 제외`,-Number(sp.normalVasFee)]);
         const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
         if(repl)rows.push(['특판 대체',repl]);
       }
@@ -7313,7 +7320,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                             className={`w-full text-left rounded-lg border px-3 py-2.5 text-xs ${selected?'bg-white border-amber-300 text-amber-800':'bg-white/80 border-gray-100 text-gray-600'}`}>
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
-                              <span className="text-[10px] text-amber-600">대체 {won(p.replacement_amount)}</span>
+                              <span className="text-[10px] text-amber-600">{isFreePhoneSpecial(p)?'요금제·VAS·보험 미지급':`대체 ${won(p.replacement_amount)}`}</span>
                             </div>
                             {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.end_date||''}</div>}
                           </button>
@@ -7322,12 +7329,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       {mobileSpecialPolicyId&&(
                         <div className="mt-2">
                           <div className="text-[10px] text-amber-700 leading-relaxed">
-                            실적·KPI·성과등급P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.
+                            {isFreePhoneSpecial(specialPolicies.find(p=>p.id===mobileSpecialPolicyId))?'실적·KPI·성과등급P는 인정하고 요금제·VAS·보험 인센티브는 지급하지 않아요. 2ND와 승인 스팟은 정상 반영돼요.':'실적·KPI·성과등급P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.'}
                           </div>
-                          <input inputMode="numeric" value={fmtInputNumber(mobileSpecialExceptionAmount)}
+                          {!isFreePhoneSpecial(specialPolicies.find(p=>p.id===mobileSpecialPolicyId))&&<input inputMode="numeric" value={fmtInputNumber(mobileSpecialExceptionAmount)}
                             onChange={e=>setMobileSpecialExceptionAmount(e.target.value.replace(/\D/g,''))}
                             placeholder="예외 지급금액 요청 (선택)"
-                            className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>
+                            className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>}
                         </div>
                       )}
                     </>

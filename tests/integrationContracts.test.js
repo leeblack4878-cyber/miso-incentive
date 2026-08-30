@@ -157,3 +157,16 @@ test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 �
   assert.match(sql, /miso-due-customer-task-push/);
   assert.match(sql, /'0 0 \* \* \*'/);
 });
+
+test('무료폰 특가는 요금제 VAS 보험 인센티브만 제외하고 2ND와 스팟은 유지한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../sql/free_phone_special_policy.sql', import.meta.url), 'utf8');
+  assert.match(source, /FREE_PHONE_SPECIAL_TITLE = '무료폰 특가'/);
+  assert.match(source, /policyType:freePhone\?'free_phone':'standard'/);
+  assert.match(source, /요금제·VAS·보험 인센티브는 지급하지 않아요/);
+  assert.match(source, /2ND와 승인 스팟은 정상 반영돼요/);
+  assert.match(source, /freePhone\?'무료폰 특가':'특판'/);
+  assert.match(source, /VAS·보험 제외/);
+  assert.match(sql, /replacement_amount/);
+  assert.match(sql, /2099-12-31/);
+});
