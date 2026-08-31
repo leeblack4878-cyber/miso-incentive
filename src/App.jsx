@@ -16,6 +16,7 @@ import {
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
   CURRENT_POLICY_VERSION, createPolicySnapshot,
+  calculateMobileSale,
   calculateHomePolicyFromOrders as calculateHomePolicyEngine,
 } from './policyRules';
 
@@ -1168,6 +1169,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
+  const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
 
   // 모바일 웹앱 뒤로가기 제어
   const [exitHint, setExitHint] = useState(false);
@@ -1581,6 +1583,28 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setHomePolicyMap(mapped);
   },[config]);
 
+  const loadShadowLedgers = useCallback(async (m,list)=>{
+    const ids=(list||[]).map(e=>e.id),mapped={};
+    ids.forEach(id=>{mapped[id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0};});
+    if(!ids.length){setShadowLedgerMap(mapped);return;}
+    const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+    const {data,error}=await supabase.from('customer_sales')
+      .select('id,user_id,sale_date,source_meta')
+      .eq('source_type','mobile').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to);
+    if(error){console.error('SHADOW LEDGER LOAD ERROR',error);setShadowLedgerMap(mapped);return;}
+    (data||[]).forEach(sale=>{
+      const row=mapped[sale.user_id]||(mapped[sale.user_id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0});
+      row.totalSales+=1;
+      if(!sale.source_meta?.policySnapshot){row.missingSnapshots+=1;return;}
+      const result=calculateMobileSale(sale,currentPolicySnapshot(config));
+      row.snapshotSales+=1;
+      row.shadowMobilePay+=Number(result.paid.plan||0)+Number(result.paid.vas||0)+Number(result.paid.insurance||0)+Number(result.paid.second||0);
+      row.performancePoints+=Number(result.performancePoints||0);
+      row.insurancePoints+=Number(result.insurancePoints||0);
+    });
+    setShadowLedgerMap(mapped);
+  },[config]);
+
   const saveDailyDay = async (day, record) => {
     if (!empId) return false;
 
@@ -1624,10 +1648,11 @@ export default function App({ authUser, authProfile, onSignOut }) {
       await loadMonth(month, list);
       await loadDaily(month, list);
       await loadHomePolicies(month, list);
+      await loadShadowLedgers(month, list);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.id]);
-  useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); loadHomePolicies(month, employees); } }, [month]); // eslint-disable-line
+  useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); loadHomePolicies(month, employees); loadShadowLedgers(month, employees); } }, [month]); // eslint-disable-line
   // 홈 고객별 저장/수정으로 일일 실적이 바뀌면 새 정책 금액도 다시 계산합니다.
   useEffect(() => { if (employees.length) loadHomePolicies(month, employees); }, [dailyRecords]); // eslint-disable-line
 
@@ -1850,7 +1875,11 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const mergedBase = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
     const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null};
     const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0);
-    return { ...e, status: rec.status, pay, draft: mergedDraft, updatedAt: rec.updatedAt };
+    const shadow=shadowLedgerMap[e.id]||{totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0};
+    const existingMobilePay=Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0);
+    const comparable=shadow.totalSales>0&&shadow.missingSnapshots===0;
+    const calculationAudit={...shadow,existingMobilePay,comparable,difference:comparable?Number(shadow.shadowMobilePay||0)-existingMobilePay:null};
+    return { ...e, status: rec.status, pay, draft: mergedDraft, calculationAudit, updatedAt: rec.updatedAt };
   });
   const currentEmp = employees.find((e) => e.id === empId);
 
@@ -9442,13 +9471,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     ...(isFullAdmin ? [
       { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud, group:'실적 관리' },
       { key: 'settlement', label: '정산 검토', icon: Wallet, group:'정산' },
+      { key: 'calculationAudit', label: '계산 검증', icon: ShieldCheck, group:'정산' },
       { key: 'rates', label: '지급기준 관리', icon: Settings, group:'설정' },
       { key: 'permissions', label: '권한 관리', icon: ShieldCheck, group:'설정' },
     ] : []),
   ];
   const TAB_GROUPS=['현황','실적 관리','고객 · 홈','비용 · 승인','정산','설정'];
   useEffect(() => {
-    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
+    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin]); // eslint-disable-line
 
   const downloadCSV = () => {
@@ -9592,6 +9622,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
       {adminTab === 'headOfficeData' && isFullAdmin && <HeadOfficeDataPanel month={month} employees={employees} rows={rows} config={config} authUserId={authUserId} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
+      {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
 
       {adminTab === 'employees' && (
@@ -9607,6 +9638,28 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       )}
     </div>
   );
+}
+
+function CalculationAuditPanel({month,rows=[]}){
+  const covered=rows.filter(r=>r.calculationAudit?.comparable).length;
+  const different=rows.filter(r=>r.calculationAudit?.comparable&&Number(r.calculationAudit?.difference||0)!==0).length;
+  return <div className="space-y-4">
+    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+      <div className="text-sm font-bold text-violet-900">계산 엔진 그림자 검증</div>
+      <div className="mt-1 text-xs leading-relaxed text-violet-700">직원에게 표시되는 급여는 변경하지 않고, 판매 당시 정책 스냅샷으로 다시 계산한 모바일 인센티브를 비교합니다.</div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">대상</div><b className="text-sm">{rows.length}명</b></div><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">비교 가능</div><b className="text-sm text-emerald-600">{covered}명</b></div><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">차이 발견</div><b className="text-sm text-red-500">{different}명</b></div></div>
+    </div>
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
+      <div className="border-b px-4 py-3"><div className="text-sm font-bold">{monthLabel(month)} 직원별 검증 결과</div><div className="text-[11px] text-gray-400">스냅샷이 없는 이전 판매는 기존 방식으로 유지하며 비교 대상에서 제외됩니다.</div></div>
+      <div className="divide-y">
+        {rows.map(r=>{const a=r.calculationAudit||{};const complete=a.comparable;return <div key={r.id} className="px-4 py-3">
+          <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">{r.name} <span className="text-[10px] font-normal text-gray-400">{displayStoreName(r.branch)}</span></div><div className="mt-1 text-[11px] text-gray-500">판매 {a.totalSales||0}건 · 스냅샷 {a.snapshotSales||0}건 · 이전방식 {a.missingSnapshots||0}건</div></div>
+          {complete?<span className={`rounded-full px-2 py-1 text-[10px] font-bold ${Number(a.difference||0)===0?'bg-emerald-50 text-emerald-600':'bg-red-50 text-red-600'}`}>{Number(a.difference||0)===0?'일치':`차이 ${won(a.difference)}`}</span>:<span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">이전정책 포함</span>}</div>
+          {complete&&<div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><div className="rounded-lg bg-gray-50 px-3 py-2">기존 모바일 <b className="float-right">{won(a.existingMobilePay)}</b></div><div className="rounded-lg bg-gray-50 px-3 py-2">새 원장 <b className="float-right">{won(a.shadowMobilePay)}</b></div></div>}
+        </div>})}
+      </div>
+    </div>
+  </div>;
 }
 
 /* 관리자는 MNP·기변A/B/C·010신규를 묶어 HS로 관리 — 일일입력 매트릭스의 해당 행을 합산 */
