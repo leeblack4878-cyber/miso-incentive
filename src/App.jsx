@@ -14,6 +14,7 @@ import {
   summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
   calculateFlatIncentive, calculateMobileCommissionParts,
+  calculatePayrollSettlement,
   calculateHomePolicyFromOrders as calculateHomePolicyEngine,
 } from './policyRules';
 
@@ -904,15 +905,6 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   // 영업 활동 지원 정책 + 요금제 + VAS + 2ND + 모바일 승인 스팟 + 직책수당
   // 특판·지인판매 대체 인센티브는 요금제/VAS 대체 성격이므로 모바일 비교 대상에 포함합니다.
   const approvedMobileSpotPay = Math.max(0, Number(mobileSpotPay || 0));
-  const mobileGuaranteeBasis = tenurePay
-    + mobileMatrixPay
-    + vasPay
-    + approvedMobileSpotPay
-    + specialReplacementPay
-    + positionAllowance;
-
-  const guaranteedComponent = Math.max(minimumGuarantee, mobileGuaranteeBasis);
-
   // 최저보장 비교 후 별도로 추가되는 항목
   // v21.63: 고객별 home_orders가 있으면 새 홈 정책으로 재계산하고,
   // 구버전 집계만 존재하면 기존 계산을 fallback으로 유지합니다.
@@ -935,14 +927,12 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const tailoredBonus = tierBonus(Number(draft.tailoredCount || 0), config.tailoredTiers);
   const tailoredAmountBonus = Number(draft.tailoredAmount || 0);
 
-  const postGuaranteeExtras = gradeBonus + homeGradePay + homeFlatPay + homeAddonPay + renewPay
-    + mnpBundlePay + sonoPay + custRegBonus + tailoredBonus + tailoredAmountBonus;
-
-  // 직원 홈 메인: 최저보정 없이 지금까지 실제로 만들어진 금액
-  const currentPerformanceAmount = mobileGuaranteeBasis + postGuaranteeExtras;
-  // 현재까지 실적을 그대로 마감한다고 가정한 금액
-  const closingAmount = guaranteedComponent + postGuaranteeExtras;
-  const total = closingAmount;
+  const settlement=calculatePayrollSettlement({
+    minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
+    specialReplacementPay,positionAllowance,
+    extras:{gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
+  });
+  const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
 
   // 기존 화면/RAW 호환용
   const positionBase = minimumGuarantee;
