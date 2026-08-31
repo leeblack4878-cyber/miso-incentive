@@ -65,6 +65,42 @@ export function calculateMobileCommissionParts({
   };
 }
 
+export function calculatePayrollSettlement({
+  minimumGuarantee = 0,
+  tenurePay = 0,
+  mobilePlanPay = 0,
+  bundle2ndPay = 0,
+  vasPay = 0,
+  approvedMobileSpotPay = 0,
+  specialReplacementPay = 0,
+  positionAllowance = 0,
+  extras = {},
+} = {}) {
+  const money = value => Math.max(0, Number(value || 0));
+  const mobileGuaranteeBasis = money(tenurePay) + money(mobilePlanPay) + money(bundle2ndPay)
+    + money(vasPay) + money(approvedMobileSpotPay) + money(specialReplacementPay)
+    + money(positionAllowance);
+  const safeMinimumGuarantee = money(minimumGuarantee);
+  const guaranteedComponent = Math.max(safeMinimumGuarantee, mobileGuaranteeBasis);
+  const normalizedExtras = Object.fromEntries(
+    Object.entries(extras || {}).map(([key, value]) => [key, money(value)])
+  );
+  const postGuaranteeExtras = Object.values(normalizedExtras).reduce((sum, value) => sum + value, 0);
+  const currentPerformanceAmount = mobileGuaranteeBasis + postGuaranteeExtras;
+  const closingAmount = guaranteedComponent + postGuaranteeExtras;
+  return {
+    minimumGuarantee: safeMinimumGuarantee,
+    mobileGuaranteeBasis,
+    guaranteedComponent,
+    guaranteeTopUp: Math.max(0, safeMinimumGuarantee - mobileGuaranteeBasis),
+    extras: normalizedExtras,
+    postGuaranteeExtras,
+    currentPerformanceAmount,
+    closingAmount,
+    total: closingAmount,
+  };
+}
+
 const HOME_GRADE_THRESHOLDS = [1, 2, 3, 5, 7, 10];
 const HOME_HOUSEHOLD_1G = [250000, 350000, 450000, 550000, 650000, 750000];
 const HOME_SOHO_1G = [440000, 540000, 640000, 740000, 840000, 940000];
