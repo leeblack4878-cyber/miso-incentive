@@ -1,6 +1,7 @@
 export const SECOND_PERFORMANCE_POINT = 0.2;
 export const INSURANCE_QUALITY_POINT = 0.8;
 export const SECOND_ALLOWED_VAS_KEYS = Object.freeze(['vasPhonePass', 'vasSafePass']);
+export const CURRENT_POLICY_VERSION = '2026-08-v1';
 
 const countValues = (values = {}) => (Array.isArray(values) ? values : Object.values(values || {}))
   .reduce((sum, value) => sum + Number(value || 0), 0);
@@ -63,6 +64,129 @@ export function calculateMobileCommissionParts({
     rawBundle2ndTotal, bundle2ndTotal, mobilePlanPay, bundle2ndPay,
     mobileMatrixPay: mobilePlanPay + bundle2ndPay,
   };
+}
+
+const rateMap = (items = []) => Object.fromEntries((items || []).map(item => [item?.key, Number(item?.rate || 0)]));
+const positive = value => Math.max(0, Number(value || 0));
+
+export function createPolicySnapshot({
+  version = CURRENT_POLICY_VERSION,
+  matrixRates = [], vasRates = [], bundleRates = [],
+  secondPointRate = SECOND_PERFORMANCE_POINT,
+  insurancePointRate = INSURANCE_QUALITY_POINT,
+} = {}) {
+  return {
+    version,
+    matrixRates: (matrixRates || []).map(row => (row || []).map(value => Number(value || 0))),
+    vasRates: rateMap(vasRates),
+    bundleRates: rateMap(bundleRates),
+    secondPointRate: Number(secondPointRate || 0),
+    insurancePointRate: Number(insurancePointRate || 0),
+  };
+}
+
+export function resolveSalePolicySnapshot(sale = {}, currentPolicy = {}) {
+  const frozen = sale?.source_meta?.policySnapshot || sale?.policySnapshot;
+  return frozen ? structuredClone(frozen) : createPolicySnapshot(currentPolicy);
+}
+
+export function calculateMobileSale(sale = {}, currentPolicy = {}) {
+  const meta = sale?.source_meta || sale?.meta || {};
+  const policy = resolveSalePolicySnapshot(sale, currentPolicy);
+  const matrixRate = positive(policy.matrixRates?.[Number(meta.ri)]?.[Number(meta.ci)]);
+  const directVasKeys = meta.vasKeys || [];
+  const bundleKeys = meta.bundle2ndKeys || [];
+  const bundleVasMap = meta.bundleVasMap || {};
+  const bundleSaleTypeMap = meta.bundleSaleTypeMap || {};
+  const directVasPay = directVasKeys.reduce((sum, key) => sum + positive(policy.vasRates?.[key]), 0);
+  const bundlePay = bundleKeys.reduce((sum, key) => (
+    sum + ((bundleSaleTypeMap?.[key] || 'normal') === 'free' ? 0 : positive(policy.bundleRates?.[key]))
+  ), 0);
+  const bundleVasPay = bundleKeys.reduce((sum, bundleKey) => {
+    if ((bundleSaleTypeMap?.[bundleKey] || 'normal') === 'free') return sum;
+    return sum + (bundleVasMap?.[bundleKey] || [])
+      .filter(key => SECOND_ALLOWED_VAS_KEYS.includes(key))
+      .reduce((vasSum, key) => vasSum + positive(policy.vasRates?.[key]), 0);
+  }, 0);
+  const allVasKeys = [...directVasKeys, ...Object.values(bundleVasMap).flat()];
+  const insuranceCount = allVasKeys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
+  const secondCount = bundleKeys.length + positive(meta.secondOnlyCount);
+  const special = meta.specialPolicy || {};
+  const freePhone = isFreePhonePolicy(special);
+  const requested = {
+    plan: matrixRate,
+    vas: directVasPay + bundleVasPay,
+    insurance: 0,
+    second: bundlePay,
+    spot: positive(meta.approvedSpotIncentive),
+  };
+  const specialOutcome = calculateFreePhoneSpecialOutcome({
+    planIncentive: requested.plan,
+    vasIncentive: requested.vas,
+    insuranceIncentive: requested.insurance,
+    secondIncentive: requested.second,
+    approvedSpotIncentive: requested.spot,
+    isFreePhoneSpecial: freePhone,
+  });
+  return {
+    saleId: sale.id || null,
+    policyVersion: policy.version || CURRENT_POLICY_VERSION,
+    policySnapshot: policy,
+    matrixRate,
+    directVasPay,
+    bundleVasPay,
+    secondCount,
+    performancePoints: Number((secondCount * positive(policy.secondPointRate)).toFixed(10)),
+    insuranceCount,
+    insurancePoints: Number((insuranceCount * positive(policy.insurancePointRate)).toFixed(10)),
+    activityCount: 1 + secondCount,
+    freePhone,
+    paid: specialOutcome.paid,
+    excluded: specialOutcome.excluded,
+    total: specialOutcome.total,
+  };
+}
+
+function isFreePhonePolicy(policy = {}) {
+  return policy?.policyType === 'free_phone' || policy?.policy_type === 'free_phone'
+    || policy?.policyTitle === '무료폰 특가' || policy?.title === '무료폰 특가';
+}
+
+export function latestActiveSales(rows = []) {
+  const latest = new Map();
+  (rows || []).forEach((row, index) => {
+    const key = String(row?.logical_sale_id || row?.id || `row-${index}`);
+    const previous = latest.get(key);
+    const revision = Number(row?.revision || 0);
+    if (!previous || revision >= Number(previous?.revision || 0)) latest.set(key, row);
+  });
+  return [...latest.values()].filter(row => !row?.deleted && row?.status !== 'cancelled');
+}
+
+export function calculateMonthlySaleLedger({
+  sales = [], currentPolicy = {}, monthsEmployed = 0, activityRate = 0,
+  activityCap = 2300000, minimumGuarantee = 0, positionAllowance = 0,
+  approvedMobileSpotPay = 0, extras = {},
+} = {}) {
+  const activeSales = latestActiveSales(sales);
+  const saleResults = activeSales.map(sale => calculateMobileSale(sale, currentPolicy));
+  const sums = saleResults.reduce((acc, result) => ({
+    activityCount: acc.activityCount + result.activityCount,
+    mobilePlanPay: acc.mobilePlanPay + result.paid.plan,
+    vasPay: acc.vasPay + result.paid.vas + result.paid.insurance,
+    bundle2ndPay: acc.bundle2ndPay + result.paid.second,
+    spotPay: acc.spotPay + result.paid.spot,
+    performancePoints: acc.performancePoints + result.performancePoints,
+    insurancePoints: acc.insurancePoints + result.insurancePoints,
+  }), { activityCount: 0, mobilePlanPay: 0, vasPay: 0, bundle2ndPay: 0, spotPay: 0, performancePoints: 0, insurancePoints: 0 });
+  const tenurePay = calculateActivitySupport({ monthsEmployed, activityCount: sums.activityCount, rate: activityRate, cap: activityCap });
+  const settlement = calculatePayrollSettlement({
+    minimumGuarantee, tenurePay, mobilePlanPay: sums.mobilePlanPay,
+    bundle2ndPay: sums.bundle2ndPay, vasPay: sums.vasPay,
+    approvedMobileSpotPay: positive(approvedMobileSpotPay) + sums.spotPay,
+    positionAllowance, extras,
+  });
+  return { activeSales, saleResults, ...sums, tenurePay, settlement, total: settlement.total };
 }
 
 export function calculatePayrollSettlement({

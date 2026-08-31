@@ -4,6 +4,8 @@ export {
   calculateActivitySupport, calculateFreePhoneSpecialOutcome, summarizeHomeStatuses,
   calculateFlatIncentive, calculateMatrixIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
+  CURRENT_POLICY_VERSION, createPolicySnapshot, resolveSalePolicySnapshot,
+  calculateMobileSale, latestActiveSales, calculateMonthlySaleLedger,
   buildHomeBundlesFromOrders, calculateHomePolicyFromOrders,
 } from './policyEngine.js';
 

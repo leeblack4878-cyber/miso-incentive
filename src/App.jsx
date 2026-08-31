@@ -15,6 +15,7 @@ import {
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
+  CURRENT_POLICY_VERSION, createPolicySnapshot,
   calculateHomePolicyFromOrders as calculateHomePolicyEngine,
 } from './policyRules';
 
@@ -81,6 +82,14 @@ function saleSchemaVersion(sale){
 }
 function withCurrentSaleSchema(meta={}){
   return {...(meta||{}), schemaVersion:CURRENT_SALE_SCHEMA_VERSION};
+}
+function currentPolicySnapshot(config={}){
+  return createPolicySnapshot({
+    version:CURRENT_POLICY_VERSION,
+    matrixRates:config.matrix||[],
+    vasRates:config.vas||[],
+    bundleRates:config.bundle2nd||[],
+  });
 }
 function legacySaleBadge(sale){
   return saleSchemaVersion(sale) < CURRENT_SALE_SCHEMA_VERSION;
@@ -6622,6 +6631,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
         const nextMeta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale.source_meta||{}, {
           legacySchemaVersion:saleSchemaVersion(editingSale),
+          policySnapshot:editingSale.source_meta?.policySnapshot||currentPolicySnapshot(config),
           ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:newIsFreePhone?'free_phone':'standard',replacementAmount:newIsFreePhone?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
         }));
@@ -6694,12 +6704,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);
         legacyBaseOverride={...base,matrix};
       }
+      const salePolicySnapshot=currentPolicySnapshot(config);
       const saved=await createCustomerSaleAndTasks({
         userId:currentEmp.id,customerName:customer,saleDate,
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
-        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,exceptionRequestedAmount:Number(mobileSpecialExceptionAmount||0)||null,exceptionStatus:Number(mobileSpecialExceptionAmount||0)>0?'pending':null} : null}
       });
       if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending'})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
@@ -6748,7 +6759,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const replacement=freePhone?0:requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',policyType:freePhone?'free_phone':'standard',replacementAmount:freePhone?0:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',policyType:freePhone?'free_phone':'standard',replacementAmount:freePhone?0:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
         }).eq('id',saved.saleId);
         saved._special={matrixFee,vasFee,replacement};
       }

@@ -21,6 +21,12 @@ test('과거 판매 수정은 이전 source_meta를 보존 병합한다', async 
   assert.match(source, /legacySchemaVersion:\s*saleSchemaVersion\(editingSale\)/);
 });
 
+test('신규 판매는 정책 스냅샷을 저장하고 수정 시 기존 정책을 유지한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /policySnapshot:salePolicySnapshot/);
+  assert.match(source, /editingSale\.source_meta\?\.policySnapshot\|\|currentPolicySnapshot\(config\)/);
+});
+
 test('저장 전에 모바일과 홈 중복 가능성을 확인한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /중복 등록 가능성이 있어요/);
