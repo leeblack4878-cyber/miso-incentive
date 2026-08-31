@@ -1164,6 +1164,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
+  const [policyBlockedMonths, setPolicyBlockedMonths] = useState([]);
   const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
@@ -1393,6 +1394,25 @@ export default function App({ authUser, authProfile, onSignOut }) {
     } catch (e) { console.error('MONTH LOCK SAVE ERROR:', e); setDbError(`월 마감 설정 실패: ${friendlyError(e)}`); }
   };
 
+  const loadPolicyBlockedMonths = useCallback(async () => {
+    try {
+      const {data,error}=await supabase.from('app_config').select('value').eq('config_key','policy_blocked_months').maybeSingle();
+      if(error)throw error;
+      setPolicyBlockedMonths(Array.isArray(data?.value)?data.value:[]);
+    } catch(e){console.error('POLICY INPUT BLOCK LOAD ERROR',e);setPolicyBlockedMonths([]);}
+  },[]);
+
+  const togglePolicyInputBlock = async (targetMonth, block) => {
+    if(!block){
+      const ok=await showAppConfirm({title:`${monthLabel(targetMonth)} 입력을 시작할까요?`,message:'지급기준 정책 수정과 검증이 모두 끝난 경우에만 입력을 열어주세요.',confirmLabel:'입력 시작'});
+      if(!ok)return;
+    }
+    const next=block?[...new Set([...policyBlockedMonths,targetMonth])]:policyBlockedMonths.filter(m=>m!==targetMonth);
+    const {error}=await supabase.from('app_config').upsert({config_key:'policy_blocked_months',value:next},{onConflict:'config_key'});
+    if(error){setDbError(`정책 준비 잠금 저장 실패: ${friendlyError(error)}`);return;}
+    setPolicyBlockedMonths(next);
+  };
+
   const loadPersonalGoals = useCallback(async () => {
     if (!authUser?.id) return;
 
@@ -1585,15 +1605,15 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   const loadShadowLedgers = useCallback(async (m,list)=>{
     const ids=(list||[]).map(e=>e.id),mapped={};
-    ids.forEach(id=>{mapped[id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0};});
+    ids.forEach(id=>{mapped[id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0,details:[]};});
     if(!ids.length){setShadowLedgerMap(mapped);return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
     const {data,error}=await supabase.from('customer_sales')
-      .select('id,user_id,sale_date,source_meta')
+      .select('id,user_id,sale_date,metric_label,source_meta,customers(customer_name)')
       .eq('source_type','mobile').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to);
     if(error){console.error('SHADOW LEDGER LOAD ERROR',error);setShadowLedgerMap(mapped);return;}
     (data||[]).forEach(sale=>{
-      const row=mapped[sale.user_id]||(mapped[sale.user_id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0});
+      const row=mapped[sale.user_id]||(mapped[sale.user_id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0,details:[]});
       row.totalSales+=1;
       if(!sale.source_meta?.policySnapshot){row.missingSnapshots+=1;return;}
       const result=calculateMobileSale(sale,currentPolicySnapshot(config));
@@ -1601,6 +1621,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       row.shadowMobilePay+=Number(result.paid.plan||0)+Number(result.paid.vas||0)+Number(result.paid.insurance||0)+Number(result.paid.second||0);
       row.performancePoints+=Number(result.performancePoints||0);
       row.insurancePoints+=Number(result.insurancePoints||0);
+      row.details.push({id:sale.id,date:sale.sale_date,customer:sale.customers?.customer_name||'고객명 없음',label:sale.metric_label||'모바일',...result});
     });
     setShadowLedgerMap(mapped);
   },[config]);
@@ -1636,6 +1657,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
+  useEffect(() => { loadPolicyBlockedMonths(); }, [loadPolicyBlockedMonths]);
   useEffect(() => { loadPersonalGoals(); }, [loadPersonalGoals]);
 
   useEffect(() => {
@@ -1655,6 +1677,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); loadHomePolicies(month, employees); loadShadowLedgers(month, employees); } }, [month]); // eslint-disable-line
   // 홈 고객별 저장/수정으로 일일 실적이 바뀌면 새 정책 금액도 다시 계산합니다.
   useEffect(() => { if (employees.length) loadHomePolicies(month, employees); }, [dailyRecords]); // eslint-disable-line
+  // 판매 저장·수정·삭제로 일일 집계가 바뀌면 관리자 그림자 원장도 즉시 다시 불러옵니다.
+  useEffect(() => { if (employees.length) loadShadowLedgers(month, employees); }, [dailyRecords]); // eslint-disable-line
 
   useEffect(()=>{
     if(!employees.length)return;
@@ -1775,7 +1799,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   // 실적입력 탭 변경을 표시만 해두고, 아래 자동저장 타이머가 실제 저장을 맡음
   const updateDraft = (next) => {
-    if (lockedMonths.includes(month)) return;
+    if (lockedMonths.includes(month) || policyBlockedMonths.includes(month)) return;
     setDraft(next);
     setDirty(true);
   };
@@ -2040,6 +2064,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
           dailyDays={dailyRecords[empId] || {}} allDailyRecords={dailyRecords} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
+          policyInputBlocked={policyBlockedMonths.includes(month)}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
           prevMonthTotal={prevMonthTotal}
@@ -2064,6 +2089,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           loginBranch={loginEmp?.branch||''}
           canSwitchStores={isFullAdmin||isHQManager}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
+          policyInputBlocked={policyBlockedMonths.includes(month)} togglePolicyInputBlock={togglePolicyInputBlock}
         />
       )}
     </div>
@@ -5194,7 +5220,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   </div>;
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [showNet,setShowNet]=useState(false);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
@@ -5274,7 +5300,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   },[authUser?.id,month,dailyDays]);
 
   const resetOwnMonthPerformance=async()=>{
-    if(monthLocked)return showLegacyAlert('마감된 월은 초기화할 수 없어요.');
+    if(monthLocked||policyInputBlocked)return showLegacyAlert(policyInputBlocked?'정책 준비 중인 월은 초기화할 수 없어요.':'마감된 월은 초기화할 수 없어요.');
     if(String(resetPhrase).trim()!=='당월실적초기화')return;
     if(!authUser?.id || currentEmp?.id!==authUser.id)return showLegacyAlert('본인의 실적만 초기화할 수 있어요.');
     setResetBusy(true);
@@ -5445,6 +5471,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
+          {policyInputBlocked && (
+            <div className="mb-3 bg-amber-50 border border-amber-100 text-amber-700 text-xs rounded-lg p-3 flex items-center gap-2">
+              <Info size={13} className="shrink-0" /> {monthLabel(month)} 지급기준 정책을 준비하고 있어요. 정책 확정 후 입력이 열립니다.
+            </div>
+          )}
 
           <DailyInputTab
             month={month}
@@ -5454,7 +5485,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             draft={draft}
             setDraft={setDraft}
             pay={pay}
-            locked={monthLocked}
+            locked={monthLocked||policyInputBlocked}
             currentEmp={currentEmp}
             authUser={authUser}
             resetMonthOpen={resetMonthOpen}
@@ -5498,7 +5529,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             homeProps={{
               userId:authUser?.id,
               month,
-              locked:monthLocked,
+              locked:monthLocked||policyInputBlocked,
               dailyDays,
               saveDailyDay
             }}
@@ -9455,7 +9486,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
     { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
@@ -9511,6 +9542,12 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
               {monthLocked ? '🔒 마감됨 (해제)' : '마감하기'}
             </button>
           )}
+          {isFullAdmin && (
+            <button onClick={() => togglePolicyInputBlock(month,!policyInputBlocked)}
+              className={`text-xs font-medium px-3 py-2 rounded-lg border ${policyInputBlocked?'bg-amber-50 text-amber-700 border-amber-200':'bg-white text-gray-600 border-gray-200'}`}>
+              {policyInputBlocked?'🛠 정책 준비 중 (입력 열기)':'정책 입력 잠금'}
+            </button>
+          )}
           <button onClick={downloadCSV} className="flex items-center gap-1 text-xs font-medium px-3 py-2 rounded-lg bg-emerald-600 text-white">
             <UploadCloud size={13} /> 엑셀 다운로드
           </button>
@@ -9520,6 +9557,11 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {monthLocked && (
         <div className="mb-4 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
           <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감된 달이에요. 모든 직원의 실적 입력·수정이 잠겨 있어요.
+        </div>
+      )}
+      {policyInputBlocked && (
+        <div className="mb-4 bg-amber-50 border border-amber-100 text-amber-700 text-xs rounded-lg p-3 flex items-center gap-2">
+          <Info size={13} className="shrink-0" /> {monthLabel(month)}은 지급기준 정책 준비 중이라 직원 실적 입력이 잠겨 있어요. 정책 수정과 검증을 마친 뒤 위의 ‘입력 열기’를 눌러주세요.
         </div>
       )}
 
@@ -9641,6 +9683,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 }
 
 function CalculationAuditPanel({month,rows=[]}){
+  const [expanded,setExpanded]=useState('');
   const covered=rows.filter(r=>r.calculationAudit?.comparable).length;
   const different=rows.filter(r=>r.calculationAudit?.comparable&&Number(r.calculationAudit?.difference||0)!==0).length;
   return <div className="space-y-4">
@@ -9652,10 +9695,11 @@ function CalculationAuditPanel({month,rows=[]}){
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
       <div className="border-b px-4 py-3"><div className="text-sm font-bold">{monthLabel(month)} 직원별 검증 결과</div><div className="text-[11px] text-gray-400">스냅샷이 없는 이전 판매는 기존 방식으로 유지하며 비교 대상에서 제외됩니다.</div></div>
       <div className="divide-y">
-        {rows.map(r=>{const a=r.calculationAudit||{};const complete=a.comparable;return <div key={r.id} className="px-4 py-3">
-          <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">{r.name} <span className="text-[10px] font-normal text-gray-400">{displayStoreName(r.branch)}</span></div><div className="mt-1 text-[11px] text-gray-500">판매 {a.totalSales||0}건 · 스냅샷 {a.snapshotSales||0}건 · 이전방식 {a.missingSnapshots||0}건</div></div>
+        {rows.map(r=>{const a=r.calculationAudit||{};const complete=a.comparable;const open=expanded===r.id;return <div key={r.id} className="px-4 py-3">
+          <button type="button" onClick={()=>setExpanded(open?'':r.id)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">{r.name} <span className="text-[10px] font-normal text-gray-400">{displayStoreName(r.branch)}</span></div><div className="mt-1 text-[11px] text-gray-500">판매 {a.totalSales||0}건 · 스냅샷 {a.snapshotSales||0}건 · 이전방식 {a.missingSnapshots||0}건</div></div>
           {complete?<span className={`rounded-full px-2 py-1 text-[10px] font-bold ${Number(a.difference||0)===0?'bg-emerald-50 text-emerald-600':'bg-red-50 text-red-600'}`}>{Number(a.difference||0)===0?'일치':`차이 ${won(a.difference)}`}</span>:<span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">이전정책 포함</span>}</div>
-          {complete&&<div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><div className="rounded-lg bg-gray-50 px-3 py-2">기존 모바일 <b className="float-right">{won(a.existingMobilePay)}</b></div><div className="rounded-lg bg-gray-50 px-3 py-2">새 원장 <b className="float-right">{won(a.shadowMobilePay)}</b></div></div>}
+          {complete&&<div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><div className="rounded-lg bg-gray-50 px-3 py-2">기존 모바일 <b className="float-right">{won(a.existingMobilePay)}</b></div><div className="rounded-lg bg-gray-50 px-3 py-2">새 원장 <b className="float-right">{won(a.shadowMobilePay)}</b></div></div>}</button>
+          {open&&<div className="mt-3 space-y-2 border-t pt-3">{(a.details||[]).length===0?<div className="rounded-lg bg-gray-50 p-3 text-[11px] text-gray-400">상세 계산이 가능한 신규 판매가 아직 없어요.</div>:(a.details||[]).map(d=><div key={d.id} className="rounded-xl border border-gray-100 p-3 text-[11px]"><div className="flex justify-between gap-2"><b>{d.date} · {d.customer}</b><span className="text-violet-600">{d.policyVersion}</span></div><div className="mt-0.5 text-gray-400">{d.label}{d.freePhone?' · 무료폰 특가':''}</div><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-gray-600"><span>요금제 <b className="float-right">{won(d.paid?.plan)}</b></span><span>VAS·보험 <b className="float-right">{won(Number(d.paid?.vas||0)+Number(d.paid?.insurance||0))}</b></span><span>2ND <b className="float-right">{won(d.paid?.second)} · {Number(d.performancePoints||0).toFixed(1)}P</b></span><span>전략P <b className="float-right">{Number(d.insurancePoints||0).toFixed(1)}P</b></span></div>{d.freePhone&&<div className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-amber-700">무료폰 제외: 요금제 {won(d.excluded?.plan)} · VAS {won(d.excluded?.vas)} · 보험 {won(d.excluded?.insurance)}</div>}</div>)}</div>}
         </div>})}
       </div>
     </div>

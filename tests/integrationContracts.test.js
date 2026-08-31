@@ -33,6 +33,9 @@ test('관리자 계산 검증은 기존 급여를 바꾸지 않고 판매별 그
   assert.match(source, /SHADOW LEDGER LOAD ERROR/);
   assert.match(source, /직원에게 표시되는 급여는 변경하지 않고/);
   assert.match(source, /missingSnapshots===0/);
+  assert.match(source, /판매 저장·수정·삭제로 일일 집계가 바뀌면 관리자 그림자 원장도 즉시/);
+  assert.match(source, /정책 준비 중이라 직원 실적 입력이 잠겨/);
+  assert.match(source, /policy_blocked_months/);
 });
 
 test('저장 전에 모바일과 홈 중복 가능성을 확인한다', async () => {
