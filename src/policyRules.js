@@ -3,6 +3,7 @@ export {
   allowedSecondVas, summarizeVasQuality, calculateSecondPolicy,
   calculateActivitySupport, calculateFreePhoneSpecialOutcome, summarizeHomeStatuses,
   calculateFlatIncentive, calculateMatrixIncentive, calculateMobileCommissionParts,
+  calculatePayrollSettlement,
   buildHomeBundlesFromOrders, calculateHomePolicyFromOrders,
 } from './policyEngine.js';
 
