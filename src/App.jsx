@@ -26,6 +26,11 @@ import {
   managerCompanyGoalShare,
   calculateSeptemberManagerIncentive,
 } from './managerPolicyEngine';
+import {
+  SEPTEMBER_POLICY_MONTH, SEPTEMBER_POLICY_VERSION, SEPTEMBER_TV_PLAN, SEPTEMBER_MATRIX_COLUMNS,
+  SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale,
+  calculateSeptemberBundleSale, calculateSeptemberSono, calculateSeptemberTailoredTier, septemberConfig,
+} from './septemberPolicy';
 
 let feedbackBridge={toast:null,confirm:null};
 function showAppToast(message,{tone='success',title=''}={}){feedbackBridge.toast?.({message,title,tone})}
@@ -80,10 +85,14 @@ function PwaInstallButton(){
    - DB audit trigger와 함께 원본 변경 이력을 보존
 */
 const CURRENT_SALE_SCHEMA_VERSION = 3;
-const FREE_PHONE_SPECIAL_TITLE = '무료폰 특가';
-function isFreePhoneSpecial(policy={}){
-  return policy?.policyType==='free_phone'||policy?.policy_type==='free_phone'||policy?.policyTitle===FREE_PHONE_SPECIAL_TITLE||policy?.title===FREE_PHONE_SPECIAL_TITLE;
+const FREE_PHONE_SPECIAL_TITLE = '무료폰 특가'; // 8월 이전 저장건 호환 전용
+function isIncentiveUnpaidSpecial(policy={}){
+  return policy?.policyType==='incentive_unpaid'||policy?.policy_type==='incentive_unpaid'
+    ||policy?.policyType==='free_phone'||policy?.policy_type==='free_phone'
+    ||policy?.policyTitle===FREE_PHONE_SPECIAL_TITLE||policy?.title===FREE_PHONE_SPECIAL_TITLE;
 }
+const isFreePhoneSpecial=isIncentiveUnpaidSpecial;
+function septemberPlanGroup(ci){return ['115','youth85','85','33plus','weak47','other'][Number(ci)]||'other'}
 
 function saleSchemaVersion(sale){
   return Number(sale?.schema_version || sale?.source_meta?.schemaVersion || 1);
@@ -93,7 +102,7 @@ function withCurrentSaleSchema(meta={}){
 }
 function currentPolicySnapshot(config={}){
   return createPolicySnapshot({
-    version:CURRENT_POLICY_VERSION,
+    version:config.policyVersion||CURRENT_POLICY_VERSION,
     matrixRates:config.matrix||[],
     vasRates:config.vas||[],
     bundleRates:config.bundle2nd||[],
@@ -394,6 +403,19 @@ function householdRenewBaseKey(speed, plan){
 function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).find(x=>x.key===key)?.rate||0); }
 function calculateHouseholdRenew(item,config){
   const speed=item?.speed||'1g';
+  if(config?.policyVersion===SEPTEMBER_POLICY_VERSION){
+    const invalid=!!item?.downSpeed;
+    const premiumSafe=item?.plan==='premiumSafe';
+    const baseKey=premiumSafe
+      ? `renewPremiumSafe${speed==='1g'?'1G':speed==='500'?'500':'100'}`
+      : `renewOther${speed==='1g'?'1G':speed==='500'?'500':'100'}`;
+    const base=invalid?0:renewRate(config,baseKey);
+    const speedUpPay=!invalid&&item?.speedUp?renewRate(config,'renewSpeedUp'):0;
+    const hsKey=speed==='1g'?'renewSimul1G':speed==='500'?'renewSimul500':'';
+    const hsPay=!invalid&&item?.hsSimul&&hsKey?renewRate(config,hsKey):0;
+    const tvPay=!invalid&&item?.tvUpsell?renewRate(config,'renewTvUpsell'):0;
+    return {invalid,baseKey,base,soloDiscount:0,hsKey,hsPay,tvPay,speedUpPay,amount:Math.max(0,base+speedUpPay+hsPay+tvPay)};
+  }
   const invalid=speed==='100'||!!item?.downSpeed||!!item?.temporaryUpgradeSame;
   const baseKey=householdRenewBaseKey(speed,item?.plan||'premiumSafe');
   const base=invalid?0:renewRate(config,baseKey);
@@ -410,13 +432,14 @@ function aggregateHouseholdRenewals(items,config){
     if(c.invalid)return;
     if(c.baseKey&&c.base>0)counts[c.baseKey]=(counts[c.baseKey]||0)+1;
     if(item.hsSimul&&c.hsKey&&c.hsPay>0)counts[c.hsKey]=(counts[c.hsKey]||0)+1;
-    if(item.tvUpsell&&!item.homeOnly&&c.tvPay>0)counts.renewTvUpsell=(counts.renewTvUpsell||0)+1;
+    if(item.speedUp&&c.speedUpPay>0)counts.renewSpeedUp=(counts.renewSpeedUp||0)+1;
+    if(item.tvUpsell&&c.tvPay>0)counts.renewTvUpsell=(counts.renewTvUpsell||0)+1;
     soloDiscount+=c.soloDiscount;
   });
   return {counts,soloDiscount};
 }
 function emptyHouseholdRenewForm(){
-  return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,downSpeed:false,temporaryUpgradeSame:false};
+  return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,speedUp:false,downSpeed:false,temporaryUpgradeSame:false};
 }
 
 
@@ -939,9 +962,14 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0)
   const homeAddonPay = homePolicy ? Number(homePolicy.homeAddonPay||0) : calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []);
   const renewPay = Math.max(0, calculateFlatIncentive(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = calculateFlatIncentive(draft.mnpBundle || {}, config.mnpBundle || []);
-  const sonoPay = calculateFlatIncentive(draft.sono || {}, config.sono || []);
+  const septemberPolicy=config.policyVersion===SEPTEMBER_POLICY_VERSION;
+  const sonoPay = septemberPolicy
+    ? (config.sono||[]).reduce((sum,item)=>sum+calculateSeptemberSono(Number(draft.sono?.[item.key]||0),Number(item.rate||0),Number(item.achievedRate||item.rate||0)),0)
+    : calculateFlatIncentive(draft.sono || {}, config.sono || []);
   const custRegBonus = tierBonus(Number(draft.custRegCount || 0), config.custRegTiers);
-  const tailoredBonus = tierBonus(Number(draft.tailoredCount || 0), config.tailoredTiers);
+  const tailoredBonus = septemberPolicy
+    ? calculateSeptemberTailoredTier(Number(draft.tailoredCount||0)).amount
+    : tierBonus(Number(draft.tailoredCount || 0), config.tailoredTiers);
   const tailoredAmountBonus = Number(draft.tailoredAmount || 0);
 
   const settlement=calculatePayrollSettlement({
@@ -1351,14 +1379,15 @@ export default function App({ authUser, authProfile, onSignOut }) {
       const { data, error } = await supabase.from('app_config').select('value').eq('config_key', 'config').maybeSingle();
       if (error) throw error;
       if (data && data.value) {
-        setConfig({ ...defaultConfig(), ...data.value, vas: mergeDefaultVas(data.value.vas) });
+        const base={ ...defaultConfig(), ...data.value, vas: mergeDefaultVas(data.value.vas) };
+        setConfig(month===SEPTEMBER_POLICY_MONTH?septemberConfig(base):base);
       } else {
         const def = defaultConfig();
         await supabase.from('app_config').upsert({ config_key: 'config', value: def }, { onConflict: 'config_key' });
-        setConfig(def);
+        setConfig(month===SEPTEMBER_POLICY_MONTH?septemberConfig(def):def);
       }
-    } catch (e) { console.error('CONFIG LOAD ERROR:', e); setConfig(defaultConfig()); }
-  }, []);
+    } catch (e) { console.error('CONFIG LOAD ERROR:', e); setConfig(month===SEPTEMBER_POLICY_MONTH?septemberConfig(defaultConfig()):defaultConfig()); }
+  }, [month]);
 
   const loadStores = useCallback(async () => {
     try {
@@ -1720,6 +1749,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, [monthRecords, empId]);
 
   const persistConfig = async (next) => {
+    if(month===SEPTEMBER_POLICY_MONTH){
+      showLegacyAlert('9월 지급정책은 회사 확정 정책으로 고정되어 있어 화면에서 수정할 수 없어요.');
+      return;
+    }
     setConfig(next);
     try {
       const { error } = await supabase.from('app_config').upsert({ config_key: 'config', value: next }, { onConflict: 'config_key' });
@@ -2371,9 +2404,8 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
 function qualityPct(n,d){return d>0?Number((Number(n||0)/d*100).toFixed(1)):0}
 function mobileStrategicPoint({strategicPlan=false,vasKeys=[],bundleVasMap={}}={}){
   const keys=[...(vasKeys||[]),...Object.values(bundleVasMap||{}).flat()];
-  const insurance=keys.filter(k=>k==='vasPhonePass'||k==='vasSafePass').length;
-  const strategicVas=keys.filter(k=>k==='vasKyobo'||k==='vasVcolor').length;
-  return Number(((strategicPlan?0.5:0)+insurance*0.8+strategicVas).toFixed(10));
+  const points={vasKyobo:1,vasVcolor:1,vasVcolorBundle:1,vasPhonePass:.8,vasSafePass:.8,vasVcolorMusic:.3,vasBellMoya:.3,vasDualNumber:.4,vasDesignatedNumber:.2,vasDaemyung:2,vasStrategicPlan:.5};
+  return Number(((strategicPlan?0.5:0)+keys.reduce((sum,key)=>sum+Number(points[key]||0),0)).toFixed(10));
 }
 function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
   const mobile=(sales||[]).filter(x=>x.source_type==='mobile');
@@ -4575,7 +4607,7 @@ function SpecialSalePolicyAdmin({ authUserId }) {
   return <div className="space-y-3"><div className="bg-amber-50 border border-amber-100 rounded-xl p-4"><div className="font-bold text-sm">🏷️ 특판·지인판매 정책</div><div className="text-xs text-gray-500 mt-1">최고관리자만 정책을 만들어요. 실적은 인정하고 요금제/VAS 수수료 대신 대체 인센티브를 적용합니다.</div><div className="grid grid-cols-2 gap-2 mt-3"><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="정책명" className="border rounded p-2 text-xs"/><input value={fmtInputNumber(form.replacement_amount)} onChange={e=>setForm({...form,replacement_amount:e.target.value.replace(/\D/g,'')})} placeholder="건당 대체 지급금액" className="border rounded p-2 text-xs"/><input type="date" value={form.start_date} onChange={e=>setForm({...form,start_date:e.target.value})} className="border rounded p-2 text-xs"/><input type="date" value={form.end_date} onChange={e=>setForm({...form,end_date:e.target.value})} className="border rounded p-2 text-xs"/></div><input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="설명 (선택)" className="mt-2 w-full border rounded p-2 text-xs"/><button onClick={add} className="mt-2 w-full bg-amber-500 text-white rounded-lg py-2 text-xs font-bold">정책 추가</button><div className="mt-3 divide-y">{rows.map(r=><div key={r.id} className="py-2 flex justify-between text-xs"><div><b>{r.title}</b> · {won(r.replacement_amount)}<div className="text-[10px] text-gray-400">{r.start_date}~{r.end_date}</div></div><button onClick={()=>toggle(r)} className={r.active?'text-emerald-600':'text-gray-400'}>{r.active?'활성':'비활성'}</button></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">예외 지급금액 승인 {pending.length}건</div>{pending.length===0?<div className="py-6 text-center text-xs text-gray-400">승인 대기 예외금액이 없어요.</div>:pending.map(x=><div key={x.id} className="p-3 border-b text-xs"><b>{x.profiles?.name||'직원'} · {x.customers?.customer_name||'고객'}</b><div className="mt-1 text-gray-500">{x.metric_label} · 요청 {won(x.source_meta?.specialPolicy?.exceptionRequestedAmount)}</div><div className="grid grid-cols-2 gap-2 mt-2"><button onClick={()=>decide(x,false)} className="py-2 bg-gray-100 rounded">기본금액 적용</button><button onClick={()=>decide(x,true)} className="py-2 bg-amber-500 text-white rounded font-bold">요청금액 승인</button></div></div>)}</div></div>;
 }
 
-function SpotAdmin({ authUserId, isFullAdmin }) {
+function SpotAdmin({ authUserId, isFullAdmin, month }) {
   const [policies,setPolicies]=useState([]);
   const [claims,setClaims]=useState([]);
   const [form,setForm]=useState({
@@ -4641,10 +4673,12 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
   };
 
   const pendingClaims=claims.filter(c=>c.status==='pending'); const doneClaims=claims.filter(c=>c.status!=='pending');
+  const septemberLocked=month===SEPTEMBER_POLICY_MONTH;
   return <div className="space-y-3">
+    {septemberLocked&&<div className="rounded-xl border border-violet-100 bg-violet-50 p-4"><div className="text-sm font-bold text-violet-800">9월 정책은 회사 확정본으로 운영돼요</div><div className="mt-1 text-xs text-violet-600">직원·매장 관리자는 스팟이나 특가 정책을 직접 만들거나 수정할 수 없어요. 확정된 특가&지인정책만 판매 입력에서 선택합니다.</div><div className="mt-3 divide-y divide-violet-100 rounded-xl bg-white px-3">{SEPTEMBER_SPECIAL_SALES.map(p=><div key={p.key} className="flex items-center justify-between gap-2 py-2 text-[11px]"><span className="font-semibold text-gray-700">{p.model} · {p.saleType}</span><span className="text-violet-700">기존 정책 +{won(p.additionalAmount)}</span></div>)}</div></div>}
     {claimLoadError&&<div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-xs">스팟 승인 목록을 불러오지 못했어요: {claimLoadError}</div>}
     <div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">✅ 승인 대기 {pendingClaims.length}건</div><div className="text-xs text-gray-400">대시보드의 스팟 승인 건과 같은 목록이에요.</div></div><div className="divide-y">{pendingClaims.length===0?<div className="py-8 text-center text-xs text-gray-400">현재 승인 대기 스팟이 없어요.</div>:pendingClaims.map(c=>{const x=claimEdits[c.id]||{},direct=!c.policy_id;return <div key={c.id} className="p-4 text-xs"><div className="flex justify-between"><div><b>{c.profiles?.name||'직원'} · {c.profiles?.store_name||''}</b><div className="text-[10px] text-gray-400">{c.claim_date} · {c.customer_name||'고객 없음'} · {direct?'직접 입력':'등록 정책'}</div></div><span className="text-orange-500">확인대기</span></div><div className="space-y-2 mt-3"><input value={x.title||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,title:e.target.value}})} placeholder="정책명" className="w-full border rounded p-2"/><input value={x.amount||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,amount:e.target.value.replace(/\D/g,'')}})} placeholder="최종 승인 금액" className="w-full border rounded p-2"/><input value={x.memo||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,memo:e.target.value}})} placeholder="관리자 메모" className="w-full border rounded p-2"/></div><div className="grid grid-cols-2 gap-2 mt-3"><button onClick={()=>decide(c.id,'rejected')} className="py-2 bg-red-50 text-red-500 rounded">반려</button><button onClick={()=>decide(c.id,'approved')} className="py-2 bg-emerald-600 text-white rounded font-bold">승인</button></div></div>})}</div></div>
-    <div className="bg-white border rounded-xl p-4">
+    {!septemberLocked&&<div className="bg-white border rounded-xl p-4">
       <div className="font-bold">🔥 스팟 정책 등록</div>
       <div className="grid grid-cols-2 gap-2 mt-3">
         <input placeholder="정책명" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} className="border rounded p-2 text-xs"/>
@@ -4674,9 +4708,9 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
       </div>
       <input placeholder="설명 (선택)" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} className="mt-2 w-full border rounded p-2 text-xs"/>
       <button onClick={add} className="mt-2 w-full bg-orange-500 text-white rounded-lg py-2 text-xs font-bold">정책 등록</button>
-    </div>
+    </div>}
 
-    <div className="bg-white border rounded-xl overflow-hidden">
+    {!septemberLocked&&<div className="bg-white border rounded-xl overflow-hidden">
       <div className="px-4 py-3 border-b"><div className="font-bold text-sm">등록된 정책 관리</div><div className="text-xs text-gray-400">명칭·금액·기간 수정 가능</div></div>
       <div className="divide-y">{policies.map(p=><div key={p.id} className="p-3 text-xs">
         {editingPolicyId===p.id?<div className="space-y-2">
@@ -4706,9 +4740,9 @@ function SpotAdmin({ authUserId, isFullAdmin }) {
         </div>:<div className="flex justify-between gap-2"><div><b>{p.title} · {won(p.amount)}</b><div className="text-[10px] text-gray-400">{p.start_date} ~ {p.end_date} · {p.active?'활성':'비활성'}</div></div>
           <button onClick={()=>{setEditingPolicyId(p.id);setEditPolicy({...p,amount:String(p.amount||'')})}} className="text-violet-600">수정</button></div>}
       </div>)}</div>
-    </div>
+    </div>}
 
-    {isFullAdmin&&<SpecialSalePolicyAdmin authUserId={authUserId} />}
+    {isFullAdmin&&!septemberLocked&&<SpecialSalePolicyAdmin authUserId={authUserId} />}
 
     {false&&<div className="bg-white border rounded-xl overflow-hidden">
       <div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 스팟 검토</div><div className="text-xs text-gray-400">직접 입력 건은 수정 후 승인하세요.</div></div>
@@ -5746,7 +5780,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
   const [specialPolicies,setSpecialPolicies]=useState([]);
   // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
-  const [mobileSaleKind,setMobileSaleKind]=useState('normal'); // normal | special
+  const [mobileSaleKind,setMobileSaleKind]=useState('normal'); // normal | special | incentive_unpaid
   const [mobileSpecialPolicyId,setMobileSpecialPolicyId]=useState('');
   const [mobileSpecialExceptionAmount,setMobileSpecialExceptionAmount]=useState('');
   const [extraInput,setExtraInput]=useState(null); // sono | tailored | customerReg
@@ -5768,6 +5802,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
 
   const dayMatrix = day.matrix;
+  const activeMatrixCols=month===SEPTEMBER_POLICY_MONTH?SEPTEMBER_MATRIX_COLUMNS:MATRIX_COLS;
   const isDayOff = !!day.dayOff;
 
   const setDayOff = async (nextOff) => {
@@ -5891,11 +5926,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         .order('start_date');
       setMobileSpotPolicies(data||[]);
       setMobileSpotPolicyId('');
-      const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
-      setSpecialPolicies(sp||[]);
+      if(month===SEPTEMBER_POLICY_MONTH){
+        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.map(p=>({
+          id:p.key,title:`${p.model} · ${p.saleType}`,replacement_amount:p.additionalAmount,
+          policy_type:'additive',start_date:'2026-09-01',end_date:'2026-09-30',...p,
+        })));
+      }else{
+        const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
+        setSpecialPolicies(sp||[]);
+      }
       if(!editingSale)setMobileSpecialPolicyId('');
     })();
-  }, [mobileSaleDraft, month, selectedDay]);
+  }, [mobileSaleDraft, month, selectedDay, editingSale]);
 
 
   const loadDaySales=useCallback(async()=>{
@@ -6119,7 +6161,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       if(homeSpotPolicyId){
         const {error}=await supabase.from('spot_claims').insert({policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',source_context:'home'}); if(error)throw error;
-      } else if(homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
+      } else if(month!==SEPTEMBER_POLICY_MONTH&&homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
         const {error}=await supabase.from('spot_claims').insert({policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null,source_context:'home'}); if(error)throw error;
       }
       if(homeExpenseOpen&&primarySaleId){
@@ -6624,8 +6666,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const vasTable=config.vas||DEFAULT_VAS;
     let bundleOffset=0, vasOffset=0;
     (bundleKeys||[]).forEach(k=>{
-      if((saleTypeMap?.[k]||'normal')!=='free')return;
-      bundleOffset += Number(bundleTable.find(x=>x.key===k)?.rate||0);
+      const saleType=saleTypeMap?.[k]||'normal';
+      const rate=Number(bundleTable.find(x=>x.key===k)?.rate||0);
+      const noInsurance=(vasMap?.[k]||[]).includes('vasNone');
+      const appleWithout115=k==='b_AppleWatch'&&Number(mobileSaleDraft?.ci)!==0;
+      if(month===SEPTEMBER_POLICY_MONTH){
+        bundleOffset+=calculateSeptemberBundleSale({rate,saleType,insuranceJoined:!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
+      }else if(saleType==='free')bundleOffset+=rate;
+      else return;
       (vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
         vasOffset += Number(vasTable.find(x=>x.key===v)?.rate||0);
       });
@@ -6655,8 +6703,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
       return showLegacyAlert(specialPolicies.length
-        ? '특판·지인판매에 적용할 정책을 선택해주세요.'
-        : '현재 적용 가능한 특판·지인판매 정책이 없어요. 관리자에게 정책 등록을 요청해주세요.');
+        ? '특가&지인정책에 적용할 모델과 가입 구분을 선택해주세요.'
+        : '현재 적용 가능한 특가&지인정책이 없어요.');
     }
     const saleDate=`${month}-${selectedDay}`;
     const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
@@ -6717,21 +6765,22 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const oldFree=bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{});
         const newFree=bundleFreeAmounts();
         const newPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
-        const newMatrixFee=mobileSpecialPolicyId?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
+        const unpaid=mobileSaleKind==='incentive_unpaid';
+        const newMatrixFee=unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
         const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
           (mobileBundleSaleTypeMap?.[bk]||'normal')==='free' ? [] : (keys||[])
         );
         const editAllVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
-        const newVasFee=mobileSpecialPolicyId?editAllVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0;
-        const newIsFreePhone=isFreePhoneSpecial(newPolicy);
-        const req=newIsFreePhone?0:Number(mobileSpecialExceptionAmount||0);
-        const newReplacement=mobileSpecialPolicyId?(newIsFreePhone?0:req>0?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0)):0;
+        const newVasFee=unpaid?editAllVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0;
+        const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
+        const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&month===SEPTEMBER_POLICY_MONTH?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints}):null;
+        const newReplacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??newPolicy?.replacement_amount??oldSp.replacementAmount??0):0;
         const oldReplacement=Number(oldSp.exceptionStatus==='approved'?oldSp.exceptionApprovedAmount:oldSp.exceptionStatus==='pending'?0:oldSp.replacementAmount||0);
         const nextMeta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale.source_meta||{}, {
           legacySchemaVersion:saleSchemaVersion(editingSale),
           policySnapshot:editingSale.source_meta?.policySnapshot||currentPolicySnapshot(config),
           ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
-          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:newIsFreePhone?'free_phone':'standard',replacementAmount:newIsFreePhone?0:Number(newPolicy?.replacement_amount||oldSp.replacementAmount||0),normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,exceptionRequestedAmount:req||null,exceptionStatus:req>0?'pending':null} : null
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:'additive',replacementAmount:newReplacement,normalMatrixFee:0,normalVasFee:0,eligible:!!(specialOutcome?.eligible??true),strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION} : unpaid?{policyId:null,policyTitle:'인센미지급 특가',policyType:'incentive_unpaid',replacementAmount:0,normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,policyVersion:SEPTEMBER_POLICY_VERSION}:null
         }));
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
@@ -6809,7 +6858,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
-          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,exceptionRequestedAmount:Number(mobileSpecialExceptionAmount||0)||null,exceptionStatus:Number(mobileSpecialExceptionAmount||0)>0?'pending':null} : null}
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyType:'additive'} : mobileSaleKind==='incentive_unpaid'?{policyType:'incentive_unpaid',policyTitle:'인센미지급 특가'}:null}
       });
       if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending'})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
 
@@ -6823,7 +6872,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           source_context:'mobile'
         });
         if (spotError) throw spotError;
-      } else if (mobileSpotDirectOpen && mobileSpotDirectTitle.trim() && Number(mobileSpotDirectAmount)>0) {
+      } else if (month!==SEPTEMBER_POLICY_MONTH && mobileSpotDirectOpen && mobileSpotDirectTitle.trim() && Number(mobileSpotDirectAmount)>0) {
         const {error:spotDirectError}=await supabase.from('spot_claims').insert({
           policy_id:null,
           user_id:currentEmp.id,
@@ -6843,8 +6892,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         if(expRows.length){ const {error:expenseError}=await supabase.from('sales_expenses').insert(expRows.map(x=>({user_id:currentEmp.id,source_sale_id:saved.saleId,expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null}))); if(expenseError)throw expenseError; }
       }
 
-      // 특판·지인판매 적용: 정상 실적은 그대로 올리고 요금제/VAS 수수료만 상쇄, 대체 인센티브 지급
-      if(mobileSaleKind==='special' && mobileSpecialPolicyId){
+      // 9월 특가&지인정책은 기존 인센티브에 추가 지급, 인센미지급 특가는 요금제·VAS·보험만 제외합니다.
+      if((mobileSaleKind==='special' && mobileSpecialPolicyId)||mobileSaleKind==='incentive_unpaid'){
         const policy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
         const matrixFee=Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0);
         const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
@@ -6852,14 +6901,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         );
         const allVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
         const vasFee=allVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0);
-        const freePhone=isFreePhoneSpecial(policy);
-        const requested=freePhone?0:Number(mobileSpecialExceptionAmount||0);
-        const replacement=freePhone?0:requested>0?0:Number(policy?.replacement_amount||0); // 예외요청은 승인 전 0원
+        const unpaid=mobileSaleKind==='incentive_unpaid';
+        const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
+        const outcome=mobileSaleKind==='special'&&month===SEPTEMBER_POLICY_MONTH
+          ? calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints})
+          : {eligible:true,additionalAmount:Number(policy?.replacement_amount||0)};
+        const replacement=unpaid?0:Number(outcome.additionalAmount||0);
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:mobileSpecialPolicyId,policyTitle:policy?.title||'',policyType:freePhone?'free_phone':'standard',replacementAmount:freePhone?0:Number(policy?.replacement_amount||0),normalMatrixFee:matrixFee,normalVasFee:vasFee,exceptionRequestedAmount:requested||null,exceptionStatus:requested>0?'pending':null}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:replacement,normalMatrixFee:unpaid?matrixFee:0,normalVasFee:unpaid?vasFee:0,eligible:!!outcome.eligible,strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION}})
         }).eq('id',saved.saleId);
-        saved._special={matrixFee,vasFee,replacement};
+        saved._special={matrixFee:unpaid?matrixFee:0,vasFee:unpaid?vasFee:0,replacement};
       }
 
       const freeAmounts=bundleFreeAmounts();
@@ -7003,12 +7055,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       Object.entries(meta.bundleVasMap||{}).forEach(([bk,keys])=>(keys||[]).forEach(k=>{if(k==='vasNone'||(meta.bundleSaleTypeMap?.[bk]||'normal')==='free')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))rows.push([`2ND VAS · ${it.label||k}`,Number(it.rate)]);}));
       if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))rows.push(['중고MNP 결합',Number(it.rate)]);}
       const sp=meta.specialPolicy||{};
-      if(sp.policyId){
-        const freePhone=isFreePhoneSpecial(sp),prefix=freePhone?'무료폰 특가':'특판';
-        if(plan)rows.push([`${prefix} 요금제 제외`,-plan]);
-        if(Number(sp.normalVasFee||0))rows.push([`${prefix} VAS·보험 제외`,-Number(sp.normalVasFee)]);
+      if(sp.policyId||sp.policyType){
+        const unpaid=isIncentiveUnpaidSpecial(sp),prefix=unpaid?'인센미지급 특가':'특가&지인정책';
+        if(unpaid&&plan)rows.push([`${prefix} 요금제 제외`,-plan]);
+        if(unpaid&&Number(sp.normalVasFee||0))rows.push([`${prefix} VAS·보험 제외`,-Number(sp.normalVasFee)]);
         const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
-        if(repl)rows.push(['특판 대체',repl]);
+        if(repl)rows.push(['모델별 추가 인센티브',repl]);
       }
     }else if(sale?.source_type==='home_order'){
       const customer=sale.customers?.customer_name||'고객';
@@ -7032,10 +7084,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const nextMnpBundle={...(base.groups?.mnpBundle||{})};if(Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle)nextMnpBundle.usedMnpBundle=Number(nextMnpBundle.usedMnpBundle||0)+1;
     const free=bundleFreeAmounts();
     const selectedPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
-    const specialMatrix=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
+    const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>(mobileBundleSaleTypeMap?.[bk]||'normal')==='free'?[]:(keys||[]));
-    const specialVas=mobileSaleKind==='special'&&mobileSpecialPolicyId?[...mobileVasKeys,...payableBundleVas].filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
-    const requested=Number(mobileSpecialExceptionAmount||0),replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?(requested>0?0:Number(selectedPolicy?.replacement_amount||0)):0;
+    const specialVas=mobileSaleKind==='incentive_unpaid'?[...mobileVasKeys,...payableBundleVas].filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
+    const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
+    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&month===SEPTEMBER_POLICY_MONTH?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints}):null;
+    const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??0):0;
     const nextDay={...base,matrix:nextMatrix,groups:{...base.groups,vas:nextVas,bundle2nd:nextBundle,mnpBundle:nextMnpBundle},bundleFreeOffset:Number(base.bundleFreeOffset||0)+free.bundleOffset,bundleFreeVasOffset:Number(base.bundleFreeVasOffset||0)+free.vasOffset,specialMatrixOffset:Number(base.specialMatrixOffset||0)+specialMatrix,specialVasOffset:Number(base.specialVasOffset||0)+specialVas,specialReplacementPay:Number(base.specialReplacementPay||0)+replacement};
     const beforeDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:base},month,config.categoryMap,config.gibyeonColumnMap);
     const afterDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:nextDay},month,config.categoryMap,config.gibyeonColumnMap);
@@ -7363,13 +7417,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">인터넷 속도</div>
             <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 상품</div>
-            <div className="space-y-1.5">{HOUSEHOLD_RENEW_PLANS.map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
+            <div className="space-y-1.5">{(month===SEPTEMBER_POLICY_MONTH?[{key:'premiumSafe',label:'프리미엄 안심 보상'},{key:'premium',label:'동일 또는 그 외 요금제'}]:HOUSEHOLD_RENEW_PLANS).map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 구성</div>
             <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
-            {householdRenewForm.homeOnly&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
+            {householdRenewForm.homeOnly&&month!==SEPTEMBER_POLICY_MONTH&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
-            <label className={`mt-2 flex items-center justify-between gap-3 rounded-xl border px-3 py-3 ${householdRenewForm.homeOnly?'bg-gray-50 border-gray-100 opacity-50':'border-gray-200'}`}><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" disabled={householdRenewForm.homeOnly} checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
-            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2"><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label><label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label><div className="text-[10px] text-gray-400 leading-relaxed">100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.</div></div>
+            <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2">{month===SEPTEMBER_POLICY_MONTH&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>속도 상향 재약정 (+30,000원)</span><input type="checkbox" checked={!!householdRenewForm.speedUp} onChange={e=>setHouseholdRenewForm({...householdRenewForm,speedUp:e.target.checked})}/></label>}<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label>{month!==SEPTEMBER_POLICY_MONTH&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label>}<div className="text-[10px] text-gray-400 leading-relaxed">{month===SEPTEMBER_POLICY_MONTH?'인터넷 요금제 하향 재약정은 지급되지 않습니다.':'100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.'}</div></div>
             <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div><div className="text-[10px] text-violet-600 mt-1">생산성 KPI · 인터넷 0.3P{householdRenewForm.homeOnly?'':' + TV 0.3P'}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
             {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-violet-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
             <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
@@ -7391,7 +7445,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">1. 판매 구분 *</div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button type="button"
                   onClick={()=>{setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileSpecialExceptionAmount('')}}
                   className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>
@@ -7400,9 +7454,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <button type="button"
                   onClick={()=>setMobileSaleKind('special')}
                   className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='special'?'bg-amber-50 border-amber-300 text-amber-700':'bg-white border-gray-200 text-gray-500'}`}>
-                  {mobileSaleKind==='special'?'✓ ':''}특판·지인판매
+                  {mobileSaleKind==='special'?'✓ ':''}특가&지인정책
+                </button>
+                <button type="button"
+                  onClick={()=>{setMobileSaleKind('incentive_unpaid');setMobileSpecialPolicyId('');setMobileSpecialExceptionAmount('')}}
+                  className={`py-3 rounded-xl border text-[10px] font-bold ${mobileSaleKind==='incentive_unpaid'?'bg-red-50 border-red-300 text-red-700':'bg-white border-gray-200 text-gray-500'}`}>
+                  {mobileSaleKind==='incentive_unpaid'?'✓ ':''}인센미지급 특가
                 </button>
               </div>
+              {mobileSaleKind==='incentive_unpaid'&&<div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[10px] text-red-700">판매 실적·성과P·영업 활동 지원비 건수는 인정하고, 요금제·VAS·보험 인센티브만 지급하지 않아요.</div>}
 
               {mobileSaleKind==='special'&&(
                 <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/30 p-3">
@@ -7417,7 +7477,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                             className={`w-full text-left rounded-lg border px-3 py-2.5 text-xs ${selected?'bg-white border-amber-300 text-amber-800':'bg-white/80 border-gray-100 text-gray-600'}`}>
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
-                              <span className="text-[10px] text-amber-600">{isFreePhoneSpecial(p)?'요금제·VAS·보험 미지급':`대체 ${won(p.replacement_amount)}`}</span>
+                              <span className="text-[10px] text-amber-600">기존 정책 +{won(p.replacement_amount)}</span>
                             </div>
                             {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.end_date||''}</div>}
                           </button>
@@ -7426,12 +7486,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       {mobileSpecialPolicyId&&(
                         <div className="mt-2">
                           <div className="text-[10px] text-amber-700 leading-relaxed">
-                            {isFreePhoneSpecial(specialPolicies.find(p=>p.id===mobileSpecialPolicyId))?'실적·KPI·성과등급P는 인정하고 요금제·VAS·보험 인센티브는 지급하지 않아요. 2ND와 승인 스팟은 정상 반영돼요.':'실적·KPI·성과등급P는 정상 인정하고 요금제/VAS 수수료 대신 선택 정책의 대체 인센티브를 적용해요.'}
+                            기존 요금제·VAS·보험 인센티브에 조건 충족 시 모델별 추가 인센티브를 더해요.
                           </div>
-                          {!isFreePhoneSpecial(specialPolicies.find(p=>p.id===mobileSpecialPolicyId))&&<input inputMode="numeric" value={fmtInputNumber(mobileSpecialExceptionAmount)}
-                            onChange={e=>setMobileSpecialExceptionAmount(e.target.value.replace(/\D/g,''))}
-                            placeholder="예외 지급금액 요청 (선택)"
-                            className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>}
                         </div>
                       )}
                     </>
@@ -7456,7 +7512,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   value={mobileSaleDraft.ri}
                   onChange={e=>{
                     const ri=Number(e.target.value);
-                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? Math.min(mobileSaleDraft.ci||0,MATRIX_COLS.length-1) : 0;
+                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? Math.min(mobileSaleDraft.ci||0,activeMatrixCols.length-1) : 0;
                     setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
                   }}
                   className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
@@ -7475,7 +7531,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     }}
                     className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
                   >
-                    {MATRIX_COLS.map((c,ci)=><option key={c} value={ci}>{c}</option>)}
+                    {activeMatrixCols.map((c,ci)=><option key={c} value={ci}>{c}</option>)}
                   </select>
                 ):(
                   <div className="w-full rounded-xl px-2.5 py-2.5 text-xs bg-gray-50 text-gray-400">해당 없음</div>
@@ -7570,17 +7626,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {[['normal','일반판매'],['free','무료판매']].map(([kind,label])=>{
+                          {(month===SEPTEMBER_POLICY_MONTH?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
-                              className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'?'bg-amber-50 border-amber-300 text-amber-700':'bg-violet-50 border-violet-200 text-violet-700'):'bg-white border-gray-100 text-gray-500'}`}>
+                              className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-violet-50 border-violet-200 text-violet-700'):'bg-white border-gray-100 text-gray-500'}`}>
                               {current===kind?'✓ ':''}{label}
                             </button>
                           })}
                         </div>
-                        {(mobileBundleSaleTypeMap[v.key]||'normal')==='free'&&
+                        {['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
-                            무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.
+                            {month===SEPTEMBER_POLICY_MONTH?'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.':'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}
                       </div>
                       <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
@@ -7620,6 +7676,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </button>
               {editingSale&&<button type="button" onClick={()=>setMobileExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 영업비용</button>}
 {!editingSale&&(<>
+              {month!==SEPTEMBER_POLICY_MONTH&&<>
               <button
                 type="button"
                 onClick={() => {
@@ -7630,6 +7687,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               >
                 + 스팟{mobileSpotPolicyId?' ✓':''}
               </button>
+              </>}
               <button
                 type="button"
                 onClick={()=>setMobileExpenseOpen(v=>!v)}
@@ -7652,7 +7710,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <button type="button" onClick={()=>setMobileExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-violet-600">+ 약속 추가</button>
             </div>
 
-            {!editingSale&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+            {!editingSale&&month!==SEPTEMBER_POLICY_MONTH&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 스팟 추가 인센티브</div>
               {mobileSpotPolicies.length>0&&<div className="space-y-1.5">
                 {mobileSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setMobileSpotPolicyId(p.id);setMobileSpotDirectOpen(false)}}
@@ -7777,7 +7835,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <div className="text-xs font-semibold text-gray-600 mb-2">4. 판매 상품 <span className="font-normal text-gray-400">· 필요한 것만 선택</span></div>
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
-                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
+                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주){month===SEPTEMBER_POLICY_MONTH?` · ${SEPTEMBER_TV_PLAN}`:''}</button>
                 <button type="button" onClick={()=>setHomeSubTv(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSubTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSubTv?'✓ ':''}TV(부)</button>
                 <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSmartHome?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
@@ -7809,15 +7867,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             </div>
 
 <div className="mt-4 grid grid-cols-2 gap-2">
-              <button type="button" onClick={()=>{const el=document.getElementById('home-spot-options');if(el)el.classList.toggle('hidden')}} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSpotPolicyId||homeSpotDirectOpen?'bg-orange-50 border-orange-200 text-orange-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 스팟 정책</button>
+              {month!==SEPTEMBER_POLICY_MONTH&&<button type="button" onClick={()=>{const el=document.getElementById('home-spot-options');if(el)el.classList.toggle('hidden')}} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSpotPolicyId||homeSpotDirectOpen?'bg-orange-50 border-orange-200 text-orange-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 스팟 정책</button>}
               <button type="button" onClick={()=>setHomeExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 오퍼/영업비용</button>
             </div>
-            <div id="home-spot-options" className="hidden mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+            {month!==SEPTEMBER_POLICY_MONTH&&<div id="home-spot-options" className="hidden mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 홈 스팟 추가 인센티브</div>
               {homeSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setHomeSpotPolicyId(p.id);setHomeSpotDirectOpen(false)}} className={`w-full mb-1 text-left px-3 py-2 rounded-lg text-xs border ${homeSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}><b>{homeSpotPolicyId===p.id?'✓ ':''}{p.title}</b><span className="float-right">+{won(p.amount)}</span></button>)}
               <button type="button" onClick={()=>{setHomeSpotPolicyId('');setHomeSpotDirectOpen(v=>!v)}} className="w-full mt-1 px-3 py-2 rounded-lg text-left text-xs font-bold bg-orange-100/70 text-orange-700">+ 스팟 직접 입력</button>
               {homeSpotDirectOpen&&<div className="space-y-2 mt-2"><input value={homeSpotDirectTitle} onChange={e=>setHomeSpotDirectTitle(e.target.value)} placeholder="정책명" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={fmtInputNumber(homeSpotDirectAmount)} onChange={e=>setHomeSpotDirectAmount(e.target.value.replace(/\D/g,''))} placeholder="추가 금액" className="w-full border rounded-lg p-2 text-xs bg-white"/><input value={homeSpotDirectMemo} onChange={e=>setHomeSpotDirectMemo(e.target.value)} placeholder="메모 (선택)" className="w-full border rounded-lg p-2 text-xs bg-white"/></div>}
-            </div>
+            </div>}
             {homeExpenseOpen&&<div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">💳 오퍼/영업비용</div><div className="grid grid-cols-2 gap-2"><select value={homeExpenseCategory} onChange={e=>setHomeExpenseCategory(e.target.value)} className="border rounded-lg px-2 py-2 text-xs bg-white"><option>오퍼</option><option>케이스</option><option>판촉</option><option>기타</option></select><input inputMode="numeric" value={fmtInputNumber(homeExpenseAmount)} onChange={e=>setHomeExpenseAmount(e.target.value.replace(/\D/g,''))} placeholder="금액" className="border rounded-lg px-2 py-2 text-xs bg-white"/></div><input value={homeExpenseMemo} onChange={e=>setHomeExpenseMemo(e.target.value)} placeholder="메모 (선택)" className="mt-2 w-full border rounded-lg px-2 py-2 text-xs bg-white"/>{homeExtraExpenses.map((x,i)=><div key={i} className="mt-2 border-t pt-2"><div className="grid grid-cols-2 gap-2"><select value={x.category} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,category:e.target.value}:v))} className="border rounded px-2 py-2 text-xs"><option>오퍼</option><option>케이스</option><option>고객 사은품</option><option>판촉</option><option>기타</option></select><input value={fmtInputNumber(x.amount)} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,amount:e.target.value.replace(/\D/g,'')}:v))} placeholder="금액" className="border rounded px-2 py-2 text-xs"/></div><input value={x.memo} onChange={e=>setHomeExtraExpenses(a=>a.map((v,j)=>j===i?{...v,memo:e.target.value}:v))} placeholder="메모" className="mt-1 w-full border rounded px-2 py-2 text-xs"/><button type="button" onClick={()=>setHomeExtraExpenses(a=>a.filter((_,j)=>j!==i))} className="mt-1 text-[10px] text-red-400">이 비용 삭제</button></div>)}<button type="button" onClick={()=>setHomeExtraExpenses(a=>[...a,{category:'고객 사은품',amount:'',memo:''}])} className="mt-2 text-xs font-semibold text-emerald-700">+ 영업비용 추가</button></div>}
 
             <label className="mt-4 flex items-center gap-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">
@@ -9699,7 +9757,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
-      {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} />}
+      {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}
       {adminTab === 'headOfficeData' && isFullAdmin && <HeadOfficeDataPanel month={month} employees={employees} rows={rows} config={config} authUserId={authUserId} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}

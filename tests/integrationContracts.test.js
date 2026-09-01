@@ -125,7 +125,8 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   assert.match(source, /strategicPointDelta:mobileStrategicPoint/);
   assert.match(source, /productivityDelta:Number\(afterPay\.kpiScore/);
   assert.match(source, /성과P \+\$\{fmtNum\(toast\.pointDelta,1\)\}P · 전략P \+\$\{fmtNum\(toast\.strategicPointDelta,1\)\}P · 생산성 \+\$\{fmtNum\(toast\.productivityDelta,1\)\}P/);
-  assert.match(source, /insurance\*0\.8\+strategicVas/);
+  assert.match(source, /vasVcolorBundle:1/);
+  assert.match(source, /vasVcolorMusic:\.3/);
 });
 
 test('명예의 전당은 공개 프로필과 대표 배지를 보여주고 개인 응원은 공개하지 않는다', async () => {
@@ -175,14 +176,13 @@ test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 �
   assert.match(sql, /'0 0 \* \* \*'/);
 });
 
-test('무료폰 특가는 요금제 VAS 보험 인센티브만 제외하고 2ND와 스팟은 유지한다', async () => {
+test('인센미지급 특가는 요금제 VAS 보험만 제외하고 과거 무료폰 기록도 호환한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../sql/free_phone_special_policy.sql', import.meta.url), 'utf8');
   assert.match(source, /FREE_PHONE_SPECIAL_TITLE = '무료폰 특가'/);
-  assert.match(source, /policyType:freePhone\?'free_phone':'standard'/);
-  assert.match(source, /요금제·VAS·보험 인센티브는 지급하지 않아요/);
-  assert.match(source, /2ND와 승인 스팟은 정상 반영돼요/);
-  assert.match(source, /freePhone\?'무료폰 특가':'특판'/);
+  assert.match(source, /policyType:'incentive_unpaid'/);
+  assert.match(source, /판매 실적·성과P·영업 활동 지원비 건수는 인정/);
+  assert.match(source, /isIncentiveUnpaidSpecial/);
   assert.match(source, /VAS·보험 제외/);
   assert.match(sql, /replacement_amount/);
   assert.match(sql, /2099-12-31/);

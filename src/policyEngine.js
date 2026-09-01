@@ -112,13 +112,16 @@ export function calculateMobileSale(sale = {}, currentPolicy = {}) {
   const insuranceCount = allVasKeys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
   const secondCount = bundleKeys.length + positive(meta.secondOnlyCount);
   const special = meta.specialPolicy || {};
-  const freePhone = isFreePhonePolicy(special);
+  const freePhone = isIncentiveUnpaidPolicy(special);
+  const additionalSpecialPay = special?.policyType === 'additive' || special?.policy_type === 'additive'
+    ? positive(special?.replacementAmount ?? special?.replacement_amount)
+    : 0;
   const requested = {
     plan: matrixRate,
     vas: directVasPay + bundleVasPay,
     insurance: 0,
     second: bundlePay,
-    spot: positive(meta.approvedSpotIncentive),
+    spot: positive(meta.approvedSpotIncentive) + additionalSpecialPay,
   };
   const specialOutcome = calculateFreePhoneSpecialOutcome({
     planIncentive: requested.plan,
@@ -147,8 +150,9 @@ export function calculateMobileSale(sale = {}, currentPolicy = {}) {
   };
 }
 
-function isFreePhonePolicy(policy = {}) {
-  return policy?.policyType === 'free_phone' || policy?.policy_type === 'free_phone'
+function isIncentiveUnpaidPolicy(policy = {}) {
+  return policy?.policyType === 'incentive_unpaid' || policy?.policy_type === 'incentive_unpaid'
+    || policy?.policyType === 'free_phone' || policy?.policy_type === 'free_phone'
     || policy?.policyTitle === '무료폰 특가' || policy?.title === '무료폰 특가';
 }
 
