@@ -64,6 +64,19 @@ test('제휴카드 약속은 신청·수령·승인·자동이체 후 최종 완
   assert.match(sql, /task_meta jsonb not null default/);
 });
 
+test('판매 없이 기존·신규 고객에게 독립 약속을 등록할 수 있다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function StandalonePromiseModal/);
+  assert.match(source, /미완료 약속 고객과 \{month\} 판매 고객을 검색/);
+  assert.match(source, /source_sale_id:null/);
+  assert.match(source, /function ensurePromiseCustomer/);
+  assert.match(source, /insert\(\{user_id:userId,customer_name:clean\}\)/);
+  assert.match(source, /기존 고객을 선택하거나 신규 고객명을 입력/);
+  assert.match(source, /고객 약속 등록/);
+  assert.match(source, /eq\('status','pending'\)/);
+  assert.match(source, /gte\('sale_date',`\$\{month\}-01`\)/);
+});
+
 test('직원 실적입력 화면에는 스팟 추가 인센티브 카드를 표시하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /<SpotClaimPanel\s+userId=/);

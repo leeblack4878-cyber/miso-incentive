@@ -4830,6 +4830,17 @@ async function ensureCustomer(userId, customerName, saleDate) {
   return data?.id||null;
 }
 
+async function ensurePromiseCustomer(userId,customerName){
+  const clean=String(customerName||'').trim();
+  if(!userId||!clean)return null;
+  const {data:found,error:findError}=await supabase.from('customers').select('id').eq('user_id',userId).eq('customer_name',clean).maybeSingle();
+  if(findError)throw findError;
+  if(found?.id)return found.id;
+  const {data,error}=await supabase.from('customers').insert({user_id:userId,customer_name:clean}).select('id').single();
+  if(error)throw error;
+  return data?.id||null;
+}
+
 async function createCustomerSaleAndTasks({
   userId, customerName, saleDate, metricLabel, sourceType='daily',
   templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null,
@@ -4954,6 +4965,69 @@ function CareTemplatePicker({
       <input type="date" value={customDueDate} onChange={e=>setCustomDueDate(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"/>
     </div>
   </div>;
+}
+
+function StandalonePromiseModal({userId,month,selectedDay,onClose}){
+  const [customers,setCustomers]=useState([]);
+  const [query,setQuery]=useState('');
+  const [selectedCustomer,setSelectedCustomer]=useState(null);
+  const [newCustomer,setNewCustomer]=useState('');
+  const [careKeys,setCareKeys]=useState([]);
+  const [customTitle,setCustomTitle]=useState('');
+  const [customDueDate,setCustomDueDate]=useState('');
+  const [targetPlan,setTargetPlan]=useState('');
+  const [paymentFirstDate,setPaymentFirstDate]=useState('');
+  const [affiliateCard,setAffiliateCard]=useState({cardName:'',approvalRequired:false});
+  const [saving,setSaving]=useState(false);
+  const baseDate=`${month}-${selectedDay}`;
+
+  useEffect(()=>{let alive=true;(async()=>{
+    const [y,m]=String(month).split('-').map(Number),next=new Date(y,m,1);
+    const monthEnd=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
+    const [{data:all},{data:sales},{data:tasks}]=await Promise.all([
+      supabase.from('customers').select('id,customer_name,last_sale_date').eq('user_id',userId),
+      supabase.from('customer_sales').select('customer_id').eq('user_id',userId).gte('sale_date',`${month}-01`).lt('sale_date',monthEnd),
+      supabase.from('customer_tasks').select('customer_id').eq('user_id',userId).eq('status','pending')
+    ]);
+    if(!alive)return;
+    const eligible=new Set([...(sales||[]).map(x=>x.customer_id),...(tasks||[]).map(x=>x.customer_id)]);
+    setCustomers((all||[]).filter(c=>eligible.has(c.id)).sort((a,b)=>String(a.customer_name).localeCompare(String(b.customer_name),'ko')));
+  })();return()=>{alive=false}},[userId,month]);
+
+  const save=async()=>{
+    const customerName=selectedCustomer?.customer_name||newCustomer.trim();
+    if(!customerName)return showAppToast('기존 고객을 선택하거나 신규 고객명을 입력해주세요.',{tone:'error'});
+    if(!careKeys.length&&!(customTitle.trim()&&customDueDate))return showAppToast('등록할 약속을 하나 이상 선택해주세요.',{tone:'error'});
+    if(careKeys.includes('payment3')&&!paymentFirstDate)return showAppToast('3개월 요금 수납의 첫 수납 예정일을 선택해주세요.',{tone:'error'});
+    if(careKeys.includes('affiliateCard')&&!affiliateCard.cardName)return showAppToast('제휴카드사를 선택해주세요.',{tone:'error'});
+    setSaving(true);
+    try{
+      const customerId=selectedCustomer?.id||await ensurePromiseCustomer(userId,customerName);
+      const rows=[];
+      careKeys.forEach(key=>{
+        const t=CARE_TEMPLATES.find(x=>x.key===key);if(!t)return;
+        if(t.repeatCount){for(let i=0;i<t.repeatCount;i++)rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:`${key}_${i+1}`,title:`${t.title} (${i+1}/${t.repeatCount}회)`,base_date:baseDate,retention_days:null,due_date:addMonthsDate(paymentFirstDate,i),status:'pending',note:'모든 회차를 완료할 때까지 각 기한에 반복 표시'});return;}
+        if(key==='affiliateCard'){rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:key,title:t.title,base_date:baseDate,retention_days:null,due_date:baseDate,status:'pending',task_meta:{card_name:affiliateCard.cardName,card_stage:'before_application',approval_required:!!affiliateCard.approvalRequired,approval_completed:false,autopay_registered:false}});return;}
+        rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:key,title:t.title,base_date:baseDate,retention_days:t.retentionDays,due_date:addDaysDate(baseDate,t.retentionDays),status:'pending',target_plan:(key==='plan93'||key==='plan183')?targetPlan.trim()||null:null});
+      });
+      if(customTitle.trim()&&customDueDate)rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:'custom',title:customTitle.trim(),base_date:baseDate,retention_days:null,due_date:customDueDate,status:'pending'});
+      const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;
+      showAppToast(`${customerName} 고객 약속을 등록했어요.`);onClose();
+    }catch(error){showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 등록 실패'});}finally{setSaving(false)}
+  };
+  const matches=customers.filter(c=>!query.trim()||String(c.customer_name||'').includes(query.trim()));
+
+  return <div className="fixed inset-0 z-[120] bg-black/45 flex items-end sm:items-center justify-center" onClick={onClose}><div className="w-full max-w-sm max-h-[92vh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
+    <div className="text-xs font-semibold text-violet-500">판매 없이도 등록 가능</div><div className="text-lg font-bold text-gray-900 mt-1">고객 약속 등록</div><div className="text-xs text-gray-400 mt-1">미완료 약속 고객과 {month} 판매 고객을 검색할 수 있어요.</div>
+    <div className="mt-4 text-xs font-semibold text-gray-600">기존 고객 검색</div>
+    <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명 검색" className="mt-1.5 w-full border rounded-xl px-3 py-2.5 text-sm"/>
+    {query.trim()&&<div className="mt-2 max-h-36 overflow-y-auto rounded-xl border divide-y">{matches.length?matches.map(c=><button key={c.id} type="button" onClick={()=>{setSelectedCustomer(c);setNewCustomer('')}} className={`w-full px-3 py-2.5 text-left text-xs ${selectedCustomer?.id===c.id?'bg-violet-50 text-violet-700 font-bold':'bg-white text-gray-600'}`}>{selectedCustomer?.id===c.id?'✓ ':''}{c.customer_name}</button>):<div className="px-3 py-3 text-xs text-gray-400">검색되는 기존 고객이 없어요.</div>}</div>}
+    {selectedCustomer&&<div className="mt-2 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2 text-xs text-violet-700">선택 고객 · <b>{selectedCustomer.customer_name}</b></div>}
+    <div className="my-3 flex items-center gap-2 text-[10px] text-gray-400"><div className="h-px bg-gray-100 flex-1"/>또는 신규 고객<div className="h-px bg-gray-100 flex-1"/></div>
+    <input value={newCustomer} onChange={e=>{setNewCustomer(e.target.value);setSelectedCustomer(null)}} placeholder="신규 고객명 입력" className="w-full border rounded-xl px-3 py-2.5 text-sm"/>
+    <div className="mt-5"><CareTemplatePicker selected={careKeys} setSelected={setCareKeys} customTitle={customTitle} setCustomTitle={setCustomTitle} customDueDate={customDueDate} setCustomDueDate={setCustomDueDate} saleDate={baseDate} targetPlan={targetPlan} setTargetPlan={setTargetPlan} paymentFirstDate={paymentFirstDate} setPaymentFirstDate={setPaymentFirstDate} affiliateCard={affiliateCard} setAffiliateCard={setAffiliateCard}/></div>
+    <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={onClose} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button type="button" disabled={saving} onClick={save} className="py-3 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">{saving?'등록 중...':'약속 등록'}</button></div>
+  </div></div>;
 }
 
 function CustomerCareManager({ userId, month, homeProps, navIntent }) {
@@ -5815,6 +5889,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [day, setDay] = useState(() => normalizeDay(dailyDays[todayKey]));
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
   const [inputCategory, setInputCategory] = useState(null); // mobile | home | extra
+  const [standalonePromiseOpen,setStandalonePromiseOpen]=useState(false);
   const [toast, setToast] = useState(null);         // 등록 피드백 카드
   const [saveState, setSaveState] = useState('idle'); // idle | pending | saved | error
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
@@ -7532,6 +7607,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <button type="button" onClick={()=>setExtraInput('sono')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">상품 · 건수 · 고객(선택)</div></button>
               <button type="button" onClick={()=>setExtraInput('tailored')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">업셀 건수 · 금액</div></button>
               <button type="button" onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
+              <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-violet-50 border-violet-200 col-span-2"><div className="text-xl">📌</div><div className="text-sm font-bold text-violet-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-violet-500 mt-1">기존 고객 검색 또는 신규 고객 약속만 등록</div></button>
             </div>
 
 
@@ -7543,6 +7619,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       )}
 
       {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
+
+      {standalonePromiseOpen&&<StandalonePromiseModal userId={currentEmp?.id} month={month} selectedDay={selectedDay} onClose={()=>setStandalonePromiseOpen(false)}/>}
 
       {householdRenewOpen&&(
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
