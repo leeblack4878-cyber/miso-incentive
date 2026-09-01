@@ -2,6 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+test('비밀번호 초기화는 관리자 승인과 첫 로그인 강제 변경을 사용한다', async () => {
+  const [auth, admin, edge, sql] = await Promise.all([
+    readFile(new URL('../src/AuthGate.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/PasswordResetAdmin.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/functions/password-reset-flow/index.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../sql/password_reset_flow.sql', import.meta.url), 'utf8'),
+  ]);
+  assert.match(auth, /비밀번호를 잃어버렸나요/);
+  assert.match(auth, /must_change_password/);
+  assert.match(auth, /session && !profile/);
+  assert.match(admin, /임시 비밀번호 발급/);
+  assert.match(edge, /updateUserById/);
+  assert.match(edge, /user\.id!==ADMIN_ID/);
+  assert.match(sql, /password_reset_requests_admin_select/);
+});
+
 test('본사 데이터 RLS는 관리자 전체조회와 직원 본인조회만 허용한다', async () => {
   const sql = await readFile(new URL('../supabase_head_office_performance.sql', import.meta.url), 'utf8');
   assert.match(sql, /head_office_performance_admin_select/);

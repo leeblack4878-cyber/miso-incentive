@@ -65,7 +65,7 @@ export default function AuthGate({ children }) {
   async function loadProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, name, employee_code, store_name, position, role, active, status, hire_date')
+      .select('id, name, employee_code, store_name, position, role, active, status, hire_date, must_change_password')
       .eq('id', userId)
       .single();
 
@@ -188,16 +188,15 @@ export default function AuthGate({ children }) {
 
     setSubmitting(true);
 
-    const redirectTo = window.location.origin;
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo
+    const { error } = await supabase.functions.invoke('password-reset-flow', {
+      body: { action: 'request', email: email.trim() }
     });
 
     if (error) {
-      console.error('RECOVERY MAIL ERROR:', error);
+      console.error('PASSWORD RESET REQUEST ERROR:', error);
       setError(friendlyError(error));
     } else {
-      setInfo('비밀번호 재설정 메일을 보냈습니다. 메일의 링크를 눌러주세요.');
+      setInfo('비밀번호 초기화 요청을 보냈습니다. 관리자가 확인한 뒤 임시 비밀번호를 안내해드려요.');
     }
 
     setSubmitting(false);
@@ -228,6 +227,14 @@ export default function AuthGate({ children }) {
       console.error('PASSWORD UPDATE ERROR:', error);
       setError(friendlyError(error));
     } else {
+      if (profile?.must_change_password) {
+        const { error: completeError } = await supabase.functions.invoke('password-reset-flow', { body: { action: 'complete' } });
+        if (completeError) {
+          setError('비밀번호는 변경됐지만 완료 처리를 하지 못했어요. 다시 로그인한 뒤 한 번 더 시도해주세요.');
+          setSubmitting(false);
+          return;
+        }
+      }
       setInfo('비밀번호가 변경되었습니다. 이제 새 비밀번호로 로그인할 수 있습니다.');
       setRecoveryMode(false);
       setNewPassword('');
@@ -253,7 +260,19 @@ export default function AuthGate({ children }) {
     );
   }
 
-  if (recoveryMode) {
+  // 로그인 직후 프로필의 강제 변경 여부를 확인하기 전에는 앱 본문을 노출하지 않는다.
+  if (session && !profile) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-slate-500">
+          <Loader2 className="animate-spin" size={20} />
+          사용자 정보 확인 중
+        </div>
+      </div>
+    );
+  }
+
+  if (recoveryMode || profile?.must_change_password) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-5">
         <form onSubmit={updatePassword} className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
@@ -263,7 +282,7 @@ export default function AuthGate({ children }) {
 
           <h1 className="text-xl font-bold text-slate-900">새 비밀번호 설정</h1>
           <p className="text-sm text-slate-500 mt-1 mb-6">
-            앞으로 로그인할 새 비밀번호를 입력해주세요.
+            {profile?.must_change_password ? '임시 비밀번호 대신 앞으로 사용할 새 비밀번호를 입력해주세요.' : '앞으로 로그인할 새 비밀번호를 입력해주세요.'}
           </p>
 
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">새 비밀번호</label>
@@ -426,7 +445,7 @@ export default function AuthGate({ children }) {
               className="w-full mt-3 text-sm text-violet-700 hover:text-violet-800 flex items-center justify-center gap-1.5"
             >
               <Mail size={14} />
-              비밀번호 재설정 메일 보내기
+              비밀번호를 잃어버렸나요?
             </button>
           )}
         </form>

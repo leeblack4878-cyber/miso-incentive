@@ -8,6 +8,7 @@ import {
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
 import HqStructurePolicyView from './HqStructurePolicyView';
+import PasswordResetAdmin from './PasswordResetAdmin';
 import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 import {
@@ -9817,7 +9818,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'hqStructure' && canViewHqStructure && <HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} />}
 
       {adminTab === 'employees' && (
-        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} />
+        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} />
       )}
 
       {adminTab === 'rates' && isFullAdmin && (
@@ -10140,7 +10141,7 @@ function ComparisonView({ rows }) {
   );
 }
 
-function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore }) {
+function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, authUserId }) {
   const [form, setForm] = useState({ name: '', branch: stores[0] || '', position: '사원', hireDate: '' });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -10201,6 +10202,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
     <div className="max-w-2xl space-y-4">
       <PendingApprovals />
       <ProfileEditRequests />
+      <PasswordResetAdmin authUserId={authUserId}/>
       <Section title="매장 관리" sub={`${stores.length}개 매장`} defaultOpen>
         <div className="p-3 flex gap-2">
           <input placeholder="새 매장명 (예: 동명_매장명)" value={newStore} onChange={(e) => setNewStore(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
