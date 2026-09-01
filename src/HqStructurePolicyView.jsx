@@ -144,7 +144,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     </div>
 
     <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
-      <div className="bg-indigo-50 px-4 py-4"><div className="text-[10px] font-bold text-indigo-500">본사 구조정책 · 두 번째</div><div className="mt-1 text-lg font-black text-gray-900">소매파트너 월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
+      <div className="bg-indigo-50 px-4 py-4"><div className="text-lg font-black text-gray-900">소매파트너 월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['월 포인트', `${countText(retail.points)}P`],
         ['115군 비중', `${countText(retail.plan115Ratio)}%`],
@@ -156,7 +156,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     </div>
 
     <div className="rounded-2xl border border-emerald-100 bg-white overflow-hidden">
-      <div className="bg-emerald-50 px-4 py-4"><div className="text-[10px] font-bold text-emerald-600">본사 구조정책 · 세 번째</div><div className="mt-1 text-lg font-black text-gray-900">매출지표 활성화 정책</div><div className="mt-1 text-[10px] text-gray-500">직원 매출지표와 동일한 기준으로 달성률과 1P당 단가를 계산합니다.</div></div>
+      <div className="bg-emerald-50 px-4 py-4"><div className="text-lg font-black text-gray-900">매출지표 활성화 정책</div><div className="mt-1 text-[10px] text-gray-500">직원 매출지표와 동일한 기준으로 달성률과 1P당 단가를 계산합니다.</div></div>
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['HS', `${countText(salesMetric.hs)}건`],
         ['매출지표', `${countText(salesMetric.points)}P`],
@@ -168,7 +168,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     </div>
 
     <div className="rounded-2xl border border-amber-100 bg-white overflow-hidden">
-      <div className="bg-amber-50 px-4 py-4"><div className="text-[10px] font-bold text-amber-600">본사 구조정책 · 네 번째</div><div className="mt-1 text-lg font-black text-gray-900">소매 월간 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">5개 지표의 최고 달성점수를 합산해 MNP·010 신규·기변 단가를 결정합니다.</div></div>
+      <div className="bg-amber-50 px-4 py-4"><div className="text-lg font-black text-gray-900">소매 월간 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">5개 지표의 최고 달성점수를 합산해 MNP·010 신규·기변 단가를 결정합니다.</div></div>
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['합산점수', `${award.totalScore}점`],
         ['MNP 단가', wonText(award.rates.mnp)],
