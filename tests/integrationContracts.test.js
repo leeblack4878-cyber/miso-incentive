@@ -79,7 +79,16 @@ test('고객 약속은 제휴카드·수납지원·변경·케이스로 구분�
   assert.match(source, /return '제휴카드'/);
   assert.match(source, /return '수납지원'/);
   assert.match(source, /return '변경'/);
-  assert.match(source, /return '케이스'/);
+  assert.match(source, /return '케이스 및 기타'/);
+});
+
+test('제휴카드 거절 약속은 삭제하지 않고 취소 이력과 다시 진행을 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function cancelAffiliateCard|const cancelAffiliateCard/);
+  assert.match(source, /status:'cancelled'/);
+  assert.match(source, /cancel_reason:'고객 거절'/);
+  assert.match(source, /완료·취소/);
+  assert.match(source, /다시 진행/);
 });
 
 test('판매 없이 기존·신규 고객에게 독립 약속을 등록할 수 있다', async () => {

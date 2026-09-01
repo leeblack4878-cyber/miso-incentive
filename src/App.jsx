@@ -4793,7 +4793,7 @@ function careTaskCategory(task){
   if(type==='affiliateCard')return '제휴카드';
   if(type.startsWith('payment3_'))return '수납지원';
   if(['plan93','addon93','plan183'].includes(type))return '변경';
-  return '케이스';
+  return '케이스 및 기타';
 }
 
 function addDaysDate(dateStr, days) {
@@ -5122,17 +5122,28 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
     await updateTask(t,{status:'pending',completed_at:null});
   };
 
+  const cancelAffiliateCard=async(t)=>{
+    const name=customerMap[t.customer_id]?.customer_name||'고객';
+    if(!await showAppConfirm({title:'제휴카드 약속을 취소할까요?',message:`${name} 고객이 카드 진행을 원하지 않는 경우 취소해주세요.\n기록은 완료·취소 내역에 남습니다.`,confirmLabel:'고객 거절로 취소',tone:'warning'}))return;
+    await updateTask(t,{status:'cancelled',completed_at:null,task_meta:{...(t.task_meta||{}),cancel_reason:'고객 거절',cancelled_at:new Date().toISOString()}});
+  };
+
+  const resumeCancelledCard=async(t)=>{
+    const meta={...(t.task_meta||{})};delete meta.cancel_reason;delete meta.cancelled_at;
+    await updateTask(t,{status:'pending',completed_at:null,task_meta:meta});
+  };
+
   const visible=tasks.filter(t=>{
     const isPending=t.status!=='completed'&&t.status!=='cancelled';
     if(filter==='todo' && !(isPending && t.due_date<=visibleUntil)) return false;
     if(filter==='today' && !(isPending && t.due_date===today)) return false;
     if(filter==='overdue' && !(isPending && t.due_date<today)) return false;
     if(filter==='all' && !isPending) return false;
-    if(filter==='done' && t.status!=='completed') return false;
+    if(filter==='done' && !['completed','cancelled'].includes(t.status)) return false;
     const name=customerMap[t.customer_id]?.customer_name||'';
     return !query.trim()||name.includes(query.trim())||String(t.title||'').includes(query.trim());
   }).sort((a,b)=>{
-    if(filter==='done') return String(b.completed_at||'').localeCompare(String(a.completed_at||''));
+    if(filter==='done') return String(b.completed_at||b.updated_at||'').localeCompare(String(a.completed_at||a.updated_at||''));
     const ao=a.due_date<today?0:a.due_date===today?1:2;
     const bo=b.due_date<today?0:b.due_date===today?1:2;
     return ao-bo || String(a.due_date).localeCompare(String(b.due_date));
@@ -5157,7 +5168,7 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명 또는 약속 검색"
         className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
       <div className="grid grid-cols-5 gap-1 mt-2">
-        {[['todo','할 일'],['today','오늘'],['overdue','경과'],['all','전체 예정'],['done','완료']].map(([k,l])=>
+        {[['todo','할 일'],['today','오늘'],['overdue','경과'],['all','전체 예정'],['done','완료·취소']].map(([k,l])=>
           <button key={k} onClick={()=>setFilter(k)}
             className={`py-2 rounded-lg text-[11px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
       </div>
@@ -5192,12 +5203,14 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
                  </div>}
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
-               <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
-                 t.status==='completed'?'bg-emerald-50 text-emerald-600':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'
-               }`}>{t.status==='completed'?'완료':dLabel(t.due_date)}</span>
+               <div className="shrink-0 flex items-center gap-1.5">{card&&t.status!=='completed'&&t.status!=='cancelled'&&<button onClick={()=>cancelAffiliateCard(t)} className="text-[10px] font-semibold text-red-400 px-1.5 py-1">약속 취소</button>}<span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
+                 t.status==='completed'?'bg-emerald-50 text-emerald-600':t.status==='cancelled'?'bg-gray-100 text-gray-500':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'
+               }`}>{t.status==='completed'?'완료':t.status==='cancelled'?'고객 거절':dLabel(t.due_date)}</span></div>
              </div>
 
-             {t.status==='completed'?(
+             {t.status==='cancelled'?(
+               <button onClick={()=>resumeCancelledCard(t)} className="mt-3 w-full py-2 rounded-lg bg-violet-50 text-violet-700 text-xs font-semibold">다시 진행</button>
+             ):t.status==='completed'?(
                <button onClick={()=>undoComplete(t)} className="mt-3 w-full py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">
                  완료 취소
                </button>
