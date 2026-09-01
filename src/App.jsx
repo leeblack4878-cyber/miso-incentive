@@ -7606,8 +7606,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               </button>
               <button type="button" onClick={()=>setExtraInput('sono')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">상품 · 건수 · 고객(선택)</div></button>
               <button type="button" onClick={()=>setExtraInput('tailored')} className="p-4 rounded-2xl border text-left bg-white border-gray-200"><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">업셀 건수 · 금액</div></button>
+              <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-violet-50 border-violet-200"><div className="text-xl">📌</div><div className="text-sm font-bold text-violet-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-violet-500 mt-1">기존·신규 고객 약속</div></button>
               <button type="button" onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
-              <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-violet-50 border-violet-200 col-span-2"><div className="text-xl">📌</div><div className="text-sm font-bold text-violet-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-violet-500 mt-1">기존 고객 검색 또는 신규 고객 약속만 등록</div></button>
             </div>
 
 
