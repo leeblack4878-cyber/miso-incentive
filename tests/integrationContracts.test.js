@@ -192,6 +192,11 @@ test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다
   assert.match(source, /마감 전 확인할 누락/);
 });
 
+test('취소된 고객 약속은 직원 홈의 오늘·기한경과 건수에서 제외한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const pending=\(tasks\|\|\[\]\)\.filter\(x=>x\.status!==['"]completed['"]&&x\.status!==['"]cancelled['"]\)/);
+});
+
 test('관리자 홈은 처리할 업무를 실제 관리 메뉴에 연결한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   for (const tab of ['performanceApproval', 'customerCareAdmin', 'homeCare', 'spot', 'headOfficeData', 'settlement', 'employees']) {

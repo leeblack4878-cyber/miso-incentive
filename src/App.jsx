@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 184764)
-Total output lines: 11013
+Warning: truncated output (original token count: 184809)
+Total output lines: 11014
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
@@ -3163,7 +3163,7 @@ function evaluateAutomaticBadges({
   const hr=rank('hs'), homer=rank('home'), freer=rank('free'), smartr=rank('smart'), pr=rank('productivity'), ur=rank('upsell');
   if(hr&&hr<=10)earned.add('hs_top10'); if(hr&&hr<=5)earned.add('hs_top5');
   if(hr===3)earned.add('hs_rank3'); if(hr===2)earned.add('hs_rank2'); if(hr===1)earned.add('hs_rank1');
-  if(homer===1)earned.add('home_rank1'); if(freer===1)earned.add('free_rank1'); if(…84764 tokens truncated…ext-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
+  if(homer===1)earned.add('home_rank1'); if(freer===1)earned.add('free_rank1'); if(…84809 tokens truncated…ext-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
               {homeSubTv&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='free'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>프리 부셋탑</button></div>}
               <div className="text-[10px] text-gray-400 mt-2">TV프리(부)와 스마트홈은 인터넷 없이 단독으로도 선택할 수 있어요.</div>
             </div>
