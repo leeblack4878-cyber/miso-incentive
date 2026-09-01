@@ -4778,7 +4778,15 @@ const CARE_TEMPLATES = [
   { key:'addon93', label:'🧾 93일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:93 },
   { key:'plan183', label:'📱 183일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:183 },
   { key:'payment3', label:'💳 3개월간 요금 수납', title:'요금 수납', repeatCount:3 },
+  { key:'affiliateCard', label:'💳 통신사 제휴카드 할인', title:'제휴카드 할인 진행', staged:true },
 ];
+
+const AFFILIATE_CARD_STAGES = {
+  before_application:'신청 전',
+  applied_unreceived:'신청완료 · 미수령',
+  received_not_visited:'수령 · 미방문',
+};
+const AFFILIATE_CARD_NAMES = ['신한카드','국민카드','현대카드','우리카드','삼성카드','롯데카드','하나카드','농협카드'];
 
 function addDaysDate(dateStr, days) {
   const d = new Date(`${dateStr}T12:00:00`);
@@ -4825,7 +4833,7 @@ async function ensureCustomer(userId, customerName, saleDate) {
 async function createCustomerSaleAndTasks({
   userId, customerName, saleDate, metricLabel, sourceType='daily',
   templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null,
-  targetPlan='', paymentFirstDate=''
+  targetPlan='', paymentFirstDate='', affiliateCard=null
 }) {
   const customerId=await ensureCustomer(userId,customerName,saleDate);
   if(!customerId) throw new Error('고객 저장 실패');
@@ -4855,6 +4863,20 @@ async function createCustomerSaleAndTasks({
       });
       return;
     }
+    if(key==='affiliateCard'){
+      rows.push({
+        user_id:userId,customer_id:customerId,source_sale_id:sale.id,
+        task_type:key,title:t.title,base_date:saleDate,retention_days:null,due_date:saleDate,status:'pending',
+        task_meta:{
+          card_name:String(affiliateCard?.cardName||'').trim(),
+          card_stage:'before_application',
+          approval_required:!!affiliateCard?.approvalRequired,
+          approval_completed:false,
+          autopay_registered:false
+        }
+      });
+      return;
+    }
     rows.push({
       user_id:userId,customer_id:customerId,source_sale_id:sale.id,
       task_type:key,title:t.title,base_date:saleDate,retention_days:t.retentionDays,
@@ -4881,7 +4903,8 @@ async function createCustomerSaleAndTasks({
 
 function CareTemplatePicker({
   selected, setSelected, customTitle, setCustomTitle, customDueDate, setCustomDueDate, saleDate,
-  targetPlan='', setTargetPlan=()=>{}, paymentFirstDate='', setPaymentFirstDate=()=>{}
+  targetPlan='', setTargetPlan=()=>{}, paymentFirstDate='', setPaymentFirstDate=()=>{},
+  affiliateCard={cardName:'',approvalRequired:false}, setAffiliateCard=()=>{}
 }) {
   const toggle=(key)=>setSelected(selected.includes(key)?selected.filter(x=>x!==key):[...selected,key]);
   return <div className="space-y-2">
@@ -4901,6 +4924,18 @@ function CareTemplatePicker({
       <input type="date" value={paymentFirstDate} onChange={e=>setPaymentFirstDate(e.target.value)} className="mt-1.5 w-full border rounded-lg px-2.5 py-2 text-xs bg-white"/>
       {paymentFirstDate&&<div className="mt-2 text-[10px] text-violet-700">{[0,1,2].map(i=>`${i+1}회 ${addMonthsDate(paymentFirstDate,i)}`).join(' · ')}</div>}
       <div className="mt-1.5 text-[10px] leading-relaxed text-gray-500">한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요.</div>
+    </div>}
+    {selected.includes('affiliateCard')&&<div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2">
+      <div className="text-[11px] font-semibold text-gray-700">통신사 제휴카드</div>
+      <select value={affiliateCard.cardName||''} onChange={e=>setAffiliateCard({...affiliateCard,cardName:e.target.value})} className="w-full border rounded-lg px-2.5 py-2 text-xs bg-white">
+        <option value="">카드사를 선택해주세요</option>
+        {AFFILIATE_CARD_NAMES.map(name=><option key={name} value={name}>{name}</option>)}
+      </select>
+      <label className="flex items-center gap-2 rounded-lg bg-white border border-blue-100 px-3 py-2 text-xs text-gray-600">
+        <input type="checkbox" checked={!!affiliateCard.approvalRequired} onChange={e=>setAffiliateCard({...affiliateCard,approvalRequired:e.target.checked})}/>
+        카드 수령 후 별도 승인이 필요해요
+      </label>
+      <div className="text-[10px] leading-relaxed text-gray-500">신청 → 수령 → 승인(필요 시) → 자동이체 등록 → 최종 완료까지 단계별로 관리해요.</div>
     </div>}
     {(selected.includes('plan93')||selected.includes('plan183'))&&(
       <div className="pt-1">
@@ -4966,6 +5001,18 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
     load();
   };
 
+  const updateAffiliateCard=async(t,metaPatch)=>{
+    await updateTask(t,{task_meta:{...(t.task_meta||{}),...metaPatch}});
+  };
+
+  const finishAffiliateCard=async(t)=>{
+    const meta=t.task_meta||{};
+    if(meta.card_stage!=='received_not_visited')return showAppToast('먼저 카드 수령 단계를 완료해주세요.',{tone:'error'});
+    if(meta.approval_required&&!meta.approval_completed)return showAppToast('카드 승인 여부를 먼저 확인해주세요.',{tone:'error'});
+    if(!meta.autopay_registered)return showAppToast('통신요금 자동이체 등록을 먼저 확인해주세요.',{tone:'error'});
+    await complete(t);
+  };
+
   const complete=async(t)=>{
     const name=customerMap[t.customer_id]?.customer_name||'고객';
     if(!await showAppConfirm({title:'고객 약속을 완료할까요?',message:`${name} · ${t.title}\n완료 내역에서 다시 되돌릴 수 있어요.`,confirmLabel:'완료 처리'}))return;
@@ -5029,6 +5076,7 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
        <div className="divide-y divide-gray-50">
          {visible.map(t=>{
            const c=customerMap[t.customer_id], isOver=t.status!=='completed'&&t.due_date<today;
+           const card=t.task_type==='affiliateCard'?t.task_meta||{}:null;
            return <div key={t.id} className="p-4">
              <div className="flex justify-between gap-3">
                <div className="min-w-0">
@@ -5037,6 +5085,13 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
                    {t.retention_days?`${t.retention_days}일 유지 → ${t.retention_days===93?'94':'184'}일째 변경 가능 · `:''}{t.due_date}
                  </div>
                  {t.target_plan&&<div className="text-xs text-violet-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
+                 {card&&<div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                   <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-blue-800">{card.card_name||'카드명 미입력'}</span><span className="text-[10px] font-bold text-blue-600">{t.status==='completed'?'최종 완료':AFFILIATE_CARD_STAGES[card.card_stage]||'신청 전'}</span></div>
+                   <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
+                     <div className={`rounded-lg px-2 py-1.5 ${card.approval_required?(card.approval_completed?'bg-emerald-100 text-emerald-700':'bg-white text-gray-500'):'bg-gray-100 text-gray-400'}`}>승인 · {card.approval_required?(card.approval_completed?'완료':'확인 필요'):'해당 없음'}</div>
+                     <div className={`rounded-lg px-2 py-1.5 ${card.autopay_registered?'bg-emerald-100 text-emerald-700':'bg-white text-gray-500'}`}>자동이체 · {card.autopay_registered?'등록 완료':'미등록'}</div>
+                   </div>
+                 </div>}
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
                <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
@@ -5048,6 +5103,20 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
                <button onClick={()=>undoComplete(t)} className="mt-3 w-full py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">
                  완료 취소
                </button>
+             ):card?(
+               <div className="mt-3 space-y-1.5">
+                 {(!card.card_stage||card.card_stage==='before_application')&&<button onClick={()=>updateAffiliateCard(t,{card_stage:'applied_unreceived'})} className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold">신청 완료 · 카드 수령 대기</button>}
+                 {card.card_stage==='applied_unreceived'&&<button onClick={()=>updateAffiliateCard(t,{card_stage:'received_not_visited'})} className="w-full py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold">카드 수령 완료 · 고객 방문 대기</button>}
+                 {card.card_stage==='received_not_visited'&&<>
+                   {card.approval_required&&!card.approval_completed&&<button onClick={()=>updateAffiliateCard(t,{approval_completed:true})} className="w-full py-2.5 rounded-lg bg-violet-600 text-white text-xs font-bold">카드 승인 확인 완료</button>}
+                   {!card.autopay_registered&&<button onClick={()=>updateAffiliateCard(t,{autopay_registered:true})} className="w-full py-2.5 rounded-lg bg-sky-600 text-white text-xs font-bold">통신요금 자동이체 등록 완료</button>}
+                   {(!card.approval_required||card.approval_completed)&&card.autopay_registered&&<button onClick={()=>finishAffiliateCard(t)} className="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold">최종 약속 완료</button>}
+                 </>}
+                 <div className="grid grid-cols-2 gap-1.5">
+                   <button onClick={()=>updateTask(t,{status:'pending',due_date:addDaysDate(today,1)})} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">내일 다시</button>
+                   <button onClick={()=>{setRescheduleTask(t);setRescheduleDate(t.due_date||today)}} className="py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">일정변경</button>
+                 </div>
+               </div>
              ):(
                <div className="grid grid-cols-3 gap-1.5 mt-3">
                  <button onClick={()=>complete(t)} className="py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold">처리완료</button>
@@ -5792,6 +5861,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
   const [mobileTargetPlan,setMobileTargetPlan]=useState('');
   const [mobilePaymentFirstDate,setMobilePaymentFirstDate]=useState('');
+  const [mobileAffiliateCard,setMobileAffiliateCard]=useState({cardName:'',approvalRequired:false,taskMeta:null});
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
@@ -6657,6 +6727,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       .filter(k=>CARE_TEMPLATES.some(x=>x.key===k)))]);
     const paymentTasks=(tasks||[]).filter(t=>String(t.task_type||'').startsWith('payment3_')).sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));
     setMobilePaymentFirstDate(paymentTasks[0]?.due_date||'');
+    const affiliateTask=editable.find(t=>t.task_type==='affiliateCard');
+    setMobileAffiliateCard({
+      cardName:affiliateTask?.task_meta?.card_name||'',
+      approvalRequired:!!affiliateTask?.task_meta?.approval_required,
+      taskMeta:affiliateTask?.task_meta||null
+    });
     const customs=editable.filter(t=>t.task_type==='custom');
     const custom=customs[0];
     setMobileCustomTitle(custom?.title||'');
@@ -6680,6 +6756,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCustomDueDate('');
     setMobileTargetPlan('');
     setMobilePaymentFirstDate('');
+    setMobileAffiliateCard({cardName:'',approvalRequired:false,taskMeta:null});
     setMobileVasKeys([]);
     setMobileStrategicPlan(false);
     setMobileBundle2ndKeys([]);
@@ -6740,6 +6817,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileCareKeys.includes('payment3')&&!mobilePaymentFirstDate)return showAppToast('3개월 요금 수납의 첫 수납 예정일을 선택해주세요.',{tone:'error'});
+    if(mobileCareKeys.includes('affiliateCard')&&!String(mobileAffiliateCard.cardName||'').trim())return showAppToast('약속할 제휴카드명을 입력해주세요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
       return showLegacyAlert(specialPolicies.length
         ? '특가&지인정책에 적용할 모델과 가입 구분을 선택해주세요.'
@@ -6860,6 +6938,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             }
             return;
           }
+          if(key==='affiliateCard'){
+            const previous=mobileAffiliateCard.taskMeta||{};
+            taskRows.push({
+              user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:editingSale.id,
+              task_type:key,title:t.title,base_date:saleDate,retention_days:null,due_date:saleDate,status:'pending',
+              task_meta:{...previous,card_name:mobileAffiliateCard.cardName.trim(),approval_required:!!mobileAffiliateCard.approvalRequired,card_stage:previous.card_stage||'before_application',approval_completed:!!previous.approval_completed,autopay_registered:!!previous.autopay_registered}
+            });
+            return;
+          }
           taskRows.push({
             user_id:currentEmp.id,
             customer_id:linkedCustomerId,
@@ -6907,6 +6994,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
         paymentFirstDate:mobilePaymentFirstDate,
+        affiliateCard:mobileAffiliateCard,
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyType:'additive'} : mobileSaleKind==='incentive_unpaid'?{policyType:'incentive_unpaid',policyTitle:'인센미지급 특가'}:null}
       });
@@ -7755,6 +7843,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 customDueDate={mobileCustomDueDate} setCustomDueDate={setMobileCustomDueDate}
                 targetPlan={mobileTargetPlan} setTargetPlan={setMobileTargetPlan}
                 paymentFirstDate={mobilePaymentFirstDate} setPaymentFirstDate={setMobilePaymentFirstDate}
+                affiliateCard={mobileAffiliateCard} setAffiliateCard={setMobileAffiliateCard}
                 saleDate={`${month}-${selectedDay}`}
               />
               {mobileExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button type="button" onClick={()=>setMobileExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}

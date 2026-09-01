@@ -47,6 +47,23 @@ test('3개월 요금 수납은 월별 3회차로 저장하고 완료 전까지 �
   assert.match(source, /completedPaymentTypes\.has\(taskType\)/);
 });
 
+test('제휴카드 약속은 신청·수령·승인·자동이체 후 최종 완료한다', async () => {
+  const [source, sql] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../sql/customer_task_affiliate_card.sql', import.meta.url), 'utf8'),
+  ]);
+  assert.match(source, /key:'affiliateCard'/);
+  assert.match(source, /\['신한카드','국민카드','현대카드','우리카드','삼성카드','롯데카드','하나카드','농협카드'\]/);
+  assert.match(source, /카드사를 선택해주세요/);
+  assert.match(source, /before_application:'신청 전'/);
+  assert.match(source, /applied_unreceived:'신청완료 · 미수령'/);
+  assert.match(source, /received_not_visited:'수령 · 미방문'/);
+  assert.match(source, /approval_required/);
+  assert.match(source, /autopay_registered/);
+  assert.match(source, /최종 약속 완료/);
+  assert.match(sql, /task_meta jsonb not null default/);
+});
+
 test('직원 실적입력 화면에는 스팟 추가 인센티브 카드를 표시하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /<SpotClaimPanel\s+userId=/);
