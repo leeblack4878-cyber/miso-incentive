@@ -15,6 +15,18 @@ test('직접 고객 약속은 판매건 source_sale_id와 연결해 저장한다
   assert.match(source, /task_type:\s*'custom'/);
 });
 
+test('93일·183일 변경 약속은 실적 입력일 기준으로 자동 계산한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /key:'plan93'[\s\S]*retentionDays:93/);
+  assert.match(source, /key:'plan183'[\s\S]*retentionDays:183/);
+  assert.match(source, /base_date:saleDate[\s\S]*due_date:addDaysDate\(saleDate,t\.retentionDays\)/);
+});
+
+test('직원 실적입력 화면에는 스팟 추가 인센티브 카드를 표시하지 않는다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /<SpotClaimPanel\s+userId=/);
+});
+
 test('과거 판매 수정은 이전 source_meta를 보존 병합한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /mergeSaleMetaPreservingLegacy\(editingSale\.source_meta/);

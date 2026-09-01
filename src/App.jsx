@@ -5564,10 +5564,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           />
 
           <div className="mt-4">
-            <SpotClaimPanel userId={authUser?.id} month={month} />
-          </div>
-
-          <div className="mt-4">
             <SalesExpensePanel
               userId={authUser?.id}
               month={month}
