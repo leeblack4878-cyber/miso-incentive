@@ -3,10 +3,11 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
   Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
   UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
-  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
+import HqStructurePolicyView from './HqStructurePolicyView';
 import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 import {
@@ -1206,6 +1207,19 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
   const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
+  const [canViewHqStructure, setCanViewHqStructure] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (!authUser?.id) { setCanViewHqStructure(false); return () => { alive = false; }; }
+    supabase.from('hq_structure_access').select('user_id').eq('user_id', authUser.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) console.error('HQ STRUCTURE ACCESS LOAD ERROR', error);
+        setCanViewHqStructure(!error && data?.user_id === authUser.id);
+      });
+    return () => { alive = false; };
+  }, [authUser?.id]);
 
   // 모바일 웹앱 뒤로가기 제어
   const [exitHint, setExitHint] = useState(false);
@@ -2128,6 +2142,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           loginPosition={loginEmp?.position||''}
           loginBranch={loginEmp?.branch||''}
           canSwitchStores={isFullAdmin||isHQManager}
+          canViewHqStructure={canViewHqStructure}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
           policyInputBlocked={policyBlockedMonths.includes(month)} togglePolicyInputBlock={togglePolicyInputBlock}
         />
@@ -9617,7 +9632,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false }) {
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
     { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
@@ -9630,6 +9645,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'expenses', label: '영업비용/오퍼', icon: Wallet, group:'비용 · 승인' },
     { key: 'spot', label: '스팟 승인', icon: Zap, group:'비용 · 승인' },
     { key: 'employees', label: '직원 관리', icon: Users, group:'설정' },
+    ...(canViewHqStructure ? [{ key: 'hqStructure', label: '본사 구조정책', icon: Building2, group:'본사 전용' }] : []),
     ...(isFullAdmin ? [
       { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud, group:'실적 관리' },
       { key: 'settlement', label: '정산 검토', icon: Wallet, group:'정산' },
@@ -9638,10 +9654,11 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       { key: 'permissions', label: '권한 관리', icon: ShieldCheck, group:'설정' },
     ] : []),
   ];
-  const TAB_GROUPS=['현황','실적 관리','고객 · 홈','비용 · 승인','정산','설정'];
+  const TAB_GROUPS=['현황','실적 관리','고객 · 홈','비용 · 승인','본사 전용','정산','설정'];
   useEffect(() => {
     if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
-  }, [adminTab, isFullAdmin]); // eslint-disable-line
+    if (adminTab === 'hqStructure' && !canViewHqStructure) setAdminTab('dashboard');
+  }, [adminTab, isFullAdmin, canViewHqStructure]); // eslint-disable-line
 
   const downloadCSV = () => {
     const header = ['이름', '직급', '매장', 'HS', '등급', '총 인센티브', '상태'];
@@ -9797,6 +9814,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
+      {adminTab === 'hqStructure' && canViewHqStructure && <HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} />}
 
       {adminTab === 'employees' && (
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} />
