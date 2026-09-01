@@ -8,6 +8,7 @@ import {
   calculateSelfStoreOperatingSupport,
   calculateRetailPartnerMonthlyPolicy,
   calculateSalesMetricActivation,
+  calculateRetailMonthlyAward,
 } from './hqStructurePolicy';
 
 const countText = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
@@ -19,15 +20,20 @@ const BASELINE_LABELS = {
   sangnoksu: '상록수', doil: '도일시장', sammi: '삼미시장', residentCenter: '주민센터', sanbon: '산본점', ownedStore: '자가매장 보유',
 };
 
-export default function HqStructurePolicyView({ month, employeeIds = [] }) {
+const HQ_STRUCTURE_EDITOR_ID = 'a50a0979-acef-40b1-98b7-f05074f1c835';
+
+export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '' }) {
   const emptyRetail = calculateRetailPartnerMonthlyPolicy();
   const emptySalesMetric = calculateSalesMetricActivation();
-  const [state, setState] = useState({ loading: true, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail, salesMetric: emptySalesMetric });
+  const emptyAward = calculateRetailMonthlyAward();
+  const [state, setState] = useState({ loading: true, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail, salesMetric: emptySalesMetric, award: emptyAward });
+  const [changeSupportRatio,setChangeSupportRatio]=useState('');
+  const [awardSaving,setAwardSaving]=useState(false);
 
   useEffect(() => {
     let alive = true;
     if (!employeeIds.length) {
-      setState({ loading: false, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail, salesMetric: emptySalesMetric });
+      setState({ loading: false, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail, salesMetric: emptySalesMetric, award: emptyAward });
       return () => { alive = false; };
     }
     (async () => {
@@ -35,7 +41,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
       const [year, monthNumber] = month.split('-').map(Number);
       const next = new Date(year, monthNumber, 1);
       const to = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
-      const [salesResult, homeResult, dailyResult] = await Promise.all([
+      const [salesResult, homeResult, dailyResult, awardInputResult] = await Promise.all([
         supabase.from('customer_sales')
           .select('id,user_id,source_type,source_meta,sale_date')
           .in('user_id', employeeIds).gte('sale_date', `${month}-01`).lt('sale_date', to),
@@ -45,8 +51,9 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
           .gte('actual_install_date', `${month}-01`).lt('actual_install_date', to),
         supabase.from('daily_records').select('user_id,data').in('user_id', employeeIds)
           .gte('work_date', `${month}-01`).lt('work_date', to),
+        supabase.from('hq_structure_monthly_inputs').select('change_support_ratio').eq('month',month).maybeSingle(),
       ]);
-      if (salesResult.error || homeResult.error || dailyResult.error) throw salesResult.error || homeResult.error || dailyResult.error;
+      if (salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error) throw salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error;
 
       let hs = 0, mnp = 0, new010 = 0, change95Plus = 0, changeUnder95 = 0, simMnp = 0, plan115Hs = 0;
       let second = 0;
@@ -83,7 +90,9 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
       const sono = (dailyResult.data || []).reduce((sum, row) => sum + Object.values(row.data?.groups?.sono || {}).reduce((a, value) => a + Number(value || 0), 0), 0);
       const salesMetricPoints = strategicPlan * 0.5 + insurance * 0.8 + strategicVas + sono * 2;
       const salesMetric = calculateSalesMetricActivation({ hs, salesMetricPoints });
-      if (alive) setState({ loading: false, error: '', result, retail, salesMetric });
+      const savedChangeSupportRatio = awardInputResult.data?.change_support_ratio;
+      const award = calculateRetailMonthlyAward({ hs, mnp, new010, change:change95Plus+changeUnder95, simMnp, internet, salesMetricPoints, changeSupportRatio:savedChangeSupportRatio });
+      if (alive) { setChangeSupportRatio(savedChangeSupportRatio??''); setState({ loading: false, error: '', result, retail, salesMetric, award }); }
     })().catch(error => {
       console.error('HQ STRUCTURE POLICY LOAD ERROR', error);
       if (alive) setState(prev => ({ ...prev, loading: false, error: '본사 구조정책 실적을 불러오지 못했어요.' }));
@@ -91,7 +100,15 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
     return () => { alive = false; };
   }, [month, employeeIds.join('|')]);
 
-  const { result, retail, salesMetric } = state;
+  const { result, retail, salesMetric, award } = state;
+  const saveChangeSupportRatio=async()=>{
+    setAwardSaving(true);
+    const value=Math.max(0,Math.min(100,Number(changeSupportRatio||0)));
+    const {error}=await supabase.from('hq_structure_monthly_inputs').upsert({month,change_support_ratio:value,updated_by:authUserId,updated_at:new Date().toISOString()},{onConflict:'month'});
+    setAwardSaving(false);
+    if(error){setState(prev=>({...prev,error:'유통망지원금 활용 비중을 저장하지 못했어요.'}));return}
+    setState(prev=>({...prev,error:'',award:calculateRetailMonthlyAward({...prev.award,changeSupportRatio:value})}));
+  };
   return <div className="space-y-4">
     <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
       <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
@@ -148,6 +165,21 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-emerald-700">{value}</div></div>)}</div>
       <div className="border-t px-4 py-3"><div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3 text-xs"><span>현재 적용 단가</span><b className="text-emerald-700">{salesMetric.pointRate ? `달성률 ${salesMetric.threshold}% 구간 · 1P당 ${wonText(salesMetric.pointRate)}` : '80% 미만 · 미지급'}</b></div><div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">{[[80,4400],[100,6600],[120,8800],[140,11000],[160,13200],[180,15400],[200,17600]].map(([pct,rate])=><div key={pct} className={`rounded-lg px-2 py-2 text-center text-[10px] ${salesMetric.threshold===pct?'bg-emerald-600 text-white':'bg-gray-50 text-gray-500'}`}><b>{pct}%</b><br/>{wonText(rate)}/P</div>)}</div></div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">전략요금제 0.5P · 보험류 0.8P · 전략 VAS 1P · 대명 2P<br/>최종 지급액 = 매출지표 총 P × 달성 구간의 1P당 단가</div>
+    </div>
+
+    <div className="rounded-2xl border border-amber-100 bg-white overflow-hidden">
+      <div className="bg-amber-50 px-4 py-4"><div className="text-[10px] font-bold text-amber-600">본사 구조정책 · 네 번째</div><div className="mt-1 text-lg font-black text-gray-900">소매 월간 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">5개 지표의 최고 달성점수를 합산해 MNP·010 신규·기변 단가를 결정합니다.</div></div>
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['합산점수', `${award.totalScore}점`],
+        ['MNP 단가', wonText(award.rates.mnp)],
+        ['010 신규 단가', wonText(award.rates.new010)],
+        ['예상 시상금', wonText(award.totalAmount)],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-amber-700">{value}</div></div>)}</div>
+      <div className="border-t divide-y divide-gray-50">{[
+        ['HS 신규 비중','newRatio'],['SIM MNP 비중','simMnpRatio'],['HS 대비 전략상품 비중','salesMetricRatio'],['기변 유통망지원금 활용','changeSupportRatio'],['인터넷 비중','internetRatio'],
+      ].map(([label,key])=><div key={key} className="grid grid-cols-[1fr_70px_45px] items-center gap-2 px-4 py-3 text-xs"><span className="font-semibold text-gray-700">{label}</span><span className="text-right text-gray-500">{countText(award.ratios[key])}%</span><b className="text-right text-amber-700">{award.scores[key]}점</b></div>)}</div>
+      <div className="border-t px-4 py-3">{authUserId===HQ_STRUCTURE_EDITOR_ID?<div className="flex items-end gap-2"><label className="flex-1 text-[10px] text-gray-500">기변 유통망지원금 활용 비중<input type="number" min="0" max="100" step="0.1" value={changeSupportRatio} onChange={e=>setChangeSupportRatio(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="예: 55"/></label><button onClick={saveChangeSupportRatio} disabled={awardSaving} className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{awardSaving?'저장 중':'저장'}</button></div>:<div className="text-[10px] text-gray-400">기변 유통망지원금 활용 비중은 이강진 실장이 월별로 입력합니다.</div>}</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">예상 시상금 = MNP 건수×MNP 단가 + 010 신규 건수×신규 단가 + 기변 건수×기변 단가<br/>현재 실적 기준 예상치이며 익월 취소·해지 등 사후 제외건은 최종 확정 시 반영됩니다.</div>
     </div>
   </div>;
 }

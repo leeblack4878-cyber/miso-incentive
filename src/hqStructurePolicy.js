@@ -98,3 +98,41 @@ export function calculateSalesMetricActivation({ hs = 0, salesMetricPoints = 0 }
   const tier = SALES_METRIC_RATES.find(item => achievement >= item.threshold) || { threshold: 0, rate: 0 };
   return { hs: safeHs, points, achievement, threshold: tier.threshold, pointRate: tier.rate, totalAmount: points * tier.rate };
 }
+
+export const MONTHLY_AWARD_THRESHOLDS = Object.freeze({
+  newRatio: [15, 18, 21, 24, 27, 30],
+  simMnpRatio: [2, 4, 6, 8, 10, 12],
+  salesMetricRatio: [80, 100, 120, 140, 160, 180],
+  changeSupportRatio: [15, 25, 35, 45, 55],
+  internetRatio: [4, 6, 8, 10, 12],
+});
+
+export function scoreMonthlyAwardMetric(value = 0, thresholds = []) {
+  return thresholds.reduce((score, threshold, index) => Number(value || 0) >= threshold ? index + 1 : score, 0);
+}
+
+export function calculateRetailMonthlyAward(input = {}) {
+  const hs = Math.max(0, Number(input.hs || 0));
+  const mnp = Math.max(0, Number(input.mnp || 0));
+  const new010 = Math.max(0, Number(input.new010 || 0));
+  const change = Math.max(0, Number(input.change || 0));
+  const simMnp = Math.max(0, Number(input.simMnp || 0));
+  const internet = Math.max(0, Number(input.internet || 0));
+  const salesMetricPoints = Math.max(0, Number(input.salesMetricPoints || 0));
+  const ratios = {
+    newRatio: hs ? new010 / hs * 100 : 0,
+    simMnpRatio: hs ? simMnp / hs * 100 : 0,
+    salesMetricRatio: hs ? salesMetricPoints / hs * 100 : 0,
+    changeSupportRatio: Math.max(0, Number(input.changeSupportRatio || 0)),
+    internetRatio: hs ? internet / hs * 100 : 0,
+  };
+  const scores = Object.fromEntries(Object.entries(MONTHLY_AWARD_THRESHOLDS).map(([key, thresholds]) => [key, scoreMonthlyAwardMetric(ratios[key], thresholds)]));
+  const totalScore = Object.values(scores).reduce((sum, score) => sum + score, 0);
+  const rates = totalScore >= 16 ? { mnp: 55000, new010: 49500, change: 16500 }
+    : totalScore >= 14 ? { mnp: 49500, new010: 44000, change: 11000 }
+    : totalScore >= 12 ? { mnp: 44000, new010: 38500, change: 5500 }
+    : totalScore >= 10 ? { mnp: 38500, new010: 33000, change: 0 }
+    : { mnp: 0, new010: 0, change: 0 };
+  const amounts = { mnp: mnp * rates.mnp, new010: new010 * rates.new010, change: change * rates.change };
+  return { hs, mnp, new010, change, simMnp, internet, salesMetricPoints, ratios, scores, totalScore, rates, amounts, totalAmount: amounts.mnp + amounts.new010 + amounts.change };
+}

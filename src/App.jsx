@@ -9814,7 +9814,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
-      {adminTab === 'hqStructure' && canViewHqStructure && <HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} />}
+      {adminTab === 'hqStructure' && canViewHqStructure && <HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} />}
 
       {adminTab === 'employees' && (
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} />

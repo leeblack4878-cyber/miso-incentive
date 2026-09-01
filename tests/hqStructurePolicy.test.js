@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SELF_STORE_BASELINE_TOTAL, calculateSelfStoreOperatingSupport, calculateRetailPartnerMonthlyPolicy, calculateSalesMetricActivation } from '../src/hqStructurePolicy.js';
+import { SELF_STORE_BASELINE_TOTAL, calculateSelfStoreOperatingSupport, calculateRetailPartnerMonthlyPolicy, calculateSalesMetricActivation, calculateRetailMonthlyAward } from '../src/hqStructurePolicy.js';
 
 test('자가매장 기준 수량 합계는 668건이다', () => assert.equal(SELF_STORE_BASELINE_TOTAL, 668));
 
@@ -51,4 +51,16 @@ test('매출지표 활성화는 달성 구간 단가를 총 P에 적용한다', 
 test('매출지표 80% 미만은 미지급하고 200% 초과도 최고 단가를 유지한다', () => {
   assert.equal(calculateSalesMetricActivation({ hs: 100, salesMetricPoints: 79 }).totalAmount, 0);
   assert.equal(calculateSalesMetricActivation({ hs: 100, salesMetricPoints: 250 }).pointRate, 17600);
+});
+
+test('소매 월간 시상은 다섯 지표의 최고 달성점수를 합산한다', () => {
+  const result=calculateRetailMonthlyAward({hs:100,new010:30,simMnp:12,salesMetricPoints:180,changeSupportRatio:55,internet:12});
+  assert.equal(result.totalScore,28);
+  assert.deepEqual(result.rates,{mnp:55000,new010:49500,change:16500});
+});
+
+test('소매 월간 시상 16점은 실제 MNP 신규 기변 건수별 단가를 적용한다', () => {
+  const result=calculateRetailMonthlyAward({hs:100,mnp:50,new010:20,change:30,simMnp:8,salesMetricPoints:140,changeSupportRatio:35,internet:8});
+  assert.equal(result.totalScore,16);
+  assert.equal(result.totalAmount,50*55000+20*49500+30*16500);
 });
