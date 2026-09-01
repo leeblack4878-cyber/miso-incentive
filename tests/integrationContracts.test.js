@@ -230,11 +230,12 @@ test('스마트홈과 HS 동시판매는 고객 묶음당 추가 수수료를 �
 
 test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const strategicSource = await readFile(new URL('../src/strategicPoints.js', import.meta.url), 'utf8');
   assert.match(source, /strategicPointDelta:mobileStrategicPoint/);
   assert.match(source, /productivityDelta:Number\(afterPay\.kpiScore/);
   assert.match(source, /성과P \+\$\{fmtNum\(toast\.pointDelta,1\)\}P · 전략P \+\$\{fmtNum\(toast\.strategicPointDelta,1\)\}P · 생산성 \+\$\{fmtNum\(toast\.productivityDelta,1\)\}P/);
-  assert.match(source, /vasVcolorBundle:1/);
-  assert.match(source, /vasVcolorMusic:\.3/);
+  assert.match(strategicSource, /vasVcolorBundle: 1/);
+  assert.match(strategicSource, /vasVcolorMusic: 0\.3/);
 });
 
 test('명예의 전당은 누적순위 바로 위에 있고 프로필 카드는 한줄 상태 없이 간결하다', async () => {

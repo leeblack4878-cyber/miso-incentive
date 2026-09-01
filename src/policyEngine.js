@@ -1,3 +1,5 @@
+import { summarizeStrategicProducts } from './strategicPoints.js';
+
 export const SECOND_PERFORMANCE_POINT = 0.2;
 export const INSURANCE_QUALITY_POINT = 0.8;
 export const SECOND_ALLOWED_VAS_KEYS = Object.freeze(['vasPhonePass', 'vasSafePass']);
@@ -201,13 +203,15 @@ export function calculatePayrollSettlement({
   vasPay = 0,
   approvedMobileSpotPay = 0,
   specialReplacementPay = 0,
+  strategicAdjustment = 0,
   positionAllowance = 0,
   extras = {},
 } = {}) {
   const money = value => Math.max(0, Number(value || 0));
-  const mobileGuaranteeBasis = money(tenurePay) + money(mobilePlanPay) + money(bundle2ndPay)
+  const signedStrategicAdjustment = Number(strategicAdjustment || 0);
+  const mobileGuaranteeBasis = Math.max(0, money(tenurePay) + money(mobilePlanPay) + money(bundle2ndPay)
     + money(vasPay) + money(approvedMobileSpotPay) + money(specialReplacementPay)
-    + money(positionAllowance);
+    + money(positionAllowance) + signedStrategicAdjustment);
   const safeMinimumGuarantee = money(minimumGuarantee);
   const guaranteedComponent = Math.max(safeMinimumGuarantee, mobileGuaranteeBasis);
   const normalizedExtras = Object.fromEntries(
@@ -218,6 +222,7 @@ export function calculatePayrollSettlement({
   const closingAmount = guaranteedComponent + postGuaranteeExtras;
   return {
     minimumGuarantee: safeMinimumGuarantee,
+    strategicAdjustment: signedStrategicAdjustment,
     mobileGuaranteeBasis,
     guaranteedComponent,
     guaranteeTopUp: Math.max(0, safeMinimumGuarantee - mobileGuaranteeBasis),
@@ -396,17 +401,7 @@ export function allowedSecondVas(items = []) {
 }
 
 export function summarizeVasQuality(sales = []) {
-  let insurance = 0;
-  let strategicVas = 0;
-  (sales || []).forEach(sale => {
-    const meta = sale?.source_meta || {};
-    const keys = [...(meta.vasKeys || []), ...Object.values(meta.bundleVasMap || {}).flat()];
-    keys.forEach(key => {
-      if (key === 'vasPhonePass' || key === 'vasSafePass') insurance += 1;
-      if (key === 'vasKyobo' || key === 'vasVcolor') strategicVas += 1;
-    });
-  });
-  return { insurance, strategicVas, insurancePoints: insurance * INSURANCE_QUALITY_POINT };
+  return summarizeStrategicProducts(sales);
 }
 
 export function calculateFreePhoneSpecialOutcome({

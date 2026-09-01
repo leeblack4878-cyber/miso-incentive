@@ -85,10 +85,9 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       const result = calculateSelfStoreOperatingSupport({ hs, second, internet, smartHome, extraSetTop });
       const retail = calculateRetailPartnerMonthlyPolicy({ hs, plan115Hs, mnp, new010, change95Plus, changeUnder95, second, simMnp });
       const mobileSales = (salesResult.data || []).filter(row => row.source_type === 'mobile');
-      const strategicPlan = mobileSales.filter(row => row.source_meta?.strategicPlan).length;
-      const { insurance, strategicVas } = summarizeVasQuality(mobileSales);
+      const { strategicPointsWithoutDaemyung, daemyungCount } = summarizeVasQuality(mobileSales);
       const sono = (dailyResult.data || []).reduce((sum, row) => sum + Object.values(row.data?.groups?.sono || {}).reduce((a, value) => a + Number(value || 0), 0), 0);
-      const salesMetricPoints = strategicPlan * 0.5 + insurance * 0.8 + strategicVas + sono * 2;
+      const salesMetricPoints = Number(strategicPointsWithoutDaemyung || 0) + Math.max(Number(daemyungCount || 0), sono) * 2;
       const salesMetric = calculateSalesMetricActivation({ hs, salesMetricPoints });
       const savedChangeSupportRatio = awardInputResult.data?.change_support_ratio;
       const award = calculateRetailMonthlyAward({ hs, mnp, new010, change:change95Plus+changeUnder95, simMnp, internet, salesMetricPoints, changeSupportRatio:savedChangeSupportRatio });
