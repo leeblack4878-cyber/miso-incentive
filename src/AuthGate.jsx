@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Loader2, LogIn, LogOut, ShieldCheck, KeyRound, Mail, CheckCircle2, UserPlus, Clock, XCircle } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
+import { startUsageTracking } from './usageTracking';
 
 // AuthGate 안에서만 쓰는 매장/직급 목록. App.jsx의 DEFAULT_STORES / POSITIONS와 같은 값으로 맞춰주세요.
 // (매장이 추가/변경되면 이 목록도 같이 업데이트해야 회원가입 폼에 반영됩니다.)
@@ -52,6 +53,14 @@ export default function AuthGate({ children }) {
       } catch (e) { /* 실패하면 fallback 목록 그대로 사용 */ }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!session?.user?.id || !profile) return undefined;
+    return startUsageTracking({
+      userId: session.user.id,
+      role: profile.role === 'admin' ? 'manager' : 'employee',
+    });
+  }, [session?.user?.id, profile?.role]);
 
   async function loadProfile(userId) {
     const { data, error } = await supabase
