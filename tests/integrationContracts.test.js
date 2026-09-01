@@ -155,6 +155,20 @@ test('관리자 홈 케어는 고객 묶음과 실시간 갱신을 사용한다'
   assert.match(source, /중복 저장 의심/);
 });
 
+test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률을 함께 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const view = source.match(/function AdminCustomerCareOverview[\s\S]*?function AdminManagementAlerts/)?.[0]||'';
+  assert.match(view, /\.in\('user_id',employeeIds\)/);
+  assert.match(view, /기한 내 완료/);
+  assert.match(view, /전체 카테고리/);
+  assert.match(view, /제휴카드/);
+  assert.match(view, /수납지원/);
+  assert.match(view, /고객 거절/);
+  assert.match(view, /자동이체 미등록/);
+  assert.match(view, /회 완료/);
+  assert.match(source, /setCustomerCareFilter\('overdue'\)/);
+});
+
 test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /todayIsDayOff[\s\S]*label:'오늘 휴무'/);
