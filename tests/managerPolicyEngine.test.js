@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateSeptemberManagerIncentive, managerOperatorForStore, septemberManagerStoreType } from '../src/managerPolicyEngine.js';
+import { calculateSeptemberManagerIncentive, managerOperatorForStore, septemberManagerStoreType, managerCompanyGoalShare } from '../src/managerPolicyEngine.js';
 
 test('9월 관리자 운영자를 직급이 아니라 지정된 이름으로 찾는다', () => {
   assert.equal(managerOperatorForStore('광정동_산본점').name, '최재혁');
@@ -12,6 +12,14 @@ test('지정한 5개 매장은 위탁, 나머지 매장은 자가 2ND 기준을 
     .forEach(store => assert.equal(septemberManagerStoreType(store), 'consignment', store));
   assert.equal(septemberManagerStoreType('신천동_삼미시장2호점'), 'owned');
   assert.equal(septemberManagerStoreType('월곶동_월곶점'), 'owned');
+});
+
+test('AA 회사 목표는 로그인 관리자의 조회 매장이 아니라 전체 매장 HS 기준으로 배분한다', () => {
+  const allStoreTargets=[102,63,100,52,70,54,100,64,37,129,39,41,41];
+  const share=managerCompanyGoalShare(102,allStoreTargets);
+  assert.ok(share < 0.12);
+  assert.equal(Math.round(209*share),24);
+  assert.equal(Math.round(84*share),10);
 });
 
 test('관리자 핵심성과는 달성 구간별 실제 건수 단가로 계산한다', () => {

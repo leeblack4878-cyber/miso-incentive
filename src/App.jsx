@@ -23,6 +23,7 @@ import {
   SEPTEMBER_MANAGER_POLICY_VERSION,
   managerOperatorForStore,
   septemberManagerStoreType,
+  managerCompanyGoalShare,
   calculateSeptemberManagerIncentive,
 } from './managerPolicyEngine';
 
@@ -2275,8 +2276,11 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     return [storeName,{...companyGoalDefaults(storeName),...(saved?.company_goals||{})}];
   }));
   const storeHsTarget=Number(goalMap[activeStore]?.hs||0);
-  const totalHsTarget=stores.reduce((sum,storeName)=>sum+Number(goalMap[storeName]?.hs||0),0);
-  const share=totalHsTarget>0?storeHsTarget/totalHsTarget:0;
+  // 현장 관리자는 권한상 자기 매장 직원만 조회하므로 `stores`에는 한 매장만 들어옵니다.
+  // AA 회사 목표 배분의 분모는 조회 범위가 아니라 정책서의 전체 매장 HS 기준수량이어야 합니다.
+  const allStoreHsTargets=COMPANY_STORE_GOAL_BASE.map(row=>Number(row.hs||0));
+  const totalHsTarget=allStoreHsTargets.reduce((sum,value)=>sum+value,0);
+  const share=managerCompanyGoalShare(storeHsTarget,allStoreHsTargets);
   const coreTargets={
     hs:Number(goalMap[activeStore]?.hs||0),
     home:Number(goalMap[activeStore]?.home||0),

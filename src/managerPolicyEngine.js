@@ -44,6 +44,11 @@ export function managerAchievementTier(actual = 0, target = 0) {
   return { achievement, threshold: 0, tier: '지급 전' };
 }
 
+export function managerCompanyGoalShare(storeHsTarget = 0, allStoreHsTargets = []) {
+  const total = (allStoreHsTargets || []).reduce((sum, value) => sum + Number(value || 0), 0);
+  return total > 0 ? Number(storeHsTarget || 0) / total : 0;
+}
+
 const RATES = {
   hs: { 90: 10000, 100: 20000, 120: 30000 },
   home: { 90: 30000, 100: 50000, 120: 60000 },
