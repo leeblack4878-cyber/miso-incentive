@@ -1,5 +1,5 @@
-Warning: truncated output (original token count: 185662)
-Total output lines: 11014
+Warning: truncated output (original token count: 185840)
+Total output lines: 11023
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
@@ -3126,7 +3126,7 @@ function evaluateAutomaticBadges({
   const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
   const prod=Number(pay?.kpiScore||0);
   if(hs>0)earned.add('first_step');
-  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m8…85662 tokens truncated…판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
+  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m8…85840 tokens truncated…판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
               </div>
               {homeMobileSimul==='usedMnp'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">✓ 중고 MNP 85군↑ 선약 동시판매 · 가정망에서만 적용</div>}
             </div>

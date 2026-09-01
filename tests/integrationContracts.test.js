@@ -195,6 +195,8 @@ test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다
 test('취소된 고객 약속은 직원 홈의 오늘·기한경과 건수에서 제외한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /const pending=\(tasks\|\|\[\]\)\.filter\(x=>x\.status!==['"]completed['"]&&x\.status!==['"]cancelled['"]\)/);
+  assert.match(source, /window\.dispatchEvent\(new CustomEvent\('customer-tasks-changed'/);
+  assert.match(source, /window\.addEventListener\('customer-tasks-changed',refresh\)/);
 });
 
 test('월 목표 현황은 기존 핵심지표의 목표 실적 진척도 예상마감을 한 줄로 표시한다', async () => {
