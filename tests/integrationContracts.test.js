@@ -38,9 +38,13 @@ test('93일·183일 변경 약속은 실적 입력일 기준으로 자동 계산
   assert.match(source, /base_date:saleDate[\s\S]*due_date:addDaysDate\(saleDate,t\.retentionDays\)/);
 });
 
-test('3개월 요금 수납은 월별 3회차로 저장하고 완료 전까지 반복 표시한다', async () => {
+test('N개월 요금 수납은 추가한 월수만큼 저장하고 완료 전까지 반복 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /key:'payment3'[\s\S]*repeatCount:3/);
+  assert.match(source, /N개월간 요금 수납 약속/);
+  assert.match(source, /\+ 다음 회차 추가/);
+  assert.match(source, /− 마지막 회차 삭제/);
+  assert.match(source, /for\(let i=0;i<paymentCount;i\+\+\)/);
   assert.match(source, /task_type:`\$\{key\}_\$\{i\+1\}`/);
   assert.match(source, /due_date:addMonthsDate\(paymentFirstDate,i\)/);
   assert.match(source, /한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요/);
@@ -61,7 +65,21 @@ test('제휴카드 약속은 신청·수령·승인·자동이체 후 최종 완
   assert.match(source, /approval_required/);
   assert.match(source, /autopay_registered/);
   assert.match(source, /최종 약속 완료/);
+  assert.match(source, /이전 단계 되돌리기/);
+  assert.match(source, /✓ 신청 완료/);
+  assert.match(source, /✓ 수령 완료/);
+  assert.match(source, /✓ 승인 확인/);
+  assert.match(source, /✓ 자동이체 등록/);
   assert.match(sql, /task_meta jsonb not null default/);
+});
+
+test('고객 약속은 제휴카드·수납지원·변경·케이스로 구분해 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function careTaskCategory/);
+  assert.match(source, /return '제휴카드'/);
+  assert.match(source, /return '수납지원'/);
+  assert.match(source, /return '변경'/);
+  assert.match(source, /return '케이스'/);
 });
 
 test('판매 없이 기존·신규 고객에게 독립 약속을 등록할 수 있다', async () => {
