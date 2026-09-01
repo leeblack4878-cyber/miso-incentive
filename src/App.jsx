@@ -9265,7 +9265,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
     <div className="px-4 py-3 border-b border-amber-50 flex items-center justify-between gap-3">
       <div>
         <div className="text-xs text-amber-600">🏆 매장 챌린지</div>
-        <div className="text-sm font-bold text-gray-900">회사 기준 대비 종합 달성</div>
+        <div className="text-sm font-bold text-gray-900">기준 목표 종합 달성</div>
         <div className="text-[10px] text-gray-400 mt-0.5">HS · 홈 · 생산성 · 프리 · 스마트홈 · 업셀 기준</div>
       </div>
       <button onClick={onOpenGoals} className="text-xs font-semibold text-violet-600">목표 보기 ›</button>
@@ -9282,7 +9282,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
               }`}>{i+1}</div>
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-gray-800 truncate">{displayStoreName(x.branch)}</div>
-                <div className="text-[10px] text-gray-400">회사기준 {x.achieved}/{x.total} 달성</div>
+                <div className="text-[10px] text-gray-400">기준 목표 {x.total}가지 중 {x.achieved}가지 달성</div>
               </div>
             </div>
             <div className="text-sm font-bold text-amber-700">{x.score.toFixed(1)}점</div>
@@ -9291,7 +9291,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
       </div>
       {myIndex>=3&&<div className="px-4 py-3 bg-violet-50 flex justify-between text-xs text-violet-700">
         <b>우리 매장 {myIndex+1}위</b>
-        <span>{ranked[myIndex].score.toFixed(1)}점 · {ranked[myIndex].achieved}/{ranked[myIndex].total} 달성</span>
+        <span>{ranked[myIndex].score.toFixed(1)}점 · {ranked[myIndex].total}가지 중 {ranked[myIndex].achieved}가지 달성</span>
       </div>}
     </>}
   </div>;
@@ -9324,10 +9324,10 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
       <div>
         <div className="text-xs text-gray-400">🎯 매장 목표 달성</div>
         <div className="text-sm font-bold text-gray-900 mt-1">
-          회사 기준 <span className="text-violet-700">{companyAch.achieved}/{companyAch.total}</span> 달성
+          기준 목표 {companyAch.total}가지 중 <span className="text-violet-700">{companyAch.achieved}가지</span> 달성
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          도전 목표 {challengeAch.achieved}/{challengeAch.total} 달성 · 종합 {companyAch.score.toFixed(1)}점
+          도전 목표 {challengeAch.total}가지 중 {challengeAch.achieved}가지 달성 · 종합 {companyAch.score.toFixed(1)}점
         </div>
       </div>
       <span className="text-xs font-semibold text-violet-600">상세 ›</span>
