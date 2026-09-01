@@ -4761,12 +4761,22 @@ const CARE_TEMPLATES = [
   { key:'plan93', label:'📱 93일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:93 },
   { key:'addon93', label:'🧾 93일 유지 후 부가서비스 해지', title:'부가서비스 해지 안내', retentionDays:93 },
   { key:'plan183', label:'📱 183일 유지 후 요금제 변경', title:'요금제 변경 안내', retentionDays:183 },
+  { key:'payment3', label:'💳 3개월간 요금 수납', title:'요금 수납', repeatCount:3 },
 ];
 
 function addDaysDate(dateStr, days) {
   const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + Number(days || 0));
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function addMonthsDate(dateStr, months) {
+  const [year,month,day]=String(dateStr||'').split('-').map(Number);
+  if(!year||!month||!day)return '';
+  const target=new Date(year,month-1+Number(months||0),1,12);
+  const lastDay=new Date(target.getFullYear(),target.getMonth()+1,0).getDate();
+  target.setDate(Math.min(day,lastDay));
+  return `${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}-${String(target.getDate()).padStart(2,'0')}`;
 }
 
 async function ensureCustomer(userId, customerName, saleDate) {
@@ -4799,7 +4809,7 @@ async function ensureCustomer(userId, customerName, saleDate) {
 async function createCustomerSaleAndTasks({
   userId, customerName, saleDate, metricLabel, sourceType='daily',
   templateKeys=[], customTitle='', customDueDate='', note='', sourceMeta=null,
-  targetPlan=''
+  targetPlan='', paymentFirstDate=''
 }) {
   const customerId=await ensureCustomer(userId,customerName,saleDate);
   if(!customerId) throw new Error('고객 저장 실패');
@@ -4819,6 +4829,16 @@ async function createCustomerSaleAndTasks({
   templateKeys.forEach(key=>{
     const t=CARE_TEMPLATES.find(x=>x.key===key);
     if(!t)return;
+    if(t.repeatCount){
+      if(!paymentFirstDate)return;
+      for(let i=0;i<t.repeatCount;i++)rows.push({
+        user_id:userId,customer_id:customerId,source_sale_id:sale.id,
+        task_type:`${key}_${i+1}`,title:`${t.title} (${i+1}/${t.repeatCount}회)`,base_date:saleDate,
+        retention_days:null,due_date:addMonthsDate(paymentFirstDate,i),status:'pending',
+        note:'모든 회차를 완료할 때까지 각 기한에 반복 표시'
+      });
+      return;
+    }
     rows.push({
       user_id:userId,customer_id:customerId,source_sale_id:sale.id,
       task_type:key,title:t.title,base_date:saleDate,retention_days:t.retentionDays,
@@ -4845,7 +4865,7 @@ async function createCustomerSaleAndTasks({
 
 function CareTemplatePicker({
   selected, setSelected, customTitle, setCustomTitle, customDueDate, setCustomDueDate, saleDate,
-  targetPlan='', setTargetPlan=()=>{}
+  targetPlan='', setTargetPlan=()=>{}, paymentFirstDate='', setPaymentFirstDate=()=>{}
 }) {
   const toggle=(key)=>setSelected(selected.includes(key)?selected.filter(x=>x!==key):[...selected,key]);
   return <div className="space-y-2">
@@ -4856,10 +4876,16 @@ function CareTemplatePicker({
         return <button key={t.key} type="button" onClick={()=>toggle(t.key)}
           className={`text-left px-3 py-2 rounded-xl border text-xs ${on?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
           <div className="font-semibold">{on?'✓ ':''}{t.label}</div>
-          {on&&<div className="text-[10px] mt-0.5 opacity-70">변경 가능일 {addDaysDate(saleDate,t.retentionDays)} · {t.retentionDays===93?'94일째':'184일째'}</div>}
+          {on&&t.retentionDays&&<div className="text-[10px] mt-0.5 opacity-70">변경 가능일 {addDaysDate(saleDate,t.retentionDays)} · {t.retentionDays===93?'94일째':'184일째'}</div>}
         </button>
       })}
     </div>
+    {selected.includes('payment3')&&<div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+      <div className="text-[11px] font-semibold text-gray-600">첫 수납 예정일</div>
+      <input type="date" value={paymentFirstDate} onChange={e=>setPaymentFirstDate(e.target.value)} className="mt-1.5 w-full border rounded-lg px-2.5 py-2 text-xs bg-white"/>
+      {paymentFirstDate&&<div className="mt-2 text-[10px] text-violet-700">{[0,1,2].map(i=>`${i+1}회 ${addMonthsDate(paymentFirstDate,i)}`).join(' · ')}</div>}
+      <div className="mt-1.5 text-[10px] leading-relaxed text-gray-500">한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요.</div>
+    </div>}
     {(selected.includes('plan93')||selected.includes('plan183'))&&(
       <div className="pt-1">
         <div className="text-[11px] font-semibold text-gray-500 mb-1.5">변경 예정 요금제</div>
@@ -5749,6 +5775,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileCustomTitle,setMobileCustomTitle]=useState('');
   const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
   const [mobileTargetPlan,setMobileTargetPlan]=useState('');
+  const [mobilePaymentFirstDate,setMobilePaymentFirstDate]=useState('');
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
@@ -6601,6 +6628,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileCustomTitle('');
       setMobileCustomDueDate('');
       setMobileTargetPlan('');
+      setMobilePaymentFirstDate('');
       setEditingCompletedTaskCount(0);
       return;
     }
@@ -6608,9 +6636,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const completed=(tasks||[]).filter(t=>t.status==='completed');
     const editable=(tasks||[]).filter(t=>t.status!=='completed');
     setEditingCompletedTaskCount(completed.length);
-    setMobileCareKeys(editable
-      .map(t=>t.task_type)
-      .filter(k=>CARE_TEMPLATES.some(x=>x.key===k)));
+    setMobileCareKeys([...new Set(editable
+      .map(t=>String(t.task_type||'').startsWith('payment3_')?'payment3':t.task_type)
+      .filter(k=>CARE_TEMPLATES.some(x=>x.key===k)))]);
+    const paymentTasks=(tasks||[]).filter(t=>String(t.task_type||'').startsWith('payment3_')).sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));
+    setMobilePaymentFirstDate(paymentTasks[0]?.due_date||'');
     const customs=editable.filter(t=>t.task_type==='custom');
     const custom=customs[0];
     setMobileCustomTitle(custom?.title||'');
@@ -6633,6 +6663,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileCustomTitle('');
     setMobileCustomDueDate('');
     setMobileTargetPlan('');
+    setMobilePaymentFirstDate('');
     setMobileVasKeys([]);
     setMobileStrategicPlan(false);
     setMobileBundle2ndKeys([]);
@@ -6692,6 +6723,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!mobileSaleDraft||!currentEmp?.id||mobileSubmitGuardRef.current)return;
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
+    if(mobileCareKeys.includes('payment3')&&!mobilePaymentFirstDate)return showAppToast('3개월 요금 수납의 첫 수납 예정일을 선택해주세요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
       return showLegacyAlert(specialPolicies.length
         ? '특가&지인정책에 적용할 모델과 가입 구분을 선택해주세요.'
@@ -6798,10 +6830,20 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           .neq('status','completed');
         if(deleteTaskError)throw deleteTaskError;
 
+        const {data:completedPaymentTasks}=await supabase.from('customer_tasks').select('task_type').eq('source_sale_id',editingSale.id).eq('user_id',currentEmp.id).eq('status','completed').like('task_type','payment3_%');
+        const completedPaymentTypes=new Set((completedPaymentTasks||[]).map(x=>x.task_type));
         const taskRows=[];
         mobileCareKeys.forEach(key=>{
           const t=CARE_TEMPLATES.find(x=>x.key===key);
           if(!t)return;
+          if(t.repeatCount){
+            for(let i=0;i<t.repeatCount;i++){
+              const taskType=`${key}_${i+1}`;
+              if(completedPaymentTypes.has(taskType))continue;
+              taskRows.push({user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:editingSale.id,task_type:taskType,title:`${t.title} (${i+1}/${t.repeatCount}회)`,base_date:saleDate,retention_days:null,due_date:addMonthsDate(mobilePaymentFirstDate,i),status:'pending',note:'모든 회차를 완료할 때까지 각 기한에 반복 표시'});
+            }
+            return;
+          }
           taskRows.push({
             user_id:currentEmp.id,
             customer_id:linkedCustomerId,
@@ -6848,6 +6890,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         metricLabel:mobileSaleDraft.label,sourceType:'mobile',
         templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,
         targetPlan:mobileTargetPlan,
+        paymentFirstDate:mobilePaymentFirstDate,
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyType:'additive'} : mobileSaleKind==='incentive_unpaid'?{policyType:'incentive_unpaid',policyTitle:'인센미지급 특가'}:null}
       });
@@ -6939,7 +6982,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         commitMobileOne(
           mobileSaleDraft.ri,
           mobileSaleDraft.ci,
-          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), strategicPlan:!!mobileStrategicPlan, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?3:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), strategicPlan:!!mobileStrategicPlan, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
             specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
             bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
         );
@@ -7088,7 +7131,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const afterPay=computePay(afterDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
     const vasLabels=[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
     const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
-    const promiseCount=mobileCareKeys.length+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
+    const promiseCount=mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?3:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
     return {incentive:Math.max(0,Number(afterPay.currentPerformanceAmount||0)-Number(beforePay.currentPerformanceAmount||0)),points:Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0),vasLabels,secondLabels,promiseCount};
   })();
 
@@ -7695,6 +7738,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 customTitle={mobileCustomTitle} setCustomTitle={setMobileCustomTitle}
                 customDueDate={mobileCustomDueDate} setCustomDueDate={setMobileCustomDueDate}
                 targetPlan={mobileTargetPlan} setTargetPlan={setMobileTargetPlan}
+                paymentFirstDate={mobilePaymentFirstDate} setPaymentFirstDate={setMobilePaymentFirstDate}
                 saleDate={`${month}-${selectedDay}`}
               />
               {mobileExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button type="button" onClick={()=>setMobileExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}

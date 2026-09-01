@@ -22,6 +22,15 @@ test('93일·183일 변경 약속은 실적 입력일 기준으로 자동 계산
   assert.match(source, /base_date:saleDate[\s\S]*due_date:addDaysDate\(saleDate,t\.retentionDays\)/);
 });
 
+test('3개월 요금 수납은 월별 3회차로 저장하고 완료 전까지 반복 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /key:'payment3'[\s\S]*repeatCount:3/);
+  assert.match(source, /task_type:`\$\{key\}_\$\{i\+1\}`/);
+  assert.match(source, /due_date:addMonthsDate\(paymentFirstDate,i\)/);
+  assert.match(source, /한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요/);
+  assert.match(source, /completedPaymentTypes\.has\(taskType\)/);
+});
+
 test('직원 실적입력 화면에는 스팟 추가 인센티브 카드를 표시하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /<SpotClaimPanel\s+userId=/);
