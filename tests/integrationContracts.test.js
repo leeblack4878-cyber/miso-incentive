@@ -129,14 +129,16 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   assert.match(source, /vasVcolorMusic:\.3/);
 });
 
-test('명예의 전당은 공개 프로필과 대표 배지를 보여주고 개인 응원은 공개하지 않는다', async () => {
+test('명예의 전당은 누적순위 바로 위에 있고 프로필 카드는 한줄 상태 없이 간결하다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
   assert.match(source, /function HallOfFame/);
   assert.match(source, /전체 직원 프로필 보기/);
   assert.match(source, /employee_public_profiles.*status_message/);
-  assert.match(source, /오늘의 응원[\s\S]*본인에게만 보여요/);
-  assert.match(source, /동료에게 공개되는 나의 한줄 상태/);
+  assert.match(source, /오늘의 응원[\s\S]*dailyEncouragement/);
+  const hub = source.match(/function GamificationHub[\s\S]*?function SpecialBadgeAwardPanel/)?.[0]||'';
+  assert.doesNotMatch(hub, /동료에게 공개되는 나의 한줄 상태/);
+  assert.ok(source.lastIndexOf('<HallOfFame') < source.lastIndexOf('<MonthlyPerformanceRankingCard'));
   assert.doesNotMatch(source.match(/function HallOfFame[\s\S]*?function GamificationHub/)?.[0]||'', /dailyEncouragement/);
   assert.match(sql, /employee_public_profiles_read_authenticated/);
   assert.match(sql, /user_id = \(select auth\.uid\(\)\)/);

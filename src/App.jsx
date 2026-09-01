@@ -3362,31 +3362,26 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
         <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">좋아요!</button>
       </div>
     </div>}
-    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
+    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-3">
       <div className="flex items-start gap-3">
-        <label className="relative w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
+        <label className="relative w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
           {avatarUrl?<img src={avatarUrl} alt="내 프로필" className="w-full h-full object-cover"/>:<span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>}
           <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
         </label>
         <div className="min-w-0 flex-1">
-          <div className="text-base font-bold truncate">{currentEmp?.name||'직원'}님, 오늘도 응원해요</div>
+          <div className="text-sm font-bold truncate">{currentEmp?.name||'직원'}님, 오늘도 응원해요</div>
           <div className="text-[10px] text-violet-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
-          <button type="button" onClick={()=>setShowCollection(true)} className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
+          <button type="button" onClick={()=>setShowCollection(true)} className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
             <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'대표 배지 선택'}</span><span className="text-violet-100">›</span>
           </button>
         </div>
       </div>
-      <div className="mt-4 pt-3 border-t border-white/15">
-        <div className="text-[9px] text-violet-100/75">오늘의 응원</div>
-        <div className="text-sm font-bold leading-relaxed mt-1">“{dailyEncouragement(userId)}”</div>
-        <div className="text-[9px] text-violet-100/60 mt-1">본인에게만 보여요.</div>
+      <div className="mt-2.5 pt-2.5 border-t border-white/15 flex items-center gap-2">
+        <div className="text-[9px] text-violet-100/75 shrink-0">오늘의 응원</div>
+        <div className="text-xs font-bold truncate">“{dailyEncouragement(userId)}”</div>
       </div>
-      <div className="mt-3 pt-3 border-t border-white/15">
-        <div className="flex justify-between"><div className="text-[9px] text-violet-100/75">동료에게 공개되는 나의 한줄 상태</div><button onClick={()=>setStatusEditing(v=>!v)} className="text-[9px] font-bold">{statusEditing?'닫기':'수정'}</button></div>
-        {statusEditing?<div className="mt-2 flex gap-2"><input maxLength={40} value={statusMessage} onChange={e=>setStatusMessage(e.target.value)} placeholder="동료에게 보여줄 한마디" className="min-w-0 flex-1 rounded-xl bg-white/15 border border-white/20 px-3 py-2 text-xs text-white placeholder:text-violet-200"/><button onClick={saveStatus} disabled={statusBusy} className="rounded-xl bg-white px-3 text-xs font-bold text-violet-700">{statusBusy?'저장중':'저장'}</button></div>:<div className="mt-1 text-xs font-semibold">{statusMessage?`“${statusMessage}”`:'아직 공개 상태를 작성하지 않았어요.'}</div>}
-      </div>
-      <div className="flex justify-between mt-3 text-[9px] text-violet-100/75"><span>대표 배지는 획득한 배지 중 선택할 수 있어요.</span><span>{fmtCount(earnedKeys.size)} / 100</span></div>
+      <div className="flex justify-between mt-2 text-[9px] text-violet-100/75"><span>획득한 배지에서 대표 배지를 선택해요.</span><span>{fmtCount(earnedKeys.size)} / 100</span></div>
     </div>
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
@@ -5456,7 +5451,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
           {employeeHomeMode==='personal' ? <>
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
-            <HallOfFame rows={competitionRows} month={month} />
             <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff}
               approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
               onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
@@ -5523,6 +5517,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <EmployeeHeadOfficeComparison userId={authUser?.id} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
+            <HallOfFame rows={competitionRows} month={month} />
             <MonthlyPerformanceRankingCard
               rows={competitionRows}
               userId={currentEmp?.id||authUser?.id}
