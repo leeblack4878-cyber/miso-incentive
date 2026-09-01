@@ -16,6 +16,21 @@ export const SEPTEMBER_MANAGER_OPERATORS = [
   { match: ['본오중학교', '본오'], name: '박성민', position: '부점장' },
 ];
 
+export const SEPTEMBER_CONSIGNMENT_STORES = [
+  ['삼미시장점', '신천동_삼미시장점'],
+  ['상록수역점', '본오3동_상록수역점'],
+  ['주민센터점', '본오3동_주민센터점'],
+  ['도일시장점', '거모동_도일시장점'],
+  ['산본점', '광정동_산본점'],
+];
+
+export function septemberManagerStoreType(storeName = '') {
+  const value = String(storeName);
+  return SEPTEMBER_CONSIGNMENT_STORES.some(names => names.some(name => value.includes(name)))
+    ? 'consignment'
+    : 'owned';
+}
+
 export function managerOperatorForStore(storeName = '') {
   const value = String(storeName);
   return SEPTEMBER_MANAGER_OPERATORS.find(row => row.match.some(key => value.includes(key))) || null;

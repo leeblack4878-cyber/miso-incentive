@@ -1,10 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateSeptemberManagerIncentive, managerOperatorForStore } from '../src/managerPolicyEngine.js';
+import { calculateSeptemberManagerIncentive, managerOperatorForStore, septemberManagerStoreType } from '../src/managerPolicyEngine.js';
 
 test('9월 관리자 운영자를 직급이 아니라 지정된 이름으로 찾는다', () => {
   assert.equal(managerOperatorForStore('광정동_산본점').name, '최재혁');
   assert.equal(managerOperatorForStore('고잔동_법조타운점').name, null);
+});
+
+test('지정한 5개 매장은 위탁, 나머지 매장은 자가 2ND 기준을 사용한다', () => {
+  ['신천동_삼미시장점','본오3동_상록수역점','본오3동_주민센터점','거모동_도일시장점','광정동_산본점']
+    .forEach(store => assert.equal(septemberManagerStoreType(store), 'consignment', store));
+  assert.equal(septemberManagerStoreType('신천동_삼미시장2호점'), 'owned');
+  assert.equal(septemberManagerStoreType('월곶동_월곶점'), 'owned');
 });
 
 test('관리자 핵심성과는 달성 구간별 실제 건수 단가로 계산한다', () => {
