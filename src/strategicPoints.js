@@ -5,9 +5,10 @@ export const STRATEGIC_PRODUCT_POINTS = Object.freeze({
 });
 
 export function strategicProductKeys(meta = {}) {
-  const keys = new Set([...(meta.vasKeys || []), ...Object.values(meta.bundleVasMap || {}).flat()]);
-  if (meta.strategicPlan) keys.add('vasStrategicPlan');
-  return [...keys].filter(key => Object.hasOwn(STRATEGIC_PRODUCT_POINTS, key));
+  const mainKeys = new Set(meta.vasKeys || []);
+  if (meta.strategicPlan) mainKeys.add('vasStrategicPlan');
+  const bundleKeys = Object.values(meta.bundleVasMap || {}).flatMap(keys => [...new Set(keys || [])]);
+  return [...mainKeys, ...bundleKeys].filter(key => Object.hasOwn(STRATEGIC_PRODUCT_POINTS, key));
 }
 
 export function calculateSaleStrategicPoints(meta = {}) {

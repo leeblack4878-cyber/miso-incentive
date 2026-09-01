@@ -2,8 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateSaleStrategicPoints, summarizeStrategicProducts, calculateEmployeeStrategicAdjustment } from '../src/strategicPoints.js';
 
-test('전략상품 점수는 입력 위치가 겹쳐도 한 판매에서 한 번만 반영한다', () => {
-  assert.equal(calculateSaleStrategicPoints({strategicPlan:true,vasKeys:['vasStrategicPlan','vasPhonePass'],bundleVasMap:{a:['vasPhonePass','vasDualNumber']}}),1.7);
+test('본회선과 각 2ND 회선의 보험 전략P를 각각 반영한다', () => {
+  assert.equal(calculateSaleStrategicPoints({strategicPlan:true,vasKeys:['vasStrategicPlan','vasPhonePass'],bundleVasMap:{a:['vasPhonePass','vasDualNumber'],b:['vasPhonePass']}}),3.3);
+});
+
+test('같은 회선 안에서 동일 상품이 중복 저장된 경우만 한 번 반영한다', () => {
+  assert.equal(calculateSaleStrategicPoints({vasKeys:['vasSafePass','vasSafePass'],bundleVasMap:{a:['vasPhonePass','vasPhonePass']}}),1.6);
 });
 
 test('월 전략P 집계는 정책표의 모든 상품 점수를 사용한다', () => {
