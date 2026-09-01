@@ -1,4 +1,4 @@
-Warning: truncated output (original token count: 184809)
+Warning: truncated output (original token count: 185662)
 Total output lines: 11014
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -2623,47 +2623,37 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
 
 function StoreHomeOverview({ rows, branch, month, userId, userName='' }) {
   const members=(rows||[]).filter(r=>r.branch===branch);
+  const [savedGoals,setSavedGoals]=useState({});
+  useEffect(()=>{
+    let alive=true;
+    if(!branch){setSavedGoals({});return()=>{alive=false};}
+    supabase.from('store_goals').select('company_goals,challenge_goals').eq('month',month).eq('store_name',branch).maybeSingle()
+      .then(({data})=>{if(alive)setSavedGoals({...companyGoalDefaults(branch),...(data?.company_goals||{}),...(data?.challenge_goals||{})})});
+    return()=>{alive=false};
+  },[branch,month]);
   if(!branch || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 매장 실적을 불러올 수 없어요.</div>;
 
   const sum=(fn)=>members.reduce((a,r)=>a+Number(fn(r)||0),0);
-  const goal=companyGoalDefaults(branch);
+  const goal={...companyGoalDefaults(branch),...savedGoals};
+  const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
 
   const metrics=[
-    {
-      key:'hs', label:'HS', unit:'건',
-      current:sum(r=>hsCount(r.draft)),
-      target:Number(goal.hs||0)
-    },
-    {
-      key:'home', label:'홈', unit:'건',
-      current:sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),
-      target:Number(goal.home||0)
-    },
-    {
-      key:'free', label:'프리', unit:'건',
-      current:sum(r=>r.draft?.homeFlat?.tvFree||0),
-      target:Number(goal.tvFree||goal.free||0)
-    },
-    {
-      key:'smart', label:'스홈', unit:'건',
-      current:sum(r=>r.draft?.homeFlat?.smartHome||0),
-      target:Number(goal.smartHome||goal.smart||0)
-    },
-    {
-      key:'tailored', label:'맞춤제안', unit:'건',
-      current:sum(r=>r.draft?.tailoredCount||0),
-      target:Number(goal.tailoredCount||goal.tailored||0)
-    },
-    {
-      key:'productivity', label:'생산성', unit:'P',
-      current:sum(r=>r.pay?.kpiScore||0),
-      target:Number(goal.productivity||0)
-    },
+    {key:'hs',label:'HS',unit:'count',current:sum(r=>hsCount(r.draft)),target:Number(goal.hs||0)},
+    {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.simMnp||0)},
+    {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.second||0)},
+    {key:'productivity',label:'생산성',unit:'point',current:sum(r=>r.pay?.kpiScore||0),target:Number(goal.productivity||goal.kpi||0)},
+    {key:'home',label:'홈',unit:'count',current:sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),target:Number(goal.home||0)},
+    {key:'free',label:'프리',unit:'count',current:sum(r=>r.draft?.homeFlat?.tvFree||0),target:Number(goal.tvFree||goal.free||0)},
+    {key:'smart',label:'스홈',unit:'count',current:sum(r=>r.draft?.homeFlat?.smartHome||0),target:Number(goal.smartHome||goal.smart||0)},
+    {key:'sono',label:'소노',unit:'count',current:sum(r=>Object.values(r.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.sono||0)},
+    {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',current:sum(r=>r.draft?.tailoredAmount||0),target:Number(goal.tailoredAmount||0)},
+    {key:'tailored',label:'업셀건',unit:'count',current:sum(r=>r.draft?.tailoredCount||0),target:Number(goal.tailoredCount||goal.tailored||0)},
   ];
 
   const fmtValue=(m,v)=>{
-    if(m.unit==='P')return `${fmtNum(Number(v||0),1)}P`;
-    return `${fmtCount(v)}건`;
+    if(m.unit==='won')return won(Math.round(v));
+    if(m.unit==='point')return `${fmtNum(Number(v||0),1)}P`;
+    return `${fmtNum(Number(v||0),Number(v||0)%1?1:0)}건`;
   };
 
   return <div className="space-y-4">
@@ -2674,31 +2664,22 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='' }) {
         <div className="text-[10px] text-gray-400 mt-1">매장 누적 실적과 목표 달성률을 한 번에 확인해요.</div>
       </div>
 
-      <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+      <div className="px-3 py-2">
+        <div className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 px-2 pb-2 text-[9px] text-gray-400 text-right"><span className="text-left">항목</span><span>목표</span><span>실적</span><span>진척도</span><span>예상 마감</span></div>
+        <div className="divide-y divide-gray-100">
         {metrics.map(m=>{
           const hasGoal=Number(m.target||0)>0;
           const pct=hasGoal?Math.max(0,Math.round(Number(m.current||0)/Number(m.target||1)*100)):null;
-          const barPct=hasGoal?Math.min(100,pct):0;
-          const achieved=hasGoal&&Number(m.current||0)>=Number(m.target||0);
-
-          return <div key={m.key} className="rounded-xl bg-gray-50 p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="text-[10px] text-gray-500">{m.label}</div>
-              {hasGoal&&<div className={`text-[9px] font-semibold ${achieved?'text-emerald-600':'text-violet-600'}`}>{pct}%</div>}
-            </div>
-
-            <div className="text-base font-bold text-gray-900 mt-1">{fmtValue(m,m.current)}</div>
-
-            {hasGoal ? <>
-              <div className="text-[9px] text-gray-400 mt-0.5">목표 {fmtValue(m,m.target)}</div>
-              <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden mt-2">
-                <div className={`h-full rounded-full ${achieved?'bg-emerald-500':'bg-violet-500'}`} style={{width:`${barPct}%`}} />
-              </div>
-            </> : (
-              <div className="text-[9px] text-gray-300 mt-1">목표 미설정</div>
-            )}
+          const forecast=Number(m.current||0)*forecastFactor,forecastHit=hasGoal&&forecast>=m.target;
+          return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
+            <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
+            {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:<span className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</span>}
+            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}</span>
+            <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
+            <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{fmtValue(m,forecast)}</span>
           </div>;
         })}
+        </div>
       </div>
     </div>
 
@@ -3145,33 +3126,7 @@ function evaluateAutomaticBadges({
   const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
   const prod=Number(pay?.kpiScore||0);
   if(hs>0)earned.add('first_step');
-  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m80'],[100,'hs_m100']].forEach(([v,k])=>{if(hs>=v)earned.add(k)});
-  [[1,'home_first'],[5,'home_m5'],[10,'home_m10'],[15,'home_m15'],[20,'home_m20']].forEach(([v,k])=>{if(home>=v)earned.add(k)});
-  [[1,'free_first'],[5,'free_m5'],[10,'free_m10']].forEach(([v,k])=>{if(free>=v)earned.add(k)});
-  [[1,'smart_first'],[5,'smart_m5'],[10,'smart_m10']].forEach(([v,k])=>{if(smart>=v)earned.add(k)});
-  [[1,'upsell_first'],[5,'upsell_m5'],[10,'upsell_m10'],[20,'upsell_m20']].forEach(([v,k])=>{if(upsell>=v)earned.add(k)});
-  [[1,'second_first'],[5,'second_m5'],[10,'second_m10'],[20,'second_m20']].forEach(([v,k])=>{if(second>=v)earned.add(k)});
-  [[100,'prod_100'],[120,'prod_120'],[150,'prod_150'],[200,'prod_200']].forEach(([v,k])=>{if(prod>=v)earned.add(k)});
-  if(pay?.grade==='S'&&pay?.gradeEligible)earned.add('grade_s');
-
-  const rank=(key)=>{
-    const m=MONTHLY_RANK_METRICS.find(x=>x.key===key); if(!m)return null;
-    const rows=[...(competitionRows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch));
-    const me=rows.find(r=>r.id===userId); if(!me||Number(m.value(me)||0)<=0)return null;
-    return 1+rows.filter(r=>Number(m.value(r)||0)>Number(m.value(me)||0)).length;
-  };
-  const hr=rank('hs'), homer=rank('home'), freer=rank('free'), smartr=rank('smart'), pr=rank('productivity'), ur=rank('upsell');
-  if(hr&&hr<=10)earned.add('hs_top10'); if(hr&&hr<=5)earned.add('hs_top5');
-  if(hr===3)earned.add('hs_rank3'); if(hr===2)earned.add('hs_rank2'); if(hr===1)earned.add('hs_rank1');
-  if(homer===1)earned.add('home_rank1'); if(freer===1)earned.add('free_rank1'); if(…84809 tokens truncated…ext-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
-              {homeSubTv&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='free'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>프리 부셋탑</button></div>}
-              <div className="text-[10px] text-gray-400 mt-2">TV프리(부)와 스마트홈은 인터넷 없이 단독으로도 선택할 수 있어요.</div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-gray-100 p-3">
-              <div className="text-xs font-semibold text-gray-700 mb-2">5. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
-              <div className="grid grid-cols-1 gap-2">
-                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
+  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m8…85662 tokens truncated…판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
               </div>
               {homeMobileSimul==='usedMnp'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">✓ 중고 MNP 85군↑ 선약 동시판매 · 가정망에서만 적용</div>}
             </div>
@@ -3716,32 +3671,42 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
   const secondStandalone=(draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0);
   const secondBundle=Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
   const metrics=[
-    {key:'hs',label:'HS',unit:'count',value:hsCount(draft)},
-    {key:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
-    {key:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
-    {key:'productivity',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
-    {key:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
-    {key:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
-    {key:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
-    {key:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
-    {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',value:Number(draft?.tailoredAmount||0)},
-    {key:'tailoredCount',label:'업셀건',unit:'count',value:Number(draft?.tailoredCount||0)},
+    {key:'hs',goalKey:'hs',label:'HS',unit:'count',value:hsCount(draft)},
+    {key:'simMnp',goalKey:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
+    {key:'second',goalKey:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
+    {key:'productivity',goalKey:'kpi',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
+    {key:'home',goalKey:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
+    {key:'tvFree',goalKey:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
+    {key:'smartHome',goalKey:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
+    {key:'sono',goalKey:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
+    {key:'tailoredAmount',goalKey:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',value:Number(draft?.tailoredAmount||0)},
+    {key:'tailoredCount',goalKey:'tailored',label:'업셀건',unit:'count',value:Number(draft?.tailoredCount||0)},
   ];
   const [detailMetric,setDetailMetric]=useState(null);
 
-  const goalFor=(m)=>{
-    const aliases={
-      hs:'hs', home:'home', tvFree:'tvFree', smartHome:'smartHome',
-      tailoredAmount:'tailoredAmount', tailoredCount:'tailoredCount'
-    };
-    const k=aliases[m.key];
-    return k ? Number(personalGoals?.[k]||0) : 0;
-  };
+  const goalFor=(m)=>Number(personalGoals?.[m.goalKey]||0);
 
-  const renderValue=(m)=>{
-    if(m.unit==='won') return won(m.value);
-    if(m.unit==='point') return `${Number(m.value||0).toFixed(1)}P`;
-    return `${fmtCount(m.value)}건`;
+  const forecastFactor=useMemo(()=>{
+    const now=new Date(), current=monthKeyOf(now)===month;
+    if(!current)return 1;
+    const total=daysInMonth(month),today=Math.min(now.getDate(),total);
+    let elapsed=0,working=0;
+    for(let day=1;day<=total;day++){
+      const key=String(day).padStart(2,'0');
+      if(normalizeDay(dailyDays?.[key]).dayOff)continue;
+      working++;
+      if(day<=today)elapsed++;
+    }
+    return elapsed>0?working/elapsed:1;
+  },[dailyDays,month]);
+
+  const forecastFor=(m)=>Number(m.value||0)*forecastFactor;
+  const missingGoalCount=metrics.filter(m=>goalFor(m)<=0).length;
+
+  const renderMetricValue=(m,value)=>{
+    if(m.unit==='won') return won(Math.round(value));
+    if(m.unit==='point') return `${fmtNum(Number(value||0),1)}P`;
+    return `${fmtNum(Number(value||0),Number(value||0)%1?1:0)}건`;
   };
 
   const detailRows=useMemo(()=>{
@@ -3797,25 +3762,30 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
           <button onClick={()=>setGoalEditing(v=>!v)} className="text-[10px] font-semibold text-violet-600">{goalEditing?'닫기':'목표 설정'}</button>
         </div>
         <div className="text-[10px] text-gray-400 mt-1">현재 누적 실적과 내 목표를 한 번에 확인해요. 숫자를 누르면 날짜별 내역이 열려요.</div>
+        {missingGoalCount>0&&!goalEditing&&<button type="button" onClick={()=>setGoalEditing(true)} className="w-full mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-left text-[9px] font-semibold text-red-600">목표 미설정 {missingGoalCount}개 · 입력하면 진척도와 예상 마감을 비교할 수 있어요 ›</button>}
         {goalEditing&&<div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-2">
-          {PERSONAL_GOAL_DEFS.map(def=><div key={def.key} className="flex items-center gap-2"><span className="text-[10px] text-gray-500 w-24 truncate">{def.label}</span><input type="number" value={goalValues[def.key]??''} onChange={e=>setGoalValues(v=>({...v,[def.key]:e.target.value}))} placeholder="미설정" className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-xs"/><span className="text-[9px] text-gray-400">{def.unit}</span></div>)}
+          {metrics.map(m=><div key={m.key} className="flex items-center gap-2"><span className="text-[10px] text-gray-500 w-24 truncate">{m.label}</span><input type="number" value={goalValues[m.goalKey]??''} onChange={e=>setGoalValues(v=>({...v,[m.goalKey]:e.target.value}))} placeholder="미설정" className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-xs"/><span className="text-[9px] text-gray-400">{m.unit==='won'?'원':m.unit==='point'?'P':'건'}</span></div>)}
           <button disabled={goalSaving} onClick={async()=>{const ok=await onSaveGoals?.(goalValues);if(ok)setGoalEditing(false)}} className="w-full mt-1 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{goalSaving?'저장 중':'목표 저장'}</button>
         </div>}
       </div>
-      <div className="p-3 space-y-2">
-        {[metrics.slice(0,4),metrics.slice(4,8),metrics.slice(8,10)].map((row,ri)=>(
-          <div key={ri} className={`grid gap-2 ${ri<2?'grid-cols-4':'grid-cols-2'}`}>
-            {row.map(m=>{
-              const goal=goalFor(m);
-              const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
-              return <button type="button" onClick={()=>setDetailMetric(m)} key={m.key} className="rounded-xl bg-gray-50 px-2 py-2.5 text-center min-w-0 hover:bg-violet-50 active:scale-[0.98] transition">
-                <div className="text-[10px] text-gray-400 leading-tight min-h-[22px] flex items-center justify-center">{m.label}</div>
-                <div className={`font-bold text-gray-900 mt-1 whitespace-nowrap ${m.unit==='won'?'text-[13px]':'text-[15px]'}`}>{renderValue(m)}</div>
-                {goal>0?<div className="text-[9px] text-violet-500 mt-1">목표 {m.unit==='won'?won(goal):m.unit==='point'?`${fmtNum(goal,1)}P`:`${fmtCount(goal)}건`} · {pct}%</div>:<div className="text-[9px] text-gray-300 mt-1">목표 미설정</div>}
-              </button>
-            })}
-          </div>
-        ))}
+      <div className="px-3 py-2">
+        <div className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 px-2 pb-2 text-[9px] text-gray-400 text-right">
+          <span className="text-left">항목</span><span>목표</span><span>실적</span><span>진척도</span><span>예상 마감</span>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {metrics.map(m=>{
+            const goal=goalFor(m), forecast=forecastFor(m);
+            const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
+            const forecastHit=goal>0&&forecast>=goal;
+            return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
+              <button type="button" onClick={()=>setDetailMetric(m)} className="text-left font-semibold text-gray-700 truncate">{m.label}</button>
+              {goal>0?<span className="text-gray-500 whitespace-nowrap">{renderMetricValue(m,goal)}</span>:<button type="button" onClick={()=>setGoalEditing(true)} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>}
+              <button type="button" onClick={()=>setDetailMetric(m)} className="font-bold text-gray-900 whitespace-nowrap">{renderMetricValue(m,m.value)}</button>
+              <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
+              <span className={`font-bold whitespace-nowrap ${goal>0?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{renderMetricValue(m,forecast)}</span>
+            </div>
+          })}
+        </div>
       </div>
     </div>
     {detailMetric&&<div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4" onClick={()=>setDetailMetric(null)}>
