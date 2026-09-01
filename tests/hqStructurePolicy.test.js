@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SELF_STORE_BASELINE_TOTAL, calculateSelfStoreOperatingSupport, calculateRetailPartnerMonthlyPolicy } from '../src/hqStructurePolicy.js';
+import { SELF_STORE_BASELINE_TOTAL, calculateSelfStoreOperatingSupport, calculateRetailPartnerMonthlyPolicy, calculateSalesMetricActivation } from '../src/hqStructurePolicy.js';
 
 test('자가매장 기준 수량 합계는 668건이다', () => assert.equal(SELF_STORE_BASELINE_TOTAL, 668));
 
@@ -39,4 +39,16 @@ test('115군 비중 지급률은 SIM MNP를 모수와 자수에서 제외한 HS 
   const result = calculateRetailPartnerMonthlyPolicy({ hs: 10, plan115Hs: 6, mnp: 100, simMnp: 100 });
   assert.equal(result.plan115Ratio, 60);
   assert.equal(result.paymentRate, 1.3);
+});
+
+test('매출지표 활성화는 달성 구간 단가를 총 P에 적용한다', () => {
+  const result = calculateSalesMetricActivation({ hs: 100, salesMetricPoints: 135 });
+  assert.equal(result.achievement, 135);
+  assert.equal(result.pointRate, 8800);
+  assert.equal(result.totalAmount, 135 * 8800);
+});
+
+test('매출지표 80% 미만은 미지급하고 200% 초과도 최고 단가를 유지한다', () => {
+  assert.equal(calculateSalesMetricActivation({ hs: 100, salesMetricPoints: 79 }).totalAmount, 0);
+  assert.equal(calculateSalesMetricActivation({ hs: 100, salesMetricPoints: 250 }).pointRate, 17600);
 });

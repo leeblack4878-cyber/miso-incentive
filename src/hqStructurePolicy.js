@@ -80,3 +80,21 @@ export function calculateRetailPartnerMonthlyPolicy(input = {}) {
   const paymentRate = retailPartnerPaymentRate(plan115Ratio);
   return { points, hs, plan115Hs, plan115Ratio, paymentRate, tiers, baseAmount, totalAmount: baseAmount * paymentRate };
 }
+
+export const SALES_METRIC_RATES = Object.freeze([
+  { threshold: 200, rate: 17600 },
+  { threshold: 180, rate: 15400 },
+  { threshold: 160, rate: 13200 },
+  { threshold: 140, rate: 11000 },
+  { threshold: 120, rate: 8800 },
+  { threshold: 100, rate: 6600 },
+  { threshold: 80, rate: 4400 },
+]);
+
+export function calculateSalesMetricActivation({ hs = 0, salesMetricPoints = 0 } = {}) {
+  const safeHs = Math.max(0, Number(hs || 0));
+  const points = Math.max(0, Number(salesMetricPoints || 0));
+  const achievement = safeHs > 0 ? points / safeHs * 100 : 0;
+  const tier = SALES_METRIC_RATES.find(item => achievement >= item.threshold) || { threshold: 0, rate: 0 };
+  return { hs: safeHs, points, achievement, threshold: tier.threshold, pointRate: tier.rate, totalAmount: points * tier.rate };
+}
