@@ -5,6 +5,7 @@ import {
   SELF_STORE_BASELINE,
   SELF_STORE_WEIGHTS,
   calculateSelfStoreOperatingSupport,
+  calculateRetailPartnerMonthlyPolicy,
 } from './hqStructurePolicy';
 
 const countText = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
@@ -17,12 +18,13 @@ const BASELINE_LABELS = {
 };
 
 export default function HqStructurePolicyView({ month, employeeIds = [] }) {
-  const [state, setState] = useState({ loading: true, error: '', result: calculateSelfStoreOperatingSupport() });
+  const emptyRetail = calculateRetailPartnerMonthlyPolicy();
+  const [state, setState] = useState({ loading: true, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail });
 
   useEffect(() => {
     let alive = true;
     if (!employeeIds.length) {
-      setState({ loading: false, error: '', result: calculateSelfStoreOperatingSupport() });
+      setState({ loading: false, error: '', result: calculateSelfStoreOperatingSupport(), retail: emptyRetail });
       return () => { alive = false; };
     }
     (async () => {
@@ -41,12 +43,22 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
       ]);
       if (salesResult.error || homeResult.error) throw salesResult.error || homeResult.error;
 
-      let hs = 0;
+      let hs = 0, mnp = 0, new010 = 0, change95Plus = 0, changeUnder95 = 0, simMnp = 0, plan115Hs = 0;
       let second = 0;
       (salesResult.data || []).filter(row => row.source_type === 'mobile').forEach(row => {
         const meta = row.source_meta || {};
         const rowIndex = Number(meta.ri);
-        if ([0, 1, 2, 3, 4].includes(rowIndex)) hs += 1;
+        if ([0, 1, 2, 3, 4].includes(rowIndex)) {
+          hs += 1;
+          if (Number(meta.ci) === 0) plan115Hs += 1;
+        }
+        if (rowIndex === 0) new010 += 1;
+        if (rowIndex === 1) mnp += 1;
+        if ([2, 3, 4].includes(rowIndex)) {
+          if ([0, 1].includes(Number(meta.ci))) change95Plus += 1;
+          else changeUnder95 += 1;
+        }
+        if (rowIndex === 5) simMnp += 1;
         if (rowIndex === 7) second += 1;
         second += Array.isArray(meta.bundle2ndKeys) ? meta.bundle2ndKeys.length : 0;
       });
@@ -59,7 +71,8 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
       const smartHome = completed.filter(row => row.product_type === 'smartHome').length;
       const extraSetTop = completed.filter(row => row.product_type === 'subSetTop').length;
       const result = calculateSelfStoreOperatingSupport({ hs, second, internet, smartHome, extraSetTop });
-      if (alive) setState({ loading: false, error: '', result });
+      const retail = calculateRetailPartnerMonthlyPolicy({ hs, plan115Hs, mnp, new010, change95Plus, changeUnder95, second, simMnp });
+      if (alive) setState({ loading: false, error: '', result, retail });
     })().catch(error => {
       console.error('HQ STRUCTURE POLICY LOAD ERROR', error);
       if (alive) setState(prev => ({ ...prev, loading: false, error: '본사 구조정책 실적을 불러오지 못했어요.' }));
@@ -67,7 +80,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
     return () => { alive = false; };
   }, [month, employeeIds.join('|')]);
 
-  const { result } = state;
+  const { result, retail } = state;
   return <div className="space-y-4">
     <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
       <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
@@ -100,6 +113,18 @@ export default function HqStructurePolicyView({ month, employeeIds = [] }) {
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="rounded-2xl border border-gray-100 bg-white p-4"><div className="text-sm font-bold">기준 수량 668건</div><div className="mt-3 grid grid-cols-2 gap-2">{Object.entries(SELF_STORE_BASELINE).map(([key, value]) => <div key={key} className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs"><span className="text-gray-500">{BASELINE_LABELS[key]}</span><b>{value}건</b></div>)}</div></div>
       <div className="rounded-2xl border border-gray-100 bg-white p-4"><div className="text-sm font-bold">초과 구간별 예상 지급</div><div className="mt-3 space-y-2"><div className="flex justify-between rounded-xl bg-violet-50 p-3 text-xs"><span>초과 1~150건 · 건당 5만원</span><b className="text-violet-700">{countText(result.tier1Count)}건 · {wonText(result.tier1Amount)}</b></div><div className="flex justify-between rounded-xl bg-indigo-50 p-3 text-xs"><span>초과 151번째부터 · 건당 6만원</span><b className="text-indigo-700">{countText(result.tier2Count)}건 · {wonText(result.tier2Amount)}</b></div></div><div className="mt-3 text-[10px] leading-relaxed text-gray-400">151건을 넘겨도 앞선 150건의 단가는 바뀌지 않습니다. 월말 최종 개통·설치 상태에 따라 확정 금액은 달라질 수 있어요.</div></div>
+    </div>
+
+    <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
+      <div className="bg-indigo-50 px-4 py-4"><div className="text-[10px] font-bold text-indigo-500">본사 구조정책 · 두 번째</div><div className="mt-1 text-lg font-black text-gray-900">소매파트너 월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['월 포인트', `${countText(retail.points)}P`],
+        ['115군 비중', `${countText(retail.plan115Ratio)}%`],
+        ['지급률', `${countText(retail.paymentRate * 100)}%`],
+        ['예상 지급액', wonText(retail.totalAmount)],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-indigo-700">{value}</div></div>)}</div>
+      <div className="border-t px-4 py-3"><div className="text-xs font-bold text-gray-700">포인트 구간별 계산</div><div className="mt-2 space-y-1.5">{retail.tiers.map((tier,index)=><div key={tier.from} className="grid grid-cols-[1fr_70px_100px] gap-2 rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><span>{index===0?'150~300P':index===retail.tiers.length-1?'1,501P 이상':`${tier.from+1}~${tier.to}P`} · {wonText(tier.rate)}/P</span><span className="text-right text-gray-500">{countText(tier.pointCount)}P</span><b className="text-right">{wonText(tier.amount)}</b></div>)}</div></div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500"><b className="text-gray-700">포인트:</b> MNP·010신규 2P, 기변 95군↑ 1P, 기변 95군 미만 0.3P, 2ND·SIM MNP 1P<br/><b className="text-gray-700">115군 비중:</b> HS 중 115군 비중이며 SIM MNP는 분모·자수 모두 제외 · 40%↑ 110%, 50%↑ 120%, 60%↑ 130%</div>
     </div>
   </div>;
 }

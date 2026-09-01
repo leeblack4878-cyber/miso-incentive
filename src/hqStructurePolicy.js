@@ -39,3 +39,44 @@ export function calculateSelfStoreOperatingSupport(input = {}) {
     totalAmount: tier1Count * 50000 + tier2Count * 60000,
   };
 }
+
+export const RETAIL_PARTNER_POINT_TIERS = Object.freeze([
+  { from: 150, to: 300, rate: 14300 },
+  { from: 300, to: 400, rate: 16500 },
+  { from: 400, to: 500, rate: 18700 },
+  { from: 500, to: 700, rate: 22000 },
+  { from: 700, to: 1000, rate: 25300 },
+  { from: 1000, to: 1500, rate: 30800 },
+  { from: 1500, to: Infinity, rate: 36300 },
+]);
+
+export function retailPartnerPaymentRate(plan115Ratio = 0) {
+  const ratio = Math.max(0, Number(plan115Ratio || 0));
+  if (ratio >= 60) return 1.3;
+  if (ratio >= 50) return 1.2;
+  if (ratio >= 40) return 1.1;
+  return 1;
+}
+
+export function calculateRetailPartnerMonthlyPolicy(input = {}) {
+  const hs = Math.max(0, Number(input.hs || 0));
+  const plan115Hs = Math.max(0, Number(input.plan115Hs || 0));
+  const points = Math.max(0,
+    Number(input.mnp || 0) * 2
+    + Number(input.new010 || 0) * 2
+    + Number(input.change95Plus || 0)
+    + Number(input.changeUnder95 || 0) * 0.3
+    + Number(input.second || 0)
+    + Number(input.simMnp || 0),
+  );
+  const tiers = RETAIL_PARTNER_POINT_TIERS.map((tier, index) => {
+    const pointCount = index === 0
+      ? (points >= tier.from ? Math.min(points, tier.to) : 0)
+      : Math.max(0, Math.min(points, tier.to) - tier.from);
+    return { ...tier, pointCount, amount: pointCount * tier.rate };
+  });
+  const baseAmount = tiers.reduce((sum, tier) => sum + tier.amount, 0);
+  const plan115Ratio = hs > 0 ? plan115Hs / hs * 100 : 0;
+  const paymentRate = retailPartnerPaymentRate(plan115Ratio);
+  return { points, hs, plan115Hs, plan115Ratio, paymentRate, tiers, baseAmount, totalAmount: baseAmount * paymentRate };
+}
