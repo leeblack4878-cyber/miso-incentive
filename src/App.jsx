@@ -29,7 +29,7 @@ import {
   calculateSeptemberManagerIncentive,
 } from './managerPolicyEngine';
 import {
-  SEPTEMBER_POLICY_MONTH, SEPTEMBER_POLICY_VERSION, SEPTEMBER_TV_PLAN, SEPTEMBER_MATRIX_COLUMNS,
+  SEPTEMBER_POLICY_MONTH, SEPTEMBER_POLICY_VERSION, septemberMainTvPlan, SEPTEMBER_MATRIX_COLUMNS,
   SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale,
   calculateSeptemberBundleSale, calculateSeptemberSono, calculateSeptemberTailoredTier, septemberConfig,
 } from './septemberPolicy';
@@ -226,6 +226,12 @@ const HOME_SALE_TYPES = [
 function homeNetworkLabel(value) {
   return HOME_NETWORK_TYPES.find(x=>x.key===value)?.label || '망 미지정';
 }
+function homeMainTvPlanLabel(value,networkType=''){
+  if(value==='broadcastPass')return '방송패스';
+  if(value==='premium')return '프리미엄';
+  if(value==='belowPremium')return '프리미엄 미만';
+  return septemberMainTvPlan(networkType);
+}
 
 const DEFAULT_HOME_TIERS = [
   { min: 1, rate: 500000 },
@@ -282,6 +288,12 @@ function homeTvGradeRate(totalInternetCount,networkType,speed){
   if(speed==='500')return HOME_HOUSEHOLD_1G[idx]+20000;
   return 0; // 가정망 인터넷+TV 100M 단가는 현재 정책 미설정
 }
+function homeMainTvPlanAdjustment(networkType,mainTvPlan){
+  if(networkType==='soho')return mainTvPlan==='belowPremium'?200000:0;
+  if(mainTvPlan==='premium')return 100000;
+  if(mainTvPlan==='belowPremium')return 200000;
+  return 0;
+}
 function homeSoloRate(speed){
   if(speed==='1g')return 200000;
   if(speed==='500')return 100000;
@@ -310,7 +322,7 @@ function buildHomeBundlesFromOrders(orders=[]){
   });
   return [...map.values()].map(b=>{
     const speed=b.types.has('internet1g')?'1g':b.types.has('internet500')?'500':b.types.has('internet100')?'100':'';
-    return {...b,speed,hasInternet:!!speed,hasTv:b.types.has('homeTv'),simul:homeSimulTypeFromProducts(b.types)};
+    return {...b,speed,hasInternet:!!speed,hasTv:b.types.has('homeTv'),mainTvPlan:b.orders.find(o=>o.product_type==='homeTv')?.main_tv_plan||null,simul:homeSimulTypeFromProducts(b.types)};
   });
 }
 function calculateHomePolicyFromOrders(orders=[],config={}){
@@ -335,9 +347,11 @@ function calculateHomePolicyFromOrders(orders=[],config={}){
       return;
     }
     if(b.hasTv){
-      const base=homeTvGradeRate(totalInternetCount,network,b.speed);
+      const normalBase=homeTvGradeRate(totalInternetCount,network,b.speed);
+      const adjustment=homeMainTvPlanAdjustment(network,b.mainTvPlan);
+      const base=Math.max(0,normalBase-adjustment);
       gradePay+=base;
-      details.push({date:b.date,customer:b.customer,type:'홈',item:'인터넷+TV 그레이드 수수료',amount:base,note:`${networkLabel} · ${speedLabel} · 총 인터넷 ${totalInternetCount}건 (${tierMin}건 구간)`});
+      details.push({date:b.date,customer:b.customer,type:'홈',item:'인터넷+TV 그레이드 수수료',amount:base,note:`${networkLabel} · ${speedLabel} · 총 인터넷 ${totalInternetCount}건 (${tierMin}건 구간)${adjustment?` · 주 셋탑 요금제 -${adjustment.toLocaleString()}원`:''}`});
       let add=0,addLabel='';
       if(b.simul==='newChange'){add=100000;addLabel='홈 + HS 신규/기변 동시판매';}
       else if(b.simul==='mnp'){add=300000;addLabel='홈 + HS MNP 동시판매';}
@@ -5947,6 +5961,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
   const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
   const [homeMainTv,setHomeMainTv]=useState(false);
+  const [homeMainTvPlan,setHomeMainTvPlan]=useState(''); // household: broadcastPass|premium|belowPremium, soho: premium|belowPremium
   const [homeSubTv,setHomeSubTv]=useState(false);
   const [homeSubTvType,setHomeSubTvType]=useState('normal');
   const [homeSmartHome,setHomeSmartHome]=useState(false);
@@ -6250,7 +6265,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeCustomerName('');
     setHomeNetworkType('');
     setHomeSaleType('normal');
-    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
     setHomeDirectComplete(false);
     setHomeActualCompleteDate('');
     setHomePlannedDate('');
@@ -6267,6 +6282,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if (!homeNetworkType) return showAppToast('가정망 또는 소호망을 선택해주세요.',{tone:'error'});
     if (!homeInternet && !homeMainTv && !homeSubTv && !homeSmartHome) return showAppToast('판매한 홈 상품을 하나 이상 선택해주세요.',{tone:'error'});
     if (homeMainTv && !homeInternet) return showAppToast('TV(주)는 인터넷 가입과 함께 선택해주세요.',{tone:'error'});
+    if (homeMainTv && !homeMainTvPlan) return showAppToast('TV(주) 요금제 가입 기준을 선택해주세요.',{tone:'error'});
     if (homeInternet && !homeInternetSpeed) return showAppToast('인터넷 속도를 선택해주세요.',{tone:'error'});
     if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'error'});
     if (homeDirectComplete && !homeActualCompleteDate) return showAppToast('설치완료일을 입력해주세요.',{tone:'error'});
@@ -6275,7 +6291,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     // 실제 판매 구성을 기존 정산 그룹으로 자동 변환
     const products=[];
     if(homeInternet){
-      if(homeMainTv) products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:'홈+TV 동시청약'});
+      if(homeMainTv){
+        const mainTvPlanText=month===SEPTEMBER_POLICY_MONTH?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):'';
+        products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:`홈+TV 동시청약${mainTvPlanText?` · ${mainTvPlanText}`:''}`});
+      }
       else products.push({groupKey:'homeBase',itemKey:'homeOnly',productType:'homeOnly',label:'홈 단독'});
       const speedMap={
         '100':{itemKey:'home100Only',productType:'internet100',label:'인터넷 100MB'},
@@ -6359,6 +6378,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           status:homeDirectComplete?'completed':'pending',applied_at:appliedAt,
           completed_at:homeDirectComplete?new Date(`${homeActualCompleteDate}T12:00:00`).toISOString():null,source_work_date:sourceWorkDate,
           source_group:product.groupKey,source_key:product.itemKey,
+          main_tv_plan:product.productType==='homeTv'?homeMainTvPlan:null,
           planned_install_date:homePlannedDate||null,actual_install_date:homeDirectComplete?homeActualCompleteDate:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
         }).select('id').single();
@@ -6369,6 +6389,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
             networkType:homeNetworkType,saleType:homeSaleType,internetSpeed:homeInternetSpeed||null,
+            mainTvPlan:homeMainTv&&month===SEPTEMBER_POLICY_MONTH?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
+            mainTvPlanLevel:homeMainTv?homeMainTvPlan:null,
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
             simulBase:homeInternet?'home':(!homeInternet&&homeSmartHome?'smartHome':null)
           })
@@ -6787,6 +6809,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const simulFromOrders=compatOrders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':compatOrders.some(o=>o.product_type==='simulMnp')?'mnp':compatOrders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
       setHomeMobileSimul(meta0.mobileSimul||simulFromOrders||'none');
       setHomeMainTv(compatOrders.some(o=>o.product_type==='homeTv'));
+      const storedMainTvPlan=compatOrders.find(o=>o.product_type==='homeTv')?.main_tv_plan||meta0.mainTvPlanLevel||'';
+      setHomeMainTvPlan(storedMainTvPlan||(compatOrders.some(o=>o.product_type==='homeTv')?(compatOrders[0]?.network_type==='soho'?'premium':'broadcastPass'):''));
       setHomeSubTv(compatOrders.some(o=>['subSetTop','tvFree'].includes(o.product_type)));
       setHomeSubTvType(compatOrders.some(o=>o.product_type==='tvFree')?'free':'normal');
       setHomeSmartHome(compatOrders.some(o=>o.product_type==='smartHome'));
@@ -8076,7 +8100,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             </label>
             <div className="grid grid-cols-2 gap-2">
               {HOME_NETWORK_TYPES.map(n=>(
-                <button key={n.key} type="button" onClick={()=>setHomeNetworkType(n.key)}
+                <button key={n.key} type="button" onClick={()=>{setHomeNetworkType(n.key);setHomeMainTvPlan('')}}
                   className={`py-3 rounded-xl border text-sm font-bold ${
                     homeNetworkType===n.key
                       ? 'bg-violet-50 border-violet-300 text-violet-700'
@@ -8106,12 +8130,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">4. 판매 상품 <span className="font-normal text-gray-400">· 필요한 것만 선택</span></div>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
-                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>!v)}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주){month===SEPTEMBER_POLICY_MONTH?` · ${SEPTEMBER_TV_PLAN}`:''}</button>
+                <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeMainTvPlan('');setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
+                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>{if(v)setHomeMainTvPlan('');return !v})}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
                 <button type="button" onClick={()=>setHomeSubTv(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSubTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSubTv?'✓ ':''}TV(부)</button>
                 <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSmartHome?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
               {homeInternet&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
+              {homeMainTv&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">TV(주) 요금제 <span className="text-red-500">*</span></div><div className={`grid ${homeNetworkType==='soho'?'grid-cols-2':'grid-cols-3'} gap-2`}>{(homeNetworkType==='soho'?[['premium','프리미엄'],['belowPremium','프리미엄 미만']]:[['broadcastPass','방송패스'],['premium','프리미엄'],['belowPremium','프리미엄 미만']]).map(([k,l])=><button key={k} type="button" onClick={()=>setHomeMainTvPlan(k)} className={`py-2.5 rounded-xl border text-[11px] font-bold ${homeMainTvPlan===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTvPlan===k?'✓ ':''}{l}</button>)}</div>{homeMainTvPlan&&<div className="mt-2 text-[10px] text-gray-500">{homeMainTvPlan==='broadcastPass'||(homeNetworkType==='soho'&&homeMainTvPlan==='premium')?'기존 단가 적용':homeMainTvPlan==='premium'?'기존 단가에서 10만원 차감':'기존 단가에서 20만원 차감'}</div>}</div>}
               {homeSubTv&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='free'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>프리 부셋탑</button></div>}
               <div className="text-[10px] text-gray-400 mt-2">TV프리(부)와 스마트홈은 인터넷 없이 단독으로도 선택할 수 있어요.</div>
             </div>
@@ -8170,7 +8195,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             </div>
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
-            <div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5"><div className="text-[10px] font-bold text-violet-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-violet-500 mt-1">{[homeInternet&&(homeMainTv?'인터넷+TV(주)':`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
+            <div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5"><div className="text-[10px] font-bold text-violet-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-violet-500 mt-1">{[homeInternet&&(homeMainTv?`인터넷+TV(주)${month===SEPTEMBER_POLICY_MONTH?` ${homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}`:''}`:`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -8188,7 +8213,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <button
                 type="button"
                 onClick={submitHomeOrder}
-                disabled={homeOrderSaving || !homeCustomerName.trim() || !homeNetworkType || (!homeInternet&&!homeMainTv&&!homeSubTv&&!homeSmartHome)}
+                disabled={homeOrderSaving || !homeCustomerName.trim() || !homeNetworkType || (!homeInternet&&!homeMainTv&&!homeSubTv&&!homeSmartHome) || (homeMainTv&&!homeMainTvPlan)}
                 className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
               >
                 {homeOrderSaving ? (homeOrderDraft?.editing?'수정 중...':'등록 중...') : (homeOrderDraft?.editing?'수정 저장':'등록')}

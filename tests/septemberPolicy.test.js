@@ -2,11 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SEPTEMBER_MATRIX, SEPTEMBER_BUNDLE_2ND, SEPTEMBER_SPECIAL_SALES, SEPTEMBER_TV_PLAN,
+  SEPTEMBER_SOHO_TV_PLAN, septemberMainTvPlan,
   calculateSeptemberSpecialSale, calculateSeptemberBundleSale, calculateSeptemberSono, calculateSeptemberTailoredTier,
 } from '../src/septemberPolicy.js';
 
 test('9월 모바일 요금제 수수료 조합을 고정한다', () => {
   assert.equal(SEPTEMBER_TV_PLAN, '방송패스');
+  assert.equal(SEPTEMBER_SOHO_TV_PLAN, '프리미엄');
+  assert.equal(septemberMainTvPlan('household'), '방송패스');
+  assert.equal(septemberMainTvPlan('soho'), '프리미엄');
   assert.deepEqual(SEPTEMBER_MATRIX[0], [50000, 40000, 20000, 0, 20000, 0]);
   assert.deepEqual(SEPTEMBER_MATRIX[1], [90000, 70000, 50000, 40000, 40000, 0]);
   assert.deepEqual(SEPTEMBER_MATRIX[4], [25000, 20000, 10000, 0, 10000, 0]);

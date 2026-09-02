@@ -1,6 +1,11 @@
 export const SEPTEMBER_POLICY_VERSION = '2026-09-v1';
 export const SEPTEMBER_POLICY_MONTH = '2026-09';
 export const SEPTEMBER_TV_PLAN = '방송패스';
+export const SEPTEMBER_SOHO_TV_PLAN = '프리미엄';
+
+export function septemberMainTvPlan(networkType = '') {
+  return networkType === 'soho' ? SEPTEMBER_SOHO_TV_PLAN : SEPTEMBER_TV_PLAN;
+}
 
 export const SEPTEMBER_MATRIX_COLUMNS = ['115군↑', '청소년85군', '일반85군', '33~84군', '약자47군↑', '그 외'];
 

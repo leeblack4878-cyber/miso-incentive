@@ -4,6 +4,7 @@ import {
   calculateSecondPolicy, calculateActivitySupport, calculateFreePhoneSpecialOutcome,
   summarizeHomeStatuses, summarizeVasQuality, calculateMobileCommissionParts,
   calculateHomePolicyFromOrders,
+  homeMainTvPlanAdjustment,
 } from '../src/policyEngine.js';
 
 test('2ND 정책 조합표: 단독과 번들은 모두 실적·활동지원·성과P에 동일 반영된다', () => {
@@ -18,6 +19,20 @@ test('2ND 정책 조합표: 단독과 번들은 모두 실적·활동지원·성
     assert.equal(result.activityCount, count, name);
     assert.equal(result.performancePoints, points, name);
   });
+});
+
+test('TV(주) 요금제에 따라 가정망·소호망 그레이드 수수료를 차감한다', () => {
+  assert.equal(homeMainTvPlanAdjustment('household', 'broadcastPass'), 0);
+  assert.equal(homeMainTvPlanAdjustment('household', 'premium'), 100000);
+  assert.equal(homeMainTvPlanAdjustment('household', 'belowPremium'), 200000);
+  assert.equal(homeMainTvPlanAdjustment('soho', 'premium'), 0);
+  assert.equal(homeMainTvPlanAdjustment('soho', 'belowPremium'), 200000);
+  const base = { customer_id: 'plan-test', source_work_date: '2026-09-02', status: 'completed', network_type: 'household' };
+  const result = calculateHomePolicyFromOrders([
+    { ...base, id: 1, product_type: 'internet1g' },
+    { ...base, id: 2, product_type: 'homeTv', main_tv_plan: 'premium' },
+  ]);
+  assert.equal(result.gradePay, 150000);
 });
 
 test('영업활동 지원금은 근속구간별 단가와 230만원 상한을 적용한다', () => {

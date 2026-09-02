@@ -270,6 +270,13 @@ function homeTvGradeRate(totalInternetCount, networkType, speed) {
   return 0;
 }
 
+export function homeMainTvPlanAdjustment(networkType, mainTvPlan) {
+  if (networkType === 'soho') return mainTvPlan === 'belowPremium' ? 200000 : 0;
+  if (mainTvPlan === 'premium') return 100000;
+  if (mainTvPlan === 'belowPremium') return 200000;
+  return 0;
+}
+
 function homeSoloRate(speed) {
   if (speed === '1g') return 200000;
   if (speed === '500') return 100000;
@@ -307,6 +314,7 @@ export function buildHomeBundlesFromOrders(orders = []) {
         : bundle.types.has('internet100') ? '100' : '';
     return {
       ...bundle, speed, hasInternet: Boolean(speed), hasTv: bundle.types.has('homeTv'),
+      mainTvPlan: bundle.orders.find(order => order.product_type === 'homeTv')?.main_tv_plan || null,
       simul: homeSimulType(bundle.types),
     };
   });
@@ -356,9 +364,11 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
       return;
     }
     if (bundle.hasTv) {
-      const base = homeTvGradeRate(totalInternetCount, network, bundle.speed);
+      const normalBase = homeTvGradeRate(totalInternetCount, network, bundle.speed);
+      const adjustment = homeMainTvPlanAdjustment(network, bundle.mainTvPlan);
+      const base = Math.max(0, normalBase - adjustment);
       gradePay += base;
-      details.push({ date: bundle.date, customer: bundle.customer, type: '홈', item: '인터넷+TV 그레이드 수수료', amount: base, note: `${networkLabel} · ${speedLabel} · 총 인터넷 ${totalInternetCount}건 (${tierMin}건 구간)` });
+      details.push({ date: bundle.date, customer: bundle.customer, type: '홈', item: '인터넷+TV 그레이드 수수료', amount: base, note: `${networkLabel} · ${speedLabel} · 총 인터넷 ${totalInternetCount}건 (${tierMin}건 구간)${adjustment?` · 주 셋탑 요금제 -${adjustment.toLocaleString()}원`:''}` });
       let additional = 0, item = '';
       if (bundle.simul === 'newChange') { additional = 100000; item = '홈 + HS 신규/기변 동시판매'; }
       else if (bundle.simul === 'mnp') { additional = 300000; item = '홈 + HS MNP 동시판매'; }
