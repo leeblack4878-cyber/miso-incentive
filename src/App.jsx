@@ -1225,7 +1225,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
   const [policyBlockedMonths, setPolicyBlockedMonths] = useState([]);
-  const [prevMonthTotal, setPrevMonthTotal] = useState(null); // 홈 화면 "전월 대비" 표시용
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
@@ -2012,33 +2011,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
     }
   }, [scopedEmployees, empId]);
 
-
-  // 홈 화면 "전월 대비" 표시용 — 본인 것만 가볍게 따로 불러옴
-  useEffect(() => {
-    if (!empId || !currentEmp) { setPrevMonthTotal(null); return; }
-    (async () => {
-      const [yy, mm] = month.split('-').map(Number);
-      const prevD = new Date(yy, mm - 2, 1);
-      const prevMonth = `${prevD.getFullYear()}-${String(prevD.getMonth() + 1).padStart(2, '0')}`;
-      const nextKey = `${month}-01`;
-
-      const prevNextD=new Date(prevD.getFullYear(),prevD.getMonth()+1,1);
-      const prevTo=`${prevNextD.getFullYear()}-${String(prevNextD.getMonth()+1).padStart(2,'0')}-01`;
-      const [{ data: msRow }, { data: dailyRows }, {data:prevSpots}] = await Promise.all([
-        supabase.from('monthly_status').select('data, activity_time_met').eq('user_id', empId).eq('month', prevMonth).maybeSingle(),
-        supabase.from('daily_records').select('work_date, data').eq('user_id', empId).gte('work_date', `${prevMonth}-01`).lt('work_date', nextKey),
-        supabase.from('spot_claims').select('final_amount,direct_amount,spot_policies(amount)').eq('user_id',empId).eq('status','approved').eq('source_context','mobile').gte('claim_date',`${prevMonth}-01`).lt('claim_date',prevTo)
-      ]);
-
-      const prevDraft = { ...emptyDraft(), ...(msRow?.data?.draft || {}), activityTimeMet: msRow?.activity_time_met ?? true };
-      const prevDailyMap = {};
-      (dailyRows || []).forEach((r) => { prevDailyMap[r.work_date.slice(8, 10)] = r.data; });
-      const prevMerged = applyDailyToDraft(prevDraft, prevDailyMap, prevMonth, config.categoryMap, config.gibyeonColumnMap);
-      const prevSpotTotal=(prevSpots||[]).reduce((sum,x)=>sum+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),0);
-      const prevPay = computePay(prevMerged, currentEmp.position, currentEmp.hireDate, prevMonth, config, prevSpotTotal);
-      setPrevMonthTotal(prevPay.currentPerformanceAmount);
-    })();
-  }, [empId, month, currentEmp?.position, currentEmp?.hireDate, config]); // eslint-disable-line
   const myMergedBase = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null};
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0, strategicMetricMap[empId]);
@@ -2149,7 +2121,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
           policyInputBlocked={policyBlockedMonths.includes(month)}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
-          prevMonthTotal={prevMonthTotal}
           currentEmp={currentEmp}
           personalGoals={personalGoals}
           savePersonalGoals={savePersonalGoals}
@@ -3087,40 +3058,6 @@ const BADGE_DEFS = [
 
 const SPECIAL_BADGE_KEYS = [];
 
-const ENCOURAGEMENT_MESSAGES = [
-  '오늘의 한 걸음이 이번 달의 흐름을 바꿔요.', '잘하고 있어요. 속도보다 방향이 더 중요해요.',
-  '작은 성과도 쌓이면 분명한 실력이 됩니다.', '지금의 꾸준함은 월말에 숫자로 보여요.',
-  '어제보다 한 걸음이면 충분해요.', '조급해하지 않아도 괜찮아요. 당신의 페이스가 있어요.',
-  '힘든 날에도 계속해온 것 자체가 능력이에요.', '오늘의 집중이 내일의 자신감을 만듭니다.',
-  '한 번의 좋은 상담이 하루의 분위기를 바꿀 수 있어요.', '완벽하지 않아도 계속하면 반드시 나아가요.',
-  '당신이 쌓은 경험은 사라지지 않아요.', '결과가 더딘 날에도 성장은 계속되고 있어요.',
-  '기회는 준비된 오늘 속에서 시작돼요.', '할 수 있다는 믿음도 중요한 실력입니다.',
-  '오늘도 충분히 잘해낼 준비가 되어 있어요.', '포기하지 않은 하루는 실패한 하루가 아니에요.',
-  '작은 친절 하나가 좋은 고객을 남겨요.', '진심은 늦더라도 반드시 전해집니다.',
-  '당신만의 강점은 비교할 수 없는 자산이에요.', '지금까지 온 길만 봐도 충분히 대단해요.',
-  '조금 느려도 멈추지 않으면 결국 도착해요.', '어려운 순간은 실력이 자라는 순간이기도 해요.',
-  '오늘의 도전이 내일의 익숙함이 됩니다.', '좋은 흐름은 한 건의 시작에서 만들어져요.',
-  '스스로를 믿어준 만큼 더 멀리 갈 수 있어요.', '당신의 노력은 생각보다 많은 사람에게 힘이 돼요.',
-  '실수는 멈추라는 신호가 아니라 배우라는 신호예요.', '한계를 정하지 않으면 가능성도 닫히지 않아요.',
-  '오늘 할 수 있는 것부터 차분히 시작해봐요.', '지친 날에는 버티는 것도 훌륭한 전진이에요.',
-  '좋은 결과는 좋은 태도에서 시작됩니다.', '당신의 성실함은 이미 강력한 경쟁력이에요.',
-  '한 사람의 신뢰를 얻는 일이 가장 큰 성과일 수 있어요.', '평범한 하루를 꾸준히 보내는 사람이 결국 강해져요.',
-  '지금 부족한 것은 앞으로 채울 수 있다는 뜻이에요.', '오늘의 경험은 다음 상담의 자신감이 됩니다.',
-  '당신에게는 다시 흐름을 만들 힘이 있어요.', '비교보다 성장에 집중하면 마음도 실력도 단단해져요.',
-  '해낸 일들을 잊지 마세요. 이미 많이 성장했어요.', '좋은 날은 기다리는 것이 아니라 조금씩 만드는 거예요.',
-  '한 번 더 시도하는 용기가 차이를 만듭니다.', '당신의 가능성은 오늘의 숫자보다 훨씬 커요.',
-  '쉬어가도 괜찮아요. 다시 시작할 힘을 모으는 중이에요.', '오늘도 누군가에게 좋은 기억을 남길 수 있어요.',
-  '목표가 멀어 보여도 오늘의 한 건은 분명히 가까워진 거리예요.', '흔들려도 방향을 잃지 않으면 괜찮아요.',
-  '스스로에게 건네는 응원이 가장 오래갑니다.', '당신이 가진 열정은 다시 불붙을 수 있어요.',
-  '꾸준한 사람에게 결국 기회가 머뭅니다.', '오늘도 당신답게, 차분하고 힘있게 나아가요.'
-];
-
-function dailyEncouragement(userId=''){
-  const day=new Date().toISOString().slice(0,10);
-  const seed=`${day}-${userId}`.split('').reduce((sum,ch)=>sum+ch.charCodeAt(0),0);
-  return ENCOURAGEMENT_MESSAGES[seed%ENCOURAGEMENT_MESSAGES.length];
-}
-
 function badgeDefOf(key) {
   return BADGE_DEFS.find((b) => b.key === key) || null;
 }
@@ -3288,7 +3225,7 @@ function HallOfFame({rows,month}){
   return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이번 달 주인공들을 만나보세요</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-violet-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-violet-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
 }
 
-function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp}) {
+function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp,currentAmount=0,onOpenPay,onGoInput}) {
   const [storedBadges,setStoredBadges]=useState([]);
   const [titleKey,setTitleKey]=useState('');
   const [loadingBadges,setLoadingBadges]=useState(true);
@@ -3384,26 +3321,35 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
         <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">좋아요!</button>
       </div>
     </div>}
-    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-3">
-      <div className="flex items-start gap-3">
+    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
         <label className="relative w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
           {avatarUrl?<img src={avatarUrl} alt="내 프로필" className="w-full h-full object-cover"/>:<span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>}
           <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
         </label>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold truncate">{currentEmp?.name||'직원'}님, 오늘도 응원해요</div>
+          <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold truncate">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-violet-100/75 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
           <div className="text-[10px] text-violet-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
-          <button type="button" onClick={()=>setShowCollection(true)} className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
-            <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'대표 배지 선택'}</span><span className="text-violet-100">›</span>
-          </button>
         </div>
+        </div>
+        <button type="button" onClick={()=>setShowCollection(true)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
+          <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'배지 선택'}</span><span className="text-violet-100">›</span>
+        </button>
       </div>
-      <div className="mt-2.5 pt-2.5 border-t border-white/15 flex items-center gap-2">
-        <div className="text-[9px] text-violet-100/75 shrink-0">오늘의 응원</div>
-        <div className="text-xs font-bold truncate">“{dailyEncouragement(userId)}”</div>
+
+      <div className="mt-4 pt-1 flex items-end justify-between gap-3">
+        <div className="min-w-0"><div className="text-[10px] text-violet-100/80">{monthLabel(month)} 현재 실적 금액</div><div className="text-2xl font-bold mt-2">{won(Math.max(0,currentAmount))}</div></div>
+        <button type="button" onClick={onOpenPay} className="shrink-0 px-3 py-2.5 rounded-xl bg-white/12 border border-white/20 text-[10px] font-bold">급여 확인·비교 ›</button>
       </div>
-      <div className="flex justify-between mt-2 text-[9px] text-violet-100/75"><span>획득한 배지에서 대표 배지를 선택해요.</span><span>{fmtCount(earnedKeys.size)} / 100</span></div>
+
+      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 mt-3 pt-3 border-t border-white/15 items-center">
+        <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay?.gradeEligible?pay.grade:'D(미달)'}</div></div>
+        <div><div className="text-[9px] text-violet-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.totalPoints||0,1)}P</div></div>
+        <div><div className="text-[9px] text-violet-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.kpiScore||0,1)}P</div></div>
+        <button type="button" onClick={onGoInput} className="px-3 py-2.5 rounded-xl bg-white text-violet-700 text-[10px] font-bold whitespace-nowrap">실적 입력 ›</button>
+      </div>
     </div>
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
@@ -5532,9 +5478,8 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   </div>;
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, prevMonthTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
-  const [showNet,setShowNet]=useState(false);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
   const [homeApprovalPending,setHomeApprovalPending]=useState(0);
@@ -5542,6 +5487,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [approvalOpen,setApprovalOpen]=useState(false);
   const [homeTodayInputCount,setHomeTodayInputCount]=useState(0);
   const [showClosingAmount,setShowClosingAmount]=useState(false);
+  const [payDialogTab,setPayDialogTab]=useState('forecast');
   const [historyOpen,setHistoryOpen]=useState({mobile:false,home:false,spot:false,expense:false});
   const [historySpotTotal,setHistorySpotTotal]=useState(0);
   const [historySpotRows,setHistorySpotRows]=useState([]);
@@ -5664,21 +5610,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const todayHomeKey=String(nowForHome.getDate()).padStart(2,'0');
   const todayHasInput=isCurrentHomeMonth && (homeTodayInputCount>0 || dayHasData(dailyDays?.[todayHomeKey]));
   const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
-  const homeInputStatus=homeApprovalPending>0
-    ? {label:`승인 대기 ${fmtCount(homeApprovalPending)}건`, cls:'bg-amber-400/20 text-amber-50 border-amber-200/30'}
-    : isCurrentHomeMonth
-      ? (todayIsDayOff
-          ? {label:'오늘 휴무', cls:'bg-sky-400/20 text-sky-50 border-sky-200/30'}
-          : todayHasInput
-          ? {label:'입력 완료', cls:'bg-emerald-400/20 text-emerald-50 border-emerald-200/30'}
-          : {label:'오늘 실적 미입력', cls:'bg-white/10 text-violet-100 border-white/15'})
-      : {label:dayHasData(dailyDays?.[todayHomeKey])?'입력 완료':'입력 없음', cls:'bg-white/10 text-violet-100 border-white/15'};
-
-  const currentPayForCompare=Number(pay.currentPerformanceAmount||0);
-  const prevPayForCompare=Number(prevMonthTotal||0);
-  const prevDiff=prevMonthTotal===null?null:currentPayForCompare-prevPayForCompare;
-  const prevPct=(prevMonthTotal===null || prevPayForCompare===0)?null:(prevDiff/prevPayForCompare)*100;
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
       {tab === 'home' && (
@@ -5695,59 +5626,28 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
-            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp} />
+            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp}
+              currentAmount={Number(pay.currentPerformanceAmount||0)-Number(expenseTotal||0)}
+              onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
             <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff}
               approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
               onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
 
-            <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="text-[11px] text-violet-100">{monthLabel(month)} 현재 실적 기준 금액</div>
-                <div className="text-right shrink-0">
-                  {prevMonthTotal===null ? (
-                    <div className="text-[9px] text-violet-100/70">전월 비교 없음</div>
-                  ) : (
-                    <>
-                      <div className={`text-[10px] font-semibold ${prevDiff>0?'text-emerald-200':prevDiff<0?'text-rose-200':'text-violet-100'}`}>
-                        전월 대비 {prevDiff>0?'+':''}{won(prevDiff)}
-                      </div>
-                      <div className="text-[9px] text-violet-100/70 mt-0.5">
-                        {prevPct===null?'비교 불가':`${prevPct>0?'+':''}${fmtNum(prevPct,1)}%`}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="text-2xl font-bold mt-0.5">{won(Math.max(0,pay.currentPerformanceAmount-(showNet?expenseTotal:0)))}</div>
-              <div className="mt-1 text-[9px] leading-relaxed text-violet-100/80">
-                지금까지 등록된 실적에서 실제 발생한 금액을 기준으로 보여줘요.
-              </div>
-
-              <button type="button" onClick={()=>setShowClosingAmount(true)}
-                className="w-full mt-3 py-2.5 px-3 rounded-xl bg-white/12 border border-white/20 text-[11px] font-bold flex items-center justify-between">
-                <span>현재 실적 기준 마감시 금액 확인</span><span>›</span>
-              </button>
-
-              <div className="grid grid-cols-4 gap-1.5 mt-3 pt-3 border-t border-white/15">
-                <div><div className="text-[9px] text-violet-100/75">근속</div><div className="text-[11px] font-bold mt-0.5">{fmtCount(pay.months)}개월</div></div>
-                <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay.gradeEligible?pay.grade:'D(미달)'}</div></div>
-                <div><div className="text-[9px] text-violet-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.totalPoints,1)}P</div></div>
-                <div><div className="text-[9px] text-violet-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay.kpiScore,1)}P</div></div>
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <button onClick={()=>setShowNet(v=>!v)} className="text-[10px] px-2.5 py-1 rounded-full bg-white/15 border border-white/20">
-                  {showNet?'영업비용 차감 전 보기':`영업비용 ${won(expenseTotal)} 차감`}
-                </button>
-                <button type="button" onClick={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('daily')} className={`text-[9px] font-semibold px-2 py-1 rounded-full border ${homeInputStatus.cls}`}>{homeInputStatus.label}{homeApprovalPending>0?' ›':''}</button>
-              </div>
-            </div>
-
             {showClosingAmount&&<div className="fixed inset-0 z-[95] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowClosingAmount(false)}>
               <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
-                <div className="text-sm font-bold text-gray-900">현재 실적 기준 마감시 금액</div>
-                <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
-                <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
-                <button type="button" onClick={()=>setShowClosingAmount(false)} className="w-full mt-5 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">확인</button>
+                <div className="flex items-center justify-between"><div className="text-sm font-bold text-gray-900">급여 확인·비교</div><button type="button" onClick={()=>setShowClosingAmount(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div>
+                <div className="grid grid-cols-2 gap-1 mt-4 rounded-xl bg-gray-100 p-1">
+                  <button type="button" onClick={()=>setPayDialogTab('forecast')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='forecast'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>예상 마감</button>
+                  <button type="button" onClick={()=>setPayDialogTab('history')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='history'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>이전 급여</button>
+                </div>
+                {payDialogTab==='forecast'?<>
+                  <div className="text-[11px] text-gray-400 mt-5">현재 실적 기준 예상 마감</div>
+                  <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
+                  <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
+                </>:<>
+                  <div className="mt-5 rounded-xl bg-violet-50 px-4 py-4"><div className="text-sm font-bold text-violet-900">원하는 월의 급여를 확인하세요</div><div className="text-xs text-violet-600 mt-1">내역 화면에서 월을 선택하면 수수료와 차감 내역까지 볼 수 있어요.</div></div>
+                  <button type="button" onClick={()=>{setShowClosingAmount(false);setTab('history')}} className="w-full mt-4 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">이전 급여 내역 보기 ›</button>
+                </>}
               </div>
             </div>}
 

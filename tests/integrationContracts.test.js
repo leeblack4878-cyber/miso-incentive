@@ -171,7 +171,7 @@ test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률�
 
 test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(source, /todayIsDayOff[\s\S]*label:'오늘 휴무'/);
+  assert.match(source, /todayIsDayOff=isCurrentHomeMonth[\s\S]*\.dayOff/);
   assert.match(source, /todayInputDone=\{todayHasInput\|\|todayIsDayOff\}/);
 });
 
@@ -252,15 +252,18 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   assert.match(strategicSource, /vasVcolorMusic: 0\.3/);
 });
 
-test('명예의 전당은 누적순위 바로 위에 있고 프로필 카드는 한줄 상태 없이 간결하다', async () => {
+test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게 유지한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
   assert.match(source, /function HallOfFame/);
   assert.match(source, /전체 직원 프로필 보기/);
   assert.match(source, /employee_public_profiles.*status_message/);
-  assert.match(source, /오늘의 응원[\s\S]*dailyEncouragement/);
   const hub = source.match(/function GamificationHub[\s\S]*?function SpecialBadgeAwardPanel/)?.[0]||'';
   assert.doesNotMatch(hub, /동료에게 공개되는 나의 한줄 상태/);
+  assert.doesNotMatch(hub, /오늘의 응원/);
+  assert.match(hub, /현재 실적 금액/);
+  assert.match(hub, /급여 확인·비교/);
+  assert.match(hub, /실적 입력/);
   assert.ok(source.lastIndexOf('<HallOfFame') < source.lastIndexOf('<MonthlyPerformanceRankingCard'));
   assert.doesNotMatch(source.match(/function HallOfFame[\s\S]*?function GamificationHub/)?.[0]||'', /dailyEncouragement/);
   assert.match(sql, /employee_public_profiles_read_authenticated/);
