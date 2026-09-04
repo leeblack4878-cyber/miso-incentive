@@ -2128,6 +2128,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           showPersonalGoal={empId === authUser?.id}
           competitionRows={salesRows}
           authUser={authUser} authProfile={authProfile}
+          onOpenStoreGoals={()=>{setRole('admin');setAdminTab('storeGoals')}}
         />
       ) : (
         <AdminView
@@ -2603,7 +2604,7 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
   </div>;
 }
 
-function StoreHomeOverview({ rows, branch, month, userId, userName='' }) {
+function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGoals=false, onOpenGoals }) {
   const members=(rows||[]).filter(r=>r.branch===branch);
   const [savedGoals,setSavedGoals]=useState({});
   useEffect(()=>{
@@ -2655,7 +2656,7 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='' }) {
           const forecast=Number(m.current||0)*forecastFactor,forecastHit=hasGoal&&forecast>=m.target;
           return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
             <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
-            {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:<span className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</span>}
+            {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
             <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}</span>
             <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
             <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{fmtValue(m,forecast)}</span>
@@ -5478,7 +5479,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   </div>;
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile, onOpenStoreGoals }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
@@ -5671,7 +5672,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               title={`${monthLabel(month)} 월 누적 순위`}
             />
           </> : <>
-            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} />
+            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
+              canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />
           </>}
         </div>
       )}
