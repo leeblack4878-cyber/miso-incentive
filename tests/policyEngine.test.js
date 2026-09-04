@@ -4,6 +4,7 @@ import {
   calculateSecondPolicy, calculateActivitySupport, calculateFreePhoneSpecialOutcome,
   summarizeHomeStatuses, summarizeVasQuality, calculateMobileCommissionParts,
   calculateHomePolicyFromOrders,
+  calculateSeptemberWeekendHomeBonus,
   homeMainTvPlanAdjustment,
 } from '../src/policyEngine.js';
 
@@ -33,6 +34,49 @@ test('TV(주) 요금제에 따라 가정망·소호망 그레이드 수수료를
     { ...base, id: 2, product_type: 'homeTv', main_tv_plan: 'premium' },
   ]);
   assert.equal(result.gradePay, 150000);
+});
+
+test('9월 주말 홈 정책은 개인 누적 건수와 망별 TV 요금제 조건으로 추가 지급한다', () => {
+  const makeBundle = (customer_id, network_type, main_tv_plan) => {
+    const base = {
+      customer_id, customer_name: customer_id, source_work_date: '2026-09-05',
+      actual_install_date: '2026-09-20', status: 'completed', network_type, sale_type: 'normal',
+    };
+    return [
+      { ...base, id: `${customer_id}-internet`, product_type: 'internet500' },
+      { ...base, id: `${customer_id}-tv`, product_type: 'homeTv', main_tv_plan },
+    ];
+  };
+  const result = calculateHomePolicyFromOrders([
+    ...makeBundle('home-a', 'household', 'broadcastPass'),
+    ...makeBundle('home-b', 'soho', 'premium'),
+  ]);
+  assert.equal(result.weekendPolicy.homeCount, 2);
+  assert.equal(result.weekendPolicy.homeRate, 150000);
+  assert.equal(result.weekendPolicy.homeBonus, 300000);
+  assert.equal(result.limitedPolicyPay, 300000);
+  assert.equal(result.homeAddonPay, 300000);
+});
+
+test('9월 주말 홈 정책은 요금제·기간·설치완료 조건이 맞지 않으면 제외한다', () => {
+  const bundles = [
+    { date: '2026-09-05', actualInstallDate: '2026-09-20', hasInternet: true, speed: '500', hasTv: true, networkType: 'household', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
+    { date: '2026-09-08', actualInstallDate: '2026-09-20', hasInternet: true, speed: '1g', hasTv: true, networkType: 'soho', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
+    { date: '2026-09-05', actualInstallDate: '2026-10-01', hasInternet: true, speed: '1g', hasTv: true, networkType: 'household', mainTvPlan: 'broadcastPass', saleType: 'normal', types: new Set() },
+  ];
+  assert.equal(calculateSeptemberWeekendHomeBonus(bundles).homeBonus, 0);
+});
+
+test('9월 주말 TV프리는 개인 누적 구간별 건당 추가 지급하며 7일까지 설치해야 한다', () => {
+  const eligible = Array.from({ length: 5 }, (_, index) => ({
+    date: '2026-09-06', actualInstallDate: '2026-09-07', saleType: 'normal', types: new Set(['tvFree']),
+  }));
+  const five = calculateSeptemberWeekendHomeBonus(eligible);
+  assert.equal(five.tvFreeCount, 5);
+  assert.equal(five.tvFreeRate, 30000);
+  assert.equal(five.tvFreeBonus, 150000);
+  const late = calculateSeptemberWeekendHomeBonus([{ ...eligible[0], actualInstallDate: '2026-09-08' }]);
+  assert.equal(late.tvFreeBonus, 0);
 });
 
 test('영업활동 지원금은 근속구간별 단가와 230만원 상한을 적용한다', () => {

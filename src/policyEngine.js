@@ -315,13 +315,48 @@ export function buildHomeBundlesFromOrders(orders = []) {
     return {
       ...bundle, speed, hasInternet: Boolean(speed), hasTv: bundle.types.has('homeTv'),
       mainTvPlan: bundle.orders.find(order => order.product_type === 'homeTv')?.main_tv_plan || null,
+      actualInstallDate: bundle.orders.find(order => order.actual_install_date)?.actual_install_date?.slice?.(0, 10) || '',
       simul: homeSimulType(bundle.types),
     };
   });
 }
 
+export function calculateSeptemberWeekendHomeBonus(bundles = []) {
+  const inApplicationPeriod = bundle => bundle.date >= '2026-09-04' && bundle.date <= '2026-09-07';
+  const installedBy = (bundle, deadline) => Boolean(bundle.actualInstallDate) && bundle.actualInstallDate <= deadline;
+  const eligibleHome = (bundles || []).filter(bundle =>
+    inApplicationPeriod(bundle)
+    && bundle.hasInternet
+    && ['500', '1g'].includes(bundle.speed)
+    && bundle.hasTv
+    && ((bundle.networkType === 'soho' && bundle.mainTvPlan === 'premium')
+      || (bundle.networkType !== 'soho' && bundle.mainTvPlan === 'broadcastPass'))
+    && installedBy(bundle, '2026-09-30')
+    && bundle.saleType !== 'allinone'
+  );
+  const homeRate = eligibleHome.length >= 2 ? 150000 : eligibleHome.length >= 1 ? 100000 : 0;
+
+  const eligibleTvFree = (bundles || []).filter(bundle =>
+    inApplicationPeriod(bundle)
+    && bundle.types.has('tvFree')
+    && installedBy(bundle, '2026-09-07')
+    && bundle.saleType !== 'allinone'
+  );
+  const tvFreeRate = eligibleTvFree.length >= 5 ? 30000 : eligibleTvFree.length >= 3 ? 20000 : eligibleTvFree.length >= 1 ? 10000 : 0;
+  return {
+    homeCount: eligibleHome.length,
+    homeRate,
+    homeBonus: eligibleHome.length * homeRate,
+    tvFreeCount: eligibleTvFree.length,
+    tvFreeRate,
+    tvFreeBonus: eligibleTvFree.length * tvFreeRate,
+    total: eligibleHome.length * homeRate + eligibleTvFree.length * tvFreeRate,
+  };
+}
+
 export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const bundles = buildHomeBundlesFromOrders(orders);
+  const weekendPolicy = calculateSeptemberWeekendHomeBonus(bundles);
   const internetBundles = bundles.filter(bundle => bundle.hasInternet);
   const totalInternetCount = internetBundles.length;
   const gradeIndex = homeGradeIndex(totalInternetCount);
@@ -398,10 +433,14 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   });
 
   const homeFlatPay = soloPay + tvFreePay + smartHomePay;
-  const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay;
+  if (weekendPolicy.homeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 홈 활성화', amount: weekendPolicy.homeBonus, note: `${weekendPolicy.homeCount}건 × ${weekendPolicy.homeRate.toLocaleString()}원` });
+  if (weekendPolicy.tvFreeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 TV프리 활성화', amount: weekendPolicy.tvFreeBonus, note: `${weekendPolicy.tvFreeCount}건 × ${weekendPolicy.tvFreeRate.toLocaleString()}원` });
+  const limitedPolicyPay = weekendPolicy.total;
+  const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {
     source: 'orders', totalInternetCount, tierMin, gradePay, soloPay, simulPay,
     tvFreePay, smartHomePay, smartHomeSimulPay, subSetTopPay,
+    limitedPolicyPay, weekendPolicy,
     homeFlatPay, homeAddonPay, total: gradePay + homeFlatPay + homeAddonPay, details,
   };
 }

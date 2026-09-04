@@ -238,7 +238,7 @@ test('스마트홈과 HS 동시판매는 고객 묶음당 추가 수수료를 �
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /smartHomeSimulRate=.*key==='smartHomeSimul'/);
   assert.match(source, /b\.types\.has\('smartHome'\)&&b\.simul!=='none'&&smartHomeSimulRate/);
-  assert.match(source, /homeAddonPay=simulPay\+smartHomeSimulPay\+subSetTopPay/);
+  assert.match(source, /homeAddonPay=simulPay\+smartHomeSimulPay\+subSetTopPay(?:\+limitedPolicyPay)?/);
   assert.match(source, /item:'스마트홈 동시판매'/);
 });
 

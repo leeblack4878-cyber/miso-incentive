@@ -1666,7 +1666,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     if(!ids.length){setHomePolicyMap({});return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
     const {data,error}=await supabase.from('home_orders')
-      .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,status,source_work_date,actual_install_date')
+      .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,actual_install_date')
       .in('user_id',ids).gte('source_work_date',`${m}-01`).lt('source_work_date',to);
     if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});return;}
     ids.forEach(id=>{
@@ -5798,6 +5798,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.tvFreePay||0)!==0&&<RowKV label="└ TV프리(부)" value={won(pay.tvFreePay)} />}
               {Number(pay.smartHomePay||0)!==0&&<RowKV label="└ 스마트홈" value={won(pay.smartHomePay)} />}
               {Number(pay.homePolicy?.subSetTopPay||0)!==0&&<RowKV label="└ 부셋탑" value={won(pay.homePolicy.subSetTopPay)} />}
+              {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
+              {Number(pay.homePolicy?.weekendPolicy?.tvFreeBonus||0)!==0&&<RowKV label="└ 9월 주말 TV프리 추가 지급" value={won(pay.homePolicy.weekendPolicy.tvFreeBonus)} />}
               {Number(pay.renewPay||0)!==0&&<RowKV label="└ 인터넷 재약정" value={won(pay.renewPay)} />}
             </div>}
 
@@ -6097,7 +6099,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         .eq('sale_date',saleDate)
         .order('created_at',{ascending:false}),
       supabase.from('home_orders')
-        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,status,source_work_date,actual_install_date')
+        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,actual_install_date')
         .eq('user_id',currentEmp.id)
         .gte('source_work_date',`${month}-01`)
         .lt('source_work_date',monthTo)
