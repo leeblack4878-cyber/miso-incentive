@@ -40,6 +40,14 @@ import {
   isSeptemberPolicyActive,
   resolvePolicyConfigForMonth,
 } from './policyCalendar';
+import {
+  DAILY_BRIEFING_SEND_TIME,
+  buildAllBriefingText,
+  buildStoreBriefingText,
+  canAccessDailyBriefing,
+  dailyInputStatus,
+  projectMetric,
+} from './dailyBriefing';
 
 let feedbackBridge={toast:null,confirm:null};
 function showAppToast(message,{tone='success',title=''}={}){feedbackBridge.toast?.({message,title,tone})}
@@ -590,7 +598,7 @@ function emptyDay() {
     groups: Object.fromEntries(DAILY_GROUP_KEYS.map((k) => [k, {}])),
     custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0, renewSoloDiscountAmount: 0,
     householdRenewals: [], householdRenewLegacyCounts: {},
-    dayOff: false,
+    dayOff: false, inputConfirmed: false, inputConfirmedAt: null,
   };
 }
 
@@ -615,6 +623,8 @@ function normalizeDay(raw) {
     householdRenewals: Array.isArray(raw.householdRenewals) ? raw.householdRenewals : [],
     householdRenewLegacyCounts: raw.householdRenewLegacyCounts && typeof raw.householdRenewLegacyCounts==='object' ? raw.householdRenewLegacyCounts : {},
     dayOff: !!raw.dayOff,
+    inputConfirmed: !!raw.inputConfirmed,
+    inputConfirmedAt: raw.inputConfirmedAt || null,
   };
 }
 
@@ -649,13 +659,19 @@ function calendarCoreMetrics(raw){
   return {hs,sim,home};
 }
 
-function dayHasData(raw) {
+function dayHasPerformanceData(raw) {
   if (!raw) return false;
   const d = normalizeDay(raw);
   if (d.matrix.some((row) => row.some((v) => v > 0))) return true;
   if (DAILY_GROUP_KEYS.some((k) => Object.values(d.groups[k] || {}).some((v) => v > 0))) return true;
   if ((d.householdRenewals||[]).length > 0) return true;
   return DAILY_NUMERIC_KEYS.some((k) => (d[k] || 0) > 0);
+}
+
+function dayHasData(raw) {
+  if (!raw) return false;
+  const d = normalizeDay(raw);
+  return d.inputConfirmed || dayHasPerformanceData(d);
 }
 
 // 그 달의 일일 입력 전체를 합산
@@ -1103,6 +1119,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
   const [strategicMetricMap, setStrategicMetricMap] = useState({}); // 직원 전략P 급여 가감 계산용
   const [canViewHqStructure, setCanViewHqStructure] = useState(false);
+  const canViewDailyBriefing = canAccessDailyBriefing(authUser?.id);
 
   useEffect(() => {
     let alive = true;
@@ -2021,6 +2038,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           loginBranch={loginEmp?.branch||''}
           canSwitchStores={isFullAdmin||isHQManager}
           canViewHqStructure={canViewHqStructure}
+          canViewDailyBriefing={canViewDailyBriefing}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
           policyInputBlocked={policyBlockedMonths.includes(month)} togglePolicyInputBlock={togglePolicyInputBlock}
         />
@@ -5831,11 +5849,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const setDayOff = async (nextOff) => {
     if (locked) return;
-    if (nextOff && dayHasData(day)) {
+    if (nextOff && dayHasPerformanceData(day)) {
       const ok = await showAppConfirm({title:'실적이 있는 날짜예요',message:'휴무로 표시해도 입력된 실적은 그대로 유지됩니다.',confirmLabel:'휴무로 표시',tone:'warning'});
       if (!ok) return;
     }
-    const next = { ...normalizeDay(day), dayOff: nextOff };
+    const next = { ...normalizeDay(day), dayOff: nextOff, ...(nextOff ? { inputConfirmed:false, inputConfirmedAt:null } : {}) };
     setDay(next);
     pendingRef.current = { day: selectedDay, record: next };
     setSaveState('pending');
@@ -5882,9 +5900,20 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const mutate = (next) => {
     if (locked) return;
-    setDay(next);
-    pendingRef.current = { day: selectedDay, record: next };
+    const normalized=normalizeDay(next);
+    const record=dayHasPerformanceData(normalized)?{...normalized,inputConfirmed:false,inputConfirmedAt:null}:normalized;
+    setDay(record);
+    pendingRef.current = { day: selectedDay, record };
     setSaveState('pending');
+  };
+  const setZeroConfirmed = (confirmed) => {
+    if (locked || dayHasPerformanceData(day)) return;
+    mutate({
+      ...normalizeDay(day),
+      dayOff:false,
+      inputConfirmed:confirmed,
+      inputConfirmedAt:confirmed ? new Date().toISOString() : null,
+    });
   };
   const setCell = (ri, ci, v) => {
     const nextMatrix = day.matrix.map((row) => [...row]);
@@ -7263,6 +7292,22 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             {isDayOff ? '휴무 ✓' : '휴무'}
           </button>
         </div>
+        {!isDayOff&&<div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-gray-700">오늘 실적이 0건인가요?</div>
+            <div className="text-[11px] text-gray-400 mt-0.5">0건도 확인해야 미입력이 아닌 정상 입력으로 집계돼요.</div>
+          </div>
+          <button
+            type="button"
+            onClick={()=>setZeroConfirmed(!day.inputConfirmed)}
+            disabled={locked||dayHasPerformanceData(day)}
+            className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border ${
+              dayHasPerformanceData(day)?'bg-gray-100 text-gray-400 border-gray-100':day.inputConfirmed?'bg-violet-600 text-white border-violet-600':'bg-white text-violet-600 border-violet-200'
+            } disabled:opacity-60`}
+          >
+            {dayHasPerformanceData(day)?'실적 입력됨':day.inputConfirmed?'0건 확인 ✓':'0건 확인'}
+          </button>
+        </div>}
       </div>
 
       {isDayOff ? (
@@ -9484,7 +9529,116 @@ function dailyCalendarMetrics(raw){
   const free=Number(d.groups?.homeFlat?.tvFree||0);
   const smart=Number(d.groups?.homeFlat?.smartHome||0);
   const tailored=Number(d.tailoredCount||0);
-  return {hs,sim,home,second,free,smart,tailored,has:dayHasData(d),off:!!d.dayOff};
+  const tailoredAmount=Number(d.tailoredAmount||0);
+  const sono=Object.values(d.groups?.sono||{}).reduce((a,v)=>a+Number(v||0),0);
+  return {hs,sim,home,second,free,smart,tailored,tailoredAmount,sono,has:dayHasData(d),off:!!d.dayOff};
+}
+
+function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
+  const defaultDay=()=>{
+    const now=new Date(),yesterday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
+    if(monthKeyOf(yesterday)===month)return String(yesterday.getDate()).padStart(2,'0');
+    if(month<monthKeyOf(now))return String(daysInMonth(month)).padStart(2,'0');
+    return '01';
+  };
+  const [selectedDay,setSelectedDay]=useState(defaultDay);
+  const [storeKey,setStoreKey]=useState('all');
+  const [goalRows,setGoalRows]=useState([]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{setSelectedDay(defaultDay());setStoreKey('all')},[month]); // eslint-disable-line
+  useEffect(()=>{
+    let alive=true;
+    (async()=>{
+      setLoading(true);
+      const {data,error}=await supabase.from('store_goals').select('store_name,company_goals').eq('month',month);
+      if(!alive)return;
+      if(error)showLegacyAlert(`매장 목표 불러오기 실패: ${friendlyError(error)}`);
+      setGoalRows(data||[]);setLoading(false);
+    })();
+    return()=>{alive=false};
+  },[month]);
+
+  const goalMap=Object.fromEntries(goalRows.map(row=>[row.store_name,{...companyGoalDefaults(row.store_name),...(row.company_goals||{})}]));
+  const branches=sortStoresByOpenOrder([...new Set((employees||[]).map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
+  const reportDay=Math.max(1,Number(selectedDay||1));
+  const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/reportDay:1;
+  const dateLabel=`${Number(month.slice(5,7))}월 ${reportDay}일`;
+  const metricDefs=[
+    {key:'hs',label:'HS',unit:'count',goal:(g)=>g.hs},
+    {key:'simMnp',label:'SIM MNP',unit:'count',goal:(g)=>g.simMnp},
+    {key:'second',label:'2ND',unit:'count',goal:(g)=>g.second},
+    {key:'productivity',label:'생산성',unit:'point',goal:(g)=>g.productivity||g.kpi},
+    {key:'home',label:'홈',unit:'count',goal:(g)=>g.home},
+    {key:'free',label:'프리',unit:'count',goal:(g)=>g.tvFree||g.free},
+    {key:'smart',label:'스홈',unit:'count',goal:(g)=>g.smartHome||g.smart},
+    {key:'sono',label:'소노',unit:'count',goal:(g)=>g.sono},
+    {key:'upsellAmount',label:'맞춤제안 매출액',unit:'won',goal:(g)=>g.tailoredAmount},
+    {key:'upsell',label:'업셀건',unit:'count',goal:(g)=>g.tailoredCount||g.tailored},
+  ];
+  const fmtBriefValue=(metric,value)=>metric.unit==='won'?won(Math.round(value)):metric.unit==='point'?`${fmtNum(value,1)}P`:`${fmtNum(value,Number(value)%1?1:0)}건`;
+  const briefingStores=branches.map(branch=>{
+    const members=(employees||[]).filter(emp=>emp.branch===branch);
+    const storeRows=(rows||[]).filter(row=>row.branch===branch);
+    const goal=goalMap[branch]||companyGoalDefaults(branch);
+    const inputRows=members.map(emp=>{
+      const raw=dailyRecords?.[emp.id]?.[selectedDay];
+      const d=normalizeDay(raw),daily=dailyCalendarMetrics(raw);
+      const status=dailyInputStatus({dayOff:d.dayOff,hasPerformance:dayHasPerformanceData(raw),zeroConfirmed:d.inputConfirmed});
+      const parts=[['HS',daily.hs],['SIM MNP',daily.sim],['2ND',daily.second],['홈',daily.home],['프리',daily.free],['스홈',daily.smart],['소노',daily.sono],['업셀',daily.tailored]].filter(([,value])=>Number(value)>0).map(([label,value])=>`${label} ${fmtNum(value,Number(value)%1?1:0)}`);
+      return {name:emp.name,status,summary:parts.length?parts.join(' · '):'기타 실적 입력'};
+    });
+    const metrics=metricDefs.map(def=>({
+      key:def.key,label:def.label,unit:def.unit,
+      ...projectMetric({current:storeMetricFromRows(storeRows,def.key),target:Number(def.goal(goal)||0),factor:forecastFactor}),
+    }));
+    return {storeName:displayStoreName(branch),branch,inputRows,metrics};
+  });
+  const visibleStores=storeKey==='all'?briefingStores:briefingStores.filter(store=>store.branch===storeKey);
+  const allInputRows=briefingStores.flatMap(store=>store.inputRows);
+  const count=(status)=>allInputRows.filter(row=>row.status===status).length;
+  const copyText=async(text,label)=>{
+    try{
+      if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(text);
+      else{const area=document.createElement('textarea');area.value=text;area.style.position='fixed';area.style.opacity='0';document.body.appendChild(area);area.select();document.execCommand('copy');area.remove();}
+      showAppToast(`${label} 복사했어요`,{title:'복사 완료'});
+    }catch(e){showLegacyAlert(`복사 실패: ${friendlyError(e)}`)}
+  };
+
+  return <div className="space-y-3">
+    <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-4 text-white">
+      <div className="flex items-start justify-between gap-3">
+        <div><div className="text-xs text-violet-200">대표 전용</div><div className="text-lg font-black mt-0.5">{dateLabel} 일일 브리핑</div><div className="text-[10px] text-violet-200 mt-1">향후 자동 메일 기준 오전 {DAILY_BRIEFING_SEND_TIME} · 현재는 복사 기능부터 사용해요.</div></div>
+        <button type="button" onClick={()=>copyText(buildAllBriefingText({dateLabel,stores:briefingStores}),'전체 브리핑을')} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-violet-700">전체 복사</button>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5 mt-4">{[['입력',count('input')],['0건 확인',count('zero')],['미입력',count('missing')],['휴무',count('off')]].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-2 py-2 text-center"><div className="text-[9px] text-violet-100">{label}</div><div className="text-base font-black mt-0.5">{value}명</div></div>)}</div>
+    </div>
+
+    <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2">
+      <select value={selectedDay} onChange={e=>setSelectedDay(e.target.value)} className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold">{Array.from({length:daysInMonth(month)},(_,i)=>String(i+1).padStart(2,'0')).map(day=><option key={day} value={day}>{Number(month.slice(5,7))}월 {Number(day)}일</option>)}</select>
+      <select value={storeKey} onChange={e=>setStoreKey(e.target.value)} className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold"><option value="all">전체 매장</option>{branches.map(branch=><option key={branch} value={branch}>{displayStoreName(branch)}</option>)}</select>
+    </div>
+
+    {loading?<div className="bg-white rounded-xl border p-8 text-center text-xs text-gray-400">브리핑을 만드는 중...</div>:visibleStores.map(store=>{
+      const missing=store.inputRows.filter(row=>row.status==='missing');
+      const zero=store.inputRows.filter(row=>row.status==='zero');
+      const setMetrics=store.metrics.filter(metric=>metric.state!=='unset');
+      const good=setMetrics.filter(metric=>metric.state==='good').sort((a,b)=>b.forecastRate-a.forecastRate);
+      const weak=setMetrics.filter(metric=>metric.state!=='good').sort((a,b)=>a.forecastRate-b.forecastRate);
+      const unset=store.metrics.filter(metric=>metric.state==='unset');
+      return <div key={store.branch} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-50 flex items-start justify-between gap-3">
+          <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">예상 달성 {good.length}/{setMetrics.length}개 · 미입력 {missing.length}명 · 0건 확인 {zero.length}명</div></div>
+          <button type="button" onClick={()=>copyText(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 피드백을`)} className="rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700">점장 전달용 복사</button>
+        </div>
+        {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-violet-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
+        <div className="p-4 grid sm:grid-cols-2 gap-3">
+          <div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold text-emerald-700">잘하고 있는 항목</div><div className="mt-2 space-y-1.5">{good.length?good.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className="font-bold text-emerald-700">예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">예상 달성 항목이 아직 없어요.</div>}</div></div>
+          <div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold text-amber-700">보완할 항목</div><div className="mt-2 space-y-1.5">{weak.length?weak.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className={`font-bold ${metric.state==='low'?'text-red-600':'text-amber-700'}`}>예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">목표 설정 항목은 모두 달성 흐름이에요.</div>}</div></div>
+        </div>
+        {unset.length>0&&<div className="px-4 pb-4 text-[10px] text-red-500"><b>목표 입력 필요:</b> {unset.map(metric=>metric.label).join(', ')}</div>}
+      </div>;
+    })}
+  </div>;
 }
 
 function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch='', canSwitchStores=false }) {
@@ -9732,13 +9886,14 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false }) {
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
     { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
     { key: 'evaluation', label: '평가', icon: ClipboardCheck, group:'현황' },
     { key: 'storeGoals', label: '매장 목표', icon: Target, group:'현황' },
+    ...(canViewDailyBriefing ? [{ key: 'dailyBriefing', label: '일일 브리핑', icon: ClipboardList, group:'현황' }] : []),
     { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, group:'실적 관리' },
     { key: 'history', label: '변경 이력', icon: History, group:'실적 관리' },
     { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, group:'고객 · 홈' },
@@ -9759,7 +9914,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
   useEffect(() => {
     if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
     if (adminTab === 'hqStructure' && !canViewHqStructure) setAdminTab('dashboard');
-  }, [adminTab, isFullAdmin, canViewHqStructure]); // eslint-disable-line
+    if (adminTab === 'dailyBriefing' && !canViewDailyBriefing) setAdminTab('dashboard');
+  }, [adminTab, isFullAdmin, canViewHqStructure, canViewDailyBriefing]); // eslint-disable-line
 
   const downloadCSV = () => {
     const header = ['이름', '직급', '매장', 'HS', '등급', '총 인센티브', '상태'];
@@ -9908,6 +10064,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
+      {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}
