@@ -159,8 +159,21 @@ test('관리자 홈 케어는 고객 묶음과 실시간 갱신을 사용한다'
 test('근속 배지는 계산된 근속개월에 따라 자동 획득한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /const tenureMonths=Number\(pay\?\.months\|\|0\)/);
-  assert.match(source, /\[\[3,'tenure3'\],\[12,'tenure12'\],\[24,'tenure24'\],\[36,'tenure36'\],\[60,'tenure60'\]\]/);
+  assert.match(source, /\[\[1,'tenure1'\],[\s\S]*\[108,'tenure108'\],[\s\S]*\[180,'tenure180'\]\]/);
   assert.match(source, /if\(tenureMonths>=months\)earned\.add\(key\)/);
+});
+
+test('기존 기록을 포함한 통산 부가지표 배지를 150개 체계로 운영한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /supabase\.from\('daily_records'\)\.select\('id,data'\)\.eq\('user_id',userId\)\.order\('id'\)\.range\(offset,offset\+999\)/);
+  assert.match(source, /totals\.sono\+=Object\.values\(d\.groups\?\.sono\|\|\{\}\)/);
+  assert.match(source, /career_home_\$\{threshold\}/);
+  assert.match(source, /career_free_\$\{threshold\}/);
+  assert.match(source, /career_smart_\$\{threshold\}/);
+  assert.match(source, /career_upsell_\$\{threshold\}/);
+  assert.match(source, /career_sono_\$\{threshold\}/);
+  assert.match(source, /\/ \{BADGE_DEFS\.length\}/);
+  assert.match(source, /b\.progressMetric==='tenure'/);
 });
 
 test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률을 함께 제공한다', async () => {

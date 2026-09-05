@@ -2951,6 +2951,31 @@ const BADGE_DEFS = [
   { key: 'special_pick', icon: '📈', name: '성장왕', rarity: 'RARE', hidden: false, desc: '월 후반 HS 페이스가 전반보다 크게 상승', auto: true },
   { key: 'special_team', icon: '🎯', name: '올라운드 세일즈', rarity: 'EPIC', hidden: false, desc: 'HS·홈·프리·스홈·2ND를 모두 판매', auto: true },
   { key: 'special_mvp', icon: '🏆', name: '미소 MVP', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 종합 순위 월 1위', auto: true }
+  ,{ key:'tenure1', icon:'👋', name:'미소 첫 달', rarity:'COMMON', hidden:false, desc:'근속 1개월', auto:true, progressMetric:'tenure', threshold:1 }
+  ,{ key:'tenure6', icon:'🌿', name:'반년의 발자국', rarity:'COMMON', hidden:false, desc:'근속 6개월', auto:true, progressMetric:'tenure', threshold:6 }
+  ,{ key:'tenure18', icon:'🌱', name:'단단한 뿌리', rarity:'RARE', hidden:false, desc:'근속 18개월', auto:true, progressMetric:'tenure', threshold:18 }
+  ,{ key:'tenure48', icon:'🤝', name:'믿음의 동료', rarity:'EPIC', hidden:false, desc:'근속 48개월', auto:true, progressMetric:'tenure', threshold:48 }
+  ,{ key:'tenure72', icon:'🏛️', name:'미소의 기둥', rarity:'EPIC', hidden:false, desc:'근속 72개월', auto:true, progressMetric:'tenure', threshold:72 }
+  ,{ key:'tenure84', icon:'✨', name:'오래된 신뢰', rarity:'EPIC', hidden:false, desc:'근속 84개월', auto:true, progressMetric:'tenure', threshold:84 }
+  ,{ key:'tenure96', icon:'📜', name:'미소 히스토리', rarity:'LEGEND', hidden:false, desc:'근속 96개월', auto:true, progressMetric:'tenure', threshold:96 }
+  ,{ key:'tenure108', icon:'🌟', name:'미소 레전드', rarity:'LEGEND', hidden:false, desc:'근속 108개월', auto:true, progressMetric:'tenure', threshold:108 }
+  ,{ key:'tenure120', icon:'🎖️', name:'미소 명예직원', rarity:'LEGEND', hidden:false, desc:'근속 120개월', auto:true, progressMetric:'tenure', threshold:120 }
+  ,{ key:'tenure180', icon:'🏛️', name:'미소의 역사', rarity:'LEGEND', hidden:false, desc:'근속 180개월', auto:true, progressMetric:'tenure', threshold:180 }
+  ,...[
+    [25,'🏡','우리집 안내자','COMMON'],[50,'🧭','홈 네비게이터','RARE'],[100,'💯','홈 백부장','RARE'],[200,'🏗️','홈 아키텍트','EPIC'],[300,'🌉','홈 커넥터','EPIC'],[500,'🏰','홈 그랜드마스터','LEGEND'],[750,'🏙️','홈 타운 빌더','LEGEND'],[1000,'🏆','천 개의 연결','LEGEND']
+  ].map(([threshold,icon,name,rarity])=>({key:`career_home_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 홈 ${threshold}건`,auto:true,progressMetric:'home',threshold}))
+  ,...[
+    [25,'🪄','프리 캐처','COMMON'],[50,'📺','프리 스페셜리스트','RARE'],[100,'💯','프리 백부장','RARE'],[200,'🎬','프리 디렉터','EPIC'],[300,'⭐','프리 아이콘','EPIC'],[500,'👑','프리 레전드','LEGEND'],[1000,'🌌','프리 신화','LEGEND']
+  ].map(([threshold,icon,name,rarity])=>({key:`career_free_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 TV프리 ${threshold}건`,auto:true,progressMetric:'free',threshold}))
+  ,...[
+    [10,'🛠️','스마트 메이커','COMMON'],[25,'💡','스마트 가이드','COMMON'],[50,'🎨','라이프 디자이너','RARE'],[100,'💯','스마트 백부장','RARE'],[200,'🏗️','스마트 아키텍트','EPIC'],[300,'🧠','미래생활 전문가','EPIC'],[500,'👑','스마트홈 레전드','LEGEND']
+  ].map(([threshold,icon,name,rarity])=>({key:`career_smart_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 스마트홈 ${threshold}건`,auto:true,progressMetric:'smart',threshold}))
+  ,...[
+    [25,'🔎','니즈 탐험가','COMMON'],[50,'💡','제안의 기술','RARE'],[100,'🎯','백 번의 적중','RARE'],[200,'📈','업셀 스페셜리스트','EPIC'],[300,'💎','가치 설계자','EPIC'],[500,'🧙','제안의 달인','LEGEND'],[750,'🧭','세일즈 디렉터','LEGEND'],[1000,'🏆','천 번의 선택','LEGEND']
+  ].map(([threshold,icon,name,rarity])=>({key:`career_upsell_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 맞춤제안 업셀 ${threshold}건`,auto:true,progressMetric:'upsell',threshold}))
+  ,...[
+    [1,'🌱','소노 첫 만남','COMMON'],[5,'🌅','라이프 스타터','COMMON'],[10,'🔟','소노 텐','COMMON'],[25,'🏖️','휴식 설계자','RARE'],[50,'🧭','라이프 플래너','RARE'],[100,'💯','소노 백부장','RARE'],[200,'🎟️','소노 스페셜리스트','EPIC'],[300,'✨','라이프 큐레이터','EPIC'],[500,'👑','소노 마스터','LEGEND'],[1000,'🌌','라이프케어 레전드','LEGEND']
+  ].map(([threshold,icon,name,rarity])=>({key:`career_sono_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 소노 ${threshold}건`,auto:true,progressMetric:'sono',threshold}))
 ];
 
 const SPECIAL_BADGE_KEYS = [];
@@ -2960,7 +2985,7 @@ function badgeDefOf(key) {
 }
 
 function evaluateAutomaticBadges({
-  dailyDays, month, personalGoals, mergedDraft, pay, competitionRows, userId,
+  dailyDays, month, personalGoals, mergedDraft, pay, competitionRows, userId, lifetimeTotals,
 }) {
   const earned=new Set();
   const hs=hsCount(mergedDraft);
@@ -2971,8 +2996,11 @@ function evaluateAutomaticBadges({
   const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
   const prod=Number(pay?.kpiScore||0);
   const tenureMonths=Number(pay?.months||0);
-  [[3,'tenure3'],[12,'tenure12'],[24,'tenure24'],[36,'tenure36'],[60,'tenure60']].forEach(([months,key])=>{
+  [[1,'tenure1'],[3,'tenure3'],[6,'tenure6'],[12,'tenure12'],[18,'tenure18'],[24,'tenure24'],[36,'tenure36'],[48,'tenure48'],[60,'tenure60'],[72,'tenure72'],[84,'tenure84'],[96,'tenure96'],[108,'tenure108'],[120,'tenure120'],[180,'tenure180']].forEach(([months,key])=>{
     if(tenureMonths>=months)earned.add(key);
+  });
+  BADGE_DEFS.filter(b=>b.progressMetric&&b.progressMetric!=='tenure').forEach(b=>{
+    if(Number(lifetimeTotals?.[b.progressMetric]||0)>=Number(b.threshold||0))earned.add(b.key);
   });
   if(hs>0)earned.add('first_step');
   [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m80'],[100,'hs_m100']].forEach(([v,k])=>{if(hs>=v)earned.add(k)});
@@ -3138,7 +3166,35 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const [statusEditing,setStatusEditing]=useState(false);
   const [statusBusy,setStatusBusy]=useState(false);
   const [celebration,setCelebration]=useState(null);
-  const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId]);
+  const [lifetimeTotals,setLifetimeTotals]=useState({home:0,free:0,smart:0,upsell:0,sono:0});
+  const [lifetimeLoaded,setLifetimeLoaded]=useState(false);
+  useEffect(()=>{let alive=true;(async()=>{
+    if(!userId){setLifetimeLoaded(true);return}
+    setLifetimeLoaded(false);
+    const history=[];let offset=0,error=null;
+    while(true){
+      const page=await supabase.from('daily_records').select('id,data').eq('user_id',userId).order('id').range(offset,offset+999);
+      if(page.error){error=page.error;break}
+      history.push(...(page.data||[]));
+      if((page.data||[]).length<1000)break;
+      offset+=1000;
+    }
+    if(!alive)return;
+    if(error){console.error(error);setLifetimeLoaded(true);return}
+    const totals={home:0,free:0,smart:0,upsell:0,sono:0};
+    history.forEach(row=>{
+      const d=normalizeDay(row.data), base=d.groups?.homeBase||{}, flat=d.groups?.homeFlat||{};
+      const baseHome=Number(base.homeOnly||0)+Number(base.homeTv||0);
+      const legacySpeed=Number(flat.home100Only||0)+Number(flat.home500Only||0)+Number(flat.home1GBOnly||0);
+      totals.home+=baseHome>0?baseHome:legacySpeed;
+      totals.free+=Number(flat.tvFree||0);
+      totals.smart+=Number(flat.smartHome||0);
+      totals.upsell+=Number(d.tailoredCount||0);
+      totals.sono+=Object.values(d.groups?.sono||{}).reduce((sum,value)=>sum+Number(value||0),0);
+    });
+    setLifetimeTotals(totals);setLifetimeLoaded(true);
+  })();return()=>{alive=false}},[userId]);
+  const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,lifetimeTotals}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,lifetimeTotals]);
   const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
   const loadBadges=useCallback(async()=>{
     if(!userId)return; setLoadingBadges(true);
@@ -3150,14 +3206,14 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   },[userId]);
   useEffect(()=>{loadBadges()},[loadBadges]);
   useEffect(()=>{
-    if(!userId||loadingBadges)return;
+    if(!userId||loadingBadges||!lifetimeLoaded)return;
     const have=new Set(storedBadges.map(r=>r.badge_key)); const missing=[...autoEarned].filter(k=>!have.has(k));
     if(!missing.length)return;
     const first=badgeDefOf(missing[0]);
     const onceKey=`miso-celebration-badge-${userId}-${missing[0]}`;
     if(first&&!localStorage.getItem(onceKey)){localStorage.setItem(onceKey,'1');setCelebration({icon:first.icon,title:'새로운 배지 획득!',message:first.name})}
     (async()=>{for(const key of missing)await supabase.from('user_achievements').insert({user_id:userId,badge_key:key,awarded_by:null});await loadBadges()})();
-  },[autoEarned,storedBadges,loadingBadges,userId,loadBadges]);
+  },[autoEarned,storedBadges,loadingBadges,lifetimeLoaded,userId,loadBadges]);
   useEffect(()=>{
     if(!userId||loadingBadges||celebration)return;
     const hs=hsCount(mergedDraft||{}),rank=[...(competitionRows||[])].sort((a,b)=>Number(b.pay?.totalPoints||0)-Number(a.pay?.totalPoints||0)).findIndex(x=>x.id===userId)+1;
@@ -3255,13 +3311,14 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
       <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
-        <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / 100</div><div className="text-[10px] text-gray-400">획득한 배지를 대표 배지로 선택할 수 있어요.</div></div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
+        <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / {BADGE_DEFS.length}</div><div className="text-[10px] text-gray-400">획득한 배지를 대표 배지로 선택할 수 있어요.</div></div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
           <div className="flex gap-1.5 mt-3 overflow-x-auto">{[['all','전체'],['earned','획득'],['locked','미획득'],['legend','LEGEND']].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-100 text-gray-500'}`}>{l}</button>)}</div>
         </div>
         <div className="p-3 grid grid-cols-2 gap-2 overflow-y-auto max-h-[70vh]">
-          {visible.map(b=>{const got=earnedKeys.has(b.key);const row=storedBadges.find(r=>r.badge_key===b.key);return <button key={b.key} disabled={!got} onClick={()=>got&&saveTitle(b.key)} className={`rounded-2xl border p-3 text-left ${got?(titleKey===b.key?'border-violet-300 bg-violet-50 ring-1 ring-violet-100':'border-gray-100 bg-white'):'border-gray-100 bg-gray-50 opacity-55'}`}>
+          {visible.map(b=>{const got=earnedKeys.has(b.key);const row=storedBadges.find(r=>r.badge_key===b.key);const current=b.progressMetric==='tenure'?Number(pay?.months||0):Number(lifetimeTotals?.[b.progressMetric]||0);const showProgress=!got&&b.progressMetric&&b.threshold;return <button key={b.key} disabled={!got} onClick={()=>got&&saveTitle(b.key)} className={`rounded-2xl border p-3 text-left ${got?(titleKey===b.key?'border-violet-300 bg-violet-50 ring-1 ring-violet-100':'border-gray-100 bg-white'):'border-gray-100 bg-gray-50 opacity-55'}`}>
             <div className="flex justify-between"><span className="text-2xl">{got?b.icon:'🔒'}</span><span className="text-[8px] font-bold text-gray-400">{b.rarity}</span></div>
             <div className="text-xs font-bold text-gray-800 mt-2">{b.name}</div><div className="text-[10px] text-gray-500 mt-1 leading-tight">{b.desc}</div>
+            {showProgress&&<div className="mt-2"><div className="h-1.5 rounded-full bg-gray-200 overflow-hidden"><div className="h-full rounded-full bg-violet-500" style={{width:`${Math.min(100,current/Number(b.threshold)*100)}%`}}/></div><div className="text-[9px] text-violet-600 mt-1">{fmtCount(current)} / {fmtCount(b.threshold)} · {fmtCount(Math.max(0,b.threshold-current))}{b.progressMetric==='tenure'?'개월':'건'} 남음</div></div>}
             {got&&<div className="text-[9px] text-violet-500 mt-2">{titleKey===b.key?'대표 배지 사용 중':row?.earned_at?`${fmtShortDate(row.earned_at)} 획득 · 대표로 설정`:'대표로 설정'}</div>}
           </button>})}
         </div>
