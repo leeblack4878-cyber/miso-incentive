@@ -151,8 +151,16 @@ test('관리자 홈 케어는 고객 묶음과 실시간 갱신을 사용한다'
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /function AdminHomeCare\(\{ employees, month \}\)/);
   assert.match(source, /postgres_changes[\s\S]*table:'home_orders'/);
-  assert.match(source, /duplicateCount:g\.rows\.length-unique\.length/);
-  assert.match(source, /중복 저장 의심/);
+  assert.match(source, /repeatedBundleCount=Math\.min\(mainHomeCount,internetCount\)/);
+  assert.match(source, /동일 홈 구성 \$\{o\.repeatedBundleCount\}회 저장 확인/);
+  assert.match(source, /repeatedProducts\.map/);
+});
+
+test('근속 배지는 계산된 근속개월에 따라 자동 획득한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const tenureMonths=Number\(pay\?\.months\|\|0\)/);
+  assert.match(source, /\[\[3,'tenure3'\],\[12,'tenure12'\],\[24,'tenure24'\],\[36,'tenure36'\],\[60,'tenure60'\]\]/);
+  assert.match(source, /if\(tenureMonths>=months\)earned\.add\(key\)/);
 });
 
 test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률을 함께 제공한다', async () => {

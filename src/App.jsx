@@ -2970,6 +2970,10 @@ function evaluateAutomaticBadges({
   const upsell=Number(mergedDraft?.tailoredCount||0);
   const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
   const prod=Number(pay?.kpiScore||0);
+  const tenureMonths=Number(pay?.months||0);
+  [[3,'tenure3'],[12,'tenure12'],[24,'tenure24'],[36,'tenure36'],[60,'tenure60']].forEach(([months,key])=>{
+    if(tenureMonths>=months)earned.add(key);
+  });
   if(hs>0)earned.add('first_step');
   [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m80'],[100,'hs_m100']].forEach(([v,k])=>{if(hs>=v)earned.add(k)});
   [[1,'home_first'],[5,'home_m5'],[10,'home_m10'],[15,'home_m15'],[20,'home_m20']].forEach(([v,k])=>{if(home>=v)earned.add(k)});
@@ -8982,7 +8986,16 @@ function AdminHomeCare({ employees, month }) {
     });
     return [...map.values()].map(g=>{
       const unique=[...new Set(g.rows.map(o=>o.product_type))];
-      return {...g,productTypes:unique,duplicateCount:g.rows.length-unique.length};
+      const productCounts=g.rows.reduce((acc,row)=>{
+        const key=String(row.product_type||'unknown');
+        acc[key]=Number(acc[key]||0)+1;
+        return acc;
+      }, {});
+      const repeatedProducts=Object.entries(productCounts).filter(([,count])=>count>1).map(([productType,count])=>({productType,count}));
+      const mainHomeCount=Number(productCounts.homeTv||0)+Number(productCounts.homeOnly||0);
+      const internetCount=Number(productCounts.internet100||0)+Number(productCounts.internet500||0)+Number(productCounts.internet1g||0);
+      const repeatedBundleCount=Math.min(mainHomeCount,internetCount);
+      return {...g,productTypes:unique,duplicateCount:repeatedProducts.reduce((sum,item)=>sum+item.count-1,0),repeatedProducts,repeatedBundleCount};
     });
   },[orders]);
   const visible=grouped.filter(g=>g.status===statusFilter);
@@ -9011,7 +9024,13 @@ function AdminHomeCare({ employees, month }) {
         <div className="divide-y">{[...visible].sort((a,b)=>String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999'))).map(o=>{
           const emp=empMap[o.user_id], p=o.planned_install_date?String(o.planned_install_date).slice(0,10):null;
           const over=o.status==='pending'&&p&&p<today, isToday=p===today;
-          const products=o.productTypes.map(k=>HOME_ORDER_PRODUCTS.find(x=>x.key===k)?.label||k);
+          const productLabel=(key)=>HOME_ORDER_PRODUCTS.find(x=>x.key===key)?.label||key;
+          const products=o.productTypes.map(productLabel);
+          const duplicateLabel=o.repeatedBundleCount>1
+            ? `동일 홈 구성 ${o.repeatedBundleCount}회 저장 확인`
+            : o.repeatedProducts?.length
+              ? `${o.repeatedProducts.map(item=>`${productLabel(item.productType)} ${item.count}회`).join(' · ')} 저장 확인`
+              : '';
           return <div key={o.key} className="px-4 py-3">
             <div className="flex justify-between gap-3"><div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -9024,7 +9043,7 @@ function AdminHomeCare({ employees, month }) {
               <div className="text-xs text-gray-500 mt-1">{emp?.name||'직원'} · {emp?.branch||''}</div></div>
               <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
                 {o.status==='completed'?'설치완료':o.status==='cancelled'?'취소':over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
-            <div className="flex flex-wrap gap-1 mt-2">{products.map(x=><span key={x} className="px-2 py-1 rounded-md bg-gray-50 text-[10px] text-gray-600">{x}</span>)}{o.duplicateCount>0&&<span className="px-2 py-1 rounded-md bg-red-50 text-[10px] font-bold text-red-600">중복 저장 의심 +{o.duplicateCount}</span>}</div>
+            <div className="flex flex-wrap gap-1 mt-2">{products.map(x=><span key={x} className="px-2 py-1 rounded-md bg-gray-50 text-[10px] text-gray-600">{x}</span>)}{duplicateLabel&&<span className="px-2 py-1 rounded-md bg-red-50 text-[10px] font-bold text-red-600">{duplicateLabel}</span>}</div>
             <div className="text-[11px] text-gray-400 mt-2">접수 {o.source_work_date||String(o.applied_at).slice(0,10)} · 설치예정 {p||'미정'}</div>
           </div>})}</div>}
     </div>
