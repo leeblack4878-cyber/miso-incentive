@@ -7177,6 +7177,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const mobilePreview=(()=>{
     if(!mobileSaleDraft)return null;
+    const saleDate=`${month}-${selectedDay}`;
     const base=normalizeDay(day),nextMatrix=base.matrix.map(r=>[...r]);
     nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
     const nextVas={...(base.groups?.vas||{})};
@@ -9628,7 +9629,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
       return <div key={store.branch} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-50 flex items-start justify-between gap-3">
           <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">예상 달성 {good.length}/{setMetrics.length}개 · 미입력 {missing.length}명 · 0건 확인 {zero.length}명</div></div>
-          <button type="button" onClick={()=>copyText(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 피드백을`)} className="rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700">점장 전달용 복사</button>
+          <button type="button" onClick={()=>copyText(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 피드백을`)} className="rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700">점장 카톡용 복사</button>
         </div>
         {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-violet-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
         <div className="p-4 grid sm:grid-cols-2 gap-3">

@@ -37,6 +37,7 @@ function metricText(metric) {
 
 export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], metrics = [] } = {}) {
   const count = (status) => inputRows.filter((row) => row.status === status).length;
+  const workingCount = inputRows.length - count('off');
   const missingNames = inputRows.filter((row) => row.status === 'missing').map((row) => row.name);
   const zeroNames = inputRows.filter((row) => row.status === 'zero').map((row) => row.name);
   const dailyLines = inputRows
@@ -45,26 +46,45 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
   const good = metrics.filter((metric) => metric.state === 'good').sort((a, b) => b.forecastRate - a.forecastRate);
   const weak = metrics.filter((metric) => metric.state === 'low' || metric.state === 'watch').sort((a, b) => a.forecastRate - b.forecastRate);
   const unset = metrics.filter((metric) => metric.state === 'unset');
+  const intro = [
+    `점장님, ${dateLabel} ${storeName}은 근무 대상 ${workingCount}명 중 ${count('input')}명이 실적을 입력했습니다.`,
+    count('zero') ? `${count('zero')}명은 실적 0건으로 확인했습니다.` : '',
+    count('off') ? `휴무는 ${count('off')}명입니다.` : '',
+  ].filter(Boolean).join(' ');
   const lines = [
-    `[${storeName} · ${dateLabel} 피드백]`,
-    `입력 ${count('input')}명 · 0건 확인 ${count('zero')}명 · 미입력 ${count('missing')}명 · 휴무 ${count('off')}명`,
+    `[${storeName} | ${dateLabel} 브리핑]`,
+    '',
+    intro,
   ];
-  if (dailyLines.length) lines.push(`어제 실적: ${dailyLines.join(' / ')}`);
-  if (zeroNames.length) lines.push(`0건 확인: ${zeroNames.join(', ')}`);
-  if (missingNames.length) lines.push(`미입력 확인: ${missingNames.join(', ')}`);
-  if (good.length) lines.push(`잘하고 있는 항목: ${good.slice(0, 3).map(metricText).join(' · ')}`);
-  if (weak.length) lines.push(`보완할 항목: ${weak.slice(0, 3).map(metricText).join(' · ')}`);
-  if (unset.length) lines.push(`목표 입력 필요: ${unset.map((metric) => metric.label).join(', ')}`);
-  if (!good.length && !weak.length && unset.length === metrics.length) lines.push('매장 목표를 입력하면 예상마감과 강점·부족 항목이 표시됩니다.');
+  if (dailyLines.length) lines.push('', `등록된 실적은 ${dailyLines.join(' / ')}입니다.`);
+  else lines.push('', '등록된 실적은 없습니다.');
+  if (zeroNames.length) lines.push(`실적 0건으로 확인한 직원은 ${zeroNames.join(', ')}입니다.`);
+  if (missingNames.length) lines.push(`아직 입력이 확인되지 않은 직원은 ${missingNames.join(', ')}입니다.`);
+  if (good.length) lines.push('', `월말 예상 기준으로 ${good.slice(0, 3).map(metricText).join(' · ')}은 좋은 흐름입니다.`);
+  if (weak.length) lines.push(`반면 ${weak.slice(0, 3).map(metricText).join(' · ')}은 보완이 필요합니다.`);
+  if (unset.length) lines.push(`아직 목표가 설정되지 않은 항목은 ${unset.map((metric) => metric.label).join(', ')}입니다.`);
+  if (!good.length && !weak.length && unset.length === metrics.length) lines.push('매장 목표를 입력하면 예상 마감과 강점·부족 항목을 함께 판단할 수 있습니다.');
+
+  const actions = [];
+  if (weak.length) actions.push(`${weak.slice(0, 2).map((metric) => metric.label).join('·')} 실적을 우선 보완`);
+  if (missingNames.length) actions.push(`${missingNames.join(', ')}님의 입력 여부를 확인`);
+  if (unset.length) actions.push('미설정 목표를 입력');
+  if (actions.length) lines.push('', `오늘은 ${actions.join('하고, ')}해주세요.`);
+  else lines.push('', '오늘도 현재의 좋은 흐름을 이어가 주세요.');
   return lines.join('\n');
 }
 
 export function buildAllBriefingText({ dateLabel, stores = [] } = {}) {
   const inputRows = stores.flatMap((store) => store.inputRows || []);
   const count = (status) => inputRows.filter((row) => row.status === status).length;
+  const workingCount = inputRows.length - count('off');
   const header = [
-    `[미소모바일 ${dateLabel} 일일 브리핑]`,
-    `입력 ${count('input')}명 · 0건 확인 ${count('zero')}명 · 미입력 ${count('missing')}명 · 휴무 ${count('off')}명`,
+    `[미소모바일 | ${dateLabel} 일일 브리핑]`,
+    '',
+    `${dateLabel} 전체 근무 대상 ${workingCount}명 중 ${count('input')}명이 실적을 입력했고, ${count('zero')}명은 0건으로 확인했습니다. 미입력 ${count('missing')}명, 휴무 ${count('off')}명입니다.`,
+    count('missing') ? '오늘은 미입력 확인과 매장별 부족 지표 보완이 우선입니다.' : '전원 입력이 확인됐습니다. 매장별 예상 마감 흐름을 점검해주세요.',
+    '',
+    '아래는 점장별로 바로 전달할 수 있는 매장 피드백입니다.',
   ].join('\n');
   return [header, ...stores.map((store) => buildStoreBriefingText({ dateLabel, ...store }))].join('\n\n');
 }

@@ -359,9 +359,14 @@ test('일일 브리핑은 이강진 전용이며 0건 확인과 매장별 복사
   ]);
   assert.match(source, /canViewDailyBriefing=\{canViewDailyBriefing\}/);
   assert.match(source, /adminTab === 'dailyBriefing' && canViewDailyBriefing/);
-  assert.match(source, /점장 전달용 복사/);
+  assert.match(source, /점장 카톡용 복사/);
   assert.match(source, /0건 확인 ✓/);
   assert.match(source, /inputConfirmedAt/);
   assert.match(briefing, /a50a0979-acef-40b1-98b7-f05074f1c835/);
   assert.match(briefing, /DAILY_BRIEFING_SEND_TIME = '08:30'/);
+});
+
+test('특가 판매 미리보기는 선택한 날짜를 정책 계산에 전달한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const mobilePreview=\(\(\)=>\{[\s\S]*?const saleDate=`\$\{month\}-\$\{selectedDay\}`;[\s\S]*?calculateSeptemberSpecialSale\(\{policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup\(mobileSaleDraft\.ci\),strategicPoints,saleDate\}\)/);
 });

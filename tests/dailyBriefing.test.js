@@ -22,7 +22,7 @@ test('예상마감 달성률로 잘함·주의·부족을 구분한다', () => {
   assert.equal(projectMetric({ current: 3, target: 0, factor: 2 }).state, 'unset');
 });
 
-test('매장별 복사 문구에 미입력자와 강점·부족 항목을 포함한다', () => {
+test('매장별 복사 문구는 점장에게 바로 전달할 수 있는 대화형 피드백이다', () => {
   const inputRows = [
     { name: '직원A', status: 'input', summary: 'HS 1건' },
     { name: '직원B', status: 'zero' },
@@ -34,8 +34,11 @@ test('매장별 복사 문구에 미입력자와 강점·부족 항목을 포함
     { label: '홈', unit: 'count', ...projectMetric({ current: 2, target: 10, factor: 2 }) },
   ];
   const text = buildStoreBriefingText({ dateLabel: '9월 4일', storeName: '월곶점', inputRows, metrics });
-  assert.match(text, /미입력 확인: 직원C/);
-  assert.match(text, /잘하고 있는 항목: HS/);
-  assert.match(text, /보완할 항목: 홈/);
-  assert.match(buildAllBriefingText({ dateLabel: '9월 4일', stores: [{ storeName: '월곶점', inputRows, metrics }] }), /입력 1명 · 0건 확인 1명 · 미입력 1명 · 휴무 1명/);
+  assert.match(text, /점장님, 9월 4일 월곶점은 근무 대상 3명 중 1명이 실적을 입력했습니다/);
+  assert.match(text, /1명은 실적 0건으로 확인했습니다/);
+  assert.match(text, /아직 입력이 확인되지 않은 직원은 직원C입니다/);
+  assert.match(text, /월말 예상 기준으로 HS .*은 좋은 흐름입니다/);
+  assert.match(text, /반면 홈 .*은 보완이 필요합니다/);
+  assert.match(text, /오늘은 홈 실적을 우선 보완하고, 직원C님의 입력 여부를 확인해주세요/);
+  assert.match(buildAllBriefingText({ dateLabel: '9월 4일', stores: [{ storeName: '월곶점', inputRows, metrics }] }), /전체 근무 대상 3명 중 1명이 실적을 입력했고, 1명은 0건으로 확인했습니다/);
 });
