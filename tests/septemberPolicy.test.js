@@ -32,6 +32,10 @@ test('특가&지인정책은 요금제와 전략P를 모두 충족해야 추가 
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'a175_m2_new', planGroup: 'junior', strategicPoints: 1.8 }).additionalAmount, 50000);
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'a176_mnp', planGroup: '33plus', strategicPoints: 2 }).eligible, true);
   assert.equal(SEPTEMBER_SPECIAL_SALES.filter(x => x.key === 'f976_change').length, 1);
+  const s26Plus = SEPTEMBER_SPECIAL_SALES.filter(x => x.model === 'S26+ 256/512');
+  assert.deepEqual(s26Plus.map(x => x.saleType), ['MNP', '기기변경']);
+  assert.ok(s26Plus.every(x => x.additionalAmount === 50000 && x.planRule === 'high' && x.requiredStrategicPoints === 2));
+  assert.ok(s26Plus.every(x => x.startDate === '2026-09-05'));
 });
 
 test('소노 5건 달성 시 첫 건부터 달성 단가를 적용한다', () => {

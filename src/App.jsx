@@ -6073,9 +6073,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileSpotPolicies(data||[]);
       setMobileSpotPolicyId('');
       if(month===SEPTEMBER_POLICY_MONTH){
-        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.map(p=>({
+        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.filter(p=>!p.startDate||p.startDate<=saleDate).map(p=>({
           id:p.key,title:`${p.model} · ${p.saleType}`,replacement_amount:p.additionalAmount,
-          policy_type:'additive',start_date:'2026-09-01',end_date:'2026-09-30',...p,
+          policy_type:'additive',start_date:p.startDate||'2026-09-01',end_date:'2026-09-30',...p,
         })));
       }else{
         const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');

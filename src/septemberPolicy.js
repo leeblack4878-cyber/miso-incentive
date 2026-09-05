@@ -61,6 +61,8 @@ export const SEPTEMBER_RENEW = [
 export const SEPTEMBER_SPECIAL_SALES = [
   ['s26_256_512_mnp', 'S26-256/512', 'MNP', 50000, 'high', 2],
   ['s26_256_512_change', 'S26-256/512', '기기변경', 50000, 'high', 2],
+  ['s26_plus_256_512_mnp', 'S26+ 256/512', 'MNP', 50000, 'high', 2, '2026-09-05'],
+  ['s26_plus_256_512_change', 'S26+ 256/512', '기기변경', 50000, 'high', 2, '2026-09-05'],
   ['s26_ultra_mnp', 'S26울트라 256/512', 'MNP', 50000, 'high', 2],
   ['s26_ultra_change', 'S26울트라 256/512', '기기변경', 50000, 'high', 2],
   ['s937_mnp', 'S937', 'MNP', 100000, 'high', 2],
@@ -74,8 +76,8 @@ export const SEPTEMBER_SPECIAL_SALES = [
   ['f976_change', 'F976-256/512', '기기변경', 0, 'high', 2],
   ['a175_m2_new', 'A175-M2', '010 신규', 50000, 'junior', 1.8],
   ['a176_mnp', 'A176', 'MNP', 0, '33plus', 2],
-].map(([key, model, saleType, additionalAmount, planRule, requiredStrategicPoints]) => ({
-  key, model, saleType, additionalAmount, planRule, requiredStrategicPoints,
+].map(([key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate = '2026-09-01']) => ({
+  key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate,
 }));
 
 export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0 } = {}) {
