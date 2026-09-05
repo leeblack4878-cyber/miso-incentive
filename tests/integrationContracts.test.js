@@ -276,4 +276,78 @@ test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
   assert.match(source, /function HallOfFame/);
-  assert.match(sourc
+  assert.match(source, /전체 직원 프로필 보기/);
+  assert.match(source, /employee_public_profiles.*status_message/);
+  const hub = source.match(/function GamificationHub[\s\S]*?function SpecialBadgeAwardPanel/)?.[0]||'';
+  assert.doesNotMatch(hub, /동료에게 공개되는 나의 한줄 상태/);
+  assert.doesNotMatch(hub, /오늘의 응원/);
+  assert.match(hub, /현재 실적 금액/);
+  assert.match(hub, /급여 확인·비교/);
+  assert.match(hub, /실적 입력/);
+  assert.ok(source.lastIndexOf('<HallOfFame') < source.lastIndexOf('<MonthlyPerformanceRankingCard'));
+  assert.doesNotMatch(source.match(/function HallOfFame[\s\S]*?function GamificationHub/)?.[0]||'', /dailyEncouragement/);
+  assert.match(sql, /employee_public_profiles_read_authenticated/);
+  assert.match(sql, /user_id = \(select auth\.uid\(\)\)/);
+  assert.match(sql, /char_length\(coalesce\(status_message, ''\)\) <= 40/);
+});
+
+test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../src/main.jsx', import.meta.url), 'utf8');
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
+  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.name, '미소페이');
+  assert.equal(manifest.icons.length, 2);
+  assert.match(html, /rel="manifest"/);
+  assert.match(html, /apple-touch-icon/);
+  assert.match(main, /serviceWorker\.register\('\/sw\.js'\)/);
+  assert.match(source, /beforeinstallprompt/);
+  assert.match(source, /홈 화면에 추가/);
+  assert.match(sw, /event\.request\.mode === 'navigate'/);
+  assert.match(sw, /fetch\(event\.request\)/);
+});
+
+test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 약속 예약을 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../sql/push_notifications.sql', import.meta.url), 'utf8');
+  assert.match(source, /pushManager\.subscribe/);
+  assert.match(source, /push_subscriptions/);
+  assert.match(source, /테스트 알림/);
+  assert.match(sw, /addEventListener\('push'/);
+  assert.match(sw, /notificationclick/);
+  assert.match(sw, /vibrate: \[180, 80, 180\]/);
+  assert.match(sql, /auth\.uid\(\)\) = user_id/);
+  assert.match(sql, /miso-due-customer-task-push/);
+  assert.match(sql, /'0 0 \* \* \*'/);
+});
+
+test('인센미지급 특가는 요금제 VAS 보험만 제외하고 과거 무료폰 기록도 호환한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sql = await readFile(new URL('../sql/free_phone_special_policy.sql', import.meta.url), 'utf8');
+  assert.match(source, /FREE_PHONE_SPECIAL_TITLE = '무료폰 특가'/);
+  assert.match(source, /policyType:'incentive_unpaid'/);
+  assert.match(source, /판매 실적·성과P·영업 활동 지원비 건수는 인정/);
+  assert.match(source, /isIncentiveUnpaidSpecial/);
+  assert.match(source, /VAS·보험 제외/);
+  assert.match(sql, /replacement_amount/);
+  assert.match(sql, /2099-12-31/);
+});
+
+test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별로 비교한다', async () => {
+  const [view, policy] = await Promise.all([
+    readFile(new URL('../src/HqStructurePolicyView.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/hqStructurePolicy.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(view, /현재 실적 기준 합계/);
+  assert.match(view, /월말 예상 합계/);
+  assert.match(view, /자가매장 운영비 · 소매파트너 · 매출지표 · 월간 시상 합계/);
+  assert.match(view, /<ForecastAmountStrip[\s\S]*forecastSelfStore/);
+  assert.match(view, /<ForecastAmountStrip[\s\S]*forecastRetail/);
+  assert.match(view, /<ForecastAmountStrip[\s\S]*forecastSalesMetric/);
+  assert.match(view, /<ForecastAmountStrip[\s\S]*forecastAward/);
+  assert.match(policy, /calculateHqStructureProjection/);
+  assert.match(policy, /runRate\.isCurrentMonth \? runRate\.factor : 1/);
+});

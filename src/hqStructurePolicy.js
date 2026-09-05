@@ -136,3 +136,96 @@ export function calculateRetailMonthlyAward(input = {}) {
   const amounts = { mnp: mnp * rates.mnp, new010: new010 * rates.new010, change: change * rates.change };
   return { hs, mnp, new010, change, simMnp, internet, salesMetricPoints, ratios, scores, totalScore, rates, amounts, totalAmount: amounts.mnp + amounts.new010 + amounts.change };
 }
+
+const FORECAST_KEYS = Object.freeze({
+  selfStore: ['hs', 'second', 'internet', 'smartHome', 'extraSetTop'],
+  retail: ['hs', 'plan115Hs', 'mnp', 'new010', 'change95Plus', 'changeUnder95', 'second', 'simMnp'],
+  salesMetric: ['hs', 'salesMetricPoints'],
+  award: ['hs', 'mnp', 'new010', 'change', 'simMnp', 'internet', 'salesMetricPoints'],
+});
+
+function monthParts(month = '') {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(month));
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) return null;
+  return { year, monthNumber };
+}
+
+export function calculateMonthlyRunRate(month, asOf = new Date()) {
+  const selected = monthParts(month);
+  const now = asOf instanceof Date ? asOf : new Date(asOf);
+  if (!selected || Number.isNaN(now.getTime())) {
+    return { isCurrentMonth: false, isPastMonth: false, isFutureMonth: false, elapsedDays: 0, totalDays: 0, remainingDays: 0, factor: 1 };
+  }
+
+  const totalDays = new Date(selected.year, selected.monthNumber, 0).getDate();
+  const selectedIndex = selected.year * 12 + selected.monthNumber;
+  const currentIndex = now.getFullYear() * 12 + now.getMonth() + 1;
+  const isCurrentMonth = selectedIndex === currentIndex;
+  const isPastMonth = selectedIndex < currentIndex;
+  const isFutureMonth = selectedIndex > currentIndex;
+  const elapsedDays = isCurrentMonth ? Math.max(1, Math.min(now.getDate(), totalDays)) : (isPastMonth ? totalDays : 0);
+  const factor = isCurrentMonth ? totalDays / elapsedDays : 1;
+
+  return {
+    isCurrentMonth,
+    isPastMonth,
+    isFutureMonth,
+    elapsedDays,
+    totalDays,
+    remainingDays: isCurrentMonth ? totalDays - elapsedDays : 0,
+    factor,
+  };
+}
+
+function scaledInput(input = {}, keys = [], factor = 1, preserved = {}) {
+  return {
+    ...preserved,
+    ...Object.fromEntries(keys.map(key => [key, Math.max(0, Number(input[key] || 0)) * factor])),
+  };
+}
+
+function sumPolicyAmounts(bundle = {}) {
+  return ['selfStore', 'retail', 'salesMetric', 'award']
+    .reduce((sum, key) => sum + Number(bundle[key]?.totalAmount || 0), 0);
+}
+
+export function calculateHqStructureProjection({
+  month = '',
+  asOf = new Date(),
+  selfStoreInput = {},
+  retailInput = {},
+  salesMetricInput = {},
+  awardInput = {},
+} = {}) {
+  const runRate = calculateMonthlyRunRate(month, asOf);
+  const current = {
+    selfStore: calculateSelfStoreOperatingSupport(selfStoreInput),
+    retail: calculateRetailPartnerMonthlyPolicy(retailInput),
+    salesMetric: calculateSalesMetricActivation(salesMetricInput),
+    award: calculateRetailMonthlyAward(awardInput),
+  };
+
+  const factor = runRate.isCurrentMonth ? runRate.factor : 1;
+  const forecast = {
+    selfStore: calculateSelfStoreOperatingSupport(scaledInput(selfStoreInput, FORECAST_KEYS.selfStore, factor)),
+    retail: calculateRetailPartnerMonthlyPolicy(scaledInput(retailInput, FORECAST_KEYS.retail, factor)),
+    salesMetric: calculateSalesMetricActivation(scaledInput(salesMetricInput, FORECAST_KEYS.salesMetric, factor)),
+    award: calculateRetailMonthlyAward(scaledInput(
+      awardInput,
+      FORECAST_KEYS.award,
+      factor,
+      { changeSupportRatio: Math.max(0, Number(awardInput.changeSupportRatio || 0)) },
+    )),
+  };
+
+  return {
+    runRate,
+    current,
+    forecast,
+    currentTotalAmount: sumPolicyAmounts(current),
+    forecastTotalAmount: sumPolicyAmounts(forecast),
+  };
+}

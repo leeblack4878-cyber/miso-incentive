@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SELF_STORE_BASELINE_TOTAL, calculateSelfStoreOperatingSupport, calculateRetailPartnerMonthlyPolicy, calculateSalesMetricActivation, calculateRetailMonthlyAward } from '../src/hqStructurePolicy.js';
+import {
+  SELF_STORE_BASELINE_TOTAL,
+  calculateSelfStoreOperatingSupport,
+  calculateRetailPartnerMonthlyPolicy,
+  calculateSalesMetricActivation,
+  calculateRetailMonthlyAward,
+  calculateMonthlyRunRate,
+  calculateHqStructureProjection,
+} from '../src/hqStructurePolicy.js';
 
 test('자가매장 기준 수량 합계는 668건이다', () => assert.equal(SELF_STORE_BASELINE_TOTAL, 668));
 
@@ -63,4 +71,43 @@ test('소매 월간 시상 16점은 실제 MNP 신규 기변 건수별 단가를
   const result=calculateRetailMonthlyAward({hs:100,mnp:50,new010:20,change:30,simMnp:8,salesMetricPoints:140,changeSupportRatio:35,internet:8});
   assert.equal(result.totalScore,16);
   assert.equal(result.totalAmount,50*55000+20*49500+30*16500);
+});
+
+test('현재 월의 월말 예상 배수는 경과일 대비 전체 일수로 계산한다', () => {
+  const runRate=calculateMonthlyRunRate('2026-09',new Date(2026,8,5,12));
+  assert.equal(runRate.isCurrentMonth,true);
+  assert.equal(runRate.elapsedDays,5);
+  assert.equal(runRate.totalDays,30);
+  assert.equal(runRate.factor,6);
+});
+
+test('지난 월은 마감값을 유지하고 다시 예상 환산하지 않는다', () => {
+  const runRate=calculateMonthlyRunRate('2026-08',new Date(2026,8,5,12));
+  assert.equal(runRate.isPastMonth,true);
+  assert.equal(runRate.factor,1);
+});
+
+test('본사 구조정책 월말 예상은 실적을 환산한 뒤 구간과 금액을 다시 계산한다', () => {
+  const projection=calculateHqStructureProjection({
+    month:'2026-09',
+    asOf:new Date(2026,8,5,12),
+    selfStoreInput:{hs:120},
+    retailInput:{hs:120,plan115Hs:72,mnp:30,new010:10},
+    salesMetricInput:{hs:100,salesMetricPoints:120},
+    awardInput:{hs:100,mnp:20,new010:15,change:10,simMnp:10,internet:10,salesMetricPoints:140,changeSupportRatio:35},
+  });
+  assert.equal(projection.forecast.selfStore.recognized,720);
+  assert.equal(projection.forecast.selfStore.totalAmount,52*50000);
+  assert.equal(projection.forecast.retail.points,480);
+  assert.equal(projection.forecast.retail.paymentRate,1.3);
+  assert.equal(projection.forecast.salesMetric.achievement,120);
+  assert.equal(projection.forecast.salesMetric.totalAmount,720*8800);
+  assert.equal(projection.forecast.award.totalAmount,projection.current.award.totalAmount*6);
+  assert.equal(
+    projection.forecastTotalAmount,
+    projection.forecast.selfStore.totalAmount
+      + projection.forecast.retail.totalAmount
+      + projection.forecast.salesMetric.totalAmount
+      + projection.forecast.award.totalAmount,
+  );
 });
