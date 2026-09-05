@@ -80,9 +80,10 @@ export const SEPTEMBER_SPECIAL_SALES = [
   key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate,
 }));
 
-export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0 } = {}) {
+export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '' } = {}) {
   const policy = SEPTEMBER_SPECIAL_SALES.find(item => item.key === policyKey);
   if (!policy) return { eligible: false, additionalAmount: 0, reason: '정책 미선택' };
+  const dateEligible = !saleDate || !policy.startDate || String(saleDate).slice(0, 10) >= policy.startDate;
   const planEligible = policy.planRule === 'high'
     ? ['115', 'youth85'].includes(planGroup)
     : policy.planRule === 'junior'
@@ -91,10 +92,11 @@ export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicP
   const pointEligible = Number(strategicPoints || 0) >= policy.requiredStrategicPoints;
   return {
     policy,
+    dateEligible,
     planEligible,
     pointEligible,
-    eligible: planEligible && pointEligible,
-    additionalAmount: planEligible && pointEligible ? policy.additionalAmount : 0,
+    eligible: dateEligible && planEligible && pointEligible,
+    additionalAmount: dateEligible && planEligible && pointEligible ? policy.additionalAmount : 0,
   };
 }
 

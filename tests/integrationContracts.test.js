@@ -235,11 +235,31 @@ test('알림센터는 본인 조회와 관리 범위 발송 RLS를 함께 사용
 });
 
 test('스마트홈과 HS 동시판매는 고객 묶음당 추가 수수료를 한 번 반영한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(source, /smartHomeSimulRate=.*key==='smartHomeSimul'/);
-  assert.match(source, /b\.types\.has\('smartHome'\)&&b\.simul!=='none'&&smartHomeSimulRate/);
-  assert.match(source, /homeAddonPay=simulPay\+smartHomeSimulPay\+subSetTopPay(?:\+limitedPolicyPay)?/);
-  assert.match(source, /item:'스마트홈 동시판매'/);
+  const [app, engine] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/policyEngine.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /calculateHomePolicyFromOrders as calculateHomePolicyEngine/);
+  assert.doesNotMatch(app, /function calculateHomePolicyFromOrders\(/);
+  assert.match(engine, /smartHomeSimulRate[\s\S]*key === 'smartHomeSimul'/);
+  assert.match(engine, /bundle\.types\.has\('smartHome'\)[\s\S]*bundle\.simul !== 'none'/);
+  assert.match(engine, /homeAddonPay = simulPay \+ smartHomeSimulPay \+ subSetTopPay \+ limitedPolicyPay/);
+  assert.match(engine, /item: '스마트홈 동시판매'/);
+});
+
+test('정책 달력과 DB 기준 스냅샷으로 지난달 지급기준을 보존한다', async () => {
+  const [app, calendar, migration] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/policyCalendar.js', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260905010000_policy_history_and_function_hardening.sql', import.meta.url), 'utf8'),
+  ]);
+  assert.match(app, /resolvePolicyConfigForMonth\(month,legacy,values\[POLICY_HISTORY_CONFIG_KEY\]\)/);
+  assert.match(app, /policySnapshot:salePolicySnapshot/);
+  assert.match(calendar, /effectiveFrom: `\$\{SEPTEMBER_POLICY_MONTH\}-01`/);
+  assert.match(calendar, /history\?\.baseSnapshots/);
+  assert.match(migration, /'policy_history_v1'/);
+  assert.match(migration, /'2026-08-v1'/);
+  assert.match(migration, /on conflict \(config_key\) do nothing/);
 });
 
 test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표시한다', async () => {
@@ -256,62 +276,4 @@ test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
   assert.match(source, /function HallOfFame/);
-  assert.match(source, /전체 직원 프로필 보기/);
-  assert.match(source, /employee_public_profiles.*status_message/);
-  const hub = source.match(/function GamificationHub[\s\S]*?function SpecialBadgeAwardPanel/)?.[0]||'';
-  assert.doesNotMatch(hub, /동료에게 공개되는 나의 한줄 상태/);
-  assert.doesNotMatch(hub, /오늘의 응원/);
-  assert.match(hub, /현재 실적 금액/);
-  assert.match(hub, /급여 확인·비교/);
-  assert.match(hub, /실적 입력/);
-  assert.ok(source.lastIndexOf('<HallOfFame') < source.lastIndexOf('<MonthlyPerformanceRankingCard'));
-  assert.doesNotMatch(source.match(/function HallOfFame[\s\S]*?function GamificationHub/)?.[0]||'', /dailyEncouragement/);
-  assert.match(sql, /employee_public_profiles_read_authenticated/);
-  assert.match(sql, /user_id = \(select auth\.uid\(\)\)/);
-  assert.match(sql, /char_length\(coalesce\(status_message, ''\)\) <= 40/);
-});
-
-test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 제공한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  const main = await readFile(new URL('../src/main.jsx', import.meta.url), 'utf8');
-  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  const manifest = JSON.parse(await readFile(new URL('../public/manifest.webmanifest', import.meta.url), 'utf8'));
-  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
-  assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.name, '미소페이');
-  assert.equal(manifest.icons.length, 2);
-  assert.match(html, /rel="manifest"/);
-  assert.match(html, /apple-touch-icon/);
-  assert.match(main, /serviceWorker\.register\('\/sw\.js'\)/);
-  assert.match(source, /beforeinstallprompt/);
-  assert.match(source, /홈 화면에 추가/);
-  assert.match(sw, /event\.request\.mode === 'navigate'/);
-  assert.match(sw, /fetch\(event\.request\)/);
-});
-
-test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 약속 예약을 제공한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
-  const sql = await readFile(new URL('../sql/push_notifications.sql', import.meta.url), 'utf8');
-  assert.match(source, /pushManager\.subscribe/);
-  assert.match(source, /push_subscriptions/);
-  assert.match(source, /테스트 알림/);
-  assert.match(sw, /addEventListener\('push'/);
-  assert.match(sw, /notificationclick/);
-  assert.match(sw, /vibrate: \[180, 80, 180\]/);
-  assert.match(sql, /auth\.uid\(\)\) = user_id/);
-  assert.match(sql, /miso-due-customer-task-push/);
-  assert.match(sql, /'0 0 \* \* \*'/);
-});
-
-test('인센미지급 특가는 요금제 VAS 보험만 제외하고 과거 무료폰 기록도 호환한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  const sql = await readFile(new URL('../sql/free_phone_special_policy.sql', import.meta.url), 'utf8');
-  assert.match(source, /FREE_PHONE_SPECIAL_TITLE = '무료폰 특가'/);
-  assert.match(source, /policyType:'incentive_unpaid'/);
-  assert.match(source, /판매 실적·성과P·영업 활동 지원비 건수는 인정/);
-  assert.match(source, /isIncentiveUnpaidSpecial/);
-  assert.match(source, /VAS·보험 제외/);
-  assert.match(sql, /replacement_amount/);
-  assert.match(sql, /2099-12-31/);
-});
+  assert.match(sourc
