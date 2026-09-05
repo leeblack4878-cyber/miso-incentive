@@ -179,10 +179,10 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       <div className="mt-2 text-xl font-black">{month.replace('-', '년 ')}월 마감 전망</div>
       <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 소매파트너 · 매출지표 · 월간 시상 합계</div>
       {state.loading ? <div className="mt-6 flex items-center gap-2 text-sm text-slate-300"><Loader2 size={16} className="animate-spin"/> 계산 중...</div> : <>
-        {runRate?.isCurrentMonth ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3 rounded-2xl bg-white/10 p-4">
-          <div><div className="text-[10px] text-slate-300">현재 실적 기준 합계</div><div className="mt-1 text-xl font-black">{wonText(state.currentTotalAmount)}</div></div>
+        {runRate?.isCurrentMonth ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-2xl bg-white/10 p-4">
+          <div className="min-w-0"><div className="text-[10px] text-slate-300">현재 실적 기준 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black">{wonText(state.currentTotalAmount)}</div></div>
           <div className="pb-1 text-xl text-violet-300">→</div>
-          <div className="text-right"><div className="text-[10px] text-violet-200">월말 예상 합계</div><div className="mt-1 text-2xl font-black text-white">{wonText(state.forecastTotalAmount)}</div></div>
+          <div className="min-w-0 text-right"><div className="text-[10px] text-violet-200">월말 예상 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black text-white">{wonText(state.forecastTotalAmount)}</div></div>
         </div> : <div className="mt-5 rounded-2xl bg-white/10 p-4"><div className="text-[10px] text-slate-300">마감 기준 합계</div><div className="mt-1 text-2xl font-black">{wonText(state.currentTotalAmount)}</div></div>}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">{[
           ['자가매장 운영비', forecastSelfStore.totalAmount],
@@ -253,12 +253,15 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-amber-100 bg-white overflow-hidden">
       <div className="bg-amber-50 px-4 py-4"><div className="text-lg font-black text-gray-900">소매 월간 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">5개 지표의 최고 달성점수를 합산해 MNP·010 신규·기변 단가를 결정합니다.</div></div>
       <ForecastAmountStrip currentAmount={award.totalAmount} forecastAmount={forecastAward.totalAmount} runRate={runRate} tone="amber" detail={`현재 ${award.totalScore}점 · 월말 예상 ${forecastAward.totalScore}점`} />
-      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+      <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-3">{[
+        ['MNP', award.mnp, award.rates.mnp, award.amounts.mnp],
+        ['010 신규', award.new010, award.rates.new010, award.amounts.new010],
+        ['기변', award.change, award.rates.change, award.amounts.change],
+      ].map(([label,count,rate,amount])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="flex items-center justify-between gap-2"><div className="text-xs font-bold text-gray-700">{label}</div><div className="text-[10px] text-gray-400">{countText(count)}건 × {wonText(rate)}</div></div><div className="mt-1 text-right text-base font-black text-amber-700">{wonText(amount)}</div></div>)}</div>
+      <div className="mx-4 mb-4 grid grid-cols-2 gap-2">{[
         ['합산점수', `${award.totalScore}점`],
-        ['MNP 단가', wonText(award.rates.mnp)],
-        ['010 신규 단가', wonText(award.rates.new010)],
         ['현재 기준액', wonText(award.totalAmount)],
-      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-amber-700">{value}</div></div>)}</div>
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] text-amber-600">{label}</div><div className="mt-1 text-base font-black text-amber-800">{value}</div></div>)}</div>
       <div className="border-t divide-y divide-gray-50">{[
         ['HS 신규 비중','newRatio'],['SIM MNP 비중','simMnpRatio'],['HS 대비 전략상품 비중','salesMetricRatio'],['기변 유통망지원금 활용','changeSupportRatio'],['인터넷 비중','internetRatio'],
       ].map(([label,key])=><div key={key} className="grid grid-cols-[1fr_70px_45px] items-center gap-2 px-4 py-3 text-xs"><span className="font-semibold text-gray-700">{label}</span><span className="text-right text-gray-500">{countText(award.ratios[key])}%</span><b className="text-right text-amber-700">{award.scores[key]}점</b></div>)}</div>
