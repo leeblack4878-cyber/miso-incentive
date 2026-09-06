@@ -5,7 +5,14 @@ import { summarizeVasQuality } from './policyRules';
 import {
   SELF_STORE_BASELINE,
   SELF_STORE_WEIGHTS,
+  calculateSelfStoreOperatingSupport,
+  calculateRetailPartnerMonthlyPolicy,
+  calculateSalesMetricActivation,
   calculateRetailMonthlyAward,
+  calculateHomeGradePolicy,
+  calculateHomeInternetRatioPolicy,
+  calculateHomeAwardPolicy,
+  calculateIptvGradePolicy,
   calculateHqStructureProjection,
 } from './hqStructurePolicy';
 
@@ -41,6 +48,16 @@ function ForecastAmountStrip({ currentAmount = 0, forecastAmount = 0, runRate, t
     {detail && <div className={`mt-1.5 text-right text-[9px] ${colors.label}`}>{detail}</div>}
   </div>;
 }
+
+function BenefitGuide({ text, increase = 0, assumption = '' }) {
+  return <div className="mx-4 mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-3">
+    <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-rose-600">다음 수혜 구간</div><div className="mt-1 text-xs font-semibold leading-relaxed text-gray-700">{text}</div></div><div className="shrink-0 text-right"><div className="text-[9px] text-rose-400">예상 증가</div><div className="mt-0.5 text-sm font-black text-rose-700">+{wonText(increase)}</div></div></div>
+    {assumption && <div className="mt-1.5 text-[9px] text-gray-400">{assumption}</div>}
+  </div>;
+}
+
+const nextAbove = (value, thresholds) => thresholds.find(threshold => threshold > Number(value || 0));
+const positiveIncrease = (nextAmount, currentAmount) => Math.max(0, Number(nextAmount || 0) - Number(currentAmount || 0));
 
 export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '' }) {
   const emptyProjection = calculateHqStructureProjection({ month });
@@ -211,6 +228,74 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       };
     });
   };
+
+  const selfNeeded = result.recognized < result.baseline ? Math.ceil(result.baseline + 1 - result.recognized) : 1;
+  const selfNext = calculateSelfStoreOperatingSupport({ hs: result.recognized + selfNeeded });
+  const selfGuide = {
+    text: result.recognized < result.baseline ? `인정실적 ${countText(selfNeeded)}건 추가 시 최초 지급 구간 진입` : `인정실적 1건 추가 시 초과구간 수혜 증가`,
+    increase: positiveIncrease(selfNext.totalAmount, result.totalAmount),
+  };
+
+  const retailBoundary = nextAbove(retail.points, [150, 301, 401, 501, 701, 1001, 1501]);
+  const retailNeeded = retailBoundary ? retailBoundary - retail.points : 1;
+  const retailNext = calculateRetailPartnerMonthlyPolicy({ hs: retail.hs, plan115Hs: retail.plan115Hs, second: retail.points + retailNeeded });
+  const retailGuide = {
+    text: retailBoundary ? `${countText(retailNeeded)}P 추가 시 ${countText(retailBoundary)}P 구간 진입` : '최고 단가 구간 · 1P 추가 수혜',
+    increase: positiveIncrease(retailNext.totalAmount, retail.totalAmount),
+  };
+
+  const salesThreshold = nextAbove(salesMetric.achievement, [80, 100, 120, 140, 160, 180, 200]);
+  const salesNeeded = salesThreshold ? Math.max(0, Math.ceil(salesMetric.hs * salesThreshold / 100 - salesMetric.points)) : 1;
+  const salesNext = calculateSalesMetricActivation({ hs: salesMetric.hs, salesMetricPoints: salesMetric.points + salesNeeded });
+  const salesGuide = {
+    text: salesThreshold ? `매출지표 ${countText(salesNeeded)}P 추가 시 달성률 ${salesThreshold}% 구간` : '최고 단가 구간 · 매출지표 1P 추가 수혜',
+    increase: positiveIncrease(salesNext.totalAmount, salesMetric.totalAmount),
+    assumption: '현재 HS 유지 가정',
+  };
+
+  const awardThreshold = nextAbove(award.totalScore, [10, 12, 14, 16]);
+  const awardRates = awardThreshold >= 16 ? { mnp: 55000, new010: 49500, change: 16500 }
+    : awardThreshold >= 14 ? { mnp: 49500, new010: 44000, change: 11000 }
+      : awardThreshold >= 12 ? { mnp: 44000, new010: 38500, change: 5500 }
+        : awardThreshold >= 10 ? { mnp: 38500, new010: 33000, change: 0 } : award.rates;
+  const awardNextAmount = award.mnp * awardRates.mnp + award.new010 * awardRates.new010 + award.change * awardRates.change;
+  const awardGuide = {
+    text: awardThreshold ? `지표점수 ${awardThreshold - award.totalScore}점 추가 시 ${awardThreshold}점 지급 구간` : '최고 지급 구간 달성',
+    increase: positiveIncrease(awardNextAmount, award.totalAmount),
+  };
+
+  const homeGradeTvThreshold = nextAbove(homeGrade.tvRatio, [8, 9, 10, 11, 12, 13, 14, 15]);
+  const homeGradeTvNeeded = homeGradeTvThreshold ? Math.max(0.5, Math.ceil((homeGrade.hs * homeGradeTvThreshold / 100 - homeGrade.tvRecognized) * 2) / 2) : 0;
+  const homeGradeNext = homeGradeTvThreshold ? calculateHomeGradePolicy({ ...homeGrade, mainTv: homeGrade.mainTv + homeGradeTvNeeded }) : homeGrade;
+  const homeGradeGuide = {
+    text: homeGradeTvThreshold ? `TV 인정 ${countText(homeGradeTvNeeded)}건 추가 시 비중 ${homeGradeTvThreshold}% 지급률 구간` : 'TV 비중 최고 지급률 구간 달성',
+    increase: positiveIncrease(homeGradeNext.totalAmount, homeGrade.totalAmount),
+    assumption: '현재 HS·인터넷·재약정 유지 가정',
+  };
+
+  const homeRatioThreshold = nextAbove(homeInternetRatio.internetRatio, [7, 8, 9, 10, 12, 14]);
+  const homeRatioNeeded = homeRatioThreshold ? Math.max(1, Math.ceil(homeInternetRatio.hs * homeRatioThreshold / 100 - homeInternetRatio.internet)) : 0;
+  const homeRatioNext = homeRatioThreshold ? calculateHomeInternetRatioPolicy({ ...homeInternetRatio, internet: homeInternetRatio.internet + homeRatioNeeded }) : homeInternetRatio;
+  const homeRatioGuide = {
+    text: homeRatioThreshold ? `인터넷 ${countText(homeRatioNeeded)}건 추가 시 비중 ${homeRatioThreshold}% 구간` : '인터넷 비중 최고 구간 달성',
+    increase: positiveIncrease(homeRatioNext.totalAmount, homeInternetRatio.totalAmount),
+    assumption: '현재 HS·TV 실적 유지 가정',
+  };
+
+  const homeAwardThreshold = homeAward.totalScore < 4 ? 4 : homeAward.totalScore < 18 ? homeAward.totalScore + 1 : null;
+  const homeAwardRate = homeAwardThreshold ? ({4:55000,5:60500,6:66000,7:71500,8:77000,9:88000,10:99000,11:110000,12:121000,13:132000,14:143000,15:154000,16:165000,17:176000,18:187000}[homeAwardThreshold] || 0) : homeAward.pointRate;
+  const homeAwardGuide = {
+    text: homeAwardThreshold ? `유효 지표점수 ${homeAwardThreshold - homeAward.totalScore}점 추가 시 ${homeAwardThreshold}점 구간` : '최고 18점 이상 구간 달성',
+    increase: positiveIncrease(homeAward.payableInternet * homeAwardRate, homeAward.totalAmount),
+  };
+
+  const iptvThreshold = nextAbove(iptvGrade.points, [20, 30, 50, 100, 150, 200, 300, 400, 500]);
+  const iptvNeeded = iptvThreshold ? iptvThreshold - iptvGrade.points : 1;
+  const iptvNext = calculateIptvGradePolicy({ mainTv: iptvGrade.mainTv + iptvNeeded, extraSetTop: iptvGrade.extraSetTop });
+  const iptvGuide = {
+    text: iptvThreshold ? `${countText(iptvNeeded)}P 추가 시 ${countText(iptvThreshold)}P Grade 구간` : '최고 단가 구간 · 주셋탑 1건 추가 수혜',
+    increase: positiveIncrease(iptvNext.totalAmount, iptvGrade.totalAmount),
+  };
   return <div className="space-y-4">
     <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
       <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
@@ -250,6 +335,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-sky-100 bg-white overflow-hidden">
       <div className="bg-sky-50 px-4 py-4"><div className="text-lg font-black text-gray-900">홈 Grade 정책</div><div className="mt-1 text-[10px] text-gray-500">인터넷 설치완료·약정갱신 구간 단가에 가정망 TV 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={homeGrade.totalAmount} forecastAmount={forecastHomeGrade.totalAmount} runRate={runRate} tone="indigo" detail={`현재 인터넷 ${countText(homeGrade.internet)}건 · 월말 예상 ${countText(forecastHomeGrade.internet)}건`} />
+      <BenefitGuide {...homeGradeGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['인터넷 설치완료',`${countText(homeGrade.internet)}건`],
         ['약정갱신 인정',`${countText(homeGrade.renewalRecognized)}건 → ${homeGrade.roundedRenewal}건`],
@@ -262,6 +348,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-cyan-100 bg-white overflow-hidden">
       <div className="bg-cyan-50 px-4 py-4"><div className="text-lg font-black text-gray-900">HS 대비 인터넷 비중 목표 정책</div><div className="mt-1 text-[10px] text-gray-500">가정망 인터넷 설치완료 비중과 HS 구간의 건당 단가에 TV 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={homeInternetRatio.totalAmount} forecastAmount={forecastHomeInternetRatio.totalAmount} runRate={runRate} tone="indigo" detail={`현재 인터넷 비중 ${countText(homeInternetRatio.internetRatio)}% · 월말 예상 ${countText(forecastHomeInternetRatio.internetRatio)}%`} />
+      <BenefitGuide {...homeRatioGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['HS', `${countText(homeInternetRatio.hs)}건`],
         ['인터넷 설치완료', `${countText(homeInternetRatio.internet)}건`],
@@ -278,6 +365,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-teal-100 bg-white overflow-hidden">
       <div className="bg-teal-50 px-4 py-4"><div className="text-lg font-black text-gray-900">홈 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">사운드바를 제외한 5개 지표 점수를 합산해 가정망 인터넷 설치완료 건당 금액을 계산합니다.</div></div>
       <ForecastAmountStrip currentAmount={homeAward.totalAmount} forecastAmount={forecastHomeAward.totalAmount} runRate={runRate} tone="emerald" detail={`현재 ${homeAward.totalScore}점 · 월말 예상 ${forecastHomeAward.totalScore}점`} />
+      <BenefitGuide {...homeAwardGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['합산점수', `${homeAward.totalScore}점`],
         ['② 적용점수', `${homeAward.setTopScore}점`],
@@ -296,6 +384,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-blue-100 bg-white overflow-hidden">
       <div className="bg-blue-50 px-4 py-4"><div className="text-lg font-black text-gray-900">IPTV Grade 정책</div><div className="mt-1 text-[10px] text-gray-500">가정망 설치완료 주셋탑과 부셋탑(프리 포함)의 포인트 구간별 인센티브입니다.</div></div>
       <ForecastAmountStrip currentAmount={iptvGrade.totalAmount} forecastAmount={forecastIptvGrade.totalAmount} runRate={runRate} tone="indigo" detail={`현재 ${countText(iptvGrade.points)}P · 월말 예상 ${countText(forecastIptvGrade.points)}P`} />
+      <BenefitGuide {...iptvGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['주셋탑', `${countText(iptvGrade.mainTv)}건 × 1P`],
         ['부셋탑(프리 포함)', `${countText(iptvGrade.extraSetTop)}건 × 0.5P`],
@@ -312,6 +401,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-violet-100 bg-white overflow-hidden">
       <div className="bg-violet-50 px-4 py-4"><div className="text-lg font-black text-gray-900">자가매장 운영비 지원제도</div><div className="mt-1 text-[10px] text-gray-500">인정 실적이 회사 기준 668건을 넘는 구간부터 누진 지급합니다.</div></div>
       <ForecastAmountStrip currentAmount={result.totalAmount} forecastAmount={forecastSelfStore.totalAmount} runRate={runRate} detail={`현재 ${countText(result.recognized)}건 · 월말 예상 ${countText(forecastSelfStore.recognized)}건`} />
+      <BenefitGuide {...selfGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['현재 인정', `${countText(result.recognized)}건`],
         ['월말 예상 인정', `${countText(forecastSelfStore.recognized)}건`],
@@ -338,6 +428,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
       <div className="bg-indigo-50 px-4 py-4"><div className="text-lg font-black text-gray-900">월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={retail.totalAmount} forecastAmount={forecastRetail.totalAmount} runRate={runRate} tone="indigo" detail={`현재 ${countText(retail.points)}P · 월말 예상 ${countText(forecastRetail.points)}P`} />
+      <BenefitGuide {...retailGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['월 포인트', `${countText(retail.points)}P`],
         ['115군 비중', `${countText(retail.plan115Ratio)}%`],
@@ -351,6 +442,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-emerald-100 bg-white overflow-hidden">
       <div className="bg-emerald-50 px-4 py-4"><div className="text-lg font-black text-gray-900">매출지표 활성화 정책</div><div className="mt-1 text-[10px] text-gray-500">직원 매출지표와 동일한 기준으로 달성률과 1P당 단가를 계산합니다.</div></div>
       <ForecastAmountStrip currentAmount={salesMetric.totalAmount} forecastAmount={forecastSalesMetric.totalAmount} runRate={runRate} tone="emerald" detail={`현재 ${countText(salesMetric.points)}P · 월말 예상 ${countText(forecastSalesMetric.points)}P`} />
+      <BenefitGuide {...salesGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['HS', `${countText(salesMetric.hs)}건`],
         ['매출지표', `${countText(salesMetric.points)}P`],
@@ -364,6 +456,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-amber-100 bg-white overflow-hidden">
       <div className="bg-amber-50 px-4 py-4"><div className="text-lg font-black text-gray-900">소매 월간 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">5개 지표의 최고 달성점수를 합산해 MNP·010 신규·기변 단가를 결정합니다.</div></div>
       <ForecastAmountStrip currentAmount={award.totalAmount} forecastAmount={forecastAward.totalAmount} runRate={runRate} tone="amber" detail={`현재 ${award.totalScore}점 · 월말 예상 ${forecastAward.totalScore}점`} />
+      <BenefitGuide {...awardGuide} />
       <div className="grid grid-cols-1 gap-2 p-4 sm:grid-cols-3">{[
         ['MNP', award.mnp, award.rates.mnp, award.amounts.mnp],
         ['010 신규', award.new010, award.rates.new010, award.amounts.new010],
