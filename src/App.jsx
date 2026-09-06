@@ -4828,7 +4828,9 @@ async function createCustomerSaleAndTasks({
   }
 
   if(rows.length){
-    const {error}=await supabase.from('customer_tasks').insert(rows);
+    // Supabase bulk insert는 행마다 필드 구성이 다르면 누락 필드를 null로 보낼 수 있습니다.
+    // task_meta는 NOT NULL이므로 제휴카드가 아닌 약속도 빈 객체를 명시합니다.
+    const {error}=await supabase.from('customer_tasks').insert(rows.map(row=>({...row,task_meta:row.task_meta||{}})));
     if(error)throw error;
   }
 
@@ -4937,7 +4939,7 @@ function StandalonePromiseModal({userId,month,selectedDay,onClose}){
         rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:key,title:t.title,base_date:baseDate,retention_days:t.retentionDays,due_date:addDaysDate(baseDate,t.retentionDays),status:'pending',target_plan:(key==='plan93'||key==='plan183')?targetPlan.trim()||null:null});
       });
       if(customTitle.trim()&&customDueDate)rows.push({user_id:userId,customer_id:customerId,source_sale_id:null,task_type:'custom',title:customTitle.trim(),base_date:baseDate,retention_days:null,due_date:customDueDate,status:'pending'});
-      const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;
+      const {error}=await supabase.from('customer_tasks').insert(rows.map(row=>({...row,task_meta:row.task_meta||{}})));if(error)throw error;
       showAppToast(`${customerName} 고객 약속을 등록했어요.`);onClose();
     }catch(error){showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 등록 실패'});}finally{setSaving(false)}
   };
@@ -4984,7 +4986,8 @@ function CustomerCareManager({ userId, month, homeProps, navIntent }) {
     if(navIntent.type==='home')setTimeout(()=>document.getElementById('employee-home-care')?.scrollIntoView({behavior:'smooth',block:'start'}),80);
   },[navIntent]);
 
-  const today=new Date().toISOString().slice(0,10);
+  const scheduleNow=new Date();
+  const today=`${monthKeyOf(scheduleNow)}-${String(scheduleNow.getDate()).padStart(2,'0')}`;
   const visibleUntil=addDaysDate(today,7);
   const customerMap=Object.fromEntries(customers.map(c=>[c.id,c]));
   const pending=tasks.filter(t=>t.status!=='completed'&&t.status!=='cancelled');
@@ -6275,7 +6278,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const homePromiseRows=[{title:homeCustomTitle,dueDate:homeCustomDueDate},...(homeExtraPromises||[])].filter(x=>String(x.title||'').trim()&&x.dueDate);
       if(homePromiseRows.length&&primarySaleId){
         const {error:taskError}=await supabase.from('customer_tasks').insert(homePromiseRows.map(x=>({
-          user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:primarySaleId,task_type:'custom',title:String(x.title).trim(),base_date:sourceWorkDate,due_date:x.dueDate,status:'pending'
+          user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:primarySaleId,task_type:'custom',title:String(x.title).trim(),base_date:sourceWorkDate,due_date:x.dueDate,status:'pending',task_meta:{}
         })));
         if(taskError)throw taskError;
       }
@@ -6986,7 +6989,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         [{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...(mobileExtraPromises||[])].filter(x=>String(x.title||'').trim()&&x.dueDate).forEach(x=>taskRows.push({
           user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:editingSale.id,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,retention_days:null,due_date:x.dueDate,status:'pending'
         }));
-        if(taskRows.length){ const {error:taskInsertError}=await supabase.from('customer_tasks').insert(taskRows); if(taskInsertError)throw taskInsertError; }
+        if(taskRows.length){ const {error:taskInsertError}=await supabase.from('customer_tasks').insert(taskRows.map(row=>({...row,task_meta:row.task_meta||{}}))); if(taskInsertError)throw taskInsertError; }
         await supabase.from('sales_expenses').delete().eq('source_sale_id',editingSale.id).eq('user_id',currentEmp.id);
         if(mobileExpenseOpen){ const expRows=[{category:mobileExpenseCategory,amount:mobileExpenseAmount,memo:mobileExpenseMemo},...(mobileExtraExpenses||[])].filter(x=>Number(x.amount)>0); if(expRows.length){ const {error:exErr}=await supabase.from('sales_expenses').insert(expRows.map(x=>({user_id:currentEmp.id,source_sale_id:editingSale.id,expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null}))); if(exErr)throw exErr; } }
 
@@ -7022,7 +7025,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyType:'additive'} : mobileSaleKind==='incentive_unpaid'?{policyType:'incentive_unpaid',policyTitle:'인센미지급 특가'}:null}
       });
-      if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending'})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
+      if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending',task_meta:{}})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
 
       if (mobileSpotPolicyId) {
         const {error:spotError}=await supabase.from('spot_claims').insert({
@@ -9621,25 +9624,45 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
   const [selectedDay,setSelectedDay]=useState(defaultDay);
   const [storeKey,setStoreKey]=useState('all');
   const [goalRows,setGoalRows]=useState([]);
+  const [scheduleRows,setScheduleRows]=useState({tasks:[],homes:[],customers:[]});
   const [loading,setLoading]=useState(true);
   useEffect(()=>{setSelectedDay(defaultDay());setStoreKey('all')},[month]); // eslint-disable-line
   useEffect(()=>{
     let alive=true;
     (async()=>{
       setLoading(true);
-      const {data,error}=await supabase.from('store_goals').select('store_name,company_goals').eq('month',month);
+      const employeeIds=(employees||[]).map(emp=>emp.id).filter(Boolean);
+      const [{data,error},taskResult,homeResult,customerResult]=await Promise.all([
+        supabase.from('store_goals').select('store_name,company_goals').eq('month',month),
+        employeeIds.length?supabase.from('customer_tasks').select('id,user_id,customer_id,title,due_date,status').in('user_id',employeeIds):Promise.resolve({data:[]}),
+        employeeIds.length?supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date').in('user_id',employeeIds):Promise.resolve({data:[]}),
+        employeeIds.length?supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds):Promise.resolve({data:[]}),
+      ]);
       if(!alive)return;
-      if(error)showLegacyAlert(`매장 목표 불러오기 실패: ${friendlyError(error)}`);
-      setGoalRows(data||[]);setLoading(false);
+      const scheduleError=taskResult.error||homeResult.error||customerResult.error;
+      if(error||scheduleError)showLegacyAlert(`브리핑 자료 불러오기 실패: ${friendlyError(error||scheduleError)}`);
+      setGoalRows(data||[]);
+      setScheduleRows({tasks:taskResult.data||[],homes:homeResult.data||[],customers:customerResult.data||[]});
+      setLoading(false);
     })();
     return()=>{alive=false};
-  },[month]);
+  },[month,employees.map(emp=>emp.id).join('|')]); // eslint-disable-line
 
   const goalMap=Object.fromEntries(goalRows.map(row=>[row.store_name,{...companyGoalDefaults(row.store_name),...(row.company_goals||{})}]));
   const branches=sortStoresByOpenOrder([...new Set((employees||[]).map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
   const reportDay=Math.max(1,Number(selectedDay||1));
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/reportDay:1;
   const dateLabel=`${Number(month.slice(5,7))}월 ${reportDay}일`;
+  const today=new Date().toISOString().slice(0,10);
+  const employeeMap=Object.fromEntries((employees||[]).map(emp=>[emp.id,emp]));
+  const customerMap=Object.fromEntries(scheduleRows.customers.map(customer=>[customer.id,customer]));
+  const activeTasks=scheduleRows.tasks.filter(task=>task.status!=='completed'&&task.status!=='cancelled');
+  const pendingHomeBundles=new Map();
+  scheduleRows.homes.filter(order=>order.status!=='completed'&&order.status!=='cancelled').forEach(order=>{
+    const key=`${order.user_id}|${order.source_work_date||''}|${order.customer_id||order.customer_name||order.id}`;
+    if(!pendingHomeBundles.has(key))pendingHomeBundles.set(key,order);
+  });
+  const pendingHomes=[...pendingHomeBundles.values()];
   const metricDefs=[
     {key:'hs',label:'HS',unit:'count',goal:(g)=>g.hs},
     {key:'simMnp',label:'SIM MNP',unit:'count',goal:(g)=>g.simMnp},
@@ -9668,7 +9691,16 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
       key:def.key,label:def.label,unit:def.unit,
       ...projectMetric({current:storeMetricFromRows(storeRows,def.key),target:Number(def.goal(goal)||0),factor:forecastFactor}),
     }));
-    return {storeName:displayStoreName(branch),branch,inputRows,metrics};
+    const memberIds=new Set(members.map(emp=>emp.id));
+    const todayTasks=activeTasks.filter(task=>memberIds.has(task.user_id)&&task.due_date===today).map(task=>({
+      ...task,employeeName:employeeMap[task.user_id]?.name||'',customerName:customerMap[task.customer_id]?.customer_name||'고객명 미입력',
+    }));
+    const homeRows=pendingHomes.filter(order=>memberIds.has(order.user_id)).map(order=>({
+      ...order,employeeName:employeeMap[order.user_id]?.name||'',customerName:order.customer_name||customerMap[order.customer_id]?.customer_name||'고객명 미입력',plannedDate:String(order.planned_install_date||'').slice(0,10),
+    }));
+    const todayInstalls=homeRows.filter(order=>order.plannedDate===today);
+    const overdueInstalls=homeRows.filter(order=>order.plannedDate&&order.plannedDate<today);
+    return {storeName:displayStoreName(branch),branch,inputRows,metrics,todayTasks,todayInstalls,overdueInstalls};
   });
   const visibleStores=storeKey==='all'?briefingStores:briefingStores.filter(store=>store.branch===storeKey);
   const allInputRows=briefingStores.flatMap(store=>store.inputRows);
@@ -9708,6 +9740,17 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
           <button type="button" onClick={()=>copyText(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 피드백을`)} className="rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700">점장 카톡용 복사</button>
         </div>
         {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-violet-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
+        <div className="border-b border-gray-50 px-4 py-3">
+          <div className="text-[10px] font-bold text-violet-700">오늘 할 일 · 일정</div>
+          <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
+            {[['고객 약속',store.todayTasks.length,'text-violet-700'],['홈 설치',store.todayInstalls.length,'text-blue-700'],['설치 지연',store.overdueInstalls.length,store.overdueInstalls.length?'text-red-600':'text-gray-400']].map(([label,value,tone])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2"><div className={`text-base font-black ${tone}`}>{value}건</div><div className="text-[9px] text-gray-500">{label}</div></div>)}
+          </div>
+          {(store.todayTasks.length>0||store.todayInstalls.length>0||store.overdueInstalls.length>0)&&<div className="mt-2 space-y-1 text-[10px] leading-relaxed text-gray-600">
+            {store.todayTasks.length>0&&<div><b>약속</b> · {store.todayTasks.map(row=>`${row.customerName}(${row.title}${row.employeeName?` · ${row.employeeName}`:''})`).join(', ')}</div>}
+            {store.todayInstalls.length>0&&<div><b>오늘 설치</b> · {store.todayInstalls.map(row=>`${row.customerName}${row.employeeName?`(${row.employeeName})`:''}`).join(', ')}</div>}
+            {store.overdueInstalls.length>0&&<div className="text-red-600"><b>예정일 경과·미완료</b> · {store.overdueInstalls.map(row=>`${row.customerName}(${row.plannedDate}${row.employeeName?` · ${row.employeeName}`:''})`).join(', ')}</div>}
+          </div>}
+        </div>
         <div className="p-4 grid sm:grid-cols-2 gap-3">
           <div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold text-emerald-700">잘하고 있는 항목</div><div className="mt-2 space-y-1.5">{good.length?good.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className="font-bold text-emerald-700">예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">예상 달성 항목이 아직 없어요.</div>}</div></div>
           <div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold text-amber-700">보완할 항목</div><div className="mt-2 space-y-1.5">{weak.length?weak.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className={`font-bold ${metric.state==='low'?'text-red-600':'text-amber-700'}`}>예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">목표 설정 항목은 모두 달성 흐름이에요.</div>}</div></div>

@@ -73,6 +73,12 @@ test('제휴카드 약속은 신청·수령·승인·자동이체 후 최종 완
   assert.match(sql, /task_meta jsonb not null default/);
 });
 
+test('판매 수정 중 여러 약속을 다시 저장해도 task_meta를 null로 보내지 않는다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /insert\(taskRows\.map\(row=>\(\{\.\.\.row,task_meta:row\.task_meta\|\|\{\}\}\)\)\)/);
+  assert.match(source, /insert\(rows\.map\(row=>\(\{\.\.\.row,task_meta:row\.task_meta\|\|\{\}\}\)\)\)/);
+});
+
 test('고객 약속은 제휴카드·수납지원·변경·케이스로 구분해 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /function careTaskCategory/);

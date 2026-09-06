@@ -35,7 +35,7 @@ function metricText(metric) {
   return `${metric.label} ${value}${suffix} (${rate})`;
 }
 
-export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], metrics = [] } = {}) {
+export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], metrics = [], todayTasks = [], todayInstalls = [], overdueInstalls = [] } = {}) {
   const count = (status) => inputRows.filter((row) => row.status === status).length;
   const workingCount = inputRows.length - count('off');
   const missingNames = inputRows.filter((row) => row.status === 'missing').map((row) => row.name);
@@ -65,10 +65,22 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
   if (unset.length) lines.push(`아직 목표가 설정되지 않은 항목은 ${unset.map((metric) => metric.label).join(', ')}입니다.`);
   if (!good.length && !weak.length && unset.length === metrics.length) lines.push('매장 목표를 입력하면 예상 마감과 강점·부족 항목을 함께 판단할 수 있습니다.');
 
+  lines.push('', '[오늘 일정]');
+  lines.push(todayTasks.length
+    ? `고객 약속 ${todayTasks.length}건 · ${todayTasks.map((row) => `${row.customerName || '고객명 미입력'}(${row.title || '약속'})`).join(', ')}`
+    : '오늘 고객 약속은 없습니다.');
+  lines.push(todayInstalls.length
+    ? `홈 설치 예정 ${todayInstalls.length}건 · ${todayInstalls.map((row) => row.customerName || '고객명 미입력').join(', ')}`
+    : '오늘 홈 설치 예정은 없습니다.');
+  if (overdueInstalls.length) lines.push(`⚠️ 예정일이 지난 홈 미완료 ${overdueInstalls.length}건 · ${overdueInstalls.map((row) => `${row.customerName || '고객명 미입력'}(${row.plannedDate || '일정 미정'})`).join(', ')}`);
+
   const actions = [];
   if (weak.length) actions.push(`${weak.slice(0, 2).map((metric) => metric.label).join('·')} 실적을 우선 보완`);
   if (missingNames.length) actions.push(`${missingNames.join(', ')}님의 입력 여부를 확인`);
   if (unset.length) actions.push('미설정 목표를 입력');
+  if (todayTasks.length) actions.push(`고객 약속 ${todayTasks.length}건을 확인`);
+  if (todayInstalls.length) actions.push(`오늘 홈 설치 ${todayInstalls.length}건을 확인`);
+  if (overdueInstalls.length) actions.push(`설치 지연 ${overdueInstalls.length}건의 진행상태를 확인`);
   if (actions.length) lines.push('', `오늘은 ${actions.join('하고, ')}해주세요.`);
   else lines.push('', '오늘도 현재의 좋은 흐름을 이어가 주세요.');
   return lines.join('\n');

@@ -12,7 +12,7 @@ import {
 const countText = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
 const wonText = value => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
 const PRODUCT_LABELS = {
-  hs: 'HS (SIM MNP 제외)', second: '2ND', internet: '인터넷', smartHome: '스마트홈', extraSetTop: 'TV 추가셋탑',
+  hs: 'HS', second: '2ND', internet: '인터넷', smartHome: '스마트홈', extraSetTop: 'TV 추가셋탑',
 };
 const BASELINE_LABELS = {
   sangnoksu: '상록수', doil: '도일시장', sammi: '삼미시장', residentCenter: '주민센터', sanbon: '산본점', ownedStore: '자가매장 보유',
@@ -210,11 +210,9 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
       <div className="border-b px-4 py-3"><div className="text-sm font-bold">인정 실적 산식</div><div className="mt-0.5 text-[10px] text-gray-400">SIM MNP는 제외하며 홈 상품은 실제 설치 완료일 기준입니다.</div></div>
       <div className="divide-y divide-gray-50">
-        {Object.keys(SELF_STORE_WEIGHTS).map(key => <div key={key} className="grid grid-cols-[1fr_65px_55px_75px] items-center gap-2 px-4 py-3 text-xs">
-          <div className="font-semibold text-gray-700">{PRODUCT_LABELS[key]}</div>
-          <div className="text-right text-gray-500">{countText(result.counts[key])}건</div>
-          <div className="text-right text-gray-400">× {SELF_STORE_WEIGHTS[key]}</div>
-          <div className="text-right font-bold text-violet-700">{countText(result.counts[key] * SELF_STORE_WEIGHTS[key])}건</div>
+        {Object.keys(SELF_STORE_WEIGHTS).map(key => <div key={key} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3">
+          <div className="min-w-0"><div className="text-xs font-semibold text-gray-700">{PRODUCT_LABELS[key]}</div><div className="mt-1 text-[10px] text-gray-400">{key==='hs'?'SIM MNP 제외 · ':''}{countText(result.counts[key])}건 × {SELF_STORE_WEIGHTS[key]}</div></div>
+          <div className="text-sm font-black text-violet-700">{countText(result.counts[key] * SELF_STORE_WEIGHTS[key])}건</div>
         </div>)}
       </div>
     </div>
@@ -233,7 +231,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         ['지급률', `${countText(retail.paymentRate * 100)}%`],
         ['현재 기준액', wonText(retail.totalAmount)],
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-indigo-700">{value}</div></div>)}</div>
-      <div className="border-t px-4 py-3"><div className="text-xs font-bold text-gray-700">포인트 구간별 계산</div><div className="mt-2 space-y-1.5">{retail.tiers.map((tier,index)=><div key={tier.from} className="grid grid-cols-[1fr_70px_100px] gap-2 rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><span>{index===0?'150~300P':index===retail.tiers.length-1?'1,501P 이상':`${tier.from+1}~${tier.to}P`} · {wonText(tier.rate)}/P</span><span className="text-right text-gray-500">{countText(tier.pointCount)}P</span><b className="text-right">{wonText(tier.amount)}</b></div>)}</div></div>
+      <div className="border-t px-4 py-3"><div className="text-xs font-bold text-gray-700">포인트 구간별 계산</div><div className="mt-2 space-y-1.5">{retail.tiers.map((tier,index)=><div key={tier.from} className="rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-700">{index===0?'150~300P':index===retail.tiers.length-1?'1,501P 이상':`${tier.from+1}~${tier.to}P`}</span><b>{wonText(tier.amount)}</b></div><div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-gray-400"><span>1P당 {wonText(tier.rate)}</span><span>적용 {countText(tier.pointCount)}P</span></div></div>)}</div></div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500"><b className="text-gray-700">포인트:</b> MNP·010신규 2P, 기변 95군↑ 1P, 기변 95군 미만 0.3P, 2ND·SIM MNP 1P<br/><b className="text-gray-700">115군 비중:</b> HS 중 115군 비중이며 SIM MNP는 분모·자수 모두 제외 · 40%↑ 110%, 50%↑ 120%, 60%↑ 130%</div>
     </div>
 
