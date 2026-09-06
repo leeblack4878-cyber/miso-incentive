@@ -12,7 +12,7 @@ import {
 const countText = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 1 });
 const wonText = value => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
 const PRODUCT_LABELS = {
-  hs: 'HS', second: '2ND', internet: '인터넷', smartHome: '스마트홈', extraSetTop: 'TV 추가셋탑',
+  hs: 'HS', second: '2ND', internet: '인터넷', smartHome: '스마트홈', extraSetTop: 'TV 부셋탑(프리 포함)',
 };
 const BASELINE_LABELS = {
   sangnoksu: '상록수', doil: '도일시장', sammi: '삼미시장', residentCenter: '주민센터', sanbon: '산본점', ownedStore: '자가매장 보유',
@@ -51,6 +51,10 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     retail: emptyProjection.current.retail,
     salesMetric: emptyProjection.current.salesMetric,
     award: emptyProjection.current.award,
+    homeGrade: emptyProjection.current.homeGrade,
+    homeInternetRatio: emptyProjection.current.homeInternetRatio,
+    homeAward: emptyProjection.current.homeAward,
+    iptvGrade: emptyProjection.current.iptvGrade,
     forecast: emptyProjection.forecast,
     runRate: emptyProjection.runRate,
     currentTotalAmount: emptyProjection.currentTotalAmount,
@@ -63,7 +67,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     let alive = true;
     if (!employeeIds.length) {
       const projection = calculateHqStructureProjection({ month });
-      setState({ loading: false, error: '', result: projection.current.selfStore, retail: projection.current.retail, salesMetric: projection.current.salesMetric, award: projection.current.award, forecast: projection.forecast, runRate: projection.runRate, currentTotalAmount: projection.currentTotalAmount, forecastTotalAmount: projection.forecastTotalAmount });
+      setState({ loading: false, error: '', result: projection.current.selfStore, retail: projection.current.retail, salesMetric: projection.current.salesMetric, award: projection.current.award, homeGrade: projection.current.homeGrade, homeInternetRatio: projection.current.homeInternetRatio, homeAward: projection.current.homeAward, iptvGrade: projection.current.iptvGrade, forecast: projection.forecast, runRate: projection.runRate, currentTotalAmount: projection.currentTotalAmount, forecastTotalAmount: projection.forecastTotalAmount });
       return () => { alive = false; };
     }
     (async () => {
@@ -76,7 +80,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
           .select('id,user_id,source_type,source_meta,sale_date')
           .in('user_id', employeeIds).gte('sale_date', `${month}-01`).lt('sale_date', to),
         supabase.from('home_orders')
-          .select('id,user_id,customer_id,customer_name,product_type,status,actual_install_date')
+          .select('id,user_id,customer_id,customer_name,product_type,network_type,main_tv_plan,status,actual_install_date')
           .in('user_id', employeeIds).eq('status', 'completed')
           .gte('actual_install_date', `${month}-01`).lt('actual_install_date', to),
         supabase.from('daily_records').select('user_id,data').in('user_id', employeeIds)
@@ -107,11 +111,32 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
 
       const completed = homeResult.data || [];
       const bundleKey = row => `${String(row.actual_install_date || '').slice(0, 10)}|${row.customer_id || row.customer_name || row.id}`;
+      const householdCompleted = completed.filter(row => row.network_type === 'household' || !row.network_type);
       const internet = new Set(completed
         .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
         .map(bundleKey)).size;
+      const householdInternet = new Set(householdCompleted
+        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
+        .map(bundleKey)).size;
+      const householdInternetKeys = new Set(householdCompleted
+        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
+        .map(bundleKey));
+      const householdMainTvKeys = new Set(householdCompleted.filter(row => row.product_type === 'homeTv').map(bundleKey));
+      const household100Keys = new Set(householdCompleted.filter(row => row.product_type === 'internet100').map(bundleKey));
+      const homeAwardPayableInternet = [...householdInternetKeys]
+        .filter(key => !household100Keys.has(key) || householdMainTvKeys.has(key)).length;
       const smartHome = completed.filter(row => row.product_type === 'smartHome').length;
-      const extraSetTop = completed.filter(row => row.product_type === 'subSetTop').length;
+      const extraSetTop = completed.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
+      const mainTv = householdCompleted.filter(row => row.product_type === 'homeTv').length;
+      const householdExtraSetTop = householdCompleted.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
+      const householdTvFree = householdCompleted.filter(row => row.product_type === 'tvFree').length;
+      const householdSmartHome = householdCompleted.filter(row => row.product_type === 'smartHome').length;
+      const householdInternet1g = new Set(householdCompleted.filter(row => row.product_type === 'internet1g').map(bundleKey)).size;
+      const iptv17Plus = new Set(householdCompleted
+        .filter(row => row.product_type === 'homeTv' && row.main_tv_plan === 'broadcastPass')
+        .map(bundleKey)).size;
+      const renewalRecognized = (dailyResult.data || []).reduce((sum, row) => sum
+        + (row.data?.householdRenewals || []).reduce((itemSum, item) => itemSum + (item?.speedUp ? 1 : 0.3), 0), 0);
       const mobileSales = (salesResult.data || []).filter(row => row.source_type === 'mobile');
       const { strategicPointsWithoutDaemyung, daemyungCount } = summarizeVasQuality(mobileSales);
       const sono = (dailyResult.data || []).reduce((sum, row) => sum + Object.values(row.data?.groups?.sono || {}).reduce((a, value) => a + Number(value || 0), 0), 0);
@@ -123,6 +148,10 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         retailInput: { hs, plan115Hs, mnp, new010, change95Plus, changeUnder95, second, simMnp },
         salesMetricInput: { hs, salesMetricPoints },
         awardInput: { hs, mnp, new010, change:change95Plus+changeUnder95, simMnp, internet, salesMetricPoints, changeSupportRatio:savedChangeSupportRatio },
+        homeGradeInput: { hs, internet: householdInternet, renewalRecognized, mainTv, extraSetTop: householdExtraSetTop },
+        homeInternetRatioInput: { hs, internet: householdInternet, mainTv, extraSetTop: householdExtraSetTop },
+        homeAwardInput: { hs, internet: householdInternet, payableInternet: homeAwardPayableInternet, mainTv, iptv17Plus, extraSetTop: householdExtraSetTop, tvFree: householdTvFree, internet1g: householdInternet1g, smartHome: householdSmartHome },
+        iptvGradeInput: { mainTv, extraSetTop: householdExtraSetTop },
       });
       if (alive) {
         setChangeSupportRatio(savedChangeSupportRatio??'');
@@ -133,6 +162,10 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
           retail: projection.current.retail,
           salesMetric: projection.current.salesMetric,
           award: projection.current.award,
+          homeGrade:projection.current.homeGrade,
+          homeInternetRatio: projection.current.homeInternetRatio,
+          homeAward: projection.current.homeAward,
+          iptvGrade: projection.current.iptvGrade,
           forecast: projection.forecast,
           runRate: projection.runRate,
           currentTotalAmount: projection.currentTotalAmount,
@@ -146,11 +179,15 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     return () => { alive = false; };
   }, [month, employeeIds.join('|')]);
 
-  const { result, retail, salesMetric, award, forecast, runRate } = state;
+  const { result, retail, salesMetric, award, homeGrade, homeInternetRatio, homeAward, iptvGrade, forecast, runRate } = state;
   const forecastSelfStore = forecast?.selfStore || result;
   const forecastRetail = forecast?.retail || retail;
   const forecastSalesMetric = forecast?.salesMetric || salesMetric;
   const forecastAward = forecast?.award || award;
+  const forecastHomeGrade=forecast?.homeGrade||homeGrade;
+  const forecastHomeInternetRatio = forecast?.homeInternetRatio || homeInternetRatio;
+  const forecastHomeAward = forecast?.homeAward || homeAward;
+  const forecastIptvGrade = forecast?.iptvGrade || iptvGrade;
   const forecastPaceText = runRate?.isCurrentMonth
     ? `${runRate.elapsedDays}일 누적 속도 × ${countText(runRate.factor)}로 월말까지 환산`
     : runRate?.isPastMonth ? '종료된 월은 실제 마감 실적으로 표시' : '현재 실적 기준';
@@ -168,8 +205,8 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         error:'',
         award:nextAward,
         forecast:{...prev.forecast,award:nextForecastAward},
-        currentTotalAmount:Number(prev.result?.totalAmount||0)+Number(prev.retail?.totalAmount||0)+Number(prev.salesMetric?.totalAmount||0)+Number(nextAward.totalAmount||0),
-        forecastTotalAmount:Number(prev.forecast?.selfStore?.totalAmount||0)+Number(prev.forecast?.retail?.totalAmount||0)+Number(prev.forecast?.salesMetric?.totalAmount||0)+Number(nextForecastAward.totalAmount||0),
+        currentTotalAmount:Number(prev.result?.totalAmount||0)+Number(prev.retail?.totalAmount||0)+Number(prev.salesMetric?.totalAmount||0)+Number(nextAward.totalAmount||0)+Number(prev.homeGrade?.totalAmount||0)+Number(prev.homeInternetRatio?.totalAmount||0)+Number(prev.homeAward?.totalAmount||0)+Number(prev.iptvGrade?.totalAmount||0),
+        forecastTotalAmount:Number(prev.forecast?.selfStore?.totalAmount||0)+Number(prev.forecast?.retail?.totalAmount||0)+Number(prev.forecast?.salesMetric?.totalAmount||0)+Number(nextForecastAward.totalAmount||0)+Number(prev.forecast?.homeGrade?.totalAmount||0)+Number(prev.forecast?.homeInternetRatio?.totalAmount||0)+Number(prev.forecast?.homeAward?.totalAmount||0)+Number(prev.forecast?.iptvGrade?.totalAmount||0),
       };
     });
   };
@@ -177,24 +214,86 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
       <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
       <div className="mt-2 text-xl font-black">{month.replace('-', '년 ')}월 마감 전망</div>
-      <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 월간판매량 · 매출지표 · 월간 시상 합계</div>
+      <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 월간판매량 · 매출지표 · 월간 시상 · 홈 구조정책 합계</div>
       {state.loading ? <div className="mt-6 flex items-center gap-2 text-sm text-slate-300"><Loader2 size={16} className="animate-spin"/> 계산 중...</div> : <>
         {runRate?.isCurrentMonth ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-2xl bg-white/10 p-4">
           <div className="min-w-0"><div className="text-[10px] text-slate-300">현재 실적 기준 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black">{wonText(state.currentTotalAmount)}</div></div>
           <div className="pb-1 text-xl text-violet-300">→</div>
           <div className="min-w-0 text-right"><div className="text-[10px] text-violet-200">월말 예상 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black text-white">{wonText(state.forecastTotalAmount)}</div></div>
         </div> : <div className="mt-5 rounded-2xl bg-white/10 p-4"><div className="text-[10px] text-slate-300">마감 기준 합계</div><div className="mt-1 text-2xl font-black">{wonText(state.currentTotalAmount)}</div></div>}
-        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">{[
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{[
           ['자가매장 운영비', forecastSelfStore.totalAmount],
           ['월간판매량', forecastRetail.totalAmount],
           ['매출지표', forecastSalesMetric.totalAmount],
           ['월간 시상', forecastAward.totalAmount],
+          ['홈 Grade',forecastHomeGrade.totalAmount],
+          ['HS 대비 인터넷', forecastHomeInternetRatio.totalAmount],
+          ['홈 시상', forecastHomeAward.totalAmount],
+          ['IPTV Grade', forecastIptvGrade.totalAmount],
         ].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-3 py-2.5"><div className="text-[9px] text-slate-300">{runRate?.isCurrentMonth?'월말 예상 · ':''}{label}</div><div className="mt-1 text-sm font-black">{wonText(value)}</div></div>)}</div>
         <div className="mt-2 text-[10px] text-slate-300">{forecastPaceText} · 정책 구간과 지급률을 다시 계산한 예상치</div>
       </>}
     </div>
 
     {state.error && <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-600">{state.error}</div>}
+
+    <div className="rounded-2xl border border-sky-100 bg-white overflow-hidden">
+      <div className="bg-sky-50 px-4 py-4"><div className="text-lg font-black text-gray-900">홈 Grade 정책</div><div className="mt-1 text-[10px] text-gray-500">인터넷 설치완료·약정갱신 구간 단가에 가정망 TV 비중 지급률을 적용합니다.</div></div>
+      <ForecastAmountStrip currentAmount={homeGrade.totalAmount} forecastAmount={forecastHomeGrade.totalAmount} runRate={runRate} tone="indigo" detail={`현재 인터넷 ${countText(homeGrade.internet)}건 · 월말 예상 ${countText(forecastHomeGrade.internet)}건`} />
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['인터넷 설치완료',`${countText(homeGrade.internet)}건`],
+        ['약정갱신 인정',`${countText(homeGrade.renewalRecognized)}건 → ${homeGrade.roundedRenewal}건`],
+        ['건당 Grade',wonText(homeGrade.pointRate)],
+        ['TV 지급률',`${countText(homeGrade.tvRatio)}% → ${countText(homeGrade.paymentRate*100)}%`],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-sky-700">{value}</div></div>)}</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">기본금액 {countText(homeGrade.internet)}건 × {wonText(homeGrade.pointRate)} = {wonText(homeGrade.baseAmount)}<br/>TV 비중 = (가정망 주셋탑 {countText(homeGrade.mainTv)}건 + 부셋탑(프리 포함) {countText(homeGrade.extraSetTop)}건 × 0.5) ÷ HS {countText(homeGrade.hs)}건<br/>SIM MNP·소호·멀티라인 제외 · 동일 요금제 재약정 0.3건, 속도 상향 재약정 1건</div>
+    </div>
+
+    <div className="rounded-2xl border border-cyan-100 bg-white overflow-hidden">
+      <div className="bg-cyan-50 px-4 py-4"><div className="text-lg font-black text-gray-900">HS 대비 인터넷 비중 목표 정책</div><div className="mt-1 text-[10px] text-gray-500">가정망 인터넷 설치완료 비중과 HS 구간의 건당 단가에 TV 비중 지급률을 적용합니다.</div></div>
+      <ForecastAmountStrip currentAmount={homeInternetRatio.totalAmount} forecastAmount={forecastHomeInternetRatio.totalAmount} runRate={runRate} tone="indigo" detail={`현재 인터넷 비중 ${countText(homeInternetRatio.internetRatio)}% · 월말 예상 ${countText(forecastHomeInternetRatio.internetRatio)}%`} />
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['HS', `${countText(homeInternetRatio.hs)}건`],
+        ['인터넷 설치완료', `${countText(homeInternetRatio.internet)}건`],
+        ['인터넷 비중', `${countText(homeInternetRatio.internetRatio)}%`],
+        ['건당 인센티브', wonText(homeInternetRatio.pointRate)],
+        ['기본금액', wonText(homeInternetRatio.baseAmount)],
+        ['TV 인정', `${countText(homeInternetRatio.tvRecognized)}건`],
+        ['TV 비중', `${countText(homeInternetRatio.tvRatio)}%`],
+        ['TV 지급률', `${countText(homeInternetRatio.paymentRate * 100)}%`],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-cyan-700">{value}</div></div>)}</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">인터넷 비중 = 가정망 설치완료 인터넷 ÷ SIM MNP 제외 HS<br/>최종금액 = 인터넷 설치완료 × HS·인터넷 비중 교차단가 × TV 지급률<br/>TV 인정 = 가정망 주셋탑 1건 + 부셋탑(프리 포함) 0.5건 · 소호·멀티라인 제외</div>
+    </div>
+
+    <div className="rounded-2xl border border-teal-100 bg-white overflow-hidden">
+      <div className="bg-teal-50 px-4 py-4"><div className="text-lg font-black text-gray-900">홈 시상 정책</div><div className="mt-1 text-[10px] text-gray-500">사운드바를 제외한 5개 지표 점수를 합산해 가정망 인터넷 설치완료 건당 금액을 계산합니다.</div></div>
+      <ForecastAmountStrip currentAmount={homeAward.totalAmount} forecastAmount={forecastHomeAward.totalAmount} runRate={runRate} tone="emerald" detail={`현재 ${homeAward.totalScore}점 · 월말 예상 ${forecastHomeAward.totalScore}점`} />
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['합산점수', `${homeAward.totalScore}점`],
+        ['② 적용점수', `${homeAward.setTopScore}점`],
+        ['건당 인센티브', wonText(homeAward.pointRate)],
+        ['지급 인터넷', `${countText(homeAward.payableInternet)}건`],
+        ['최종금액', wonText(homeAward.totalAmount)],
+        ['인터넷 몫 60%', wonText(homeAward.internetShare)],
+        ['IPTV 몫 40%', wonText(homeAward.iptvShare)],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-teal-700">{value}</div></div>)}</div>
+      <div className="border-t divide-y divide-gray-50">{[
+        ['IPTV 17 이상','iptv17Plus'],['부셋탑(프리 포함)','extraSetTop'],['TV프리','tvFree'],['1G','internet1g'],['스마트홈','smartHome'],
+      ].map(([label,key])=><div key={key} className="grid grid-cols-[1fr_70px_45px] items-center gap-2 px-4 py-3 text-xs"><span className="font-semibold text-gray-700">{label}</span><span className="text-right text-gray-500">{countText(homeAward.ratios[key])}%</span><b className="text-right text-teal-700">{homeAward.scores[key]}점</b></div>)}</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">②번 점수는 추가셋탑과 TV프리 점수를 모두 더하지 않고 둘 중 높은 점수 하나만 반영합니다.<br/>사운드바는 입력·점수 산정에서 제외합니다. 가정망 설치완료 기준이며 소호는 제외합니다.<br/>부셋탑 수량에는 일반 부셋탑과 TV프리(부)를 모두 인정합니다.<br/>인터넷 100M 단독은 지표에는 포함하되 지급 인터넷에서는 제외합니다.</div>
+    </div>
+
+    <div className="rounded-2xl border border-blue-100 bg-white overflow-hidden">
+      <div className="bg-blue-50 px-4 py-4"><div className="text-lg font-black text-gray-900">IPTV Grade 정책</div><div className="mt-1 text-[10px] text-gray-500">가정망 설치완료 주셋탑과 부셋탑(프리 포함)의 포인트 구간별 인센티브입니다.</div></div>
+      <ForecastAmountStrip currentAmount={iptvGrade.totalAmount} forecastAmount={forecastIptvGrade.totalAmount} runRate={runRate} tone="indigo" detail={`현재 ${countText(iptvGrade.points)}P · 월말 예상 ${countText(forecastIptvGrade.points)}P`} />
+      <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
+        ['주셋탑', `${countText(iptvGrade.mainTv)}건 × 1P`],
+        ['부셋탑(프리 포함)', `${countText(iptvGrade.extraSetTop)}건 × 0.5P`],
+        ['총 IPTV 포인트', `${countText(iptvGrade.points)}P`],
+        ['1P당 인센티브', wonText(iptvGrade.pointRate)],
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-blue-700">{value}</div></div>)}</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">최종금액 = 총 IPTV 포인트 × 적용 구간의 1P당 인센티브<br/>20P 미만 미지급 · 소호·멀티라인·납부 관련 제한은 적용하지 않습니다.</div>
+    </div>
 
     <div className="rounded-2xl border border-violet-100 bg-white overflow-hidden">
       <div className="bg-violet-50 px-4 py-4"><div className="text-lg font-black text-gray-900">자가매장 운영비 지원제도</div><div className="mt-1 text-[10px] text-gray-500">인정 실적이 회사 기준 668건을 넘는 구간부터 누진 지급합니다.</div></div>
