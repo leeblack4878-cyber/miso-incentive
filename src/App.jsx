@@ -9653,7 +9653,8 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
   const reportDay=Math.max(1,Number(selectedDay||1));
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/reportDay:1;
   const dateLabel=`${Number(month.slice(5,7))}월 ${reportDay}일`;
-  const today=new Date().toISOString().slice(0,10);
+  const briefingNow=new Date();
+  const today=`${monthKeyOf(briefingNow)}-${String(briefingNow.getDate()).padStart(2,'0')}`;
   const employeeMap=Object.fromEntries((employees||[]).map(emp=>[emp.id,emp]));
   const customerMap=Object.fromEntries(scheduleRows.customers.map(customer=>[customer.id,customer]));
   const activeTasks=scheduleRows.tasks.filter(task=>task.status!=='completed'&&task.status!=='cancelled');
