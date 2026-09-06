@@ -29,7 +29,7 @@ export const SEPTEMBER_VAS = [
   { key: 'vasBellMoya', label: '벨링모아 A/B', rate: 0, point: 0.3 },
   { key: 'vasDualNumber', label: '듀얼넘버 온앤오프', rate: 0, point: 0.4 },
   { key: 'vasDesignatedNumber', label: '지정번호필터링', rate: 0, point: 0.2 },
-  { key: 'vasDaemyung', label: '대명', rate: 0, point: 2 },
+  { key: 'vasDaemyung', label: '소노', rate: 0, point: 2 },
   { key: 'vasStrategicPlan', label: '전략 요금제', rate: 0, point: 0.5 },
 ];
 
