@@ -379,6 +379,10 @@ test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별�
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastHomeInternetRatio/);
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastHomeAward/);
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastIptvGrade/);
+  assert.match(view, /기존 구조정책/);
+  assert.match(view, /홈 구조정책/);
+  assert.match(view, /policyTab === 'home'/);
+  assert.match(view, /policyTab === 'base'/);
   assert.match(view, /row\.main_tv_plan === 'broadcastPass'/);
   assert.match(view, /인터넷 100M 단독은 지표에는 포함하되 지급 인터넷에서는 제외/);
   assert.match(view, /\['subSetTop', 'tvFree'\]\.includes\(row\.product_type\)/);

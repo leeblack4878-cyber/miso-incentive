@@ -62,6 +62,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
   });
   const [changeSupportRatio,setChangeSupportRatio]=useState('');
   const [awardSaving,setAwardSaving]=useState(false);
+  const [policyTab, setPolicyTab] = useState('base');
 
   useEffect(() => {
     let alive = true;
@@ -237,6 +238,15 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
 
     {state.error && <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-600">{state.error}</div>}
 
+    <div className="grid grid-cols-2 gap-1 rounded-2xl bg-gray-100 p-1">
+      {[
+        ['base', '기존 구조정책', '4개'],
+        ['home', '홈 구조정책', '4개'],
+      ].map(([key, label, count]) => <button key={key} type="button" onClick={() => setPolicyTab(key)} className={`rounded-xl px-3 py-3 text-xs font-bold transition ${policyTab === key ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500'}`}><span>{label}</span><span className={`ml-1.5 text-[9px] ${policyTab === key ? 'text-violet-400' : 'text-gray-400'}`}>{count}</span></button>)}
+    </div>
+
+    {policyTab === 'home' && <>
+
     <div className="rounded-2xl border border-sky-100 bg-white overflow-hidden">
       <div className="bg-sky-50 px-4 py-4"><div className="text-lg font-black text-gray-900">홈 Grade 정책</div><div className="mt-1 text-[10px] text-gray-500">인터넷 설치완료·약정갱신 구간 단가에 가정망 TV 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={homeGrade.totalAmount} forecastAmount={forecastHomeGrade.totalAmount} runRate={runRate} tone="indigo" detail={`현재 인터넷 ${countText(homeGrade.internet)}건 · 월말 예상 ${countText(forecastHomeGrade.internet)}건`} />
@@ -294,6 +304,10 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-blue-700">{value}</div></div>)}</div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">최종금액 = 총 IPTV 포인트 × 적용 구간의 1P당 인센티브<br/>20P 미만 미지급 · 소호·멀티라인·납부 관련 제한은 적용하지 않습니다.</div>
     </div>
+
+    </>}
+
+    {policyTab === 'base' && <>
 
     <div className="rounded-2xl border border-violet-100 bg-white overflow-hidden">
       <div className="bg-violet-50 px-4 py-4"><div className="text-lg font-black text-gray-900">자가매장 운영비 지원제도</div><div className="mt-1 text-[10px] text-gray-500">인정 실적이 회사 기준 668건을 넘는 구간부터 누진 지급합니다.</div></div>
@@ -365,5 +379,6 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       <div className="border-t px-4 py-3">{authUserId===HQ_STRUCTURE_EDITOR_ID?<div className="flex items-end gap-2"><label className="flex-1 text-[10px] text-gray-500">기변 유통망지원금 활용 비중<input type="number" min="0" max="100" step="0.1" value={changeSupportRatio} onChange={e=>setChangeSupportRatio(e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 text-sm" placeholder="예: 55"/></label><button onClick={saveChangeSupportRatio} disabled={awardSaving} className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{awardSaving?'저장 중':'저장'}</button></div>:<div className="text-[10px] text-gray-400">기변 유통망지원금 활용 비중은 이강진 실장이 월별로 입력합니다.</div>}</div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">예상 시상금 = MNP 건수×MNP 단가 + 010 신규 건수×신규 단가 + 기변 건수×기변 단가<br/>현재 실적 기준 예상치이며 익월 취소·해지 등 사후 제외건은 최종 확정 시 반영됩니다.</div>
     </div>
+    </>}
   </div>;
 }
