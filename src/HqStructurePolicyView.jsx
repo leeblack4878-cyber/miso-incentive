@@ -450,7 +450,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         ['현재 기준액', wonText(salesMetric.totalAmount)],
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-emerald-700">{value}</div></div>)}</div>
       <div className="border-t px-4 py-3"><div className="flex items-center justify-between rounded-xl bg-emerald-50 p-3 text-xs"><span>현재 적용 단가</span><b className="text-emerald-700">{salesMetric.pointRate ? `달성률 ${salesMetric.threshold}% 구간 · 1P당 ${wonText(salesMetric.pointRate)}` : '80% 미만 · 미지급'}</b></div><div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">{[[80,4400],[100,6600],[120,8800],[140,11000],[160,13200],[180,15400],[200,17600]].map(([pct,rate])=><div key={pct} className={`rounded-lg px-2 py-2 text-center text-[10px] ${salesMetric.threshold===pct?'bg-emerald-600 text-white':'bg-gray-50 text-gray-500'}`}><b>{pct}%</b><br/>{wonText(rate)}/P</div>)}</div></div>
-      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">전략요금제 0.5P · 보험류 0.8P · 전략 VAS 1P · 대명 2P<br/>최종 지급액 = 매출지표 총 P × 달성 구간의 1P당 단가</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">전략요금제 0.5P · 보험류 0.8P · 전략 VAS 1P · 소노 2P<br/>최종 지급액 = 매출지표 총 P × 달성 구간의 1P당 단가</div>
     </div>
 
     <div className="rounded-2xl border border-amber-100 bg-white overflow-hidden">
