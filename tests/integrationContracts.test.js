@@ -294,6 +294,8 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   const strategicSource = await readFile(new URL('../src/strategicPoints.js', import.meta.url), 'utf8');
   assert.match(source, /strategicPointDelta:mobileStrategicPoint/);
   assert.match(source, /productivityDelta:Number\(afterPay\.kpiScore/);
+  assert.match(source, /bundle2ndKpiPoints=Number/);
+  assert.match(source, /const kpiScore=baseKpiScore\+bundle2ndKpiPoints/);
   assert.match(source, /성과P \+\$\{fmtNum\(toast\.pointDelta,1\)\}P · 전략P \+\$\{fmtNum\(toast\.strategicPointDelta,1\)\}P · 생산성 \+\$\{fmtNum\(toast\.productivityDelta,1\)\}P/);
   assert.match(strategicSource, /vasVcolorBundle: 1/);
   assert.match(strategicSource, /vasVcolorMusic: 0\.3/);
@@ -305,10 +307,15 @@ test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산�
   assert.match(source, /최근 판매 조합 빠른 선택/);
   assert.match(source, /2ND·고객약속·영업비용 추가/);
   assert.match(source, /계산 근거 보기/);
-  assert.match(source, /생산성 \+\{fmtNum\(mobilePreview\.productivity,1\)\}P/);
+  assert.match(source, /\['생산성',mobilePreview\.productivity\]/);
+  assert.match(source, /\['전략P',mobilePreview\.strategicPoints\]/);
   assert.match(source, /sales_expenses'\)\.delete\(\)\.eq\('source_sale_id',toast\.customerSaleId\)/);
   assert.match(source, /if\(toast\.usedMnpBundle\)nextMnpBundle\.usedMnpBundle/);
   assert.match(source, /방금 등록 취소/);
+  assert.match(source, /VAS·보험 \$\{vasLabels\.length\}개/);
+  assert.doesNotMatch(source, /2ND 회선 VAS 수수료 제외/);
+  assert.match(source, /bundleVasCommissionExcluded:true/);
+  assert.match(source, /vasKeys:\[\.\.\.mobileVasKeys\], bundleVasMap:mobileBundleVasMap/);
 });
 
 test('9월 모바일 입력은 사용하지 않는 33~84군을 숨기고 기존 선택을 그 외로 전환한다', async () => {
