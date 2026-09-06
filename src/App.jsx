@@ -2502,6 +2502,7 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
 
 function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGoals=false, onOpenGoals }) {
   const members=(rows||[]).filter(r=>r.branch===branch);
+  const finalPerformance=useFinalStorePerformance(month,branch);
   const [savedGoals,setSavedGoals]=useState({});
   useEffect(()=>{
     let alive=true;
@@ -2516,7 +2517,7 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
   const goal={...companyGoalDefaults(branch),...savedGoals};
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
 
-  const metrics=[
+  const inputMetrics=[
     {key:'hs',label:'HS',unit:'count',current:sum(r=>hsCount(r.draft)),target:Number(goal.hs||0)},
     {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.simMnp||0)},
     {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.second||0)},
@@ -2528,6 +2529,7 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
     {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',current:sum(r=>r.draft?.tailoredAmount||0),target:Number(goal.tailoredAmount||0)},
     {key:'tailored',label:'업셀건',unit:'count',current:sum(r=>r.draft?.tailoredCount||0),target:Number(goal.tailoredCount||goal.tailored||0)},
   ];
+  const metrics=inputMetrics.map(m=>({...m,inputCurrent:m.current,current:finalPerformance?finalStoreMetric(finalPerformance,m.key,m.current):m.current}));
 
   const fmtValue=(m,v)=>{
     if(m.unit==='won')return won(Math.round(v));
@@ -2540,7 +2542,8 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
       <div className="px-4 py-3 border-b border-gray-50">
         <div className="text-xs text-gray-400">📊 {monthLabel(month)}</div>
         <div className="text-sm font-bold text-gray-900 mt-0.5">{displayStoreName(branch)} 매장 목표 현황</div>
-        <div className="text-[10px] text-gray-400 mt-1">매장 누적 실적과 목표 달성률을 한 번에 확인해요.</div>
+        <div className="text-[10px] text-gray-400 mt-1">{finalPerformance?'마감 확정 실적으로 목표 달성률을 표시해요.':'매장 누적 실적과 목표 달성률을 한 번에 확인해요.'}</div>
+        {finalPerformance&&<div className="mt-2 rounded-lg bg-emerald-50 px-2.5 py-2 text-[9px] font-semibold text-emerald-700">✓ {monthLabel(month)} 마감 확정 · 개인 실적/급여 원장은 변경되지 않아요.</div>}
       </div>
 
       <div className="px-3 py-2">
@@ -2553,7 +2556,7 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
           return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
             <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
             {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
-            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}</span>
+            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}{finalPerformance&&Number(m.current)!==Number(m.inputCurrent)&&<span className="block text-[8px] font-normal text-gray-400">입력 {fmtValue(m,m.inputCurrent)}</span>}</span>
             <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
             <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{fmtValue(m,forecast)}</span>
           </div>;
@@ -4197,6 +4200,38 @@ function storeGoalCurrent(mergedDraft, pay, key) {
   return 0;
 }
 
+function isFinalStorePerformance(row, month) {
+  if (!row || row.month !== month || !row.as_of_date) return false;
+  const [year,monthNumber]=String(month).split('-').map(Number);
+  const lastDay=new Date(year,monthNumber,0).getDate();
+  return String(row.as_of_date) >= `${month}-${String(lastDay).padStart(2,'0')}` || row.metrics?.status==='final';
+}
+
+function finalStoreMetric(row, key, fallback=0) {
+  if (!row) return Number(fallback||0);
+  const metrics=row.metrics||{};
+  const aliases={free:'tv',tvFree:'tv',smart:'smartHome',upsell:'tailoredCount',upsellAmount:'tailoredAmount'};
+  const sourceKey=aliases[key]||key;
+  return metrics[sourceKey]===undefined ? Number(fallback||0) : Number(metrics[sourceKey]||0);
+}
+
+function useFinalStorePerformance(month, storeName='') {
+  const [data,setData]=useState(storeName?null:{});
+  useEffect(()=>{
+    let alive=true;
+    let query=supabase.from('head_office_store_performance').select('month,store_name,as_of_date,metrics,note').eq('month',month);
+    if(storeName)query=query.eq('store_name',storeName).maybeSingle();
+    query.then(({data:rows,error})=>{
+      if(!alive)return;
+      if(error){console.error('FINAL STORE PERFORMANCE LOAD ERROR',error);setData(storeName?null:{});return;}
+      if(storeName){setData(isFinalStorePerformance(rows,month)?rows:null);return;}
+      const map={};(rows||[]).forEach(row=>{if(isFinalStorePerformance(row,month))map[row.store_name]=row});setData(map);
+    });
+    return()=>{alive=false};
+  },[month,storeName]);
+  return data;
+}
+
 function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
   const [goal,setGoal]=useState(null);
   const [open,setOpen]=useState(false);
@@ -4370,6 +4405,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
     !NON_SALES_STORES.includes(me?.branch) ? (me?.branch||stores[0]||'') : (stores[0]||'')
   );
   const [goal,setGoal]=useState({company_goals:{},challenge_goals:{}});
+  const finalPerformance=useFinalStorePerformance(month,selected);
 
   const load=useCallback(async()=>{
     if(!selected)return;
@@ -4479,6 +4515,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
           else if(m.key==='smartHome')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0);
           else if(m.key==='tailoredCount')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.tailoredCount||0),0);
           else actual=cur||0;
+          if(finalPerformance)actual=finalStoreMetric(finalPerformance,m.key==='tvFree'?'free':m.key==='smartHome'?'smart':m.key,actual);
 
           const companyTarget=Number(goal.company_goals?.[m.key]||0);
           const challengeTarget=Number(goal.challenge_goals?.[m.key]||companyTarget||0);
@@ -4493,6 +4530,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
                 <b>{challengeTarget||'-'}</b>
               </span>
             </div>
+            {finalPerformance&&<div className="text-[9px] text-emerald-600 mt-1">마감 확정 실적 기준</div>}
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1.5">
               <div className="h-full bg-violet-500 rounded-full" style={{width:`${Math.min(100,challengePct)}%`}} />
             </div>
@@ -8915,6 +8953,7 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
   const [storeMode, setStoreMode] = useState('total'); // total | avg
   const [periodMode, setPeriodMode] = useState('month'); // month | recent7
   const metric = COMPETITION_METRICS.find((m) => m.key === metricKey) || COMPETITION_METRICS[0];
+  const finalPerformances=useFinalStorePerformance(month);
 
   const employeeRanked = useMemo(() => [...(rows || [])]
     .filter((r) => !NON_SALES_STORES.includes(r.branch))
@@ -8943,10 +8982,13 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
     return [...map.values()]
       .map((s) => ({
         ...s,
-        value: storeMode === 'avg' ? (s.count ? s.total / s.count : 0) : s.total,
+        total: periodMode==='month'&&finalPerformances[s.name]
+          ? finalStoreMetric(finalPerformances[s.name],metricKey,s.total)
+          : s.total,
       }))
+      .map(s=>({...s,value:storeMode==='avg'?(s.count?s.total/s.count:0):s.total}))
       .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
-  }, [rows, recentEmployeeRanked, metricKey, storeMode, periodMode]);
+  }, [rows, recentEmployeeRanked, metricKey, storeMode, periodMode, finalPerformances]);
 
   return (
     <div className="space-y-3">
@@ -8979,6 +9021,7 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
       <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-50 text-sm font-semibold text-gray-700">
           {periodMode === 'recent7' ? '최근 7일 · ' : ''}{metric.label} {mode === 'employees' ? '직원 순위' : '매장 순위'}
+          {mode==='stores'&&periodMode==='month'&&Object.keys(finalPerformances).length>0&&<div className="text-[9px] font-normal text-emerald-600 mt-1">마감된 매장은 확정 실적 기준</div>}
         </div>
         <div className="divide-y divide-gray-50">
           {(mode === 'employees'
@@ -9138,14 +9181,15 @@ function storeMetricFromRows(storeRows,key){
   return list.reduce((s,r)=>s+adminMetricValue(r,key),0);
 }
 
-function storeGoalAchievement(company,storeRows){
+function storeGoalAchievement(company,storeRows,finalPerformance=null){
   const metrics=[
     ['hs','hs'],['home','home'],['productivity','productivity'],
     ['tvFree','free'],['smartHome','smart'],['tailoredCount','upsell']
   ];
   const detail=metrics.map(([goalKey,rowKey])=>{
     const target=Number(company?.[goalKey]||0);
-    const actual=storeMetricFromRows(storeRows,rowKey);
+    const inputActual=storeMetricFromRows(storeRows,rowKey);
+    const actual=finalPerformance?finalStoreMetric(finalPerformance,rowKey,inputActual):inputActual;
     const pct=target>0 ? actual/target*100 : 0;
     return {goalKey,rowKey,target,actual,pct};
   }).filter(x=>x.target>0);
@@ -9157,6 +9201,7 @@ function storeGoalAchievement(company,storeRows){
 }
 
 function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals }) {
+  const finalPerformances=useFinalStorePerformance(month);
   const [goalRows,setGoalRows]=useState([]);
   const [loading,setLoading]=useState(true);
   const me=(employees||[]).find(e=>e.id===authUserId);
@@ -9184,7 +9229,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
   const ranked=branches.map(branch=>{
     const branchRows=(allRows||[]).filter(r=>r.branch===branch);
     const company=goalMap[branch]||companyGoalDefaults(branch);
-    const achievement=storeGoalAchievement(company,branchRows);
+    const achievement=storeGoalAchievement(company,branchRows,finalPerformances[branch]);
     return {branch,...achievement};
   }).filter(x=>x.total>0)
     .sort((a,b)=>b.score-a.score || b.achieved-a.achieved || a.branch.localeCompare(b.branch));
@@ -9233,6 +9278,7 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
   const [goal,setGoal]=useState(null);
   const me=(employees||[]).find(e=>e.id===authUserId);
   const branch=me?.branch || rows?.[0]?.branch;
+  const finalPerformance=useFinalStorePerformance(month,branch||'');
 
   useEffect(()=>{
     if(!branch||NON_SALES_STORES.includes(branch)){setGoal(null);return;}
@@ -9247,9 +9293,9 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
   },[month,branch]);
 
   if(!branch||NON_SALES_STORES.includes(branch)||!goal)return null;
-  const companyAch=storeGoalAchievement(goal.company_goals,rows);
+  const companyAch=storeGoalAchievement(goal.company_goals,rows,finalPerformance);
   const challengeBase={...goal.company_goals,...goal.challenge_goals};
-  const challengeAch=storeGoalAchievement(challengeBase,rows);
+  const challengeAch=storeGoalAchievement(challengeBase,rows,finalPerformance);
 
   return <button onClick={onOpen} className="w-full text-left bg-white rounded-xl border border-gray-100 p-4">
     <div className="flex items-center justify-between gap-3">
@@ -9261,6 +9307,7 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
         <div className="text-xs text-gray-500 mt-1">
           도전 목표 {challengeAch.total}가지 중 {challengeAch.achieved}가지 달성 · 종합 {companyAch.score.toFixed(1)}점
         </div>
+        {finalPerformance&&<div className="text-[9px] font-semibold text-emerald-600 mt-1">마감 확정 실적 기준</div>}
       </div>
       <span className="text-xs font-semibold text-violet-600">상세 ›</span>
     </div>
@@ -10008,6 +10055,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 }
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false }) {
+  const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
@@ -10050,6 +10098,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     a.href = url; a.download = `미소인센티브_${month}.csv`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+  const adminHomeMetricValue=(key)=>{
+    const branches=[...new Set((rows||[]).map(r=>r.branch).filter(Boolean))];
+    return branches.reduce((total,branch)=>{
+      const branchRows=(rows||[]).filter(r=>r.branch===branch);
+      const input=branchRows.reduce((sum,row)=>sum+adminMetricValue(row,key),0);
+      return total+(finalPerformances[branch]?finalStoreMetric(finalPerformances[branch],key,input):input);
+    },0);
   };
 
   return (
@@ -10108,6 +10164,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
               <div>
                 <div className="text-xs text-gray-400">{isFullAdmin?'전체 운영 현황':'우리 매장 현황'}</div>
                 <div className="text-base font-bold text-gray-900">{monthLabel(month)} 핵심 성과</div>
+                {Object.keys(finalPerformances).length>0&&<div className="text-[9px] font-semibold text-emerald-600 mt-0.5">마감된 매장은 확정 실적 기준</div>}
               </div>
               <div className="text-xs text-gray-400">{rows.length}명</div>
             </div>
@@ -10119,7 +10176,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
               ].map((metricRow,rowIndex)=>(
                 <div key={rowIndex} className={`grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
                   {metricRow.map(([key,label,unit])=>{
-                    const value=rows.reduce((s,r)=>s+adminMetricValue(r,key),0);
+                    const value=adminHomeMetricValue(key);
                     return <div key={key} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
                       <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
                       <div className="text-[15px] font-bold text-gray-900 mt-1 whitespace-nowrap">
