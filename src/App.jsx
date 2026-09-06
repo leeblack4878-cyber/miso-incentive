@@ -2309,7 +2309,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
               ['U+one 무체험', ext.noExperienceRate!==undefined&&ext.noExperienceRate!==''?`${fmtNum(Number(ext.noExperienceRate),1)}%`:'미입력', adj.noExp],
               ['매장 레벨링', ext.leveling==='4'?'Lv4':ext.leveling?'Lv4 미만':'미입력', adj.leveling],
               ['인터넷 비중', `${internetRatio.toFixed(1)}% · 홈 ${fmtCount(householdHome)} / HS ${fmtCount(hsActual)}`, adj.internet],
-              ['대명', `목표 ${daemyungTarget}건 / 실적 ${fmtCount(actual('daemyung'))}건`, adj.daemyung],
+              ['소노', `목표 ${daemyungTarget}건 / 실적 ${fmtCount(actual('daemyung'))}건`, adj.daemyung],
               ['MNP 타사 가망', `목표 ${prospectTarget}건 / 실적 ${fmtCount(actual('prospectMnp'))}건`, adj.prospect],
             ].map(([label,basis,point])=><div key={label} className="flex items-center justify-between gap-3 text-[10px]"><div className="min-w-0"><span className="font-semibold text-gray-600">{label}</span><span className="text-gray-400 ml-1.5">{basis}</span></div><b className={Number(point)>0?'text-emerald-600':Number(point)<0?'text-red-500':'text-gray-400'}>{Number(point)>0?'+':''}{Number(point).toFixed(1)}점</b></div>)}
           </div>
@@ -2327,8 +2327,8 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[10px] text-amber-700 leading-relaxed">현재 입력·확인된 실적 기준 예상액이에요. 전략P·115군과 월말 임팩트 값이 확정되면 금액이 달라질 수 있습니다. · 2ND 기준 {septemberManagerStoreType(activeStore)==='consignment'?'위탁 20건':'자가 10건'}</div>
       </>}
     </>:<>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">실적 최신화</div><div className="text-[10px] text-gray-400 mt-1">직원 입력 누적과 관리자 확인값을 비교하고, 평가에는 관리자 확인값을 우선 사용합니다.</div></div><button onClick={saveSnapshot} disabled={saving} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold h-fit">{saving?'저장중':'최신화 완료'}</button></div><div className="mt-3 space-y-2">{[['HS','hs'],['홈','home'],['생산성','productivity'],['MNP','mnp'],['SIM MNP','simMnp'],['TV부셋탑(가정망)','subTvHousehold'],['TV프리(부)','tvFree'],['스마트홈','smartHome'],['타사 고객 등록','otherCustomer'],['맞춤제안 매출액','tailoredAmount'],['대명','daemyung'],['MNP 타사 가망 개통','prospectMnp']].map(([l,k])=><div key={k} className="grid grid-cols-[1fr_70px_90px] gap-2 items-center"><div className="text-xs text-gray-600">{l}</div><div className="text-[10px] text-gray-400 text-right">입력 {k==='tailoredAmount'?won(live[k]):fmtNum(live[k],1)}</div><input type="number" value={verified[k]??live[k]??0} onChange={e=>setVerified(k,e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
-      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">대명 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(37건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">실적 최신화</div><div className="text-[10px] text-gray-400 mt-1">직원 입력 누적과 관리자 확인값을 비교하고, 평가에는 관리자 확인값을 우선 사용합니다.</div></div><button onClick={saveSnapshot} disabled={saving} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold h-fit">{saving?'저장중':'최신화 완료'}</button></div><div className="mt-3 space-y-2">{[['HS','hs'],['홈','home'],['생산성','productivity'],['MNP','mnp'],['SIM MNP','simMnp'],['TV부셋탑(가정망)','subTvHousehold'],['TV프리(부)','tvFree'],['스마트홈','smartHome'],['타사 고객 등록','otherCustomer'],['맞춤제안 매출액','tailoredAmount'],['소노','daemyung'],['MNP 타사 가망 개통','prospectMnp']].map(([l,k])=><div key={k} className="grid grid-cols-[1fr_70px_90px] gap-2 items-center"><div className="text-xs text-gray-600">{l}</div><div className="text-[10px] text-gray-400 text-right">입력 {k==='tailoredAmount'?won(live[k]):fmtNum(live[k],1)}</div><input type="number" value={verified[k]??live[k]??0} onChange={e=>setVerified(k,e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">소노 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(37건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
     </>}
   </div>;
@@ -5926,6 +5926,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [recentMobileCombos,setRecentMobileCombos]=useState([]);
   const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
   const [mobileCalcOpen,setMobileCalcOpen]=useState(false);
+  const [mobileMoreVasOpen,setMobileMoreVasOpen]=useState(false);
   const [editingSale,setEditingSale]=useState(null);
   const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
   const [mobileCustomerName,setMobileCustomerName]=useState('');
@@ -5986,6 +5987,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const activeMatrixOptions=activeMatrixCols
     .map((label,ci)=>({label,ci}))
     .filter(option=>!(isSeptemberPolicyActive(month)&&option.ci===3));
+  const normalizedMainVas=(config.vas||DEFAULT_VAS).filter(v=>!(isSeptemberPolicyActive(month)&&v.key==='vasVcolor'));
+  const primaryVasKeys=new Set(['vasKyobo','vasVcolorBundle','vasVcolor','vasPhonePass','vasSafePass']);
+  const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key));
+  const additionalMainVas=normalizedMainVas.filter(v=>!primaryVasKeys.has(v.key));
   const isDayOff = !!day.dayOff;
 
   const recentComboStorageKey=currentEmp?.id?`miso_recent_mobile_combos_v1:${currentEmp.id}`:'';
@@ -6016,7 +6021,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!Number.isInteger(ri)||!MATRIX_ROW_DEFS[ri])return;
     const storedCi=Math.min(Math.max(0,Number(combo?.ci)||0),maxCi);
     const ci=MATRIX_ROW_DEFS[ri].hasTiers?(isSeptemberPolicyActive(month)&&storedCi===3?5:storedCi):0;
-    const vasKeys=(combo.vasKeys||[]).filter(k=>k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k));
+    const vasKeys=(combo.vasKeys||[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k).filter((k,i,a)=>(k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k))&&a.indexOf(k)===i);
     const bundleKeys=(combo.bundle2ndKeys||[]).filter(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).some(v=>v.key===k)).slice(0,2);
     setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
     setMobileStrategicPlan(!!combo.strategicPlan);
@@ -6026,6 +6031,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileBundleSaleTypeMap(Object.fromEntries(bundleKeys.map(k=>[k,combo.bundleSaleTypeMap?.[k]||'normal'])));
     setMobileUsedMnpBundle(!!combo.usedMnpBundle);
     setMobileDetailsOpen(bundleKeys.length>0);
+    setMobileMoreVasOpen(vasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
     showAppToast('최근 판매 조합을 불러왔어요.',{tone:'info'});
   };
 
@@ -6835,7 +6841,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const editableCi=isSeptemberPolicyActive(month)&&Number(meta.ci)===3?5:meta.ci;
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setMobileCustomerName(sale.customers?.customer_name||'');
-    setMobileVasKeys(Array.isArray(meta.vasKeys)?meta.vasKeys:[]);
+    const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
+    setMobileVasKeys([...new Set(editableVasKeys)]);
+    setMobileMoreVasOpen(editableVasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
     setMobileBundle2ndKeys(meta.bundle2ndKeys);
     setMobileBundleVasMap(meta.bundleVasMap);
     setMobileBundleSaleTypeMap(meta.bundleSaleTypeMap);
@@ -6900,6 +6908,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileSaleDraft({ri,ci,label});
     setMobileDetailsOpen(false);
     setMobileCalcOpen(false);
+    setMobileMoreVasOpen(false);
     setMobileCustomerName('');
     setMobileCareKeys([]);
     setMobileCustomTitle('');
@@ -7900,7 +7909,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 3. 메인회선 전략 부가서비스(VAS) <span className="font-normal text-gray-400">· 복수 선택 가능</span>
               </div>
               <div className="grid grid-cols-1 gap-1.5">
-                {[...(config.vas || DEFAULT_VAS), { key:'vasNone', label:'미유치', rate:0 }].map((v) => {
+                {[...primaryMainVas, { key:'vasNone', label:'미유치', rate:0 }].map((v) => {
                   const selected = mobileVasKeys.includes(v.key);
                   return (
                     <button
@@ -7930,6 +7939,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   );
                 })}
               </div>
+              {additionalMainVas.length>0&&<>
+                <button type="button" onClick={()=>setMobileMoreVasOpen(v=>!v)} className="mt-2 w-full rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-left text-[11px] font-semibold text-gray-600">
+                  기타 전략 항목 {mobileMoreVasOpen?'접기':'펼치기'}
+                  <span className="float-right">{mobileMoreVasOpen?'▲':'▼'}</span>
+                </button>
+                {mobileMoreVasOpen&&<div className="grid grid-cols-1 gap-1.5 mt-1.5">
+                  {additionalMainVas.map(v=>{const selected=mobileVasKeys.includes(v.key);return <button key={v.key} type="button" onClick={()=>setMobileVasKeys(prev=>{const clean=prev.filter(k=>k!=='vasNone');return selected?clean.filter(k=>k!==v.key):[...clean,v.key]})}
+                    className={`text-left px-3 py-2.5 rounded-xl border text-xs ${selected?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
+                    <span className="font-semibold">{selected?'✓ ':''}{v.label}</span>{v.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>}
+                  </button>})}
+                </div>}
+              </>}
               <div className="text-[10px] text-gray-400 mt-1.5">
                 미유치는 기록용이며 인센티브에는 포함되지 않아요.
               </div>
