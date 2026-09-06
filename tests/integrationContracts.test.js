@@ -364,7 +364,7 @@ test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별�
   ]);
   assert.match(view, /현재 실적 기준 합계/);
   assert.match(view, /월말 예상 합계/);
-  assert.match(view, /자가매장 운영비 · 소매파트너 · 매출지표 · 월간 시상 합계/);
+  assert.match(view, /자가매장 운영비 · 월간판매량 · 매출지표 · 월간 시상 합계/);
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastSelfStore/);
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastRetail/);
   assert.match(view, /<ForecastAmountStrip[\s\S]*forecastSalesMetric/);

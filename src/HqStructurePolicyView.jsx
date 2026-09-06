@@ -177,7 +177,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
       <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
       <div className="mt-2 text-xl font-black">{month.replace('-', '년 ')}월 마감 전망</div>
-      <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 소매파트너 · 매출지표 · 월간 시상 합계</div>
+      <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 월간판매량 · 매출지표 · 월간 시상 합계</div>
       {state.loading ? <div className="mt-6 flex items-center gap-2 text-sm text-slate-300"><Loader2 size={16} className="animate-spin"/> 계산 중...</div> : <>
         {runRate?.isCurrentMonth ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-2xl bg-white/10 p-4">
           <div className="min-w-0"><div className="text-[10px] text-slate-300">현재 실적 기준 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black">{wonText(state.currentTotalAmount)}</div></div>
@@ -186,7 +186,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         </div> : <div className="mt-5 rounded-2xl bg-white/10 p-4"><div className="text-[10px] text-slate-300">마감 기준 합계</div><div className="mt-1 text-2xl font-black">{wonText(state.currentTotalAmount)}</div></div>}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">{[
           ['자가매장 운영비', forecastSelfStore.totalAmount],
-          ['소매파트너', forecastRetail.totalAmount],
+          ['월간판매량', forecastRetail.totalAmount],
           ['매출지표', forecastSalesMetric.totalAmount],
           ['월간 시상', forecastAward.totalAmount],
         ].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-3 py-2.5"><div className="text-[9px] text-slate-300">{runRate?.isCurrentMonth?'월말 예상 · ':''}{label}</div><div className="mt-1 text-sm font-black">{wonText(value)}</div></div>)}</div>
@@ -225,7 +225,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     </div>
 
     <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
-      <div className="bg-indigo-50 px-4 py-4"><div className="text-lg font-black text-gray-900">소매파트너 월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
+      <div className="bg-indigo-50 px-4 py-4"><div className="text-lg font-black text-gray-900">월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={retail.totalAmount} forecastAmount={forecastRetail.totalAmount} runRate={runRate} tone="indigo" detail={`현재 ${countText(retail.points)}P · 월말 예상 ${countText(forecastRetail.points)}P`} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['월 포인트', `${countText(retail.points)}P`],
