@@ -792,7 +792,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
 
   const mobileItems = config.mobilePointItems || DEFAULT_MOBILE_POINT_ITEMS;
   const kpiItems = config.kpiItems || DEFAULT_KPI_ITEMS;
-  const kpiScore = sumPoint(draft.kpi || {}, kpiItems);
+  const baseKpiScore = sumPoint(draft.kpi || {}, kpiItems);
 
   // 영업 활동 지원 정책 대상 = HS + SIM MNP + 2ND
   // mobilePoint에는 HS/SIM MNP/2ND단독이 들어오고, 2ND 번들 판매건은 별도 그룹이므로 추가 합산합니다.
@@ -806,6 +806,10 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   });
   const bundle2ndActivityCount = secondPolicy.bundled;
   const activityCount = baseActivityCount + bundle2ndActivityCount;
+  // 2ND 번들도 단독 2ND와 동일하게 생산성 0.2P를 인정합니다.
+  // 단독은 draft.kpi에 이미 들어오므로 번들 건만 추가합니다.
+  const bundle2ndKpiPoints=Number((secondPolicy.bundled*Number(kpiItems.find(item=>item.key==='kpiSecond')?.point||0.2)).toFixed(10));
+  const kpiScore=baseKpiScore+bundle2ndKpiPoints;
 
   const supportCap = Number(config.tenureCap ?? DEFAULT_ACTIVITY_SUPPORT_MAX);
   // 6개월 미만: 실적 무관 230만원
@@ -926,7 +930,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     currentPerformanceAmount, closingAmount, postGuaranteeExtras,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
-    mnpBundlePay, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore,
+    mnpBundlePay, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
     strategicPoints, strategicRatio:employeeStrategic.ratio, strategicAdjustment:employeeStrategic.amount,
     strategicAdjustmentBand:employeeStrategic.band, total,
   };
@@ -5807,7 +5811,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
               {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
               {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
-              {Number(pay.bundleFreeVasOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 VAS 제외" value={`-${won(pay.bundleFreeVasOffset)}`} />}
               {Number(pay.specialMatrixOffset||0)!==0&&<RowKV label="└ 특판 요금제 제외" value={`-${won(pay.specialMatrixOffset)}`} />}
               {Number(pay.specialVasOffset||0)!==0&&<RowKV label="└ 특판 VAS 제외" value={`-${won(pay.specialVasOffset)}`} />}
               {Number(pay.specialReplacementPay||0)!==0&&<RowKV label="└ 특판 대체 인센티브" value={won(pay.specialReplacementPay)} />}
@@ -6243,11 +6246,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
     if(sale.source_type==='mobile' && Number.isInteger(meta.ri) && Number.isInteger(meta.ci)){
       const base=normalizeDay(day),matrix=base.matrix.map(r=>[...r]); matrix[meta.ri][meta.ci]=Math.max(0,Number(matrix[meta.ri][meta.ci]||0)-1);
-      const vas={...(base.groups?.vas||{})}; [...(meta.vasKeys||[]),...Object.values(meta.bundleVasMap||{}).flat()].forEach(k=>{if(k!=='vasNone')vas[k]=Math.max(0,Number(vas[k]||0)-1)});
+      const vas={...(base.groups?.vas||{})};
+      const deleteVasKeys=meta.bundleVasCommissionExcluded?(meta.vasKeys||[]):[...(meta.vasKeys||[]),...Object.values(meta.bundleVasMap||{}).flat()];
+      deleteVasKeys.forEach(k=>{if(k!=='vasNone')vas[k]=Math.max(0,Number(vas[k]||0)-1)});
       const bundle2nd={...(base.groups?.bundle2nd||{})};(meta.bundle2ndKeys||[]).forEach(k=>bundle2nd[k]=Math.max(0,Number(bundle2nd[k]||0)-1));
       const mnpBundle={...(base.groups?.mnpBundle||{})};if(meta.usedMnpBundle)mnpBundle.usedMnpBundle=Math.max(0,Number(mnpBundle.usedMnpBundle||0)-1);
       const sp=meta.specialPolicy||{};
-      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{});
+      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{},true);
       mutate({...base,matrix,groups:{...base.groups,vas,bundle2nd,mnpBundle},
         bundleFreeOffset:Math.max(0,Number(base.bundleFreeOffset||0)-Number(free.bundleOffset||0)),
         bundleFreeVasOffset:Math.max(0,Number(base.bundleFreeVasOffset||0)-Number(free.vasOffset||0)),
@@ -6646,6 +6651,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       bundle2ndKeys:cleanArray(meta.bundle2ndKeys),
       bundleVasMap:cleanObj(meta.bundleVasMap),
       bundleSaleTypeMap:cleanObj(meta.bundleSaleTypeMap),
+      bundleVasCommissionExcluded:!!meta.bundleVasCommissionExcluded,
       usedMnpBundle:!!meta.usedMnpBundle,
       specialPolicy:cleanObj(meta.specialPolicy),
       schemaVersion:saleSchemaVersion(sale),
@@ -6936,7 +6942,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSaleKind('normal'); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
   };
 
-  const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap) => {
+  const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false) => {
     const bundleTable=config.bundle2nd||DEFAULT_BUNDLE2ND;
     const vasTable=config.vas||DEFAULT_VAS;
     let bundleOffset=0, vasOffset=0;
@@ -6949,7 +6955,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         bundleOffset+=calculateSeptemberBundleSale({rate,saleType,insuranceJoined:!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
       }else if(saleType==='free')bundleOffset+=rate;
       else return;
-      (vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
+      if(includeLegacyVasOffset)(vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
         vasOffset += Number(vasTable.find(x=>x.key===v)?.rate||0);
       });
     });
@@ -7024,10 +7030,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
 
         const vas={...(base.groups?.vas||{})};
-        const oldBundleVasKeys=Object.values(oldMeta.bundleVasMap||{}).flat();
+        const oldBundleVasKeys=oldMeta.bundleVasCommissionExcluded?[]:Object.values(oldMeta.bundleVasMap||{}).flat();
         [...(oldMeta.vasKeys||[]),...oldBundleVasKeys].forEach(k=>{ if(k!=='vasNone') vas[k]=Math.max(0,Number(vas[k]||0)-1); });
-        const newBundleVasKeys=Object.values(mobileBundleVasMap||{}).flat();
-        [...(mobileVasKeys||[]),...newBundleVasKeys].forEach(k=>{
+        (mobileVasKeys||[]).forEach(k=>{
           if(k!=='vasNone')vas[k]=Number(vas[k]||0)+1;
         });
 
@@ -7039,15 +7044,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         if(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && mobileUsedMnpBundle)mnpBundle.usedMnpBundle=Number(mnpBundle.usedMnpBundle||0)+1;
 
         const oldSp=oldMeta.specialPolicy||editingSale.source_meta?.specialPolicy||{};
-        const oldFree=bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{});
+        const oldFree=bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{},true);
         const newFree=bundleFreeAmounts();
         const newPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
         const unpaid=mobileSaleKind==='incentive_unpaid';
         const newMatrixFee=unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
-        const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
-          (mobileBundleSaleTypeMap?.[bk]||'normal')==='free' ? [] : (keys||[])
-        );
-        const editAllVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
+        const editAllVas=(mobileVasKeys||[]).filter(k=>k!=='vasNone');
         const newVasFee=unpaid?editAllVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0;
         const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
         const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate}):null;
@@ -7056,7 +7058,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const nextMeta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale.source_meta||{}, {
           legacySchemaVersion:saleSchemaVersion(editingSale),
           policySnapshot:editingSale.source_meta?.policySnapshot||currentPolicySnapshot(config),
-          ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+          ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:'additive',replacementAmount:newReplacement,normalMatrixFee:0,normalVasFee:0,eligible:!!(specialOutcome?.eligible??true),strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION} : unpaid?{policyId:null,policyTitle:'인센미지급 특가',policyType:'incentive_unpaid',replacementAmount:0,normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,policyVersion:SEPTEMBER_POLICY_VERSION}:null
         }));
 
@@ -7156,7 +7158,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         paymentFirstDate:mobilePaymentFirstDate,
         paymentCount:mobilePaymentCount,
         affiliateCard:mobileAffiliateCard,
-        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+        sourceMeta:{ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
           specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyType:'additive'} : mobileSaleKind==='incentive_unpaid'?{policyType:'incentive_unpaid',policyTitle:'인센미지급 특가'}:null}
       });
       if((mobileExtraPromises||[]).length){ const rows=mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({user_id:currentEmp.id,customer_id:saved.customerId,source_sale_id:saved.saleId,task_type:'custom',title:String(x.title).trim(),base_date:saleDate,due_date:x.dueDate,status:'pending',task_meta:{}})); if(rows.length){const {error}=await supabase.from('customer_tasks').insert(rows);if(error)throw error;} }
@@ -7195,10 +7197,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       if((mobileSaleKind==='special' && mobileSpecialPolicyId)||mobileSaleKind==='incentive_unpaid'){
         const policy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
         const matrixFee=Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0);
-        const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>
-          (mobileBundleSaleTypeMap?.[bk]||'normal')==='free' ? [] : (keys||[])
-        );
-        const allVas=[...(mobileVasKeys||[]),...payableBundleVas].filter(k=>k!=='vasNone');
+        const allVas=(mobileVasKeys||[]).filter(k=>k!=='vasNone');
         const vasFee=allVas.reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0);
         const unpaid=mobileSaleKind==='incentive_unpaid';
         const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
@@ -7208,7 +7207,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const replacement=unpaid?0:Number(outcome.additionalAmount||0);
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:replacement,normalMatrixFee:unpaid?matrixFee:0,normalVasFee:unpaid?vasFee:0,eligible:!!outcome.eligible,strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),specialPolicy:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:replacement,normalMatrixFee:unpaid?matrixFee:0,normalVasFee:unpaid?vasFee:0,eligible:!!outcome.eligible,strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION}})
         }).eq('id',saved.saleId);
         saved._special={matrixFee:unpaid?matrixFee:0,vasFee:unpaid?vasFee:0,replacement};
       }
@@ -7222,7 +7221,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(matrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
 
         const vas={...(base.groups?.vas||{})};
-        [...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].forEach(k=>{
+        (mobileVasKeys||[]).forEach(k=>{
           if(k!=='vasNone')vas[k]=Number(vas[k]||0)+1;
         });
         const bundle2nd={...(base.groups?.bundle2nd||{})};
@@ -7247,7 +7246,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         commitMobileOne(
           mobileSaleDraft.ri,
           mobileSaleDraft.ci,
-          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?mobilePaymentCount:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), strategicPlan:!!mobileStrategicPlan, vasKeys:[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()], bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
+          { saleId:saved.saleId, customerName:customer, promiseCount:mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?mobilePaymentCount:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length), strategicPlan:!!mobileStrategicPlan, vasKeys:[...mobileVasKeys], bundleVasMap:mobileBundleVasMap, bundle2ndKeys:mobileBundle2ndKeys, usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
             calculationLines:mobilePreview?.calculationLines||[],
             specialMatrixOffset:saved._special?.matrixFee||0,specialVasOffset:saved._special?.vasFee||0,specialReplacementPay:saved._special?.replacement||0,
             bundleFreeOffset:freeAmounts.bundleOffset||0,bundleFreeVasOffset:freeAmounts.vasOffset||0 }
@@ -7359,7 +7358,6 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       if(plan)rows.push(['요금제',plan]);
       (meta.vasKeys||[]).forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))rows.push([it.label||'VAS',Number(it.rate)]);});
       (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);const free=(meta.bundleSaleTypeMap?.[k]||'normal')==='free';if(Number(it?.rate||0)&&!free)rows.push([it.label||'2ND',Number(it.rate)]);});
-      Object.entries(meta.bundleVasMap||{}).forEach(([bk,keys])=>(keys||[]).forEach(k=>{if(k==='vasNone'||(meta.bundleSaleTypeMap?.[bk]||'normal')==='free')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))rows.push([`2ND VAS · ${it.label||k}`,Number(it.rate)]);}));
       if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))rows.push(['중고MNP 결합',Number(it.rate)]);}
       const sp=meta.specialPolicy||{};
       if(sp.policyId||sp.policyType){
@@ -7387,14 +7385,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const base=normalizeDay(day),nextMatrix=base.matrix.map(r=>[...r]);
     nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
     const nextVas={...(base.groups?.vas||{})};
-    [...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].forEach(k=>{if(k!=='vasNone')nextVas[k]=Number(nextVas[k]||0)+1});
+    (mobileVasKeys||[]).forEach(k=>{if(k!=='vasNone')nextVas[k]=Number(nextVas[k]||0)+1});
     const nextBundle={...(base.groups?.bundle2nd||{})};mobileBundle2ndKeys.forEach(k=>nextBundle[k]=Number(nextBundle[k]||0)+1);
     const nextMnpBundle={...(base.groups?.mnpBundle||{})};if(Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle)nextMnpBundle.usedMnpBundle=Number(nextMnpBundle.usedMnpBundle||0)+1;
     const free=bundleFreeAmounts();
     const selectedPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
     const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
-    const payableBundleVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bk,keys])=>(mobileBundleSaleTypeMap?.[bk]||'normal')==='free'?[]:(keys||[]));
-    const specialVas=mobileSaleKind==='incentive_unpaid'?[...mobileVasKeys,...payableBundleVas].filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
+    const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
     const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??0):0;
@@ -7403,22 +7400,24 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const afterDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:nextDay},month,config.categoryMap,config.gibyeonColumnMap);
     const beforePay=computePay(beforeDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
     const afterPay=computePay(afterDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
-    const vasLabels=[...mobileVasKeys,...Object.values(mobileBundleVasMap||{}).flat()].filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
+    const vasLabels=(mobileVasKeys||[]).filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
     const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
     const promiseCount=mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?mobilePaymentCount:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
     const incentive=Math.max(0,Number(afterPay.currentPerformanceAmount||0)-Number(beforePay.currentPerformanceAmount||0));
     const points=Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0);
     const productivity=Number(afterPay.kpiScore||0)-Number(beforePay.kpiScore||0);
     const calculationLines=[];
-    const matrixFee=Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0);
-    calculationLines.push([mobileSaleDraft.label,matrixFee]);
-    if(vasLabels.length)calculationLines.push([`VAS ${vasLabels.join(', ')}`,null]);
-    if(secondLabels.length)calculationLines.push([`2ND ${secondLabels.join(', ')}`,null]);
+    const planDelta=Number(afterPay.matrixTotal||0)-Number(beforePay.matrixTotal||0);
+    const vasDelta=Number(afterPay.rawVasPay||0)-Number(beforePay.rawVasPay||0);
+    const secondDelta=Number(afterPay.rawBundle2ndTotal||0)-Number(beforePay.rawBundle2ndTotal||0);
+    calculationLines.push([`요금제 · ${mobileSaleDraft.label}`,planDelta]);
+    if(vasLabels.length)calculationLines.push([`VAS·보험 ${vasLabels.length}개`,vasDelta]);
+    if(secondLabels.length)calculationLines.push([`2ND ${secondLabels.length}개 · ${secondLabels.join(', ')}`,secondDelta]);
     if(mobileUsedMnpBundle)calculationLines.push(['중고 MNP 결합',Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||0)]);
-    if(free.bundleOffset||free.vasOffset)calculationLines.push(['할인·무료판매 조정',-(Number(free.bundleOffset||0)+Number(free.vasOffset||0))]);
-    if(specialMatrix||specialVas)calculationLines.push(['인센미지급 항목 제외',-(specialMatrix+specialVas)]);
+    if(free.bundleOffset)calculationLines.push(['2ND 할인·조건 미충족 제외',-Number(free.bundleOffset||0)]);
+    if(specialMatrix||specialVas)calculationLines.push(['인센미지급 특가 제외',-(specialMatrix+specialVas)]);
     if(replacement)calculationLines.push(['특가·지인 추가',replacement]);
-    return {incentive,points,productivity,calculationLines,vasLabels,secondLabels,promiseCount};
+    return {incentive,points,productivity,strategicPoints,calculationLines,vasLabels,secondLabels,promiseCount};
   })();
 
   return (
@@ -8144,11 +8143,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <div className="text-[9px] text-violet-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
                 {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-violet-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
                 {!editingSale&&<>
-                  <div className="flex justify-between mt-1.5 text-[11px]"><b className="text-emerald-700">이번 판매 총 +{won(mobilePreview.incentive)}</b><b className="text-violet-700">성과P +{fmtNum(mobilePreview.points,1)}P</b></div>
-                  <div className="flex items-center justify-between mt-1.5">
-                    <span className="text-[10px] font-semibold text-violet-600">생산성 +{fmtNum(mobilePreview.productivity,1)}P</span>
-                    <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="text-[10px] font-bold text-violet-700">{mobileCalcOpen?'계산 근거 닫기':'계산 근거 보기'}</button>
+                  <div className="mt-2 text-sm font-black text-emerald-700">이번 판매 총 +{won(mobilePreview.incentive)}</div>
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    {[['성과P',mobilePreview.points],['생산성',mobilePreview.productivity],['전략P',mobilePreview.strategicPoints]].map(([label,value])=><div key={label} className="rounded-lg bg-white/80 px-2 py-1.5 text-center"><div className="text-[9px] text-violet-400">{label}</div><div className="text-[11px] font-bold text-violet-700">+{fmtNum(value,1)}P</div></div>)}
                   </div>
+                  <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-violet-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
                   {mobileCalcOpen&&<div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 space-y-1">
                     {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-violet-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
                     <div className="pt-1 border-t border-violet-100 text-[9px] text-gray-400">등급·누적 구간 변화까지 포함한 현재 예상 증가액입니다.</div>
@@ -9676,7 +9675,6 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
           normalVas.forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:it.label||k});});
           Object.entries(meta.bundle2ndKeys||[]).forEach(()=>{});
           (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'2ND 번들 유치 수수료',amount:Number(it.rate),note:it.label||k});});
-          Object.entries(meta.bundleVasMap||{}).forEach(([bk,keys])=>(keys||[]).forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:`2ND · ${it.label||k}${(meta.bundleSaleTypeMap?.[bk]||'normal')==='free'?' · 무료판매 제외대상':''}`});}));
           if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고 MNP 결합 수수료',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
           const sp=meta.specialPolicy||{};
           if(sp.policyId){
