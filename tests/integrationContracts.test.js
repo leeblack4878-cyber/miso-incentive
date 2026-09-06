@@ -299,6 +299,18 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   assert.match(strategicSource, /vasVcolorMusic: 0\.3/);
 });
 
+test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산근거·완전한 실행취소를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /miso_recent_mobile_combos_v1/);
+  assert.match(source, /최근 판매 조합 빠른 선택/);
+  assert.match(source, /2ND·고객약속·영업비용 추가/);
+  assert.match(source, /계산 근거 보기/);
+  assert.match(source, /생산성 \+\{fmtNum\(mobilePreview\.productivity,1\)\}P/);
+  assert.match(source, /sales_expenses'\)\.delete\(\)\.eq\('source_sale_id',toast\.customerSaleId\)/);
+  assert.match(source, /if\(toast\.usedMnpBundle\)nextMnpBundle\.usedMnpBundle/);
+  assert.match(source, /방금 등록 취소/);
+});
+
 test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게 유지한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
