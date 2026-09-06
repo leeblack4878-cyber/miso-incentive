@@ -395,18 +395,30 @@ test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별�
   assert.match(policy, /runRate\.isCurrentMonth \? runRate\.factor : 1/);
 });
 
-test('일일 브리핑은 이강진 전용이며 0건 확인과 매장별 복사를 제공한다', async () => {
+test('일일 브리핑은 이강진 전용이며 0건 확인과 매장별 전달을 제공한다', async () => {
   const [source, briefing] = await Promise.all([
     readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/dailyBriefing.js', import.meta.url), 'utf8'),
   ]);
   assert.match(source, /canViewDailyBriefing=\{canViewDailyBriefing\}/);
   assert.match(source, /adminTab === 'dailyBriefing' && canViewDailyBriefing/);
-  assert.match(source, /점장 카톡용 복사/);
+  assert.match(source, /카카오 전달/);
   assert.match(source, /0건 확인 ✓/);
   assert.match(source, /inputConfirmedAt/);
   assert.match(briefing, /a50a0979-acef-40b1-98b7-f05074f1c835/);
   assert.match(briefing, /DAILY_BRIEFING_SEND_TIME = '08:30'/);
+});
+
+test('일일 브리핑은 카카오 공유와 미입력 직원 푸시 알림을 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
+  assert.match(source, /navigator\.share/);
+  assert.match(source, /카카오로 전달/);
+  assert.match(source, /daily_input_reminder/);
+  assert.match(source, /실적 입력 알림 보내기/);
+  assert.match(source, /playMisoNotificationSound/);
+  assert.match(source, /\?open=daily/);
+  assert.match(sw, /silent: false/);
 });
 
 test('특가 판매 미리보기는 선택한 날짜를 정책 계산에 전달한다', async () => {
