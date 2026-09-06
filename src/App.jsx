@@ -5981,6 +5981,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const dayMatrix = day.matrix;
   const activeMatrixCols=isSeptemberPolicyActive(month)?SEPTEMBER_MATRIX_COLUMNS:MATRIX_COLS;
+  // 9월의 33~84군은 현장 입력에서 사용하지 않습니다. 해당 고객은 '그 외'로 기록합니다.
+  // 저장 배열 인덱스는 과거 데이터 호환을 위해 그대로 두고 선택지만 숨깁니다.
+  const activeMatrixOptions=activeMatrixCols
+    .map((label,ci)=>({label,ci}))
+    .filter(option=>!(isSeptemberPolicyActive(month)&&option.ci===3));
   const isDayOff = !!day.dayOff;
 
   const recentComboStorageKey=currentEmp?.id?`miso_recent_mobile_combos_v1:${currentEmp.id}`:'';
@@ -6009,7 +6014,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const applyRecentMobileCombo=(combo)=>{
     const ri=Number(combo?.ri),maxCi=Math.max(0,activeMatrixCols.length-1);
     if(!Number.isInteger(ri)||!MATRIX_ROW_DEFS[ri])return;
-    const ci=MATRIX_ROW_DEFS[ri].hasTiers?Math.min(Math.max(0,Number(combo?.ci)||0),maxCi):0;
+    const storedCi=Math.min(Math.max(0,Number(combo?.ci)||0),maxCi);
+    const ci=MATRIX_ROW_DEFS[ri].hasTiers?(isSeptemberPolicyActive(month)&&storedCi===3?5:storedCi):0;
     const vasKeys=(combo.vasKeys||[]).filter(k=>k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k));
     const bundleKeys=(combo.bundle2ndKeys||[]).filter(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).some(v=>v.key===k)).slice(0,2);
     setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
@@ -6826,7 +6832,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setEditingSale(sale);
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
-    setMobileSaleDraft({ri:meta.ri,ci:meta.ci,label:mobileLabelFor(meta.ri,meta.ci)});
+    const editableCi=isSeptemberPolicyActive(month)&&Number(meta.ci)===3?5:meta.ci;
+    setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setMobileCustomerName(sale.customers?.customer_name||'');
     setMobileVasKeys(Array.isArray(meta.vasKeys)?meta.vasKeys:[]);
     setMobileBundle2ndKeys(meta.bundle2ndKeys);
@@ -7849,7 +7856,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   value={mobileSaleDraft.ri}
                   onChange={e=>{
                     const ri=Number(e.target.value);
-                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? Math.min(mobileSaleDraft.ci||0,activeMatrixCols.length-1) : 0;
+                    const currentCi=Math.min(mobileSaleDraft.ci||0,activeMatrixCols.length-1);
+                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? (isSeptemberPolicyActive(month)&&currentCi===3?5:currentCi) : 0;
                     setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
                   }}
                   className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
@@ -7868,7 +7876,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     }}
                     className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
                   >
-                    {activeMatrixCols.map((c,ci)=><option key={c} value={ci}>{c}</option>)}
+                    {activeMatrixOptions.map(({label,ci})=><option key={`${ci}-${label}`} value={ci}>{label}</option>)}
                   </select>
                 ):(
                   <div className="w-full rounded-xl px-2.5 py-2.5 text-xs bg-gray-50 text-gray-400">해당 없음</div>
