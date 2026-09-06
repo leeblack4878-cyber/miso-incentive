@@ -42,6 +42,7 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'miso-pay',
     data: data.data || { url: '/?open=notifications' },
     vibrate: [180, 80, 180],
+    silent: false,
     renotify: true,
   }));
 });
