@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
   Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
   UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
-  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -59,6 +59,24 @@ function showLegacyAlert(message){
 function showAppConfirm(options={}){
   if(!feedbackBridge.confirm)return Promise.resolve(window.confirm(options.message||options.title||'계속할까요?'));
   return feedbackBridge.confirm(options);
+}
+
+function playMisoNotificationSound(){
+  try{
+    const AudioContext=window.AudioContext||window.webkitAudioContext;
+    if(!AudioContext)return;
+    const context=new AudioContext(),gain=context.createGain();
+    gain.connect(context.destination);
+    gain.gain.setValueAtTime(0.0001,context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16,context.currentTime+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,context.currentTime+0.55);
+    [[659.25,0],[783.99,0.16]].forEach(([frequency,delay])=>{
+      const oscillator=context.createOscillator();
+      oscillator.type='sine';oscillator.frequency.value=frequency;oscillator.connect(gain);
+      oscillator.start(context.currentTime+delay);oscillator.stop(context.currentTime+delay+0.34);
+    });
+    setTimeout(()=>context.close().catch(()=>{}),800);
+  }catch(e){console.debug('NOTIFICATION SOUND UNAVAILABLE',e)}
 }
 function AppFeedbackHost(){
   const [toasts,setToasts]=useState([]),[dialog,setDialog]=useState(null);
@@ -1088,6 +1106,11 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const params=new URLSearchParams(window.location.search);
     if(params.get('open')==='notifications'){
       setNotificationOpen(true);
+      params.delete('open');
+      const query=params.toString();
+      window.history.replaceState({},'',`${window.location.pathname}${query?`?${query}`:''}${window.location.hash}`);
+    }else if(params.get('open')==='daily'){
+      setRole('employee');setTab('daily');
       params.delete('open');
       const query=params.toString();
       window.history.replaceState({},'',`${window.location.pathname}${query?`?${query}`:''}${window.location.hash}`);
@@ -3881,7 +3904,14 @@ function NotificationBell({ userId, onOpen }) {
           table: 'notifications',
           filter: `recipient_id=eq.${userId}`,
         },
-        () => loadUnread()
+        (payload) => {
+          loadUnread();
+          if(payload.eventType==='INSERT'){
+            playMisoNotificationSound();
+            const item=payload.new||{};
+            showAppToast(item.message||'새 알림이 도착했어요.',{title:item.title||'미소페이 알림',tone:'info'});
+          }
+        }
       )
       .subscribe();
 
@@ -4011,6 +4041,7 @@ function NotificationCenter({ userId }) {
     if (type === 'home_completed') return '✅';
     if (type === 'home_cancelled') return '⚠️';
     if (type === 'daily_input') return '📈';
+    if (type === 'daily_input_reminder') return '✍️';
     return '🔔';
   };
 
@@ -9661,7 +9692,7 @@ function dailyCalendarMetrics(raw){
   return {hs,sim,home,second,free,smart,tailored,tailoredAmount,sono,has:dayHasData(d),off:!!d.dayOff};
 }
 
-function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
+function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUserId=''}){
   const defaultDay=()=>{
     const now=new Date(),yesterday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
     if(monthKeyOf(yesterday)===month)return String(yesterday.getDate()).padStart(2,'0');
@@ -9673,6 +9704,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
   const [goalRows,setGoalRows]=useState([]);
   const [scheduleRows,setScheduleRows]=useState({tasks:[],homes:[],customers:[]});
   const [loading,setLoading]=useState(true);
+  const [reminderSending,setReminderSending]=useState(false);
   useEffect(()=>{setSelectedDay(defaultDay());setStoreKey('all')},[month]); // eslint-disable-line
   useEffect(()=>{
     let alive=true;
@@ -9733,7 +9765,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
       const d=normalizeDay(raw),daily=dailyCalendarMetrics(raw);
       const status=dailyInputStatus({dayOff:d.dayOff,hasPerformance:dayHasPerformanceData(raw),zeroConfirmed:d.inputConfirmed});
       const parts=[['HS',daily.hs],['SIM MNP',daily.sim],['2ND',daily.second],['홈',daily.home],['프리',daily.free],['스홈',daily.smart],['소노',daily.sono],['업셀',daily.tailored]].filter(([,value])=>Number(value)>0).map(([label,value])=>`${label} ${fmtNum(value,Number(value)%1?1:0)}`);
-      return {name:emp.name,status,summary:parts.length?parts.join(' · '):'기타 실적 입력'};
+      return {userId:emp.id,name:emp.name,status,summary:parts.length?parts.join(' · '):'기타 실적 입력'};
     });
     const metrics=metricDefs.map(def=>({
       key:def.key,label:def.label,unit:def.unit,
@@ -9760,14 +9792,40 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
       showAppToast(`${label} 복사했어요`,{title:'복사 완료'});
     }catch(e){showLegacyAlert(`복사 실패: ${friendlyError(e)}`)}
   };
+  const shareBriefing=async(text,title)=>{
+    try{
+      if(navigator.share){await navigator.share({title,text});return}
+      await copyText(text,title);
+      showAppToast('카카오톡 대화창에 붙여넣어 주세요.',{title:'브리핑 복사 완료',tone:'info'});
+    }catch(e){if(e?.name!=='AbortError')showLegacyAlert(`공유 실패: ${friendlyError(e)}`)}
+  };
+  const sendInputReminders=async(targetStores)=>{
+    const targets=(targetStores||visibleStores).flatMap(store=>store.inputRows
+      .filter(row=>row.status==='missing'&&row.userId)
+      .map(row=>({...row,storeName:store.storeName})));
+    const unique=[...new Map(targets.map(row=>[row.userId,row])).values()];
+    if(!unique.length)return showAppToast('선택한 범위에는 미입력 직원이 없어요.',{title:'알림 대상 없음',tone:'info'});
+    const confirmed=await showAppConfirm({title:'실적 입력 알림 보내기',message:`미입력 직원 ${unique.length}명에게 ${dateLabel} 실적 입력 알림을 보낼까요?`,confirmLabel:'알림 보내기'});
+    if(!confirmed)return;
+    setReminderSending(true);
+    const reportDate=`${month}-${String(reportDay).padStart(2,'0')}`;
+    const notifications=unique.map(row=>({
+      recipient_id:row.userId,actor_id:authUserId,type:'daily_input_reminder',
+      title:'오늘 실적을 입력해주세요 ✍️',
+      message:`${dateLabel} ${row.storeName} 실적이 아직 확인되지 않았어요. 실적이 없으면 0건 확인을 눌러주세요.`,
+      payload:{screen:'daily',reportDate,url:'/?open=daily'},
+    }));
+    const {error}=await supabase.from('notifications').insert(notifications);
+    setReminderSending(false);
+    if(error)return showLegacyAlert(`입력 알림 발송 실패: ${friendlyError(error)}`);
+    showAppToast(`${unique.length}명에게 실적 입력 알림을 보냈어요.`,{title:'알림 발송 완료'});
+  };
 
   return <div className="space-y-3">
     <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-4 text-white">
-      <div className="flex items-start justify-between gap-3">
-        <div><div className="text-xs text-violet-200">대표 전용</div><div className="text-lg font-black mt-0.5">{dateLabel} 일일 브리핑</div><div className="text-[10px] text-violet-200 mt-1">향후 자동 메일 기준 오전 {DAILY_BRIEFING_SEND_TIME} · 현재는 복사 기능부터 사용해요.</div></div>
-        <button type="button" onClick={()=>copyText(buildAllBriefingText({dateLabel,stores:briefingStores}),'전체 브리핑을')} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-violet-700">전체 복사</button>
-      </div>
+      <div><div className="text-xs text-violet-200">대표 전용</div><div className="text-lg font-black mt-0.5">{dateLabel} 일일 브리핑</div><div className="text-[10px] text-violet-200 mt-1">오전 {DAILY_BRIEFING_SEND_TIME} 기준 · 카카오 전달과 미입력 알림을 바로 보낼 수 있어요.</div></div>
       <div className="grid grid-cols-4 gap-1.5 mt-4">{[['입력',count('input')],['0건 확인',count('zero')],['미입력',count('missing')],['휴무',count('off')]].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-2 py-2 text-center"><div className="text-[9px] text-violet-100">{label}</div><div className="text-base font-black mt-0.5">{value}명</div></div>)}</div>
+      <div className="grid grid-cols-2 gap-2 mt-3"><button type="button" onClick={()=>shareBriefing(buildAllBriefingText({dateLabel,stores:visibleStores}),`${dateLabel} 일일 브리핑`)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-xs font-bold text-violet-700"><Share2 size={14}/>카카오로 전달</button><button type="button" disabled={reminderSending} onClick={()=>sendInputReminders()} className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-500 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-50"><Send size={14}/>{reminderSending?'보내는 중':'미입력 알림'}</button></div>
     </div>
 
     <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2">
@@ -9785,7 +9843,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[]}){
       return <div key={store.branch} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-50 flex items-start justify-between gap-3">
           <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">예상 달성 {good.length}/{setMetrics.length}개 · 미입력 {missing.length}명 · 0건 확인 {zero.length}명</div></div>
-          <button type="button" onClick={()=>copyText(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 피드백을`)} className="rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700">점장 카톡용 복사</button>
+          <div className="flex gap-1.5"><button type="button" onClick={()=>shareBriefing(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 브리핑`)} className="flex items-center gap-1 rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700"><Share2 size={12}/>카카오 전달</button>{missing.length>0&&<button type="button" disabled={reminderSending} onClick={()=>sendInputReminders([store])} className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-2 text-[10px] font-bold text-red-600 disabled:opacity-50"><Send size={12}/>입력 알림</button>}</div>
         </div>
         {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-violet-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
         <div className="border-b border-gray-50 px-4 py-3">
@@ -10242,7 +10300,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
-      {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} />}
+      {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}
