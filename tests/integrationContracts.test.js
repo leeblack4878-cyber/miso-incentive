@@ -311,6 +311,14 @@ test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산�
   assert.match(source, /방금 등록 취소/);
 });
 
+test('9월 모바일 입력은 사용하지 않는 33~84군을 숨기고 기존 선택을 그 외로 전환한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /option\.ci===3/);
+  assert.match(source, /storedCi===3\?5:storedCi/);
+  assert.match(source, /Number\(meta\.ci\)===3\?5:meta\.ci/);
+  assert.match(source, /activeMatrixOptions\.map/);
+});
+
 test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게 유지한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
