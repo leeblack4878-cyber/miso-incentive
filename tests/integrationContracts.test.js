@@ -319,6 +319,22 @@ test('9월 모바일 입력은 사용하지 않는 33~84군을 숨기고 기존 
   assert.match(source, /activeMatrixOptions\.map/);
 });
 
+test('9월 VAS 입력은 구형 V컬러링 중복을 숨기고 기타 전략 항목을 접어 표시한다', async () => {
+  const [source, september, hq] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/septemberPolicy.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/HqStructurePolicyView.jsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(source, /v\.key==='vasVcolor'/);
+  assert.match(source, /k==='vasVcolor'\?'vasVcolorBundle':k/);
+  assert.match(source, /기타 전략 항목 \{mobileMoreVasOpen\?'접기':'펼치기'\}/);
+  assert.match(source, /primaryMainVas/);
+  assert.match(source, /additionalMainVas/);
+  assert.match(september, /key: 'vasDaemyung', label: '소노'/);
+  assert.doesNotMatch(hq, /대명 2P/);
+  assert.match(hq, /소노 2P/);
+});
+
 test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게 유지한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
