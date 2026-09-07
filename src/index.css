@@ -26,13 +26,20 @@ select:focus-visible {
 }
 
 @media (max-width: 640px) {
-  .text-\[9px\] { font-size: 10.5px !important; line-height: 1.45 !important; }
-  .text-\[10px\] { font-size: 11.5px !important; line-height: 1.45 !important; }
-  .text-\[11px\] { font-size: 12px !important; line-height: 1.45 !important; }
+  .text-\[9px\] { font-size: 11px !important; line-height: 1.45 !important; }
+  .text-\[10px\] { font-size: 12px !important; line-height: 1.45 !important; }
+  .text-\[11px\] { font-size: 12.5px !important; line-height: 1.45 !important; }
   .text-xs { font-size: 13px !important; line-height: 1.5 !important; }
+  .text-\[9px\],
+  .text-\[10px\],
+  .text-\[11px\],
+  .text-xs,
+  .text-sm,
+  button { overflow-wrap: anywhere; word-break: keep-all; }
+  .flex > div { min-width: 0; }
   button,
-  select { min-height: 40px; }
-  input:not([type="checkbox"]):not([type="radio"]) { min-height: 42px; }
+  select { min-height: 42px; max-width: 100%; }
+  input:not([type="checkbox"]):not([type="radio"]) { min-height: 44px; max-width: 100%; }
   input[type="checkbox"],
   input[type="radio"] { width: 18px; height: 18px; }
 }
