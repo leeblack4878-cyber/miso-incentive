@@ -217,6 +217,7 @@ const SALES_AREA_STORES = Object.freeze({
 const SALES_AREA_LABELS = Object.freeze({ ansan: '안산 상권', siheung: '시흥 상권' });
 const SALES_MANAGER_AREAS = Object.freeze({ 김진백: 'ansan', 임성준: 'siheung' });
 const COMPANY_SCOPE_VIEWERS = new Set(['이강진', '김진문']);
+const NON_EXECUTIVE_COMPANY_CONTROLLERS = new Set(['정유미', '김솔이']);
 
 const DEFAULT_TENURE = [
   { key: 'under6', label: '6개월 미만 (실적무관)', rate: 0 },
@@ -2013,8 +2014,14 @@ export default function App({ authUser, authProfile, onSignOut }) {
     return()=>{alive=false};
   },[authUser?.id,loginEmp?.branch,month,canViewStoreMemberRows]);
 
-  const scopedEmployees = isFullAdmin || isHQManager
+  const loginName=String(loginEmp?.name||'').trim();
+  const loginAreaKey=SALES_MANAGER_AREAS[loginName];
+  const scopedEmployees = COMPANY_SCOPE_VIEWERS.has(loginName)
     ? employees
+    : NON_EXECUTIVE_COMPANY_CONTROLLERS.has(loginName)
+      ? employees.filter((e)=>!COMPANY_SCOPE_VIEWERS.has(String(e.name||'').trim()))
+    : loginAreaKey
+      ? employees.filter((e)=>e.id===authUser?.id||SALES_AREA_STORES[loginAreaKey]?.includes(e.branch))
     : isStoreLeader
       ? employees.filter((e) => e.branch === loginEmp?.branch)
       : employees.filter((e) => e.id === authUser?.id);
