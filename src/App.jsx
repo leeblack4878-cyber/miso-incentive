@@ -270,7 +270,7 @@ const DEFAULT_KPI_ITEMS = [
 
 const HOME_BASE_ITEMS = [
   { key: 'homeOnly', label: '홈 단독', point: 1 },
-  { key: 'homeTv', label: '홈+TV 동시청약', point: 2 },
+  { key: 'homeTv', label: 'TV(주)', point: 2 },
 ];
 
 // v21.15: 홈 청약을 가정망/소호망으로 분리 저장.
@@ -3755,7 +3755,7 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
 /* ===================== v11 홈 청약 관리 ===================== */
 const HOME_ORDER_PRODUCTS = [
   { key: 'homeOnly', label: '홈 단독' },
-  { key: 'homeTv', label: '홈+TV 동시청약' },
+  { key: 'homeTv', label: 'TV(주)' },
   { key: 'internet1g', label: '인터넷 1GB' },
   { key: 'internet500', label: '인터넷 500MB' },
   { key: 'internet100', label: '인터넷 100MB' },
@@ -3770,7 +3770,7 @@ const HOME_ORDER_PRODUCTS = [
 function homeOrderMeta(groupKey, itemKey) {
   const map = {
     'homeBase.homeOnly': { productType: 'homeOnly', label: '홈 단독' },
-    'homeBase.homeTv': { productType: 'homeTv', label: '홈+TV 동시청약' },
+    'homeBase.homeTv': { productType: 'homeTv', label: 'TV(주)' },
     'homeFlat.tvFree': { productType: 'tvFree', label: 'TV프리(부)' },
     'homeFlat.smartHome': { productType: 'smartHome', label: '스마트홈' },
   };
@@ -3793,6 +3793,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
   const [homeScheduleDate, setHomeScheduleDate] = useState('');
   const [homeCareActionSaving, setHomeCareActionSaving] = useState(false);
   const [archiveFilter, setArchiveFilter] = useState('completed');
+  const [homeBatchTarget, setHomeBatchTarget] = useState(null);
+  const [homeBatchSelected, setHomeBatchSelected] = useState([]);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -3900,6 +3902,81 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'completed',actual_install_date:homeActualCompleteDate,team_only:!!supportCredit}});
     setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load();
     if(supportCredit)await onTeamCreditSaved?.();
+  };
+
+  const openBatchAction = (group, action) => {
+    if (locked || !group?.items?.length) return;
+    const t=new Date();
+    setHomeBatchTarget({...group,action});
+    setHomeBatchSelected(group.items.map(o=>String(o.id)));
+    setHomeActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
+  };
+
+  const confirmBatchAction = async () => {
+    const selected=(homeBatchTarget?.items||[]).filter(o=>homeBatchSelected.includes(String(o.id)));
+    if(!selected.length || locked) return;
+    if(homeBatchTarget.action==='cancelled'){
+      if(!await showAppConfirm({title:`선택한 ${selected.length}개 상품을 취소할까요?`,message:'선택하지 않은 상품은 진행중 상태로 유지됩니다.',confirmLabel:'선택 상품 취소',tone:'danger'}))return;
+      setHomeCareActionSaving(true);
+      try{
+        const now=new Date().toISOString();
+        const {error}=await supabase.from('home_orders').update({status:'cancelled',cancelled_at:now,updated_at:now})
+          .in('id',selected.map(o=>o.id)).eq('user_id',userId).eq('status','pending');
+        if(error)throw error;
+        selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
+          message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type}`,
+          payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}}));
+        setHomeBatchTarget(null); setHomeBatchSelected([]); await load();
+      }catch(e){showLegacyAlert(`묶음 취소 실패: ${friendlyError(e)}`);}
+      finally{setHomeCareActionSaving(false);}
+      return;
+    }
+    if(!homeActualCompleteDate)return;
+    setHomeCareActionSaving(true);
+    try{
+      const supportById={};
+      for(const order of selected){
+        const {data,error}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',[String(order.id)]).maybeSingle();
+        if(error)throw error;
+        supportById[String(order.id)]=data||null;
+      }
+      const [y,m,d]=homeActualCompleteDate.split('-');
+      const completionMonth=`${y}-${m}`, completionDay=d, completionWorkDate=`${completionMonth}-${completionDay}`;
+      const countable=selected.filter(o=>!supportById[String(o.id)]&&o.source_group&&o.source_key);
+      if(countable.length){
+        let base;
+        if(completionMonth===month) base=normalizeDay(dailyDays?.[completionDay]);
+        else{
+          const {data:rec,error}=await supabase.from('daily_records').select('data').eq('user_id',userId).eq('work_date',completionWorkDate).maybeSingle();
+          if(error)throw error;
+          base=normalizeDay(rec?.data);
+        }
+        const groups={...base.groups};
+        countable.forEach(order=>{
+          groups[order.source_group]={...(groups[order.source_group]||{})};
+          groups[order.source_group][order.source_key]=Number(groups[order.source_group][order.source_key]||0)+1;
+        });
+        const next={...base,groups};
+        if(completionMonth===month){
+          const ok=await saveDailyDay(completionDay,next);
+          if(!ok)throw new Error('확정 실적 반영에 실패했어요.');
+        }else{
+          const {error}=await supabase.from('daily_records').upsert({user_id:userId,work_date:completionWorkDate,data:next},{onConflict:'user_id,work_date'});
+          if(error)throw error;
+        }
+      }
+      const completedAt=new Date(`${homeActualCompleteDate}T12:00:00`).toISOString(), now=new Date().toISOString();
+      const {error}=await supabase.from('home_orders').update({status:'completed',completed_at:completedAt,actual_install_date:homeActualCompleteDate,updated_at:now})
+        .in('id',selected.map(o=>o.id)).eq('user_id',userId).eq('status','pending');
+      if(error)throw error;
+      selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
+        message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type} · ${homeActualCompleteDate}`,
+        storeName:supportById[String(order.id)]?.credited_store||null,
+        payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'completed',actual_install_date:homeActualCompleteDate,team_only:!!supportById[String(order.id)]}}));
+      setHomeBatchTarget(null); setHomeBatchSelected([]); setHomeActualCompleteDate(''); await load();
+      if(selected.some(o=>supportById[String(o.id)]))await onTeamCreditSaved?.();
+    }catch(e){showLegacyAlert(`묶음 완료 처리 실패: ${friendlyError(e)}`);}
+    finally{setHomeCareActionSaving(false);}
   };
 
   const openScheduleEdit = (order) => {
@@ -4039,6 +4116,10 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
                     <div className="text-sm font-bold text-gray-900">{group.customer} 고객</div>
                     <span className="text-[10px] font-bold text-amber-600">{fmtCount(group.items.length)}개 진행중</span>
                   </div>
+                  {group.items.length>1&&<div className="grid grid-cols-2 gap-2 mb-2">
+                    <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>openBatchAction(group,'completed')} className="py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold disabled:opacity-50">여러 상품 완료</button>
+                    <button type="button" disabled={locked||homeCareActionSaving} onClick={()=>openBatchAction(group,'cancelled')} className="py-2 rounded-lg bg-white border border-gray-200 text-gray-500 text-xs font-semibold disabled:opacity-50">여러 상품 취소</button>
+                  </div>}
                   <div className="space-y-2">
                     {group.items.map(o => {
                       const def = HOME_ORDER_PRODUCTS.find(p => p.key === o.product_type);
@@ -4152,6 +4233,27 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
                 className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">닫기</button>
               <button onClick={confirmCompletion} disabled={!homeActualCompleteDate}
                 className="py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">완료 처리</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {homeBatchTarget&&(
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className={`text-xs font-semibold ${homeBatchTarget.action==='completed'?'text-emerald-600':'text-red-500'}`}>여러 상품 {homeBatchTarget.action==='completed'?'설치/개통 완료':'취소'}</div>
+            <div className="text-lg font-bold text-gray-900 mt-1">{homeBatchTarget.customer} 고객</div>
+            <div className="text-[11px] text-gray-400 mt-1">처리할 상품만 선택하세요. 선택하지 않은 상품은 진행중으로 남습니다.</div>
+            <button type="button" onClick={()=>setHomeBatchSelected(homeBatchSelected.length===homeBatchTarget.items.length?[]:homeBatchTarget.items.map(o=>String(o.id)))} className="mt-4 text-xs font-bold text-violet-600">
+              {homeBatchSelected.length===homeBatchTarget.items.length?'전체 선택 해제':'전체 선택'}
+            </button>
+            <div className="mt-2 space-y-2">
+              {homeBatchTarget.items.map(o=>{const checked=homeBatchSelected.includes(String(o.id));return <label key={o.id} className={`flex items-center gap-3 rounded-xl border p-3 ${checked?'border-violet-300 bg-violet-50':'border-gray-200 bg-white'}`}><input type="checkbox" checked={checked} onChange={()=>setHomeBatchSelected(a=>checked?a.filter(id=>id!==String(o.id)):[...a,String(o.id)])}/><span className="text-sm font-semibold text-gray-700">{HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type)?.label||o.product_type}</span></label>})}
+            </div>
+            {homeBatchTarget.action==='completed'&&<><label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">실제 설치/개통 완료일 *</label><input type="date" value={homeActualCompleteDate} onChange={e=>setHomeActualCompleteDate(e.target.value)} className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/></>}
+            <div className="grid grid-cols-2 gap-2 mt-5">
+              <button type="button" disabled={homeCareActionSaving} onClick={()=>{setHomeBatchTarget(null);setHomeBatchSelected([]);setHomeActualCompleteDate('')}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold disabled:opacity-50">닫기</button>
+              <button type="button" disabled={homeCareActionSaving||!homeBatchSelected.length||(homeBatchTarget.action==='completed'&&!homeActualCompleteDate)} onClick={confirmBatchAction} className={`py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 ${homeBatchTarget.action==='completed'?'bg-emerald-600':'bg-red-500'}`}>{homeCareActionSaving?'처리 중...':`선택 ${homeBatchSelected.length}개 처리`}</button>
             </div>
           </div>
         </div>
@@ -5692,7 +5794,7 @@ function MyInputSummary({userId,month,config}){
       const completedHomes=homeOrdersForMonth(validHomes,month,'completed');
       const pendingHomes=homeOrdersForMonth(validHomes,month,'pending');
       const addHomeRows=(rows,target)=>rows.forEach(x=>{
-        const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'홈+TV 동시청약',tvFree:'TV프리(부)',smartHome:'스마트홈'};
+        const labels={internet1g:'인터넷 1GB',internet500:'인터넷 500MB',internet100:'인터넷 100MB',homeOnly:'인터넷 단독',homeTv:'TV(주)',tvFree:'TV프리(부)',smartHome:'스마트홈'};
         const fallbackLabel=String(x.product_type||'홈 기타')
           .replace(/^internet1g$/i,'인터넷 1GB')
           .replace(/^internet500$/i,'인터넷 500MB')
@@ -6224,14 +6326,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeNetworkType, setHomeNetworkType] = useState('');
-  const [homeSaleType, setHomeSaleType] = useState('normal'); // normal | allinone
   const [homeInternet,setHomeInternet]=useState(false);
   const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
   const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
   const [homeMainTv,setHomeMainTv]=useState(false);
   const [homeMainTvPlan,setHomeMainTvPlan]=useState(''); // household: broadcastPass|premium|belowPremium, soho: premium|belowPremium
   const [homeSubTv,setHomeSubTv]=useState(false);
-  const [homeSubTvType,setHomeSubTvType]=useState('normal');
+  const [homeSubTvType,setHomeSubTvType]=useState('');
   const [homeSmartHome,setHomeSmartHome]=useState(false);
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
   const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
@@ -6652,8 +6753,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeOrderDraft({ unified:true, label:'홈 실적 입력' });
     setHomeCustomerName('');
     setHomeNetworkType('');
-    setHomeSaleType('normal');
-    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType('normal'); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
     setHomeDirectComplete(false);
     setHomeActualCompleteDate('');
     setHomePlannedDate('');
@@ -6673,6 +6773,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if (homeMainTv && !homeInternet) return showAppToast('TV(주)는 인터넷 가입과 함께 선택해주세요.',{tone:'error'});
     if (homeMainTv && !homeMainTvPlan) return showAppToast('TV(주) 요금제 가입 기준을 선택해주세요.',{tone:'error'});
     if (homeInternet && !homeInternetSpeed) return showAppToast('인터넷 속도를 선택해주세요.',{tone:'error'});
+    if (homeSubTv && !homeSubTvType) return showAppToast('TV(부) 종류를 선택해주세요.',{tone:'error'});
     if (homeMobileSimul==='usedMnp' && homeNetworkType!=='household') return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'error'});
     if (homeDirectComplete && !homeActualCompleteDate) return showAppToast('설치완료일을 입력해주세요.',{tone:'error'});
 
@@ -6682,7 +6783,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(homeInternet){
       if(homeMainTv){
         const mainTvPlanText=isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):'';
-        products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:`홈+TV 동시청약${mainTvPlanText?` · ${mainTvPlanText}`:''}`});
+        products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:`TV(주)${mainTvPlanText?` · ${mainTvPlanText}`:''}`});
       }
       else products.push({groupKey:'homeBase',itemKey:'homeOnly',productType:'homeOnly',label:'홈 단독'});
       const speedMap={
@@ -6764,7 +6865,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       for(const product of products){
         const {data:order,error}=await supabase.from('home_orders').insert({
           user_id:currentEmp.id,customer_name:customer,customer_id:linkedCustomerId,
-          product_type:product.productType,network_type:homeNetworkType,sale_type:homeSaleType,
+          product_type:product.productType,network_type:homeNetworkType,sale_type:'normal',
           status:homeDirectComplete?'completed':'pending',applied_at:appliedAt,
           completed_at:homeDirectComplete?new Date(`${homeActualCompleteDate}T12:00:00`).toISOString():null,source_work_date:sourceWorkDate,
           source_group:product.groupKey,source_key:product.itemKey,
@@ -6779,7 +6880,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           metric_label:product.label,source_type:'home_order',source_ref:String(order?.id||''),
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
-            networkType:homeNetworkType,saleType:homeSaleType,internetSpeed:homeInternetSpeed||null,
+            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,
             mainTvPlan:homeMainTv&&isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
             mainTvPlanLevel:homeMainTv?homeMainTvPlan:null,
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
@@ -8639,35 +8740,31 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               가정망/소호망은 성과 및 관리자 평가의 가정망 비중 계산에도 사용돼요.
             </div>
 
-            <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
-              3. 판매 유형
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {HOME_SALE_TYPES.map(t=>(
-                <button key={t.key} type="button" onClick={()=>setHomeSaleType(t.key)}
-                  className={`py-3 rounded-xl border text-sm font-bold ${homeSaleType===t.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>
-                  {homeSaleType===t.key?'✓ ':''}{t.label}
-                </button>
-              ))}
-            </div>
-            {homeSaleType==='allinone'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">올인원은 홈 인센티브는 0원이지만 그레이드 수량과 성과/KPI에는 정상 인정됩니다.</div>}
-
             <div className="mt-4">
-              <div className="text-xs font-semibold text-gray-600 mb-2">4. 판매 상품 <span className="font-normal text-gray-400">· 필요한 것만 선택</span></div>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={()=>{setHomeInternet(v=>!v);if(homeInternet){setHomeMainTv(false);setHomeMainTvPlan('');setHomeInternetSpeed('')}}} className={`py-3 rounded-xl border text-xs font-bold ${homeInternet?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternet?'✓ ':''}인터넷</button>
-                <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});setHomeMainTv(v=>{if(v)setHomeMainTvPlan('');return !v})}} className={`py-3 rounded-xl border text-xs font-bold ${homeMainTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTv?'✓ ':''}TV(주)</button>
-                <button type="button" onClick={()=>setHomeSubTv(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSubTv?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSubTv?'✓ ':''}TV(부)</button>
-                <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`py-3 rounded-xl border text-xs font-bold ${homeSmartHome?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
+              <div className="text-xs font-semibold text-gray-600 mb-2">3. 판매 상품 <span className="font-normal text-gray-400">· 상품을 누른 뒤 바로 세부 선택</span></div>
+              <div className="space-y-2">
+                <div className={`rounded-xl border p-2.5 ${homeInternet?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-violet-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-violet-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
+                  {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">{l}</button>)}</div>}
+                  {homeInternet&&homeInternetSpeed&&<button type="button" onClick={()=>setHomeInternetSpeed('')} className="mt-1 text-[10px] font-semibold text-gray-400">속도 변경</button>}
+                </div>
+                <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});if(homeMainTv){setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeMainTv(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeMainTv?'text-violet-700':'text-gray-600'}>{homeMainTv?'✓ ':''}TV(주)</span>{homeMainTvPlan&&<span className="text-xs text-violet-600">{homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}</span>}</button>
+                  {homeMainTv&&!homeMainTvPlan&&<div className={`grid ${homeNetworkType==='soho'?'grid-cols-2':'grid-cols-3'} gap-2 mt-2`}>{(homeNetworkType==='soho'?[['premium','프리미엄'],['belowPremium','프리미엄 미만']]:[['broadcastPass','방송패스'],['premium','프리미엄'],['belowPremium','프리미엄 미만']]).map(([k,l])=><button key={k} type="button" onClick={()=>setHomeMainTvPlan(k)} className="py-2.5 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-700">{l}</button>)}</div>}
+                  {homeMainTv&&homeMainTvPlan&&<button type="button" onClick={()=>setHomeMainTvPlan('')} className="mt-1 text-[10px] font-semibold text-gray-400">요금제 변경</button>}
+                </div>
+                <div className={`rounded-xl border p-2.5 ${homeSubTv?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{setHomeSubTv(v=>!v);if(homeSubTv)setHomeSubTvType('')}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeSubTv?'text-violet-700':'text-gray-600'}>{homeSubTv?'✓ ':''}TV(부)</span>{homeSubTv&&homeSubTvType&&<span className="text-xs text-violet-600">{homeSubTvType==='free'?'프리 부셋탑':'일반 부셋탑'}</span>}</button>
+                  {homeSubTv&&!homeSubTvType&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">프리 부셋탑</button></div>}
+                  {homeSubTv&&homeSubTvType&&<button type="button" onClick={()=>setHomeSubTvType('')} className="mt-1 text-[10px] font-semibold text-gray-400">종류 변경</button>}
+                </div>
+                <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`w-full rounded-xl border p-3 text-left text-sm font-bold ${homeSmartHome?'border-violet-300 bg-violet-50 text-violet-700':'border-gray-200 bg-white text-gray-600'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
-              {homeInternet&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">인터넷 속도 <span className="text-red-500">*</span></div><div className="grid grid-cols-3 gap-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className={`py-2.5 rounded-xl border text-xs font-bold ${homeInternetSpeed===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeInternetSpeed===k?'✓ ':''}{l}</button>)}</div></div>}
-              {homeMainTv&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3"><div className="text-xs font-semibold text-gray-700 mb-2">TV(주) 요금제 <span className="text-red-500">*</span></div><div className={`grid ${homeNetworkType==='soho'?'grid-cols-2':'grid-cols-3'} gap-2`}>{(homeNetworkType==='soho'?[['premium','프리미엄'],['belowPremium','프리미엄 미만']]:[['broadcastPass','방송패스'],['premium','프리미엄'],['belowPremium','프리미엄 미만']]).map(([k,l])=><button key={k} type="button" onClick={()=>setHomeMainTvPlan(k)} className={`py-2.5 rounded-xl border text-[11px] font-bold ${homeMainTvPlan===k?'bg-violet-100 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMainTvPlan===k?'✓ ':''}{l}</button>)}</div>{homeMainTvPlan&&<div className="mt-2 text-[10px] text-gray-500">{homeMainTvPlan==='broadcastPass'||(homeNetworkType==='soho'&&homeMainTvPlan==='premium')?'기존 단가 적용':homeMainTvPlan==='premium'?'기존 단가에서 10만원 차감':'기존 단가에서 20만원 차감'}</div>}</div>}
-              {homeSubTv&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSubTvType==='free'?'bg-violet-50 border-violet-300 text-violet-700':'bg-gray-50 border-gray-100 text-gray-500'}`}>프리 부셋탑</button></div>}
-              <div className="text-[10px] text-gray-400 mt-2">TV프리(부)와 스마트홈은 인터넷 없이 단독으로도 선택할 수 있어요.</div>
+              <div className="text-[10px] text-gray-400 mt-2">TV(부)와 스마트홈은 인터넷 없이도 선택할 수 있어요.</div>
             </div>
 
             <div className="mt-4 rounded-xl border border-gray-100 p-3">
-              <div className="text-xs font-semibold text-gray-700 mb-2">5. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
+              <div className="text-xs font-semibold text-gray-700 mb-2">4. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
               <div className="grid grid-cols-1 gap-2">
                 {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
               </div>
