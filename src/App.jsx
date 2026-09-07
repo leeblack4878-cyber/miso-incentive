@@ -191,6 +191,13 @@ const DEFAULT_STORES = [
 ];
 // 실제 영업을 하지 않는 조직 — 실적표/실적비교/지급 총액 집계에서 제외
 const NON_SALES_STORES = ['운영진', '영업지원팀'];
+const SALES_AREA_STORES = Object.freeze({
+  ansan: ['본오3동_상록수역점', '본오3동_주민센터점', '월피동_성포역점', '광정동_산본점', '고잔동_법조타운점', '본오1동_본오중학교점'],
+  siheung: ['신천동_삼미시장점', '신천동_삼미시장2호점', '대야동_롯데마트점', '장곡동_장곡역점', '거모동_도일시장점', '월곶동_월곶점', '은행동_은계사거리점'],
+});
+const SALES_AREA_LABELS = Object.freeze({ ansan: '안산 상권', siheung: '시흥 상권' });
+const SALES_MANAGER_AREAS = Object.freeze({ 김진백: 'ansan', 임성준: 'siheung' });
+const COMPANY_SCOPE_VIEWERS = new Set(['이강진', '김진문']);
 
 const DEFAULT_TENURE = [
   { key: 'under6', label: '6개월 미만 (실적무관)', rate: 0 },
@@ -1469,7 +1476,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, name, employee_code, store_name, position, hire_date, role, active')
+      .select('id, name, employee_code, store_name, store_scope, position, hire_date, role, active')
       .eq('active', true)
       .order('name', { ascending: true });
 
@@ -1489,6 +1496,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       id: p.id,
       name: p.name || (p.id === authUser.id ? (authUser.email || '내 계정') : '이름 미설정'),
       branch: p.store_name || '미지정',
+      storeScope: Array.isArray(p.store_scope) ? p.store_scope : [],
       position: p.position || '사원',
       hireDate: p.hire_date || month,
       employeeCode: p.employee_code || '',
@@ -2199,7 +2207,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
       {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
     </div>
     {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">���장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
   </div>;
 }
 
@@ -2527,21 +2535,27 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
   </div>;
 }
 
-function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGoals=false, onOpenGoals }) {
-  const members=(rows||[]).filter(r=>r.branch===branch);
-  const finalPerformance=useFinalStorePerformance(month,branch);
+function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, userName='', canEditGoals=false, onOpenGoals }) {
+  const scopedBranches=[...new Set((branches||[]).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))];
+  const members=(rows||[]).filter(r=>scopedBranches.includes(r.branch));
+  const finalPerformances=useFinalStorePerformance(month);
   const [savedGoals,setSavedGoals]=useState({});
+  const branchKey=scopedBranches.join('|');
   useEffect(()=>{
     let alive=true;
-    if(!branch){setSavedGoals({});return()=>{alive=false};}
-    supabase.from('store_goals').select('company_goals,challenge_goals').eq('month',month).eq('store_name',branch).maybeSingle()
-      .then(({data})=>{if(alive)setSavedGoals({...companyGoalDefaults(branch),...(data?.company_goals||{}),...(data?.challenge_goals||{})})});
+    if(!scopedBranches.length){setSavedGoals({});return()=>{alive=false};}
+    supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',scopedBranches)
+      .then(({data})=>{if(alive)setSavedGoals(Object.fromEntries((data||[]).map(goal=>[goal.store_name,{...(goal.company_goals||{}),...(goal.challenge_goals||{})}])))});
     return()=>{alive=false};
-  },[branch,month]);
-  if(!branch || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 매장 실적을 불러올 수 없어요.</div>;
+  },[branchKey,month]); // eslint-disable-line react-hooks/exhaustive-deps
+  if(!scopedBranches.length || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 선택 범위의 매장 실적을 불러올 수 없어요.</div>;
 
   const sum=(fn)=>members.reduce((a,r)=>a+Number(fn(r)||0),0);
-  const goal={...companyGoalDefaults(branch),...savedGoals};
+  const goal=scopedBranches.reduce((total,branch)=>{
+    const branchGoal={...companyGoalDefaults(branch),...(savedGoals[branch]||{})};
+    Object.entries(branchGoal).forEach(([key,value])=>{total[key]=Number(total[key]||0)+Number(value||0)});
+    return total;
+  },{});
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
 
   const inputMetrics=[
@@ -2556,7 +2570,27 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
     {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',current:sum(r=>r.draft?.tailoredAmount||0),target:Number(goal.tailoredAmount||0)},
     {key:'tailored',label:'업셀건',unit:'count',current:sum(r=>r.draft?.tailoredCount||0),target:Number(goal.tailoredCount||goal.tailored||0)},
   ];
-  const metrics=inputMetrics.map(m=>({...m,inputCurrent:m.current,current:finalPerformance?finalStoreMetric(finalPerformance,m.key,m.current):m.current}));
+  const metrics=inputMetrics.map(m=>{
+    const current=scopedBranches.reduce((total,branch)=>{
+      const branchMembers=members.filter(row=>row.branch===branch);
+      const branchMetric=inputMetrics.find(metric=>metric.key===m.key);
+      const inputValue=branchMembers.reduce((sumValue,row)=>{
+        if(m.key==='hs')return sumValue+hsCount(row.draft);
+        if(m.key==='simMnp')return sumValue+(row.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
+        if(m.key==='second')return sumValue+(row.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
+        if(m.key==='productivity')return sumValue+Number(row.pay?.kpiScore||0);
+        if(m.key==='home')return sumValue+Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0);
+        if(m.key==='free')return sumValue+Number(row.draft?.homeFlat?.tvFree||0);
+        if(m.key==='smart')return sumValue+Number(row.draft?.homeFlat?.smartHome||0);
+        if(m.key==='sono')return sumValue+Object.values(row.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0);
+        if(m.key==='tailoredAmount')return sumValue+Number(row.draft?.tailoredAmount||0);
+        if(m.key==='tailored')return sumValue+Number(row.draft?.tailoredCount||0);
+        return sumValue+Number(branchMetric?.current||0);
+      },0);
+      return total+finalStoreMetric(finalPerformances?.[branch],m.key,inputValue);
+    },0);
+    return {...m,inputCurrent:m.current,current};
+  });
 
   const fmtValue=(m,v)=>{
     if(m.unit==='won')return won(Math.round(v));
@@ -2568,9 +2602,8 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50">
         <div className="text-xs text-gray-400">📊 {monthLabel(month)}</div>
-        <div className="text-sm font-bold text-gray-900 mt-0.5">{displayStoreName(branch)} 매장 목표 현황</div>
-        <div className="text-[10px] text-gray-400 mt-1">{finalPerformance?'마감 확정 실적으로 목표 달성률을 표시해요.':'매장 누적 실적과 목표 달성률을 한 번에 확인해요.'}</div>
-        {finalPerformance&&<div className="mt-2 rounded-lg bg-emerald-50 px-2.5 py-2 text-[9px] font-semibold text-emerald-700">✓ {monthLabel(month)} 마감 확정 · 개인 실적/급여 원장은 변경되지 않아요.</div>}
+        <div className="text-sm font-bold text-gray-900 mt-0.5">{scopeLabel||displayStoreName(scopedBranches[0])} 목표 현황</div>
+        <div className="text-[10px] text-gray-400 mt-1">{scopedBranches.length>1?`${scopedBranches.length}개 매장 누적 실적과 합산 목표입니다.`:'매장 누적 실적과 목표 달성률을 한 번에 확인해요.'}</div>
       </div>
 
       <div className="px-3 py-2">
@@ -2583,7 +2616,7 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
           return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
             <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
             {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
-            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}{finalPerformance&&Number(m.current)!==Number(m.inputCurrent)&&<span className="block text-[8px] font-normal text-gray-400">입력 {fmtValue(m,m.inputCurrent)}</span>}</span>
+            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}{Number(m.current)!==Number(m.inputCurrent)&&<span className="block text-[8px] font-normal text-gray-400">입력 {fmtValue(m,m.inputCurrent)}</span>}</span>
             <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
             <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{fmtValue(m,forecast)}</span>
           </div>;
@@ -2596,9 +2629,9 @@ function StoreHomeOverview({ rows, branch, month, userId, userName='', canEditGo
       rows={members}
       userId={userId}
       userName={userName}
-      userBranch={branch}
-      branchOnly={branch}
-      title="매장 월 누적 순위"
+      userBranch={scopedBranches.length===1?scopedBranches[0]:''}
+      branchOnly={scopedBranches.length===1?scopedBranches[0]:''}
+      title={`${scopeLabel||displayStoreName(scopedBranches[0])} 월 누적 순위`}
       showAll
     />
   </div>;
@@ -5508,14 +5541,42 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시��니다.</div>}
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시합니다.</div>}
   </div>;
+}
+
+function employeeStoreScopeOptions(employee, rows=[]) {
+  const available=[...new Set((rows||[]).map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
+  const keep=branches=>(branches||[]).filter(branch=>available.includes(branch));
+  const name=String(employee?.name||'').trim();
+  if(COMPANY_SCOPE_VIEWERS.has(name))return [
+    {key:'company',label:'회사 전체',branches:available},
+    {key:'area:ansan',label:SALES_AREA_LABELS.ansan,branches:keep(SALES_AREA_STORES.ansan)},
+    {key:'area:siheung',label:SALES_AREA_LABELS.siheung,branches:keep(SALES_AREA_STORES.siheung)},
+    ...available.map(branch=>({key:`store:${branch}`,label:displayStoreName(branch),branches:[branch]})),
+  ];
+  const areaKey=SALES_MANAGER_AREAS[name];
+  if(areaKey){
+    const branches=keep(employee?.storeScope?.length?employee.storeScope:SALES_AREA_STORES[areaKey]);
+    return [
+      {key:`area:${areaKey}`,label:SALES_AREA_LABELS[areaKey],branches},
+      ...branches.map(branch=>({key:`store:${branch}`,label:displayStoreName(branch),branches:[branch]})),
+    ];
+  }
+  return employee?.branch?[{key:`store:${employee.branch}`,label:displayStoreName(employee.branch),branches:[employee.branch]}]:[];
 }
 
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile, onOpenStoreGoals }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
+  const storeScopeOptions=useMemo(()=>employeeStoreScopeOptions(currentEmp,competitionRows),[currentEmp?.name,currentEmp?.branch,competitionRows]);
+  const [storeScopeKey,setStoreScopeKey]=useState('');
+  useEffect(()=>{
+    if(!storeScopeOptions.length){setStoreScopeKey('');return;}
+    setStoreScopeKey(current=>storeScopeOptions.some(option=>option.key===current)?current:storeScopeOptions[0].key);
+  },[storeScopeOptions]);
+  const selectedStoreScope=storeScopeOptions.find(option=>option.key===storeScopeKey)||storeScopeOptions[0];
   const [homeApprovalPending,setHomeApprovalPending]=useState(0);
   const [approvalRows,setApprovalRows]=useState([]);
   const [approvalOpen,setApprovalOpen]=useState(false);
@@ -5705,7 +5766,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               title={`${monthLabel(month)} 월 누적 순위`}
             />
           </> : <>
-            <StoreHomeOverview rows={competitionRows} branch={currentEmp?.branch} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
+            {storeScopeOptions.length>1&&<div className="rounded-2xl border border-gray-100 bg-white p-3">
+              <div className="mb-2 text-[10px] font-bold text-gray-500">조회 범위</div>
+              <select value={storeScopeKey} onChange={event=>setStoreScopeKey(event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700">
+                {storeScopeOptions.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}
+              </select>
+            </div>}
+            <StoreHomeOverview rows={competitionRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
               canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />
           </>}
         </div>
