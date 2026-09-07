@@ -686,6 +686,16 @@ test('취소된 구버전 홈 주문은 이전 방식 입력 실적으로 다시
   assert.match(source, /\[legacyMobileMatrix,day,daySales,dayHomeOrders\]/);
 });
 
+test('취소된 구버전 홈 집계는 내역·KPI·예상급여에서도 제외한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function applyCancelledLegacyHomeAdjustments/);
+  assert.match(source, /o\.status==='cancelled'.*?!linkedRefs\.has\(String\(o\.id\)\)/);
+  assert.match(source, /const effectiveDailyRecords=useMemo/);
+  assert.match(source, /applyDailyToDraft\(rec\.draft, effectiveDailyRecords\[e\.id\]/);
+  assert.match(source, /dailyDays=\{effectiveDailyRecords\[empId\]/);
+  assert.match(source, /dailyRecords=\{effectiveDailyRecords\}/);
+});
+
 test('모바일 작은 글씨와 긴 문구는 카드 밖으로 넘치지 않는다', async () => {
   const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
   assert.match(css, /\.text-\\\[9px\\\] \{ font-size: 11px !important/);
