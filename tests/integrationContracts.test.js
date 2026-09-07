@@ -483,3 +483,16 @@ test('월말 예상에서 건당 지급 수량은 정수 반올림하고 포인�
   assert.match(source, /forecastPlan115Count=Math\.round/);
   assert.match(source, /key==='productivity'\|\|key==='tailoredAmount'\?value:Math\.round\(value\)/);
 });
+
+test('지원 판매는 선택 매장 팀 실적에만 반영하고 개인 계산에서 제외한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const schema = await readFile(new URL('../sql/team_sales_credits.sql', import.meta.url), 'utf8');
+  assert.match(source, /\['김솔이','이강진','김진문'\]\.includes\(loginEmp\.name\)/);
+  assert.match(source, /from\('team_sales_credits'\)\.insert\(\{seller_id:authUser\.id,credited_store:teamSupportStore/);
+  assert.match(source, /if\(sale\.source_meta\?\.teamOnly\)return/);
+  assert.match(source, /const personalSalesRows=salesRows\.filter\(\(r\)=>!r\.teamOnly\)/);
+  assert.match(source, /source_type==='home'&&!credit\.is_completed/);
+  assert.match(source, /storeName:activeTeamSupport\?teamSupportStore:null/);
+  assert.match(schema, /max\(h\.actual_install_date\)/);
+  assert.match(schema, /source_sale_id uuid references public\.customer_sales\(id\) on delete cascade/);
+});
