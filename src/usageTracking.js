@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 
-const APP_USAGE_VERSION = '2026-09-usage-v1';
+const APP_USAGE_VERSION = '2026-09-usage-v2';
 const DEDUPE_MS = 30_000;
 const SAFE_KEY = /^[a-z0-9_-]{1,80}$/;
 
@@ -33,6 +33,18 @@ export async function trackUsageEvent(input = {}) {
     console.warn('USAGE TRACKING ERROR', error);
     return false;
   }
+}
+
+export function safeClientErrorKey(value='') {
+  const message=String(value||'').toLowerCase();
+  if(/loading chunk|failed to fetch dynamically imported module|importing a module script/.test(message))return 'chunk_load';
+  if(/network|failed to fetch|load failed|offline/.test(message))return 'network';
+  if(/quota|storage/.test(message))return 'device_storage';
+  return 'runtime';
+}
+
+export function trackClientError({userId,role,value}={}){
+  return trackUsageEvent({userId,role,screenKey:'client_error',featureKey:`error_${safeClientErrorKey(value)}`});
 }
 
 const EMPLOYEE_SCREENS = {
@@ -75,7 +87,18 @@ export function startUsageTracking({ userId, role }) {
     if (!key) return;
     trackUsageEvent({ userId, role, screenKey: `${manager ? 'manager' : 'employee'}_${key}` });
   };
+  const onError=(event)=>{
+    const resourceFailure=event?.target&&event.target!==window&&!event.message;
+    trackClientError({userId,role,value:resourceFailure?'resource load failed':event?.message});
+  };
+  const onUnhandledRejection=(event)=>trackClientError({userId,role,value:event?.reason?.name||event?.reason?.message||'promise rejection'});
 
   document.addEventListener('click', onClick, true);
-  return () => document.removeEventListener('click', onClick, true);
+  window.addEventListener('error',onError,true);
+  window.addEventListener('unhandledrejection',onUnhandledRejection);
+  return () => {
+    document.removeEventListener('click', onClick, true);
+    window.removeEventListener('error',onError,true);
+    window.removeEventListener('unhandledrejection',onUnhandledRejection);
+  };
 }

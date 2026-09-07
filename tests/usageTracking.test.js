@@ -13,3 +13,12 @@ test('사용기록은 화면·기능 식별자만 저장하고 본문 데이터�
   assert.match(sql, /enable row level security/i);
   assert.match(sql, /with check \(\(select auth\.uid\(\)\) = user_id\)/i);
 });
+
+test('클라이언트 오류는 본문 없이 안전한 종류만 기록한다', async () => {
+  const source = await readFile(new URL('../src/usageTracking.js', import.meta.url), 'utf8');
+  assert.match(source, /safeClientErrorKey/);
+  assert.match(source, /featureKey:`error_\$\{safeClientErrorKey\(value\)\}`/);
+  assert.match(source, /window\.addEventListener\('error',onError,true\)/);
+  assert.match(source, /window\.addEventListener\('unhandledrejection',onUnhandledRejection\)/);
+  assert.doesNotMatch(source, /error_message|error_stack|stack_trace/);
+});
