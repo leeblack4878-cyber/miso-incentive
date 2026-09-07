@@ -633,3 +633,26 @@ test('지원 판매는 선택 매장 팀 실적에만 반영하고 개인 계산
   assert.match(schema, /max\(h\.actual_install_date\)/);
   assert.match(schema, /source_sale_id uuid references public\.customer_sales\(id\) on delete cascade/);
 });
+
+test('신규 홈 입력은 판매유형 없이 상품별 세부항목을 바로 선택한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const modal = source.match(/\{homeOrderDraft && \([\s\S]*?\{homeExpenseOpen&&/)?.[0] || '';
+  assert.doesNotMatch(modal, /판매 유형|HOME_SALE_TYPES|올인원/);
+  assert.match(modal, /상품을 누른 뒤 바로 세부 선택/);
+  assert.match(modal, /homeInternet&&!homeInternetSpeed/);
+  assert.match(modal, /homeMainTv&&!homeMainTvPlan/);
+  assert.match(modal, /homeSubTv&&!homeSubTvType/);
+  assert.match(source, /sale_type:'normal'/);
+  assert.match(source, /homeTv:'TV\(주\)'/);
+});
+
+test('같은 고객의 홈 상품은 선택 항목만 묶음 완료·취소한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const manager = source.match(/function HomeOrderManager[\s\S]*?function NotificationBell/)?.[0] || '';
+  assert.match(manager, /여러 상품 완료/);
+  assert.match(manager, /여러 상품 취소/);
+  assert.match(manager, /homeBatchSelected\.includes\(String\(o\.id\)\)/);
+  assert.match(manager, /선택하지 않은 상품은 진행중으로 남습니다/);
+  assert.match(manager, /\.in\('id',selected\.map\(o=>o\.id\)\)\.eq\('user_id',userId\)\.eq\('status','pending'\)/);
+  assert.match(manager, /countable\.forEach\(order=>/);
+});
