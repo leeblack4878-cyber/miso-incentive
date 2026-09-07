@@ -496,6 +496,15 @@ test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별�
   assert.match(policy, /runRate\.isCurrentMonth \? runRate\.factor : 1/);
 });
 
+test('무거운 관리자 도구는 선택할 때 분리 로딩한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /React\.lazy\(\(\)=>import\('\.\/HqStructurePolicyView'\)\)/);
+  assert.match(source, /React\.lazy\(\(\)=>import\('\.\/PendingApprovals'\)\)/);
+  assert.match(source, /React\.lazy\(\(\)=>import\('\.\/ProfileEditRequests'\)\)/);
+  assert.match(source, /React\.lazy\(\(\)=>import\('\.\/PasswordResetAdmin'\)\)/);
+  assert.match(source, /React\.Suspense fallback=\{<DeferredAdminPanelFallback label="본사 구조정책"\/>\}/);
+});
+
 test('일일 브리핑은 이강진 전용이며 0건 확인과 매장별 전달을 제공한다', async () => {
   const [source, briefing] = await Promise.all([
     readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),

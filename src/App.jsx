@@ -7,10 +7,10 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
-import HqStructurePolicyView from './HqStructurePolicyView';
-import PasswordResetAdmin from './PasswordResetAdmin';
-import PendingApprovals from './PendingApprovals';
-import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
+const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
+const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
+const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
+const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
 import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
   summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate,
@@ -8799,6 +8799,10 @@ function DailySaveBadge({ state, isOnline=true, onRetry }) {
   return <span className={`${base} border-gray-100 bg-gray-50 text-gray-500`}><Check size={11} />동기화 정상</span>;
 }
 
+function DeferredAdminPanelFallback({label='관리 화면'}){
+  return <div className="flex min-h-28 items-center justify-center gap-2 rounded-2xl border border-gray-100 bg-white text-xs font-semibold text-gray-400"><Loader2 size={15} className="animate-spin"/>{label} 불러오는 중...</div>;
+}
+
 
 function ColHeader({ label }) {
   if (label.includes('·')) {
@@ -10895,7 +10899,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}
       {adminTab === 'history' && <HistoryTab employees={employees} month={month} config={config} />}
-      {adminTab === 'hqStructure' && canViewHqStructure && <HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} />}
+      {adminTab === 'hqStructure' && canViewHqStructure && <React.Suspense fallback={<DeferredAdminPanelFallback label="본사 구조정책"/>}><HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} /></React.Suspense>}
 
       {adminTab === 'employees' && (
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} />
@@ -11280,9 +11284,11 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
 
   return (
     <div className="max-w-2xl space-y-4">
-      <PendingApprovals />
-      <ProfileEditRequests />
-      <PasswordResetAdmin authUserId={authUserId}/>
+      <React.Suspense fallback={<DeferredAdminPanelFallback label="직원 관리 도구"/>}>
+        <PendingApprovals />
+        <ProfileEditRequests />
+        <PasswordResetAdmin authUserId={authUserId}/>
+      </React.Suspense>
       <Section title="매장 관리" sub={`${stores.length}개 매장`} defaultOpen>
         <div className="p-3 flex gap-2">
           <input placeholder="새 매장명 (예: 동명_매장명)" value={newStore} onChange={(e) => setNewStore(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
