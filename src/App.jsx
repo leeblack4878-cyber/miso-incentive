@@ -2214,6 +2214,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
 
 function managerActualFromDraft(d,key){
   if(key==='hs')return hsCount(d);
+  if(key==='plan115')return HS_PARTS.reduce((sum,part)=>sum+Number(d.matrix?.[part.idx]?.[0]||0),0);
   const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
   const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
   if(key==='mnp')return hsMnp+simMnp;
@@ -2246,8 +2247,9 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     supabase.from('store_goals').select('store_name,company_goals').eq('month',month)
   ]);if(Array.isArray(c?.metrics)&&c.metrics.length)setAaConfig(c.metrics);setSnap(s||{verified_metrics:{},external_inputs:{}});setAllGoals(g||[]);})();},[month,activeStore]);
   const storeRows=(rows||[]).filter(r=>r.branch===activeStore);
-  const live={};['hs','home','mnp','simMnp','subTvHousehold','tvFree','smartHome','second','tailoredCount','otherCustomer','tailoredAmount','daemyung','prospectMnp'].forEach(k=>live[k]=storeRows.reduce((s,r)=>s+managerActualFromDraft(r.draft,k),0));
+  const live={};['hs','plan115','home','mnp','simMnp','subTvHousehold','tvFree','smartHome','second','tailoredCount','otherCustomer','tailoredAmount','daemyung','prospectMnp'].forEach(k=>live[k]=storeRows.reduce((s,r)=>s+managerActualFromDraft(r.draft,k),0));
   live.productivity=storeRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
+  live.strategicPoints=storeRows.reduce((s,r)=>s+Number(r.pay?.strategicPoints||0),0);
   const verified=snap?.verified_metrics||{};
   const actual=(key)=>Number(verified[key]??live[key]??0);
   // 관리자 > 회사 목표 > 회사 기준수량을 평가의 단일 기준으로 사용합니다.
@@ -2280,8 +2282,9 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const operator=managerOperatorForStore(activeStore);
   const viewer=(employees||[]).find(e=>e.id===authUserId);
   const canViewManagerIncentive=canSwitchStores||!!(operator?.name&&viewer?.name===operator.name&&viewer?.branch===activeStore);
-  const strategicRatio=verified.strategicRatio??null;
-  const plan115Count=Number(verified.plan115Count||0),plan115Ratio=hsActual>0?plan115Count/hsActual*100:0;
+  const strategicPoints=Number(verified.strategicPoints??live.strategicPoints??0);
+  const strategicRatio=hsActual>0?strategicPoints/hsActual*100:0;
+  const plan115Count=Number(verified.plan115Count??live.plan115??0),plan115Ratio=hsActual>0?plan115Count/hsActual*100:0;
   const subTvSmartRatio=hsActual>0?(actual('subTvHousehold')+actual('smartHome'))/hsActual*100:null;
   const managerEstimate=calculateSeptemberManagerIncentive({
     actual:{hs:hsActual,home:actual('home'),tvFree:actual('tvFree'),smartHome:actual('smartHome')},
@@ -2353,6 +2356,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
           <div className="mt-2 text-[10px] text-violet-100 text-right">현재 {Math.round(managerForecastFactor===1?100:100/managerForecastFactor)}% 경과 기준 예상</div>
           <div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-relaxed">임팩트 평가 지급률은 월중 금액에 적용하지 않고 월 마감 시 최종 반영해요.</div>
         </div>
+        <div className="grid grid-cols-2 gap-2"><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">전략P 비중 · 자동</div><div className="text-base font-black text-violet-700 mt-1">{fmtNum(strategicRatio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">전략P {fmtNum(strategicPoints,1)}P ÷ HS {fmtCount(hsActual)}건</div></div><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">115군 비중 · 자동</div><div className="text-base font-black text-violet-700 mt-1">{fmtNum(plan115Ratio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">115군 {fmtCount(plan115Count)}건 ÷ HS {fmtCount(hsActual)}건</div></div></div>
         <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">성과 인센티브</div><div className="text-[10px] text-gray-400 mt-0.5">달성 구간의 건당 금액 × 실제 완료 건수 · 보라색은 월말 예상</div></div>{managerEstimate.metrics.map((m,index)=>{const forecast=forecastManagerEstimate.metrics[index];return <div key={m.key} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold">{{hs:'HS',home:'홈(소호 포함)',tvFree:'TV프리(부)',smartHome:'스마트홈'}[m.key]}</div><div className="text-[10px] text-gray-400 mt-1">현재 {fmtNum(m.actual,1)} / {fmtNum(m.target,1)}건 · {m.achievement.toFixed(0)}% · {m.tier}</div><div className="text-[10px] font-semibold text-violet-600 mt-1">예상 {fmtNum(forecast.actual,1)}건 · {forecast.achievement.toFixed(0)}% · {forecast.tier}</div></div><div className="text-right"><div className="text-sm font-black text-gray-800">{won(m.amount)}</div><div className="text-[10px] font-bold text-violet-700 mt-1">예상 {won(forecast.amount)}</div><div className="text-[9px] text-gray-400">{forecast.rate?`예상 건당 ${won(forecast.rate)}`:'예상도 지급 전'}</div></div></div>{m.key==='hs'&&<div className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] ${m.withheld?'bg-red-50 text-red-600':'bg-gray-50 text-gray-500'}`}>{m.homeBonus>0?`가정망 홈 12% 이상 · HS +20% ${won(m.homeBonus)}`:'가정망 홈 12% 추가 조건 미달'} · {m.strategicKnown?(m.withheld?'전략P 160% 미만으로 HS 미지급':`전략P ${fmtNum(Number(strategicRatio),1)}%`):'전략P 비중 확인 전'}</div>}</div>})}</div>
         <div className="grid grid-cols-2 gap-3"><div className="bg-white rounded-2xl border p-4"><div className="text-[10px] text-gray-400">추가 정책</div><div className="text-lg font-black text-gray-800 mt-1">+{won(managerEstimate.bonusTotal)}</div><div className="text-[10px] font-bold text-violet-700 mt-1">예상 +{won(forecastManagerEstimate.bonusTotal)}</div><div className="mt-2 space-y-1">{managerEstimate.bonuses.map((x,index)=>{const forecast=forecastManagerEstimate.bonuses[index];return <div key={x.key} className="flex justify-between gap-2 text-[10px]"><span className={x.achieved?'text-gray-700 font-semibold':'text-gray-400'}>{x.label}</span><span className="text-right"><b className={x.amount?'text-gray-700':'text-gray-300'}>{x.amount?`+${won(x.amount)}`:'—'}</b>{Number(forecast?.amount)!==Number(x.amount)&&<b className="block text-violet-600">예상 +{won(forecast?.amount||0)}</b>}</span></div>})}</div></div><div className="bg-white rounded-2xl border p-4"><div className="text-[10px] text-gray-400">현재 확인된 차감</div><div className="text-lg font-black text-red-500 mt-1">-{won(managerEstimate.deductionTotal)}</div><div className="mt-2 space-y-1">{managerEstimate.deductions.length?managerEstimate.deductions.map(x=><div key={x.key} className="flex justify-between text-[10px]"><span className="text-gray-600">{x.label}</span><b className="text-red-500">-{won(x.amount)}</b></div>):<div className="text-[10px] text-gray-300">현재 확인된 차감 없음</div>}</div></div></div>
         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[10px] text-amber-700 leading-relaxed">현재 입력·확인된 실적 기준 예상액이에요. 전략P·115군과 월말 임팩트 값이 확정되면 금액이 달라질 수 있습니다. · 2ND 기준 {septemberManagerStoreType(activeStore)==='consignment'?'위탁 20건':'자가 10건'}</div>
