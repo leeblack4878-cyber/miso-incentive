@@ -6408,6 +6408,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [extraAmount,setExtraAmount]=useState('');
   const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
   const [daySales,setDaySales]=useState([]);
+  // customer_sales가 없던 구버전 홈 주문도 일일 집계의 원본으로 인식합니다.
+  // 특히 취소된 주문을 '이전 방식 입력 실적'으로 다시 복원하게 만드는 것을 막습니다.
+  const [dayHomeOrders,setDayHomeOrders]=useState([]);
   const [homePreviewPolicy,setHomePreviewPolicy]=useState(null); // 설치예정 포함, 입력건 예상 홈 인센티브
   const [saleIncentiveOpen,setSaleIncentiveOpen]=useState(null);
   const [daySalesLoading,setDaySalesLoading]=useState(false);
@@ -6671,19 +6674,21 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         .eq('sale_date',saleDate)
         .order('created_at',{ascending:false}),
       supabase.from('home_orders')
-        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,actual_install_date')
+        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
         .eq('user_id',currentEmp.id)
         .gte('source_work_date',`${month}-01`)
         .lt('source_work_date',monthTo)
     ]);
     if(!saleRes.error)setDaySales(saleRes.data||[]);
     if(!homeRes.error){
+      setDayHomeOrders((homeRes.data||[]).filter(o=>String(o.source_work_date||'').slice(0,10)===saleDate));
       // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
       // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
       const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
       setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
     }else{
       console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
+      setDayHomeOrders([]);
       setHomePreviewPolicy(null);
     }
     setDaySalesLoading(false);
@@ -7213,8 +7218,23 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const d=normalizeDay(day);
     const representedHome={};
     const addRep=(g,k)=>{const key=`${g}.${k}`;representedHome[key]=Number(representedHome[key]||0)+1};
+    const representedOrderRefs=new Set();
     (daySales||[]).filter(x=>x.source_type==='home_order').forEach(sale=>{
+      if(sale.source_ref)representedOrderRefs.add(String(sale.source_ref));
       const pt=inferHomeProductTypeFromLabel(sale.metric_label);
+      if(pt==='homeOnly')addRep('homeBase','homeOnly');
+      else if(pt==='homeTv')addRep('homeBase','homeTv');
+      else if(pt==='tvFree')addRep('homeFlat','tvFree');
+      else if(pt==='smartHome')addRep('homeFlat','smartHome');
+      else if(pt==='internet100')addRep('homeFlat','home100Only');
+      else if(pt==='internet500')addRep('homeFlat','home500Only');
+      else if(pt==='internet1g')addRep('homeFlat','home1GBOnly');
+    });
+    // 구버전에는 home_orders만 있고 customer_sales가 없는 건이 있습니다.
+    // 완료/진행/취소 여부와 관계없이 이미 존재하는 원본 주문이면 legacy 잔여분으로 다시 만들지 않습니다.
+    (dayHomeOrders||[]).filter(o=>!representedOrderRefs.has(String(o.id))).forEach(o=>{
+      if(o.source_group&&o.source_key){addRep(o.source_group,o.source_key);return;}
+      const pt=o.product_type;
       if(pt==='homeOnly')addRep('homeBase','homeOnly');
       else if(pt==='homeTv')addRep('homeBase','homeTv');
       else if(pt==='tvFree')addRep('homeFlat','tvFree');
@@ -7254,7 +7274,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       });
     }
     return rows;
-  },[legacyMobileMatrix,day,daySales]);
+  },[legacyMobileMatrix,day,daySales,dayHomeOrders]);
 
   const openLegacySaleRow=(row)=>{
     if(locked)return;
