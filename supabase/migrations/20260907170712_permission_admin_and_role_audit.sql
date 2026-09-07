@@ -31,6 +31,11 @@ create table if not exists public.profile_role_audit (
   changed_at timestamptz not null default now()
 );
 
+create index if not exists profile_role_audit_profile_id_idx
+  on public.profile_role_audit(profile_id);
+create index if not exists profile_role_audit_changed_by_idx
+  on public.profile_role_audit(changed_by);
+
 alter table public.profile_role_audit enable row level security;
 grant select on public.profile_role_audit to authenticated;
 
