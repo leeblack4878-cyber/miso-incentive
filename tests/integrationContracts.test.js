@@ -212,6 +212,20 @@ test('직원 전환 시 선택한 직원의 고객·약속·홈 설치를 일관
   assert.match(sql, /can_write_target\(user_id\)/);
 });
 
+test('대리관리 직원 목록은 대표·실장, 담당 상권, 임원 제외 전사 범위를 구분한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /NON_EXECUTIVE_COMPANY_CONTROLLERS = new Set\(\['정유미', '김솔이'\]\)/);
+  assert.match(source, /COMPANY_SCOPE_VIEWERS\.has\(loginName\)[\s\S]*?employees/);
+  assert.match(source, /NON_EXECUTIVE_COMPANY_CONTROLLERS\.has\(loginName\)[\s\S]*?!COMPANY_SCOPE_VIEWERS\.has/);
+  assert.match(source, /loginAreaKey[\s\S]*?e\.id===authUser\?\.id\|\|SALES_AREA_STORES\[loginAreaKey\]/);
+
+  const sql = await readFile(new URL('../supabase/migrations/20260907165135_refine_employee_proxy_scope.sql', import.meta.url), 'utf8');
+  assert.match(sql, /v\.name in \('이강진', '김진문'\)/);
+  assert.match(sql, /v\.name in \('정유미', '김솔이'\)/);
+  assert.match(sql, /v\.name = '김진백'/);
+  assert.match(sql, /v\.name = '임성준'/);
+});
+
 test('직원 홈 설치 처리 내역은 완료와 취소를 별도로 조회한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const homeManager = source.match(/function HomeOrderManager[\s\S]*?function [A-Z]/)?.[0]||'';
