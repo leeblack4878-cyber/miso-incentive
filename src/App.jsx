@@ -962,7 +962,11 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const smartHomeRate = config.homeFlat.find((t) => t.key === 'smartHome')?.rate || 0;
   const tvFreePay = homePolicy ? Number(homePolicy.tvFreePay||0) : Number(draft.homeFlat?.tvFree || 0) * tvFreeRate;
   const smartHomePay = homePolicy ? Number(homePolicy.smartHomePay||0) : Number(draft.homeFlat?.smartHome || 0) * smartHomeRate;
-  const homeAddonPay = homePolicy ? Number(homePolicy.homeAddonPay||0) : calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []);
+  // 홈 동시판매 수수료는 본 홈 상품이 존재할 때만 지급합니다.
+  // 구버전 홈 건을 삭제한 뒤 addMnp 같은 부가 집계만 남아 30만원이 표시되는 것을 방지합니다.
+  const homeAddonPay = homePolicy
+    ? Number(homePolicy.homeAddonPay||0)
+    : homeAnyCount>0 ? calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []) : 0;
   const renewPay = Math.max(0, calculateFlatIncentive(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = calculateFlatIncentive(draft.mnpBundle || {}, config.mnpBundle || []);
   const septemberPolicy=config.policyVersion===SEPTEMBER_POLICY_VERSION;
