@@ -656,3 +656,14 @@ test('같은 고객의 홈 상품은 선택 항목만 묶음 완료·취소한�
   assert.match(manager, /\.in\('id',selected\.map\(o=>o\.id\)\)\.eq\('user_id',userId\)\.eq\('status','pending'\)/);
   assert.match(manager, /countable\.forEach\(order=>/);
 });
+
+test('홈 판매는 저장 직후 묶음 취소와 작성 중 이탈 방지를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const undoHomeToast = async \(\) =>/);
+  assert.match(source, /방금 등록한 홈 판매를 취소할까요/);
+  assert.match(source, /deleteSale\(data,\{skipConfirm:true\}\)/);
+  assert.match(source, /toast\.source==='home'\?undoHomeToast:undoToast/);
+  assert.match(source, /const closeHomeOrder = async \(\) =>/);
+  assert.match(source, /아직 등록하지 않은 작성 내용은 사라집니다/);
+  assert.match(source, /onClick=\{closeHomeOrder\}/);
+});
