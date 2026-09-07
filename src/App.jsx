@@ -749,6 +749,26 @@ function dayHasData(raw) {
   return d.inputConfirmed || dayHasPerformanceData(d);
 }
 
+// customer_sales 원본이 없던 구버전 홈 주문을 취소한 경우 daily_records에 남은
+// 홈 집계만 화면/급여에서 제외합니다. 원본 일일 기록과 감사 이력은 그대로 보존합니다.
+function applyCancelledLegacyHomeAdjustments(records, adjustments) {
+  if (!adjustments || !Object.keys(adjustments).length) return records || {};
+  const next={...(records||{})};
+  Object.entries(adjustments).forEach(([dayKey,groupsToSubtract])=>{
+    const raw=next[dayKey];
+    if(!raw)return;
+    const d=normalizeDay(raw),groups={...d.groups};
+    Object.entries(groupsToSubtract||{}).forEach(([groupKey,items])=>{
+      groups[groupKey]={...(groups[groupKey]||{})};
+      Object.entries(items||{}).forEach(([itemKey,count])=>{
+        groups[groupKey][itemKey]=Math.max(0,Number(groups[groupKey][itemKey]||0)-Number(count||0));
+      });
+    });
+    next[dayKey]={...d,groups};
+  });
+  return next;
+}
+
 // 그 달의 일일 입력 전체를 합산
 function aggregateDaily(daysMap, monthKey) {
   const agg = emptyDay();
@@ -1209,6 +1229,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
+  const [cancelledLegacyHomeMap,setCancelledLegacyHomeMap]=useState({}); // customer_sales 없는 취소 홈의 일일 잔여 차감
   const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
   const [strategicMetricMap, setStrategicMetricMap] = useState({}); // 직원 전략P 급여 가감 계산용
   const [canViewHqStructure, setCanViewHqStructure] = useState(false);
@@ -1661,10 +1682,24 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const ids=(list||[]).map(e=>e.id),mapped={};
     if(!ids.length){setHomePolicyMap({});return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-    const {data,error}=await supabase.from('home_orders')
-      .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,actual_install_date')
-      .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`);
-    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});return;}
+    const [orderRes,saleRes]=await Promise.all([
+      supabase.from('home_orders')
+        .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
+        .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`),
+      supabase.from('customer_sales').select('source_ref').eq('source_type','home_order').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to),
+    ]);
+    const {data,error}=orderRes;
+    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
+    const linkedRefs=new Set((saleRes.data||[]).map(s=>String(s.source_ref||'')).filter(Boolean));
+    const cancelledMap={};
+    (data||[]).filter(o=>o.status==='cancelled'&&!linkedRefs.has(String(o.id))&&String(o.source_work_date||'').startsWith(m)).forEach(o=>{
+      const fallback={homeOnly:['homeBase','homeOnly'],homeTv:['homeBase','homeTv'],tvFree:['homeFlat','tvFree'],smartHome:['homeFlat','smartHome'],internet100:['homeFlat','home100Only'],internet500:['homeFlat','home500Only'],internet1g:['homeFlat','home1GBOnly']}[o.product_type];
+      const groupKey=o.source_group||fallback?.[0],itemKey=o.source_key||fallback?.[1],dayKey=String(o.source_work_date||'').slice(8,10);
+      if(!groupKey||!itemKey||!dayKey)return;
+      cancelledMap[o.user_id]||={}; cancelledMap[o.user_id][dayKey]||={}; cancelledMap[o.user_id][dayKey][groupKey]||={};
+      cancelledMap[o.user_id][dayKey][groupKey][itemKey]=Number(cancelledMap[o.user_id][dayKey][groupKey][itemKey]||0)+1;
+    });
+    setCancelledLegacyHomeMap(cancelledMap);
     ids.forEach(id=>{
       const userOrders=homeOrdersForMonth((data||[]).filter(o=>o.user_id===id),m,'completed');
       const completed=userOrders.filter(o=>o.status==='completed');
@@ -1974,9 +2009,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setMonthRecords((prev) => ({ ...prev, [id]: next }));
   };
 
+  const effectiveDailyRecords=useMemo(()=>Object.fromEntries(employees.map(e=>[
+    e.id,applyCancelledLegacyHomeAdjustments(dailyRecords[e.id],cancelledLegacyHomeMap[e.id])
+  ])),[employees,dailyRecords,cancelledLegacyHomeMap]);
+
   const rows = employees.map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
-    const mergedBase = applyDailyToDraft(rec.draft, dailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
+    const mergedBase = applyDailyToDraft(rec.draft, effectiveDailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
     const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null};
     const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0, strategicMetricMap[e.id]);
     const shadow=shadowLedgerMap[e.id]||{totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0};
@@ -2034,7 +2073,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     }
   }, [scopedEmployees, empId]);
 
-  const myMergedBase = applyDailyToDraft(draft, dailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
+  const myMergedBase = applyDailyToDraft(draft, effectiveDailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
   const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null};
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0, strategicMetricMap[empId]);
   const teamCreditDaysByStore=(teamSalesCredits||[]).reduce((map,credit)=>{
@@ -2164,7 +2203,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           draft={draft} setDraft={updateDraft} config={config} pay={myPay} mergedDraft={myMergedDraft}
           status={(monthRecords[empId] || {}).status || 'none'}
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
-          dailyDays={dailyRecords[empId] || {}} allDailyRecords={dailyRecords} saveDailyDay={saveDailyDay}
+          dailyDays={effectiveDailyRecords[empId] || {}} allDailyRecords={effectiveDailyRecords} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
           policyInputBlocked={policyBlockedMonths.includes(month)}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
@@ -2187,7 +2226,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       ) : (
         <AdminView
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
-          rows={scopedSalesRows} rankingRows={personalSalesRows} dailyRecords={dailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve} rejectApproval={rejectApproval}
+          rows={scopedSalesRows} rankingRows={personalSalesRows} dailyRecords={effectiveDailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve} rejectApproval={rejectApproval}
           config={config} persistConfig={persistConfig}
           employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
