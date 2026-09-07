@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
   Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
   UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
-  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -110,6 +110,24 @@ function PwaInstallButton(){
   };
   const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
   return <><button onClick={install} className="hidden sm:flex h-9 items-center gap-1 rounded-xl border border-violet-100 bg-violet-50 px-2.5 text-[10px] font-bold text-violet-700" title="홈 화면에 앱 설치"><Home size={14}/>앱 설치</button><button onClick={install} className="sm:hidden w-9 h-9 rounded-xl border border-violet-100 bg-violet-50 text-violet-700 flex items-center justify-center" title="앱 설치"><Home size={15}/></button>{guideOpen&&<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-violet-600 text-white flex items-center justify-center"><Trophy size={24}/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">브라우저 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. Chrome 최신 버전에서 가장 원활해요.</div>}<div className="mt-3 rounded-xl bg-violet-50 p-3 text-xs text-violet-700">설치하면 주소창 없이 앱처럼 열리고, 다음 단계에서 휴대폰 푸시 알림도 연결할 수 있어요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>}</>;
+}
+
+function AppQuickGuide({open,onClose,isManager=false}){
+  if(!open)return null;
+  const employeeSteps=[
+    ['1','홈부터 확인','오늘 할 일, 목표 진척도, 예상 급여와 순위를 먼저 확인해요.'],
+    ['2','실적입력','판매일을 고르고 모바일·홈 실적을 등록해요. 저장 상태도 상단에서 확인할 수 있어요.'],
+    ['3','고객관리','제휴카드, 수납지원, 요금제 변경과 설치 일정을 놓치지 않게 관리해요.'],
+    ['4','내역 확인','판매별 계산 근거와 월 누적 급여가 맞는지 확인해요.'],
+  ];
+  const managerSteps=[
+    ['1','오늘의 운영','미입력, 목표 위험, 설치 지연과 승인 대기부터 확인해요.'],
+    ['2','실적·고객 점검','매장 목표와 순위, 고객 약속·홈 설치를 필요한 범위에서 확인해요.'],
+    ['3','평가·급여','평가와 담당자 급여는 기존 관리 범위와 회사 전체 기준을 유지해요.'],
+    ['4','관리 설정','본사 데이터와 지급기준 같은 민감 메뉴는 권한이 있을 때만 보여요.'],
+  ];
+  const steps=isManager?managerSteps:employeeSteps;
+  return <div className="fixed inset-0 z-[127] flex items-end justify-center bg-black/45 sm:items-center" onClick={onClose}><div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl" onClick={event=>event.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-violet-600">빠른 사용 안내</div><div className="mt-1 text-xl font-black text-gray-900">미소페이, 이렇게 사용하세요</div><div className="mt-1 text-xs text-gray-400">{isManager?'관리자가 매일 확인할 흐름이에요.':'직원이 매일 사용할 핵심 흐름이에요.'}</div></div><button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500"><X size={15}/></button></div><div className="mt-4 space-y-2">{steps.map(([number,title,description])=><div key={number} className="flex gap-3 rounded-2xl bg-gray-50 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-xs font-black text-white">{number}</span><div><div className="text-sm font-bold text-gray-900">{title}</div><div className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{description}</div></div></div>)}</div><div className="mt-3 rounded-xl bg-violet-50 px-3 py-2.5 text-[11px] text-violet-700">오른쪽 위 <b>?</b> 버튼을 누르면 언제든 다시 볼 수 있어요.</div><button type="button" onClick={onClose} className="mt-4 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">확인하고 시작하기</button></div></div>;
 }
 
 /* v21.26: 2ND 번들별 일반/무료판매 구분. 무료판매는 실적/KPI 인정, 번들+해당 VAS 인센티브 제외. */
@@ -1143,6 +1161,13 @@ function CountGroup({ table, counts, onChange, autoCounts, autoKeys }) {
 export default function App({ authUser, authProfile, onSignOut }) {
   const [role, setRole] = useState('employee');
   const [notificationOpen,setNotificationOpen]=useState(false);
+  const [quickGuideOpen,setQuickGuideOpen]=useState(false);
+  const quickGuideStorageKey=authUser?.id?`miso_quick_guide_v1:${authUser.id}`:'';
+  useEffect(()=>{
+    if(!quickGuideStorageKey)return;
+    try{if(!localStorage.getItem(quickGuideStorageKey)){const timer=setTimeout(()=>setQuickGuideOpen(true),700);return()=>clearTimeout(timer)}}catch{/* 저장공간 제한 시 자동 안내만 생략 */}
+  },[quickGuideStorageKey]);
+  const closeQuickGuide=()=>{setQuickGuideOpen(false);if(quickGuideStorageKey)try{localStorage.setItem(quickGuideStorageKey,'seen')}catch{/* 다시 표시될 수 있으나 앱 사용에는 영향 없음 */}};
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
     if(params.get('open')==='notifications'){
@@ -2078,6 +2103,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
               <div className="text-[10px] text-gray-400">{ROLE_LABELS[authProfile?.role] || authProfile?.role}</div>
             </div>
             <PwaInstallButton />
+            <button type="button" onClick={()=>setQuickGuideOpen(true)} title="사용 안내" className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-violet-600"><HelpCircle size={16}/></button>
             <NotificationBell userId={authUser?.id} onOpen={()=>setNotificationOpen(true)} />
             {onSignOut && (
               <button onClick={onSignOut} title="로그아웃" className="text-gray-400 hover:text-red-500 p-1.5 shrink-0">
@@ -2104,6 +2130,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
           </div>
         )}
       </div>
+
+      <AppQuickGuide open={quickGuideOpen} onClose={closeQuickGuide} isManager={role==='admin'} />
 
       {notificationOpen&&<div className="fixed inset-0 z-[115] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setNotificationOpen(false)}>
         <div className="w-full max-w-md max-h-[86vh] overflow-y-auto bg-gray-50 rounded-t-3xl sm:rounded-3xl p-4" onClick={e=>e.stopPropagation()}>

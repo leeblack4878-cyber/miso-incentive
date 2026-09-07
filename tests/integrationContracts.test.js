@@ -437,6 +437,15 @@ test('설치형 웹앱은 manifest 서비스워커 기기별 설치 안내를 �
   assert.match(sw, /fetch\(event\.request\)/);
 });
 
+test('첫 사용자는 역할별 빠른 안내를 보고 언제든 다시 열 수 있다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function AppQuickGuide/);
+  assert.match(source, /miso_quick_guide_v1:/);
+  assert.match(source, /미소페이, 이렇게 사용하세요/);
+  assert.match(source, /isManager=\{role==='admin'\}/);
+  assert.match(source, /title="사용 안내"/);
+});
+
 test('휴대폰 푸시는 본인 구독 RLS와 알림 클릭 이동 및 고객 약속 예약을 제공한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sw = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
