@@ -9921,7 +9921,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
     const [{data:t,error:taskError},{data:c,error:customerError},{data:s,error:saleError}]=await Promise.all([
       supabase.from('customer_tasks').select('*').in('user_id',employeeIds).order('due_date',{ascending:true}),
       supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds),
-      compact?Promise.resolve({data:[],error:null}):supabase.from('customer_sales').select('id,user_id,customer_id,sale_date,metric_label,source_type,status').in('user_id',employeeIds).order('sale_date',{ascending:false}).limit(2000)
+      compact?Promise.resolve({data:[],error:null}):supabase.from('customer_sales').select('id,user_id,customer_id,sale_date,metric_label,source_type').in('user_id',employeeIds).order('sale_date',{ascending:false}).limit(2000)
     ]);
     if(taskError||customerError||saleError)setLoadError(friendlyError(taskError||customerError||saleError));
     setTasks(t||[]);setCustomers(c||[]);setSales(s||[]);setLoading(false);
@@ -9972,7 +9972,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
     if(branch!=='all'&&emp.branch!==branch)return null;
     if(employeeId!=='all'&&customer.user_id!==employeeId)return null;
     const customerTasks=scoped.filter(task=>task.customer_id===customer.id);
-    const customerSales=sales.filter(sale=>sale.customer_id===customer.id&&sale.status!=='cancelled');
+    const customerSales=sales.filter(sale=>sale.customer_id===customer.id);
     const haystack=[customer.customer_name,emp.name,emp.branch,...customerTasks.flatMap(task=>[task.title,task.note,task.task_meta?.card_name]),...customerSales.map(sale=>sale.metric_label)].filter(Boolean).join(' ').toLowerCase();
     if(!haystack.includes(searchNeedle))return null;
     return {customer,emp,tasks:customerTasks,sales:customerSales,lastSale:customerSales[0]};
