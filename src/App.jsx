@@ -1171,6 +1171,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [saved, setSaved] = useState(false);
   const [stores, setStores] = useState(DEFAULT_STORES);
   const [dailyRecords, setDailyRecords] = useState({}); // { empId: { "01": matrix2D, ... } }
+  const [storeAggregateDays,setStoreAggregateDays]=useState({}); // 일반 직원용: 개인 식별정보가 제거된 우리 매장 일별 합계
   const [teamSalesCredits,setTeamSalesCredits]=useState([]); // 담당·운영진 지원판매: 개인 제외, 선택 매장 팀 실적 전용
   const [dirty, setDirty] = useState(false);            // 실적입력 탭에 저장 안 된 변경이 있는지
   const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -1968,6 +1969,24 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const isFullAdmin = authProfile?.role === 'admin';
   const isHQManager = ['담당','팀장','대표','실장'].includes(loginEmp?.position);
   const isStoreLeader = ['점장', '부점장'].includes(loginEmp?.position);
+  const canViewStoreMemberRows=isFullAdmin||isHQManager||isStoreLeader;
+
+  useEffect(()=>{
+    let alive=true;
+    if(!authUser?.id||!loginEmp?.branch||canViewStoreMemberRows){setStoreAggregateDays({});return()=>{alive=false};}
+    supabase.rpc('get_my_store_performance_days',{p_month:month}).then(({data,error})=>{
+      if(!alive)return;
+      if(error){console.error('STORE AGGREGATE LOAD ERROR:',error);setStoreAggregateDays({});return;}
+      const mapped={};
+      (data||[]).forEach(row=>{
+        const dayKey=String(Number(String(row.work_date||'').slice(8,10))).padStart(2,'0');
+        if(dayKey==='00')return;
+        mapped[dayKey]=mergePerformanceDay(mapped[dayKey],row.data||{});
+      });
+      setStoreAggregateDays(mapped);
+    });
+    return()=>{alive=false};
+  },[authUser?.id,loginEmp?.branch,month,canViewStoreMemberRows]);
 
   const scopedEmployees = isFullAdmin || isHQManager
     ? employees
@@ -2014,6 +2033,12 @@ export default function App({ authUser, authProfile, onSignOut }) {
   // 홈 화면 랭킹용 — 본인이 영업 조직 소속일 때만 순위 계산
   // 지원 판매는 매장 합계에는 들어가지만 가상의 개인/직원으로 순위에 노출하지 않습니다.
   const personalSalesRows=salesRows.filter((r)=>!r.teamOnly);
+  const storeAggregateDraft=applyDailyToDraft(emptyDraft(),storeAggregateDays,month,config.categoryMap,config.gibyeonColumnMap);
+  const storeAggregatePay=computePay(storeAggregateDraft,'기타',null,month,config,0,null);
+  const anonymousStoreRow={id:'my-store-aggregate',name:'우리 매장 합계',branch:loginEmp?.branch||currentEmp?.branch||'',position:'기타',draft:storeAggregateDraft,pay:{...storeAggregatePay,total:0,closingAmount:0,guaranteedComponent:0},storeAggregate:true};
+  const storeOverviewRows=canViewStoreMemberRows
+    ? salesRows
+    : [anonymousStoreRow,...salesRows.filter(row=>row.teamOnly&&row.branch===anonymousStoreRow.branch)];
   const rankedSorted = [...personalSalesRows].sort((a, b) => b.pay.total - a.pay.total);
   const myRankIndex = rankedSorted.findIndex((r) => r.id === empId);
   const myRank = myRankIndex >= 0 ? myRankIndex + 1 : null;
@@ -2117,6 +2142,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
           goalSaving={goalSaving}
           showPersonalGoal={empId === authUser?.id}
           competitionRows={personalSalesRows}
+          storeOverviewRows={storeOverviewRows}
+          canViewStoreRanking={canViewStoreMemberRows}
           authUser={authUser} authProfile={authProfile}
           onOpenStoreGoals={()=>{setRole('admin');setAdminTab('storeGoals')}}
         />
@@ -5722,11 +5749,11 @@ function employeeStoreScopeOptions(employee, rows=[]) {
   return employee?.branch?[{key:`store:${employee.branch}`,label:displayStoreName(employee.branch),branches:[employee.branch]}]:[];
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, authUser, authProfile, onOpenStoreGoals }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
-  const storeScopeOptions=useMemo(()=>employeeStoreScopeOptions(currentEmp,competitionRows),[currentEmp?.name,currentEmp?.branch,competitionRows]);
+  const storeScopeOptions=useMemo(()=>employeeStoreScopeOptions(currentEmp,storeOverviewRows),[currentEmp?.name,currentEmp?.branch,storeOverviewRows]);
   const [storeScopeKey,setStoreScopeKey]=useState('');
   useEffect(()=>{
     if(!storeScopeOptions.length){setStoreScopeKey('');return;}
@@ -5932,11 +5959,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {isSalesManager&&String(selectedStoreScope?.key||'').startsWith('area:')?<>
               <div className="px-1"><div className="text-sm font-bold text-gray-900">상권별 목표 비교</div><div className="text-[11px] text-gray-400 mt-1">상대 상권은 합산 현황만 비교하며 직원·고객 상세는 표시하지 않습니다.</div></div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <StoreHomeOverview rows={competitionRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
-                <StoreHomeOverview rows={competitionRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
               </div>
-            </>:<StoreHomeOverview rows={competitionRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
-              canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />}
+            </>:<StoreHomeOverview rows={storeOverviewRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
+              showRanking={canViewStoreRanking} canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />}
           </>}
         </div>
       )}
@@ -10559,29 +10586,38 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
   const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
-    { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
-    { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
-    { key: 'evaluation', label: '평가', icon: ClipboardCheck, group:'현황' },
-    { key: 'managerPayroll', label: '관리자 급여', icon: Wallet, group:'현황' },
-    { key: 'storeGoals', label: '매장 목표', icon: Target, group:'현황' },
-    ...(canViewDailyBriefing ? [{ key: 'dailyBriefing', label: '일일 브리핑', icon: ClipboardList, group:'현황' }] : []),
-    { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, group:'실적 관리' },
-    { key: 'history', label: '변경 이력', icon: History, group:'실적 관리' },
-    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, group:'고객 · 홈' },
-    { key: 'homeCare', label: '홈 케어', icon: Home, group:'고객 · 홈' },
-    { key: 'expenses', label: '영업비용/오퍼', icon: Wallet, group:'비용 · 승인' },
-    ...(canViewDailyBriefing ? [{ key: 'spot', label: '스팟 승인', icon: Zap, group:'비용 · 승인' }] : []),
-    { key: 'employees', label: '직원 관리', icon: Users, group:'설정' },
-    ...(canViewHqStructure ? [{ key: 'hqStructure', label: '본사 구조정책', icon: Building2, group:'본사 전용' }] : []),
+    { key: 'dashboard', label: '운영 현황', icon: LayoutDashboard, section:'operations' },
+    ...(canViewDailyBriefing ? [{ key: 'dailyBriefing', label: '일일 브리핑', icon: ClipboardList, section:'operations' }] : []),
+    { key: 'performance', label: '실적 순위', icon: Trophy, section:'performance' },
+    { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, section:'performance' },
+    { key: 'storeGoals', label: '매장 목표', icon: Target, section:'performance' },
+    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, section:'customer' },
+    { key: 'homeCare', label: '홈 케어', icon: Home, section:'customer' },
+    { key: 'evaluation', label: '평가', icon: ClipboardCheck, section:'settlement' },
+    { key: 'managerPayroll', label: '관리자 급여', icon: Wallet, section:'settlement' },
+    { key: 'expenses', label: '영업비용/오퍼', icon: Wallet, section:'cost' },
+    ...(canViewDailyBriefing ? [{ key: 'spot', label: '스팟 승인', icon: Zap, section:'cost' }] : []),
+    { key: 'history', label: '변경 이력', icon: History, section:'cost' },
+    { key: 'employees', label: '직원 관리', icon: Users, section:'settings' },
+    ...(canViewHqStructure ? [{ key: 'hqStructure', label: '본사 구조정책', icon: Building2, section:'settings' }] : []),
     ...(isFullAdmin ? [
-      { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud, group:'실적 관리' },
-      { key: 'settlement', label: '정산 검토', icon: Wallet, group:'정산' },
-      { key: 'calculationAudit', label: '계산 검증', icon: ShieldCheck, group:'정산' },
-      { key: 'rates', label: '지급기준 관리', icon: Settings, group:'설정' },
-      { key: 'permissions', label: '권한 관리', icon: ShieldCheck, group:'설정' },
+      { key: 'headOfficeData', label: '본사 데이터', icon: UploadCloud, section:'performance' },
+      { key: 'settlement', label: '정산 검토', icon: Wallet, section:'settlement' },
+      { key: 'calculationAudit', label: '계산 검증', icon: ShieldCheck, section:'settlement' },
+      { key: 'rates', label: '지급기준 관리', icon: Settings, section:'settings' },
+      { key: 'permissions', label: '권한 관리', icon: ShieldCheck, section:'settings' },
     ] : []),
   ];
-  const TAB_GROUPS=['현황','실적 관리','고객 · 홈','비용 · 승인','본사 전용','정산','설정'];
+  const ADMIN_SECTIONS=[
+    {key:'operations',label:'오늘의 운영',icon:LayoutDashboard},
+    {key:'performance',label:'실적',icon:Trophy},
+    {key:'customer',label:'고객·설치',icon:ClipboardList},
+    {key:'settlement',label:'평가·급여',icon:Wallet},
+    {key:'cost',label:'비용·승인',icon:Zap},
+    {key:'settings',label:'관리 설정',icon:Settings},
+  ].filter(section=>TABS.some(tab=>tab.section===section.key));
+  const activeAdminSection=TABS.find(tab=>tab.key===adminTab)?.section||'operations';
+  const activeSectionTabs=TABS.filter(tab=>tab.section===activeAdminSection);
   useEffect(() => {
     if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
     if (adminTab === 'hqStructure' && !canViewHqStructure) setAdminTab('dashboard');
@@ -10615,7 +10651,12 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     <div className="max-w-5xl mx-auto px-4 py-5">
       <div className="mb-4 space-y-3">
         <div className="bg-white border border-gray-200 rounded-2xl p-2 space-y-2">
-          {TAB_GROUPS.map(group=>{const items=TABS.filter(x=>x.group===group);if(!items.length)return null;return <div key={group} className="grid grid-cols-[58px_1fr] gap-2 items-start"><div className="text-[9px] font-bold text-gray-400 pt-2 px-1">{group}</div><div className="flex flex-wrap gap-1">{items.map(n=><button key={n.key} onClick={()=>setAdminTab(n.key)} className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition ${adminTab===n.key?'bg-violet-600 text-white shadow-sm':'bg-gray-50 text-gray-600 hover:bg-violet-50'}`}><n.icon size={13}/>{n.label}</button>)}</div></div>})}
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-violet-600 text-white shadow-sm':'bg-gray-50 text-gray-500 hover:bg-violet-50'}`}><section.icon size={14}/>{section.label}</button>)}
+          </div>
+          {activeSectionTabs.length>1&&<div className="flex gap-1 overflow-x-auto border-t border-gray-100 pt-2 pb-0.5">
+            {activeSectionTabs.map(n=><button key={n.key} type="button" onClick={()=>setAdminTab(n.key)} className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition ${adminTab===n.key?'bg-violet-50 text-violet-700':'text-gray-500 hover:bg-gray-50'}`}>{n.label}</button>)}
+          </div>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
