@@ -2173,6 +2173,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           loginEmp={loginEmp}
           stores={stores}
           onTeamCreditSaved={()=>loadTeamSalesCredits(month)}
+          onHomeOrdersChanged={()=>loadHomePolicies(month,employees)}
           personalGoals={personalGoals}
           savePersonalGoals={savePersonalGoals}
           goalSaving={goalSaving}
@@ -3779,7 +3780,7 @@ function homeOrderMeta(groupKey, itemKey) {
 
 
 
-function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTeamCreditSaved }) {
+function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTeamCreditSaved, onHomeOrdersChanged }) {
   const [orders, setOrders] = useState([]);
   const [product, setProduct] = useState('homeOnly');
   const [customerName, setCustomerName] = useState('');
@@ -3829,7 +3830,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
     notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
       message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel}`,
       payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}});
-    await load();
+    await load(); await onHomeOrdersChanged?.();
   };
 
   const confirmCompletion = async () => {
@@ -3900,7 +3901,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel} · ${homeActualCompleteDate}`,
       storeName:supportCredit?.credited_store||null,
       payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'completed',actual_install_date:homeActualCompleteDate,team_only:!!supportCredit}});
-    setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load();
+    setHomeCompletionTarget(null); setHomeActualCompleteDate(''); await load(); await onHomeOrdersChanged?.();
     if(supportCredit)await onTeamCreditSaved?.();
   };
 
@@ -3926,7 +3927,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
           message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type}`,
           payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}}));
-        setHomeBatchTarget(null); setHomeBatchSelected([]); await load();
+        setHomeBatchTarget(null); setHomeBatchSelected([]); await load(); await onHomeOrdersChanged?.();
       }catch(e){showLegacyAlert(`묶음 취소 실패: ${friendlyError(e)}`);}
       finally{setHomeCareActionSaving(false);}
       return;
@@ -3973,7 +3974,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type} · ${homeActualCompleteDate}`,
         storeName:supportById[String(order.id)]?.credited_store||null,
         payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'completed',actual_install_date:homeActualCompleteDate,team_only:!!supportById[String(order.id)]}}));
-      setHomeBatchTarget(null); setHomeBatchSelected([]); setHomeActualCompleteDate(''); await load();
+      setHomeBatchTarget(null); setHomeBatchSelected([]); setHomeActualCompleteDate(''); await load(); await onHomeOrdersChanged?.();
       if(selected.some(o=>supportById[String(o.id)]))await onTeamCreditSaved?.();
     }catch(e){showLegacyAlert(`묶음 완료 처리 실패: ${friendlyError(e)}`);}
     finally{setHomeCareActionSaving(false);}
@@ -4006,7 +4007,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       if(error)throw error;
       setHomeScheduleTarget(null);
       setHomeScheduleDate('');
-      await load();
+      await load(); await onHomeOrdersChanged?.();
     }catch(e){
       showLegacyAlert(`설치 예정일 수정 실패: ${friendlyError(e)}`);
     }finally{
@@ -4066,7 +4067,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         updated_at:new Date().toISOString()
       }).eq('id',order.id).eq('user_id',userId);
       if(error)throw error;
-      await load();
+      await load(); await onHomeOrdersChanged?.();
     }catch(e){
       showLegacyAlert(`상태 되돌리기 실패: ${friendlyError(e)}`);
     }finally{
@@ -5920,7 +5921,7 @@ function employeeStoreScopeOptions(employee, rows=[]) {
   return employee?.branch?[{key:`store:${employee.branch}`,label:displayStoreName(employee.branch),branches:[employee.branch]}]:[];
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, onHomeOrdersChanged, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
   const viewedUserId=currentEmp?.id||authUser?.id;
   const isManagingAnotherEmployee=!!authUser?.id&&!!currentEmp?.id&&currentEmp.id!==authUser.id;
   const [expenseTotal,setExpenseTotal]=useState(0);
@@ -6167,6 +6168,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             loginEmp={loginEmp}
             stores={stores}
             onTeamCreditSaved={onTeamCreditSaved}
+            onHomeOrdersChanged={onHomeOrdersChanged}
             authUser={authUser}
             resetMonthOpen={resetMonthOpen}
             setResetMonthOpen={setResetMonthOpen}
@@ -6208,7 +6210,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               locked:monthLocked||policyInputBlocked,
               dailyDays,
               saveDailyDay,
-              onTeamCreditSaved
+              onTeamCreditSaved,
+              onHomeOrdersChanged
             }}
           />
         </div>
@@ -6310,7 +6313,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   );
 }
 
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, currentEmp, loginEmp, stores=[], onTeamCreditSaved, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
+function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -6705,7 +6708,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         await supabase.from('sales_expenses').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
         await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id);
       }
-      await onTeamCreditSaved?.();loadDaySales();return;
+      await onTeamCreditSaved?.();
+      if(sale.source_type==='home_order')await onHomeOrdersChanged?.();
+      loadDaySales();return;
     }
 
     if(sale.source_type==='home_order'){
@@ -6718,7 +6723,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       mutate({...base,groups});
       if(ids.length){await supabase.from('customer_tasks').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('sales_expenses').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('customer_sales').delete().in('id',ids).eq('user_id',currentEmp?.id);}
       if(refs.length)await supabase.from('home_orders').delete().in('id',refs).eq('user_id',currentEmp?.id);
-      loadDaySales();return;
+      await onHomeOrdersChanged?.();loadDaySales();return;
     }
 
     if(sale.source_type==='extra'){
@@ -6939,6 +6944,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       if(activeTeamSupport)resetTeamSupportSelection();
       setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
+      await onHomeOrdersChanged?.();
       setTimeout(loadDaySales,150);
     }catch(e){ showAppToast(friendlyError(e),{tone:'error',title:'홈 상품 등록 실패'}); }
     finally{ homeSubmitGuardRef.current=false; setHomeOrderSaving(false); }
