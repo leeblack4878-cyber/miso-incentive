@@ -667,3 +667,21 @@ test('홈 판매는 저장 직후 묶음 취소와 작성 중 이탈 방지를 �
   assert.match(source, /아직 등록하지 않은 작성 내용은 사라집니다/);
   assert.match(source, /onClick=\{closeHomeOrder\}/);
 });
+
+test('홈 상태 변경 직후 급여의 홈 수수료를 다시 계산한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const manager = source.match(/function HomeOrderManager[\s\S]*?function NotificationBell/)?.[0] || '';
+  assert.match(source, /onHomeOrdersChanged=\{\(\)=>loadHomePolicies\(month,employees\)\}/);
+  assert.match(manager, /status:'cancelled'[\s\S]*?await load\(\); await onHomeOrdersChanged\?\.\(\)/);
+  assert.match(manager, /status:'completed'[\s\S]*?await load\(\); await onHomeOrdersChanged\?\.\(\)/);
+  assert.match(manager, /상태 되돌리기 실패/);
+  assert.ok((manager.match(/onHomeOrdersChanged\?\.\(\)/g)||[]).length>=5);
+});
+
+test('모바일 작은 글씨와 긴 문구는 카드 밖으로 넘치지 않는다', async () => {
+  const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
+  assert.match(css, /\.text-\\\[9px\\\] \{ font-size: 11px !important/);
+  assert.match(css, /overflow-wrap: anywhere; word-break: keep-all/);
+  assert.match(css, /\.flex > div \{ min-width: 0; \}/);
+  assert.match(css, /select \{ min-height: 42px; max-width: 100%; \}/);
+});
