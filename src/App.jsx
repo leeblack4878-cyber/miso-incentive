@@ -3783,6 +3783,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
   const [homeScheduleTarget, setHomeScheduleTarget] = useState(null);
   const [homeScheduleDate, setHomeScheduleDate] = useState('');
   const [homeCareActionSaving, setHomeCareActionSaving] = useState(false);
+  const [archiveFilter, setArchiveFilter] = useState('completed');
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -4067,9 +4068,12 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         ) : <div className="mt-3 rounded-xl bg-gray-50 py-4 text-center text-xs text-gray-400">현재 케어할 진행중 청약이 없어요.</div>}
         {(completed.length>0 || cancelled.length>0) && (
           <details className="mt-3">
-            <summary className="text-xs font-semibold text-violet-600 cursor-pointer">완료·취소 내역 보기</summary>
+            <summary className="text-xs font-semibold text-violet-600 cursor-pointer">처리된 내역 보기</summary>
+            <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
+              {[['completed',`설치완료 ${fmtCount(completed.length)}건`],['cancelled',`취소 ${fmtCount(cancelled.length)}건`]].map(([key,label])=><button key={key} type="button" onClick={()=>setArchiveFilter(key)} className={`rounded-lg py-2 text-[11px] font-bold ${archiveFilter===key?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>{label}</button>)}
+            </div>
             <div className="mt-2 space-y-1.5">
-              {[...completed,...cancelled].sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
+              {(archiveFilter==='completed'?completed:cancelled).sort((a,b)=>new Date(b.applied_at)-new Date(a.applied_at)).map(o=>{
                 const def=HOME_ORDER_PRODUCTS.find(p=>p.key===o.product_type);
                 return <div key={o.id} className="rounded-lg bg-gray-50 px-3 py-2">
                   <div className="flex justify-between gap-2 items-start">
@@ -5806,6 +5810,8 @@ function employeeStoreScopeOptions(employee, rows=[]) {
 }
 
 function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
+  const viewedUserId=currentEmp?.id||authUser?.id;
+  const isManagingAnotherEmployee=!!authUser?.id&&!!currentEmp?.id&&currentEmp.id!==authUser.id;
   const [expenseTotal,setExpenseTotal]=useState(0);
   const [homeDetailOpen,setHomeDetailOpen]=useState(false);
   const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
@@ -5833,15 +5839,15 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [careNavIntent,setCareNavIntent]=useState(null);
   const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
   useEffect(() => {
-    if (!authUser?.id) return;
+    if (!viewedUserId) return;
     (async () => {
       const [y, m] = month.split('-').map(Number);
       const next = new Date(y, m, 1);
       const to = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
 
       const [expenseRes,spotRes]=await Promise.all([
-        supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').eq('user_id',authUser.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
-        supabase.from('spot_claims').select('claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',authUser.id).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date')
+        supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').eq('user_id',viewedUserId).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
+        supabase.from('spot_claims').select('claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date')
       ]);
       if(!expenseRes.error){
         setHistoryExpenseRows(expenseRes.data||[]);
@@ -5853,11 +5859,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         setHistorySpotTotal(nonMobile.reduce((sum,x)=>sum+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),0));
       }
     })();
-  }, [authUser?.id, month]);
+  }, [viewedUserId, month]);
 
   // v21.28: '승인 대기'는 실제 승인 대상(스팟/특판 예외금액)이 있을 때만 표시
   useEffect(()=>{
-    if(!authUser?.id)return;
+    if(!viewedUserId)return;
     let alive=true;
     (async()=>{
       try{
@@ -5869,10 +5875,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         const todayDate=`${todayKey}-${String(now.getDate()).padStart(2,'0')}`;
 
         const [spotRes,saleRes,todayRes]=await Promise.all([
-          supabase.from('spot_claims').select('id,claim_date,customer_name,source_context,direct_title,direct_amount,spot_policies(title,amount)').eq('user_id',authUser.id).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
-          supabase.from('customer_sales').select('id,sale_date,metric_label,source_meta,customers(customer_name)').eq('user_id',authUser.id).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
+          supabase.from('spot_claims').select('id,claim_date,customer_name,source_context,direct_title,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
+          supabase.from('customer_sales').select('id,sale_date,metric_label,source_meta,customers(customer_name)').eq('user_id',viewedUserId).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
           todayKey===month
-            ? supabase.from('customer_sales').select('id').eq('user_id',authUser.id).eq('sale_date',todayDate)
+            ? supabase.from('customer_sales').select('id').eq('user_id',viewedUserId).eq('sale_date',todayDate)
             : Promise.resolve({data:[],error:null})
         ]);
 
@@ -5890,7 +5896,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       }
     })();
     return()=>{alive=false};
-  },[authUser?.id,month,dailyDays]);
+  },[viewedUserId,month,dailyDays]);
 
   const resetOwnMonthPerformance=async()=>{
     if(monthLocked||policyInputBlocked)return showLegacyAlert(policyInputBlocked?'정책 준비 중인 월은 초기화할 수 없어요.':'마감된 월은 초기화할 수 없어요.');
@@ -5947,6 +5953,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
   return (
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
+      {isManagingAnotherEmployee&&<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><div className="text-[10px] font-bold text-amber-600">직원 대리 관리 중</div><div className="mt-0.5 text-sm font-black text-amber-900">{currentEmp?.name} 직원의 실적·고객·약속·홈 설치를 보고 수정합니다.</div><div className="mt-1 text-[10px] text-amber-700">판매·홈 변경 이력에는 실제 처리한 관리자 계정이 기록됩니다.</div></div>}
       {tab === 'home' && (
         <div className="space-y-4">
           <div className="bg-gray-100 rounded-xl p-1 grid grid-cols-2 gap-1">
@@ -5961,10 +5968,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
-            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={authUser?.id} currentEmp={currentEmp}
+            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} currentEmp={currentEmp}
               currentAmount={Number(pay.currentPerformanceAmount||0)-Number(expenseTotal||0)}
               onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
-            <TodayWorkCard userId={authUser?.id} todayInputDone={todayHasInput||todayIsDayOff}
+            <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
               approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
               onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
 
@@ -5994,7 +6001,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               </div>
             </div>}
 
-            <EmployeeHeadOfficeComparison userId={authUser?.id} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
+            <EmployeeHeadOfficeComparison userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <RecognitionRankingHub
@@ -6060,7 +6067,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
           <div className="mt-4">
             <SalesExpensePanel
-              userId={authUser?.id}
+              userId={viewedUserId}
               month={month}
               onTotal={setExpenseTotal}
             />
@@ -6081,11 +6088,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </select>
           </div>
           <CustomerCareManager
-            userId={authUser?.id}
+            userId={viewedUserId}
             month={month}
             navIntent={careNavIntent}
             homeProps={{
-              userId:authUser?.id,
+              userId:viewedUserId,
               month,
               locked:monthLocked||policyInputBlocked,
               dailyDays,
@@ -6097,7 +6104,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       {tab === 'evaluation' && (
-        <EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===authUser?.id)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} />
+        <EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===viewedUserId)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} />
       )}
 
       {tab === 'history' && (
