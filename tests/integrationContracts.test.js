@@ -680,10 +680,10 @@ test('홈 상태 변경 직후 급여의 홈 수수료를 다시 계산한다', 
 
 test('취소된 구버전 홈 주문은 이전 방식 입력 실적으로 다시 나타나지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(source, /const \\[dayHomeOrders,setDayHomeOrders\\]=useState\\(\\[\\]\\)/);
+  assert.match(source, /const \[dayHomeOrders,setDayHomeOrders\]=useState\(\[\]\)/);
   assert.match(source, /source_work_date,source_group,source_key,actual_install_date/);
-  assert.match(source, /dayHomeOrders\\|\\|\\[\\][\\s\\S]*?!representedOrderRefs\\.has\\(String\\(o\\.id\\)\\)/);
-  assert.match(source, /\\[legacyMobileMatrix,day,daySales,dayHomeOrders\\]/);
+  assert.match(source, /dayHomeOrders\|\|\[\][\s\S]*?!representedOrderRefs\.has\(String\(o\.id\)\)/);
+  assert.match(source, /\[legacyMobileMatrix,day,daySales,dayHomeOrders\]/);
 });
 
 test('모바일 작은 글씨와 긴 문구는 카드 밖으로 넘치지 않는다', async () => {
