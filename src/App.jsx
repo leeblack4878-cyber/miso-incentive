@@ -6688,10 +6688,10 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   useEffect(()=>{loadDaySales()},[loadDaySales]);
 
-  const deleteSale=async(sale)=>{
+  const deleteSale=async(sale,{skipConfirm=false}={})=>{
     const name=sale.customers?.customer_name||'고객';
     const bundleText=sale.source_type==='home_order'?'이 고객의 같은 날 홈 판매 묶음을 삭제할까요?':'이 판매 건을 삭제할까요?';
-    if(!await showAppConfirm({title:'판매건을 삭제할까요?',message:`${name} · ${sale.metric_label}\n${bundleText}\n연결된 고객 약속과 영업비용도 함께 삭제됩니다.`,confirmLabel:'판매건 삭제',tone:'danger'}))return;
+    if(!skipConfirm&&!await showAppConfirm({title:'판매건을 삭제할까요?',message:`${name} · ${sale.metric_label}\n${bundleText}\n연결된 고객 약속과 영업비용도 함께 삭제됩니다.`,confirmLabel:'판매건 삭제',tone:'danger'}))return;
     const meta=sale.source_meta||{};
 
     if(meta.teamOnly){
@@ -6761,6 +6761,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setHomeSpotPolicyId(''); setHomeSpotDirectOpen(false); setHomeSpotDirectTitle(''); setHomeSpotDirectAmount(''); setHomeSpotDirectMemo('');
     setHomeExpenseOpen(false); setHomeExpenseCategory('오퍼'); setHomeExpenseAmount(''); setHomeExpenseMemo('');
     setHomeExtraPromises([]); setHomeExtraExpenses([]); setEditingHomeSales([]);
+  };
+
+  const closeHomeOrder = async () => {
+    if(homeOrderSaving)return;
+    const hasInput=!!(homeOrderDraft?.editing||homeCustomerName.trim()||homeNetworkType||homeInternet||homeMainTv||homeSubTv||homeSmartHome||homeMobileSimul!=='none'||homePlannedDate||homeCustomTitle.trim()||homeExtraPromises.length||homeExpenseOpen);
+    if(hasInput&&!await showAppConfirm({title:'홈 입력을 닫을까요?',message:'아직 등록하지 않은 작성 내용은 사라집니다.',confirmLabel:'작성 내용 버리기',tone:'warning'}))return;
+    setHomeOrderDraft(null);setEditingHomeSales([]);setLegacyConversion(null);
+    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
   };
 
   const submitHomeOrder = async () => {
@@ -7821,6 +7829,17 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     showAppToast('방금 등록한 실적을 취소했어요.',{tone:'info'});
   };
 
+  const undoHomeToast = async () => {
+    if(!toast?.customerSaleId)return;
+    const {data,error}=await supabase.from('customer_sales')
+      .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)')
+      .eq('id',toast.customerSaleId).eq('user_id',currentEmp?.id).maybeSingle();
+    if(error||!data)return showAppToast('방금 등록한 홈 판매를 찾지 못했어요. 판매 내역에서 확인해주세요.',{tone:'error'});
+    if(!await showAppConfirm({title:'방금 등록한 홈 판매를 취소할까요?',message:`${data.customers?.customer_name||'고객'} · 같은 날 등록한 홈 상품 묶음과 연결된 약속·비용이 함께 삭제됩니다.`,confirmLabel:'등록 취소',tone:'danger'}))return;
+    await deleteSale(data,{skipConfirm:true});
+    setToast(null);
+  };
+
   const editToastSale=async()=>{
     if(!toast?.customerSaleId)return;
     const {data,error}=await supabase.from('customer_sales')
@@ -8821,12 +8840,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setHomeOrderDraft(null);
-                  setHomeCustomerName('');
-                  setHomeNetworkType('');
-                  setHomeDirectComplete(false);
-                }}
+                onClick={closeHomeOrder}
                 disabled={homeOrderSaving}
                 className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold"
               >
@@ -8881,7 +8895,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
                   <div className="flex gap-1.5">
                     {toast.customerSaleId&&<button onClick={editToastSale} className="shrink-0 px-3 py-1.5 rounded-lg bg-white text-gray-900 text-xs font-bold">바로 수정</button>}
-                    {toast.source!=='home'&&<button onClick={undoToast} className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-400 text-gray-900 text-xs font-bold">방금 등록 취소</button>}
+                    <button onClick={toast.source==='home'?undoHomeToast:undoToast} className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-400 text-gray-900 text-xs font-bold">방금 등록 취소</button>
                   </div>
                 </div>
               </div>
