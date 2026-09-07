@@ -696,6 +696,11 @@ test('취소된 구버전 홈 집계는 내역·KPI·예상급여에서도 제�
   assert.match(source, /dailyRecords=\{effectiveDailyRecords\}/);
 });
 
+test('홈 본판매가 없으면 구버전 동시판매 부가 수수료를 지급하지 않는다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /homeAnyCount>0 \? calculateFlatIncentive\(draft\.homeAddon \|\| \{\}, config\.homeAddon \|\| \[\]\) : 0/);
+});
+
 test('모바일 작은 글씨와 긴 문구는 카드 밖으로 넘치지 않는다', async () => {
   const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
   assert.match(css, /\.text-\\\[9px\\\] \{ font-size: 11px !important/);
