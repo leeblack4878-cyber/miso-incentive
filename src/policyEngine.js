@@ -487,11 +487,13 @@ export function calculateFreePhoneSpecialOutcome({
 
 export function summarizeHomeStatuses(orders = [], month) {
   const monthRows = (orders || []).filter(order => {
-    const dateMonth = String(order?.source_work_date || order?.actual_install_date || '').slice(0, 7);
+    const completed = order?.status === 'completed';
+    const dateMonth = String((completed && order?.actual_install_date) || order?.source_work_date || order?.actual_install_date || '').slice(0, 7);
     return dateMonth === month && order?.status !== 'cancelled';
   });
   const bundleKey = row => {
-    const date = String(row?.source_work_date || row?.actual_install_date || '').slice(0, 10);
+    const completed = row?.status === 'completed';
+    const date = String((completed && row?.actual_install_date) || row?.source_work_date || row?.actual_install_date || '').slice(0, 10);
     return `${date}|${row?.customer_id || row?.customer_name || row?.id}`;
   };
   const uniqueCount = rows => new Set(rows.map(bundleKey)).size;

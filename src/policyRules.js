@@ -20,9 +20,16 @@ export function homeOrdersForMonth(orders = [], month, status = null) {
   return status === 'completed' ? summary.completedRows : status === 'pending' ? summary.pendingRows : summary.rows;
 }
 
+// 홈 실적은 청약월이 아니라 설치완료월에 인정합니다.
+// 완료 전 일정/대기 관리는 기존 청약일을 기준으로 유지합니다.
+export function homePerformanceDate(row = {}) {
+  const completed = row?.status === 'completed';
+  return String((completed && row?.actual_install_date) || row?.source_work_date || row?.actual_install_date || '').slice(0, 10);
+}
+
 export function homeBundleCount(rows = []) {
   return new Set((rows || []).map(row => {
-    const date = String(row?.source_work_date || row?.actual_install_date || '').slice(0, 10);
+    const date = homePerformanceDate(row);
     return `${date}|${row?.customer_id || row?.customer_name || row?.id}`;
   })).size;
 }

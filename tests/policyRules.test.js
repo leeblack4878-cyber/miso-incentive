@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas, secondPerformancePoints,
-  summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
+  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate,
   replaceCountedSale, mergeSaleMetaPreservingLegacy,
 } from '../src/policyRules.js';
 
@@ -35,6 +35,17 @@ test('취소 홈은 제외하고 설치대기와 완료를 구분한다', () => 
   assert.deepEqual(homeOrdersForMonth(rows, '2026-08').map(x => x.id), [2, 3]);
   assert.deepEqual(homeOrdersForMonth(rows, '2026-08', 'pending').map(x => x.id), [2]);
   assert.deepEqual(homeOrdersForMonth(rows, '2026-08', 'completed').map(x => x.id), [3]);
+});
+
+test('8월 청약 후 9월 설치완료한 홈은 9월 완료실적으로 인정한다', () => {
+  const rows = [
+    { id: 1, customer_id: 'a', source_work_date: '2026-08-28', actual_install_date: '2026-09-02', status: 'completed' },
+    { id: 2, customer_id: 'b', source_work_date: '2026-08-29', planned_install_date: '2026-09-03', status: 'pending' },
+  ];
+  assert.equal(homePerformanceDate(rows[0]), '2026-09-02');
+  assert.deepEqual(homeOrdersForMonth(rows, '2026-08').map(x => x.id), [2]);
+  assert.deepEqual(homeOrdersForMonth(rows, '2026-09', 'completed').map(x => x.id), [1]);
+  assert.equal(homeBundleCount([rows[0]]), 1);
 });
 
 test('같은 고객의 홈 세부행은 핵심 판매 1건으로 센다', () => {

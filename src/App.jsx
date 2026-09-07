@@ -13,7 +13,7 @@ import PendingApprovals from './PendingApprovals';
 import ProfileEditRequests, { ProfileEditRequestForm } from './ProfileEditRequests';
 import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
-  summarizeVasQuality, homeOrdersForMonth, homeBundleCount,
+  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
@@ -1589,10 +1589,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
     const {data,error}=await supabase.from('home_orders')
       .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,actual_install_date')
-      .in('user_id',ids).gte('source_work_date',`${m}-01`).lt('source_work_date',to);
+      .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`);
     if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});return;}
     ids.forEach(id=>{
-      const userOrders=(data||[]).filter(o=>o.user_id===id);
+      const userOrders=homeOrdersForMonth((data||[]).filter(o=>o.user_id===id),m,'completed');
       const completed=userOrders.filter(o=>o.status==='completed');
       mapped[id]=completed.length?calculateHomePolicyEngine(userOrders,config):null;
     });
@@ -2199,7 +2199,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
       {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
     </div>
     {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 ��담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">���장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
   </div>;
 }
 
@@ -2356,7 +2356,7 @@ function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
   const internetKeys=new Set();
   let free=0,smart=0;
   (homeOrders||[]).forEach(o=>{
-    const d=String(o.source_work_date||o.actual_install_date||'').slice(0,10);
+    const d=homePerformanceDate(o);
     const ck=o.customer_id||o.customer_name||o.id;
     if(['internet1g','internet500','internet100','homeOnly','homeTv'].includes(o.product_type))internetKeys.add(`${d}|${ck}`);
     if(o.product_type==='tvFree')free++;
@@ -2379,12 +2379,12 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
     (async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
       const [sr,hr,dr]=await Promise.all([
         supabase.from('customer_sales').select('user_id,source_type,source_meta').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to),
-        supabase.from('home_orders').select('id,user_id,customer_id,customer_name,product_type,sale_type,source_work_date,actual_install_date').in('user_id',ids).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`),
+        supabase.from('home_orders').select('id,user_id,customer_id,customer_name,product_type,sale_type,status,source_work_date,actual_install_date').in('user_id',ids).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`),
         supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to)
       ]);
       const map={};ids.forEach(id=>map[id]={sales:[],home:[],sono:0});
       (sr.data||[]).forEach(x=>map[x.user_id]?.sales.push(x));
-      (hr.data||[]).filter(x=>{const d=String(x.source_work_date||x.actual_install_date||'');return d>=`${month}-01`&&d<to}).forEach(x=>map[x.user_id]?.home.push(x));
+      (hr.data||[]).filter(x=>{const d=homePerformanceDate(x);return x.status==='completed'&&d>=`${month}-01`&&d<to}).forEach(x=>map[x.user_id]?.home.push(x));
       (dr.data||[]).forEach(x=>{const g=x.data?.groups?.sono||{};if(map[x.user_id])map[x.user_id].sono+=Object.values(g).reduce((a,v)=>a+Number(v||0),0)});
       const result={};ids.forEach(id=>result[id]=qualityFromSales(map[id]?.sales||[],map[id]?.home||[],map[id]?.sono||0));setData(result);setLoading(false);
     })().catch(err=>{console.error('SALES QUALITY LOAD ERROR',err);const result={};ids.forEach(id=>result[id]=qualityFromSales([],[],0));setData(result);setLoading(false);});
@@ -5508,7 +5508,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시합니다.</div>}
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시��니다.</div>}
   </div>;
 }
 
@@ -9676,11 +9676,12 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
         supabase.from('customer_sales').select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)').eq('user_id',r.id).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
         supabase.from('spot_claims').select('id,claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',r.id).gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date'),
         supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
-        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,sale_type,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).gte('source_work_date',`${month}-01`).lt('source_work_date',to)
+        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,sale_type,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
       ]);
       const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
-      const homeMap=Object.fromEntries((homeRes.data||[]).map(o=>[String(o.id),o]));
-      const detailHomePolicy=calculateHomePolicyEngine(homeRes.data||[],config);
+      const recognizedHomes=homeOrdersForMonth(homeRes.data||[],month,'completed');
+      const homeMap=Object.fromEntries(recognizedHomes.map(o=>[String(o.id),o]));
+      const detailHomePolicy=calculateHomePolicyEngine(recognizedHomes,config);
       const ledger=[];
       (salesRes.data||[]).forEach(x=>{
         const meta=x.source_meta||{}, customer=x.customers?.customer_name||'이름 없음';
