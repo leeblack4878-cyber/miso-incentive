@@ -218,6 +218,7 @@ const SALES_AREA_LABELS = Object.freeze({ ansan: '안산 상권', siheung: '시�
 const SALES_MANAGER_AREAS = Object.freeze({ 김진백: 'ansan', 임성준: 'siheung' });
 const COMPANY_SCOPE_VIEWERS = new Set(['이강진', '김진문']);
 const NON_EXECUTIVE_COMPANY_CONTROLLERS = new Set(['정유미', '김솔이']);
+const PRIMARY_PERMISSION_ADMIN_ID = 'a50a0979-acef-40b1-98b7-f05074f1c835';
 
 const DEFAULT_TENURE = [
   { key: 'under6', label: '6개월 미만 (실적무관)', rate: 0 },
@@ -2190,6 +2191,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={isFullAdmin}
+          canManagePermissions={authUser?.id===PRIMARY_PERMISSION_ADMIN_ID}
           authUserId={authUser?.id}
           loginPosition={loginEmp?.position||''}
           loginBranch={loginEmp?.branch||''}
@@ -10725,7 +10727,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false }) {
   const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
@@ -10748,8 +10750,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       { key: 'settlement', label: '정산 검토', icon: Wallet, section:'settlement' },
       { key: 'calculationAudit', label: '계산 검증', icon: ShieldCheck, section:'settlement' },
       { key: 'rates', label: '지급기준 관리', icon: Settings, section:'settings' },
-      { key: 'permissions', label: '권한 관리', icon: ShieldCheck, section:'settings' },
     ] : []),
+    ...(canManagePermissions ? [{ key: 'permissions', label: '권한 관리', icon: ShieldCheck, section:'settings' }] : []),
   ];
   const ADMIN_SECTIONS=[
     {key:'operations',label:'오늘의 운영',icon:LayoutDashboard},
@@ -10972,7 +10974,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
         <RatesManager config={config} persistConfig={persistConfig} />
       )}
 
-      {adminTab === 'permissions' && isFullAdmin && (
+      {adminTab === 'permissions' && canManagePermissions && (
         <PermissionsManager employees={employees} />
       )}
     </div>
@@ -11620,7 +11622,7 @@ function PermissionsManager({ employees }) {
   const [error, setError] = useState('');
   const [nameQuery, setNameQuery] = useState('');
 
-  const [autoPositions, setAutoPositions] = useState(['점장', '부점장', '담당']);
+  const [autoPositions, setAutoPositions] = useState([]);
   const [autoSaving, setAutoSaving] = useState(false);
 
   useEffect(() => {
@@ -11657,7 +11659,7 @@ function PermissionsManager({ employees }) {
     <div className="max-w-2xl space-y-4">
       <div className="text-xs text-gray-400 bg-gray-50 rounded-lg p-3 flex gap-2">
         <Info size={13} className="shrink-0 mt-0.5" />
-        이 화면은 전체 관리자(사장님)만 볼 수 있어요. 실수로 다른 사람에게 전체 관리자 권한을 주지 않도록 주의해주세요.
+        이 화면은 이강진 계정만 볼 수 있어요. 모든 권한 변경은 변경 이력에 기록됩니다.
       </div>
 
       <Section title="가입 승인시 자동으로 매니저 권한 부여할 직급" defaultOpen>
