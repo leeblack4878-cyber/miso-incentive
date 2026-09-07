@@ -303,6 +303,9 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
 
 test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산근거·완전한 실행취소를 제공한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const \[mobileSaleKind,setMobileSaleKind\]=useState\('\'\)/);
+  assert.match(source, /const addOne = \(ri=null,ci=null\)/);
+  assert.match(source, /if\(!mobileSaleDraft\|\|!mobileSaleKind\|\|!Number\.isInteger\(mobileSaleDraft\.ri\)/);
   assert.match(source, /miso_recent_mobile_combos_v1/);
   assert.match(source, /최근 판매 조합 빠른 선택/);
   assert.match(source, /2ND·고객약속·영업비용 추가/);
@@ -313,6 +316,9 @@ test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산�
   assert.match(source, /if\(toast\.usedMnpBundle\)nextMnpBundle\.usedMnpBundle/);
   assert.match(source, /방금 등록 취소/);
   assert.match(source, /VAS·보험 \$\{vasLabels\.length\}개/);
+  assert.match(source, /홈 실적 기준 예상 조정/);
+  assert.match(source, /전략포인트 비중 예상 조정/);
+  assert.match(source, /정산 시 최종 반영액은 달라질 수 있습니다/);
   assert.doesNotMatch(source, /2ND 회선 VAS 수수료 제외/);
   assert.match(source, /bundleVasCommissionExcluded:true/);
   assert.match(source, /vasKeys:\[\.\.\.mobileVasKeys\], bundleVasMap:mobileBundleVasMap/);

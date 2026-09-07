@@ -22,7 +22,7 @@ test('예상마감 달성률로 잘함·주의·부족을 구분한다', () => {
   assert.equal(projectMetric({ current: 3, target: 0, factor: 2 }).state, 'unset');
 });
 
-test('매장별 복사 문구는 점장에게 바로 전달할 수 있는 대화형 피드백이다', () => {
+test('매장별 복사 문구는 매장 단톡방에 바로 전달할 수 있는 대화형 피드백이다', () => {
   const inputRows = [
     { name: '직원A', status: 'input', summary: 'HS 1건' },
     { name: '직원B', status: 'zero' },
@@ -38,14 +38,16 @@ test('매장별 복사 문구는 점장에게 바로 전달할 수 있는 대화
     todayInstalls:[{customerName:'이고객'}],
     overdueInstalls:[{customerName:'박고객',plannedDate:'2026-09-03'}],
   });
-  assert.match(text, /점장님, 9월 4일 월곶점은 근무 대상 3명 중 1명이 실적을 입력했습니다/);
+  assert.match(text, /좋은 아침입니다 😊 9월 4일 월곶점 브리핑 공유드립니다/);
+  assert.match(text, /현재 근무 대상 3명 중 1명이 실적을 입력했습니다/);
   assert.match(text, /1명은 실적 0건으로 확인했습니다/);
   assert.match(text, /아직 입력이 확인되지 않은 직원은 직원C입니다/);
   assert.match(text, /월말 예상 기준으로 HS .*은 좋은 흐름입니다/);
   assert.match(text, /반면 홈 .*은 보완이 필요합니다/);
-  assert.match(text, /오늘은 홈 실적을 우선 보완하고, 직원C님의 입력 여부를 확인하고/);
+  assert.match(text, /홈 실적을 우선 보완하고, 직원C님의 입력 여부를 확인하고/);
   assert.match(text, /고객 약속 1건 · 김고객\(제휴카드 확인\)/);
   assert.match(text, /홈 설치 예정 1건 · 이고객/);
   assert.match(text, /예정일이 지난 홈 미완료 1건 · 박고객\(2026-09-03\)/);
+  assert.match(text, /월곶점 화이팅! 💪/);
   assert.match(buildAllBriefingText({ dateLabel: '9월 4일', stores: [{ storeName: '월곶점', inputRows, metrics }] }), /전체 근무 대상 3명 중 1명이 실적을 입력했고, 1명은 0건으로 확인했습니다/);
 });

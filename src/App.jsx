@@ -2199,7 +2199,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
       {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
     </div>
     {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 ��담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
   </div>;
 }
 
@@ -5962,7 +5962,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
   const [specialPolicies,setSpecialPolicies]=useState([]);
   // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
-  const [mobileSaleKind,setMobileSaleKind]=useState('normal'); // normal | special | incentive_unpaid
+  const [mobileSaleKind,setMobileSaleKind]=useState(''); // '' | normal | special | incentive_unpaid
   const [mobileSpecialPolicyId,setMobileSpecialPolicyId]=useState('');
   const [mobileSpecialExceptionAmount,setMobileSpecialExceptionAmount]=useState('');
   const [extraInput,setExtraInput]=useState(null); // sono | tailored | customerReg
@@ -6027,6 +6027,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const vasKeys=(combo.vasKeys||[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k).filter((k,i,a)=>(k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k))&&a.indexOf(k)===i);
     const bundleKeys=(combo.bundle2ndKeys||[]).filter(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).some(v=>v.key===k)).slice(0,2);
     setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
+    setMobileSaleKind('normal');
     setMobileStrategicPlan(!!combo.strategicPlan);
     setMobileVasKeys(vasKeys);
     setMobileBundle2ndKeys(bundleKeys);
@@ -6906,11 +6907,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileTargetPlan(plan?.target_plan||'');
   };
 
-  const addOne = (ri,ci) => {
+  const addOne = (ri=null,ci=null) => {
     if(locked)return;
     setEditingSale(null);
     setEditingCompletedTaskCount(0);
-    const label=mobileLabelFor(ri,ci);
+    const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
     setMobileSaleDraft({ri,ci,label});
     setMobileDetailsOpen(false);
     setMobileCalcOpen(false);
@@ -6939,7 +6940,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     setMobileExpenseCategory('케이스');
     setMobileExpenseAmount('');
     setMobileExpenseMemo('');
-    setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSaleKind('normal'); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
+    setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSaleKind(''); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
   };
 
   const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false) => {
@@ -6980,6 +6981,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const submitMobileSale = async () => {
     if(!mobileSaleDraft||!currentEmp?.id||mobileSubmitGuardRef.current)return;
+    if(!mobileSaleKind)return showAppToast('판매 구분을 선택해주세요.',{tone:'error'});
+    if(!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return showAppToast('가입구분과 요금제군을 선택해주세요.',{tone:'error'});
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
     if(mobileCareKeys.includes('payment3')&&!mobilePaymentFirstDate)return showAppToast('3개월 요금 수납의 첫 수납 예정일을 선택해주세요.',{tone:'error'});
@@ -7257,7 +7260,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
       setMobileSaleDraft(null);
       setLegacyConversion(null);
-      setMobileSaleKind('normal');
+      setMobileSaleKind('');
       setMobileSpecialPolicyId('');
       setMobileSpecialExceptionAmount('');
       setTimeout(loadDaySales,150);
@@ -7380,7 +7383,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   };
 
   const mobilePreview=(()=>{
-    if(!mobileSaleDraft)return null;
+    if(!mobileSaleDraft||!mobileSaleKind||!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return null;
     const saleDate=`${month}-${selectedDay}`;
     const base=normalizeDay(day),nextMatrix=base.matrix.map(r=>[...r]);
     nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
@@ -7407,16 +7410,29 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const points=Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0);
     const productivity=Number(afterPay.kpiScore||0)-Number(beforePay.kpiScore||0);
     const calculationLines=[];
+    const activityDelta=Number(afterPay.tenurePay||0)-Number(beforePay.tenurePay||0);
     const planDelta=Number(afterPay.matrixTotal||0)-Number(beforePay.matrixTotal||0);
+    const appliedPlanDelta=Number(afterPay.mobilePlanPay||0)-Number(beforePay.mobilePlanPay||0);
     const vasDelta=Number(afterPay.rawVasPay||0)-Number(beforePay.rawVasPay||0);
     const secondDelta=Number(afterPay.rawBundle2ndTotal||0)-Number(beforePay.rawBundle2ndTotal||0);
+    const appliedSecondDelta=Number(afterPay.bundle2ndPay||0)-Number(beforePay.bundle2ndPay||0);
+    const strategicDelta=Number(afterPay.strategicAdjustment||0)-Number(beforePay.strategicAdjustment||0);
+    if(activityDelta)calculationLines.push(['영업활동 지원금',activityDelta]);
     calculationLines.push([`요금제 · ${mobileSaleDraft.label}`,planDelta]);
+    const eligiblePlanDelta=Number(afterPay.adjustedMatrixTotal||0)-Number(beforePay.adjustedMatrixTotal||0);
+    const eligibleSecondDelta=Number(afterPay.bundle2ndTotal||0)-Number(beforePay.bundle2ndTotal||0);
+    const homeAdjustment=(appliedPlanDelta-eligiblePlanDelta)+(appliedSecondDelta-eligibleSecondDelta);
     if(vasLabels.length)calculationLines.push([`VAS·보험 ${vasLabels.length}개`,vasDelta]);
     if(secondLabels.length)calculationLines.push([`2ND ${secondLabels.length}개 · ${secondLabels.join(', ')}`,secondDelta]);
+    if(homeAdjustment)calculationLines.push(['홈 실적 기준 예상 조정',homeAdjustment]);
+    if(strategicDelta)calculationLines.push(['전략포인트 비중 예상 조정',strategicDelta]);
     if(mobileUsedMnpBundle)calculationLines.push(['중고 MNP 결합',Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||0)]);
     if(free.bundleOffset)calculationLines.push(['2ND 할인·조건 미충족 제외',-Number(free.bundleOffset||0)]);
     if(specialMatrix||specialVas)calculationLines.push(['인센미지급 특가 제외',-(specialMatrix+specialVas)]);
     if(replacement)calculationLines.push(['특가·지인 추가',replacement]);
+    const explained=calculationLines.reduce((sum,[,amount])=>sum+Number(amount||0),0);
+    const otherDelta=incentive-explained;
+    if(otherDelta)calculationLines.push(['누적 구간·기타 예상 변동',otherDelta]);
     return {incentive,points,productivity,strategicPoints,calculationLines,vasLabels,secondLabels,promiseCount};
   })();
 
@@ -7712,7 +7728,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           <div className="bg-white rounded-xl border border-gray-100 p-3">
             <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={()=>{setInputCategory('mobile');setPickedRow(null);addOne(0,0);}}
+              <button type="button" onClick={()=>{setInputCategory('mobile');setPickedRow(null);addOne();}}
                 className={`p-4 rounded-2xl border text-left ${inputCategory==='mobile'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
                 <div className="text-xl">📱</div><div className="text-sm font-bold text-gray-800 mt-1">모바일 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가입구분 · 요금제 · VAS · 스팟 · 오퍼</div>
@@ -7861,15 +7877,15 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">3. 가입구분</label>
                 <select
-                  value={mobileSaleDraft.ri}
+                  value={mobileSaleDraft.ri??''}
                   onChange={e=>{
                     const ri=Number(e.target.value);
-                    const currentCi=Math.min(mobileSaleDraft.ci||0,activeMatrixCols.length-1);
-                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? (isSeptemberPolicyActive(month)&&currentCi===3?5:currentCi) : 0;
-                    setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
+                    const ci=MATRIX_ROW_DEFS[ri]?.hasTiers ? null : 0;
+                    setMobileSaleDraft({ri,ci,label:ci===null?'':mobileLabelFor(ri,ci)});
                   }}
                   className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
                 >
+                  <option value="" disabled>선택해주세요</option>
                   {MATRIX_ROW_DEFS.map((r,ri)=><option key={r.label} value={ri}>{r.dailyLabel||r.label}</option>)}
                 </select>
               </div>
@@ -7877,17 +7893,18 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">요금제군</label>
                 {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers ? (
                   <select
-                    value={mobileSaleDraft.ci}
+                    value={mobileSaleDraft.ci??''}
                     onChange={e=>{
                       const ci=Number(e.target.value),ri=mobileSaleDraft.ri;
                       setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
                     }}
                     className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
                   >
+                    <option value="" disabled>선택해주세요</option>
                     {activeMatrixOptions.map(({label,ci})=><option key={`${ci}-${label}`} value={ci}>{label}</option>)}
                   </select>
                 ):(
-                  <div className="w-full rounded-xl px-2.5 py-2.5 text-xs bg-gray-50 text-gray-400">해당 없음</div>
+                  <div className="w-full rounded-xl px-2.5 py-2.5 text-xs bg-gray-50 text-gray-400">{Number.isInteger(mobileSaleDraft.ri)?'해당 없음':'가입구분 먼저 선택'}</div>
                 )}
               </div>
             </div>
@@ -8150,14 +8167,14 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                   <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-violet-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
                   {mobileCalcOpen&&<div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 space-y-1">
                     {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-violet-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
-                    <div className="pt-1 border-t border-violet-100 text-[9px] text-gray-400">등급·누적 구간 변화까지 포함한 현재 예상 증가액입니다.</div>
+                    <div className="pt-1 border-t border-violet-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
                   </div>}
                 </>}
               </div>}
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
                   className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
-                <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()}
+                <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()||!mobileSaleKind||!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci)}
                   className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
                   {mobileSaleSaving?(editingSale?'수정 중...':'판매건 등록 중...'):(editingSale?'수정 저장':'실적 등록')}
                 </button>

@@ -47,7 +47,8 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
   const weak = metrics.filter((metric) => metric.state === 'low' || metric.state === 'watch').sort((a, b) => a.forecastRate - b.forecastRate);
   const unset = metrics.filter((metric) => metric.state === 'unset');
   const intro = [
-    `점장님, ${dateLabel} ${storeName}은 근무 대상 ${workingCount}명 중 ${count('input')}명이 실적을 입력했습니다.`,
+    `좋은 아침입니다 😊 ${dateLabel} ${storeName} 브리핑 공유드립니다.`,
+    `현재 근무 대상 ${workingCount}명 중 ${count('input')}명이 실적을 입력했습니다.`,
     count('zero') ? `${count('zero')}명은 실적 0건으로 확인했습니다.` : '',
     count('off') ? `휴무는 ${count('off')}명입니다.` : '',
   ].filter(Boolean).join(' ');
@@ -67,12 +68,12 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
 
   lines.push('', '[오늘 일정]');
   lines.push(todayTasks.length
-    ? `고객 약속 ${todayTasks.length}건 · ${todayTasks.map((row) => `${row.customerName || '고객명 미입력'}(${row.title || '약속'})`).join(', ')}`
+    ? `고객 약속 ${todayTasks.length}건 · ${todayTasks.map((row) => `${row.customerName || '고객명 미입력'}(${row.title || '약속'}${row.employeeName ? ` · ${row.employeeName}` : ''})`).join(', ')}`
     : '오늘 고객 약속은 없습니다.');
   lines.push(todayInstalls.length
-    ? `홈 설치 예정 ${todayInstalls.length}건 · ${todayInstalls.map((row) => row.customerName || '고객명 미입력').join(', ')}`
+    ? `홈 설치 예정 ${todayInstalls.length}건 · ${todayInstalls.map((row) => `${row.customerName || '고객명 미입력'}${row.employeeName ? `(${row.employeeName})` : ''}`).join(', ')}`
     : '오늘 홈 설치 예정은 없습니다.');
-  if (overdueInstalls.length) lines.push(`⚠️ 예정일이 지난 홈 미완료 ${overdueInstalls.length}건 · ${overdueInstalls.map((row) => `${row.customerName || '고객명 미입력'}(${row.plannedDate || '일정 미정'})`).join(', ')}`);
+  if (overdueInstalls.length) lines.push(`⚠️ 예정일이 지난 홈 미완료 ${overdueInstalls.length}건 · ${overdueInstalls.map((row) => `${row.customerName || '고객명 미입력'}(${row.plannedDate || '일정 미정'}${row.employeeName ? ` · ${row.employeeName}` : ''})`).join(', ')}`);
 
   const actions = [];
   if (weak.length) actions.push(`${weak.slice(0, 2).map((metric) => metric.label).join('·')} 실적을 우선 보완`);
@@ -81,8 +82,12 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
   if (todayTasks.length) actions.push(`고객 약속 ${todayTasks.length}건을 확인`);
   if (todayInstalls.length) actions.push(`오늘 홈 설치 ${todayInstalls.length}건을 확인`);
   if (overdueInstalls.length) actions.push(`설치 지연 ${overdueInstalls.length}건의 진행상태를 확인`);
-  if (actions.length) lines.push('', `오늘은 ${actions.join('하고, ')}해주세요.`);
-  else lines.push('', '오늘도 현재의 좋은 흐름을 이어가 주세요.');
+  if (actions.length) lines.push('', `[오늘 함께 챙길 것]`, `${actions.join('하고, ')}하겠습니다.`);
+  else lines.push('', '오늘도 현재의 좋은 흐름을 함께 이어가겠습니다.');
+  const cheer = weak.length || missingNames.length || overdueInstalls.length
+    ? `오늘 한 건씩 집중해서 부족한 흐름 같이 끌어올려봐요. ${storeName} 화이팅! 💪`
+    : `지금 흐름 아주 좋습니다. 오늘도 힘차게 이어가요. ${storeName} 화이팅! 🔥`;
+  lines.push('', cheer);
   return lines.join('\n');
 }
 
@@ -96,7 +101,7 @@ export function buildAllBriefingText({ dateLabel, stores = [] } = {}) {
     `${dateLabel} 전체 근무 대상 ${workingCount}명 중 ${count('input')}명이 실적을 입력했고, ${count('zero')}명은 0건으로 확인했습니다. 미입력 ${count('missing')}명, 휴무 ${count('off')}명입니다.`,
     count('missing') ? '오늘은 미입력 확인과 매장별 부족 지표 보완이 우선입니다.' : '전원 입력이 확인됐습니다. 매장별 예상 마감 흐름을 점검해주세요.',
     '',
-    '아래는 점장별로 바로 전달할 수 있는 매장 피드백입니다.',
+    '아래 내용은 각 매장 단톡방에 바로 전달할 수 있는 브리핑입니다.',
   ].join('\n');
   return [header, ...stores.map((store) => buildStoreBriefingText({ dateLabel, ...store }))].join('\n\n');
 }
