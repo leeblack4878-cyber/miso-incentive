@@ -203,6 +203,7 @@ test('관리자 고객 통합검색은 판매 이력과 약속을 함께 찾는�
   assert.match(customerCare, /고객 통합검색/);
   assert.match(customerCare, /판매 이력과 약속을 한 번에 찾아요/);
   assert.match(customerCare, /판매 \{customerSales\.length\} · 약속 \{customerTasks\.length\}/);
+  assert.doesNotMatch(customerCare, /customer_sales'\)\.select\('[^']*status/);
 });
 
 test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () => {
