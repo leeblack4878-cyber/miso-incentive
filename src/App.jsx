@@ -9845,22 +9845,23 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
 }
 
 function AdminCustomerCareOverview({ employees, month, initialFilter='todo', compact=false, onOpen }) {
-  const [tasks,setTasks]=useState([]),[customers,setCustomers]=useState([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
+  const [tasks,setTasks]=useState([]),[customers,setCustomers]=useState([]),[sales,setSales]=useState([]),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
   const [filter,setFilter]=useState(initialFilter),[category,setCategory]=useState('all'),[branch,setBranch]=useState('all'),[employeeId,setEmployeeId]=useState('all'),[query,setQuery]=useState('');
   const employeeMap=Object.fromEntries((employees||[]).map(e=>[e.id,e]));
   const employeeIds=(employees||[]).map(e=>e.id).filter(Boolean);
   const employeeKey=employeeIds.join('|');
   const load=useCallback(async()=>{
-    if(!employeeIds.length){setTasks([]);setCustomers([]);setLoading(false);return;}
+    if(!employeeIds.length){setTasks([]);setCustomers([]);setSales([]);setLoading(false);return;}
     setLoading(true);
     setLoadError('');
-    const [{data:t,error:taskError},{data:c,error:customerError}]=await Promise.all([
+    const [{data:t,error:taskError},{data:c,error:customerError},{data:s,error:saleError}]=await Promise.all([
       supabase.from('customer_tasks').select('*').in('user_id',employeeIds).order('due_date',{ascending:true}),
-      supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds)
+      supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds),
+      compact?Promise.resolve({data:[],error:null}):supabase.from('customer_sales').select('id,user_id,customer_id,sale_date,metric_label,source_type,status').in('user_id',employeeIds).order('sale_date',{ascending:false}).limit(2000)
     ]);
-    if(taskError||customerError)setLoadError(friendlyError(taskError||customerError));
-    setTasks(t||[]);setCustomers(c||[]);setLoading(false);
-  },[employeeKey]); // eslint-disable-line
+    if(taskError||customerError||saleError)setLoadError(friendlyError(taskError||customerError||saleError));
+    setTasks(t||[]);setCustomers(c||[]);setSales(s||[]);setLoading(false);
+  },[employeeKey,compact]); // eslint-disable-line
   useEffect(()=>{load()},[load]);
   useEffect(()=>{setFilter(initialFilter)},[initialFilter]);
   const customerMap=Object.fromEntries(customers.map(c=>[c.id,c]));
@@ -9900,6 +9901,18 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
   baseFiltered.forEach(t=>{if(String(t.task_type||'').startsWith('payment3_'))paymentGroups.set(paymentGroupKey(t),true);else grouped.push({task:t,tasks:[t]})});
   paymentGroups.forEach((_,key)=>{const ordered=scoped.filter(t=>String(t.task_type||'').startsWith('payment3_')&&paymentGroupKey(t)===key).sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));const matching=ordered.filter(t=>baseFiltered.some(x=>x.id===t.id));const next=filter==='done'?[...matching].reverse()[0]:filter==='cancelled'?[...matching].reverse()[0]:ordered.find(t=>t.status!=='completed'&&t.status!=='cancelled')||ordered[ordered.length-1];if(next)grouped.push({task:next,tasks:ordered,payment:true})});
   const displayRows=grouped.sort((a,b)=>String(a.task.due_date||'').localeCompare(String(b.task.due_date||'')));
+  const searchNeedle=query.trim().toLowerCase();
+  const unifiedCustomerRows=searchNeedle?customers.map(customer=>{
+    const emp=employeeMap[customer.user_id];
+    if(!emp)return null;
+    if(branch!=='all'&&emp.branch!==branch)return null;
+    if(employeeId!=='all'&&customer.user_id!==employeeId)return null;
+    const customerTasks=scoped.filter(task=>task.customer_id===customer.id);
+    const customerSales=sales.filter(sale=>sale.customer_id===customer.id&&sale.status!=='cancelled');
+    const haystack=[customer.customer_name,emp.name,emp.branch,...customerTasks.flatMap(task=>[task.title,task.note,task.task_meta?.card_name]),...customerSales.map(sale=>sale.metric_label)].filter(Boolean).join(' ').toLowerCase();
+    if(!haystack.includes(searchNeedle))return null;
+    return {customer,emp,tasks:customerTasks,sales:customerSales,lastSale:customerSales[0]};
+  }).filter(Boolean).sort((a,b)=>String(b.lastSale?.sale_date||'').localeCompare(String(a.lastSale?.sale_date||''))).slice(0,20):[];
 
   if(loading)return <div className="bg-white rounded-xl border p-4 text-xs text-gray-400">고객 약속 현황 불러오는 중...</div>;
   if(loadError)return <div className="bg-white rounded-xl border border-red-100 p-4"><div className="text-sm font-bold text-red-500">고객 약속을 불러오지 못했어요.</div><div className="text-xs text-red-400 mt-1">{loadError}</div></div>;
@@ -9910,7 +9923,12 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
     </div>
     {compact?<button onClick={onOpen} className="w-full bg-white rounded-xl border border-gray-100 p-4 flex justify-between text-left"><div><div className="text-sm font-bold">고객 약속 관리</div><div className="text-xs text-gray-400 mt-1">직원별 진행단계와 기한초과 내역을 확인해요.</div></div><span className="text-xs font-semibold text-violet-600">상세 ›</span></button>:<>
     <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
-      <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="직원명·고객명·약속·카드사 검색" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
+      <div><div className="text-xs font-bold text-gray-800">고객 통합검색</div><div className="mt-0.5 text-[10px] text-gray-400">판매 이력과 약속을 한 번에 찾아요.</div></div>
+      <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명·직원명·판매 항목·약속·카드사 검색" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
+      {searchNeedle&&<div className="rounded-xl border border-violet-100 bg-violet-50/50 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-violet-100"><span className="text-[10px] font-bold text-violet-700">통합 고객 검색 결과</span><span className="text-[10px] text-violet-500">{unifiedCustomerRows.length}명</span></div>
+        <div className="max-h-56 overflow-y-auto divide-y divide-violet-100">{unifiedCustomerRows.map(({customer,emp,tasks:customerTasks,sales:customerSales,lastSale})=><button key={customer.id} type="button" onClick={()=>{setQuery(customer.customer_name);setBranch(emp.branch||'all');setEmployeeId(emp.id)}} className="w-full bg-white/80 px-3 py-2.5 text-left hover:bg-white"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{customer.customer_name} · {emp.name}</div><div className="mt-0.5 text-[10px] text-gray-400 truncate">{displayStoreName(emp.branch)}{lastSale?` · 최근 ${lastSale.sale_date} ${lastSale.metric_label||'판매'}`:''}</div></div><div className="shrink-0 text-[10px] font-semibold text-violet-600">판매 {customerSales.length} · 약속 {customerTasks.length}</div></div></button>)}{unifiedCustomerRows.length===0&&<div className="px-3 py-5 text-center text-xs text-gray-400">판매 이력과 약속에서 일치하는 고객이 없어요.</div>}</div>
+      </div>}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <select value={branch} onChange={e=>{setBranch(e.target.value);setEmployeeId('all')}} className="border rounded-lg px-2.5 py-2 text-xs"><option value="all">전체 매장</option>{stores.map(x=><option key={x} value={x}>{displayStoreName(x)}</option>)}</select>
         <select value={employeeId} onChange={e=>setEmployeeId(e.target.value)} className="border rounded-lg px-2.5 py-2 text-xs"><option value="all">전체 직원</option>{(employees||[]).filter(e=>branch==='all'||e.branch===branch).map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>

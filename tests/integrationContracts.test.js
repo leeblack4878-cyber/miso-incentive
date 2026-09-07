@@ -196,6 +196,15 @@ test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률�
   assert.match(source, /setCustomerCareFilter\('overdue'\)/);
 });
 
+test('관리자 고객 통합검색은 판매 이력과 약속을 함께 찾는다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const customerCare = source.match(/function AdminCustomerCareOverview[\s\S]*?function AdminManagementAlerts/)?.[0]||'';
+  assert.match(customerCare, /customer_sales/);
+  assert.match(customerCare, /고객 통합검색/);
+  assert.match(customerCare, /판매 이력과 약속을 한 번에 찾아요/);
+  assert.match(customerCare, /판매 \{customerSales\.length\} · 약속 \{customerTasks\.length\}/);
+});
+
 test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /todayIsDayOff=isCurrentHomeMonth[\s\S]*\.dayOff/);
