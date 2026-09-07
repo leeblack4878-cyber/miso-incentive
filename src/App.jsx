@@ -9921,24 +9921,33 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
 }
 
 function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dailyRecords, isFullAdmin, config, canViewSpotAdmin=false }) {
-  const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0});
+  const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0,goalRisk:0});
   useEffect(()=>{
     (async()=>{
       const today=new Date().toISOString().slice(0,10);
       const ids=(employees||[]).map(e=>e.id);
       if(!ids.length)return;
-      const [{data:t},{data:h},{data:s},{data:p},{data:sr},{data:hq}]=await Promise.all([
+      const scopedBranches=[...new Set((employees||[]).map(employee=>employee.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
+      const [{data:t},{data:h},{data:s},{data:p},{data:sr},{data:hq},{data:goals}]=await Promise.all([
         supabase.from('customer_tasks').select('id').in('user_id',ids).eq('status','pending').lt('due_date',today),
         supabase.from('home_orders').select('id').in('user_id',ids).eq('status','pending').lt('planned_install_date',today),
         supabase.from('spot_claims').select('id').in('user_id',ids).eq('status','pending'),
         supabase.from('profile_edit_requests').select('id').in('user_id',ids).eq('status','pending'),
         supabase.from('settlement_reviews').select('user_id,status').eq('month',month).in('user_id',ids),
-        supabase.from('head_office_performance').select('user_id,metrics').eq('month',month).in('user_id',ids)
+        supabase.from('head_office_performance').select('user_id,metrics').eq('month',month).in('user_id',ids),
+        supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',scopedBranches)
       ]);
       const reviewed=new Set((sr||[]).filter(x=>x.status==='checked'||x.status==='final').map(x=>x.user_id));
       const rowMap=Object.fromEntries((rows||[]).map(x=>[x.id,x]));
       const hqDiff=(hq||[]).filter(x=>{const r=rowMap[x.user_id],m=x.metrics||{};return r&&(Number(headOfficeScores(normalizeHeadOfficeMetrics(m),config,month)?.hs||0)!==Number(hsCount(r.draft)||0))}).length;
-      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length,profile:(p||[]).length,settlement:Math.max(0,ids.length-reviewed.size),hqDiff});
+      const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
+      const goalRisk=(goals||[]).filter(goal=>{
+        const target=Number(({...(goal.company_goals||{}),...(goal.challenge_goals||{})}).hs||0);
+        if(target<=0)return false;
+        const actual=(rows||[]).filter(row=>row.branch===goal.store_name).reduce((sum,row)=>sum+hsCount(row.draft),0);
+        return actual*forecastFactor<target;
+      }).length;
+      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length,profile:(p||[]).length,settlement:Math.max(0,ids.length-reviewed.size),hqDiff,goalRisk});
     })();
   },[employees,month,rows,config]);
   const now=new Date(),todayKey=String(now.getDate()).padStart(2,'0');
@@ -9952,6 +9961,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dai
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
       {canViewSpotAdmin&&<button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>}
       <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount}</b></button>
+      <button onClick={()=>onGo('storeGoals')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">HS 목표 위험 매장 <b className="float-right">{counts.goalRisk}</b></button>
       {isFullAdmin&&<button onClick={()=>onGo('headOfficeData')} className="bg-blue-50 text-blue-700 rounded-lg p-2 text-left">본사 데이터 차이 <b className="float-right">{counts.hqDiff}</b></button>}
       {isFullAdmin&&<button onClick={()=>onGo('settlement')} className="bg-emerald-50 text-emerald-700 rounded-lg p-2 text-left">정산 미검토 <b className="float-right">{counts.settlement}</b></button>}
       <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-700 rounded-lg p-2 text-left">프로필 수정 요청 <b className="float-right">{counts.profile}</b></button>

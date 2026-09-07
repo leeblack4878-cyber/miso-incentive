@@ -241,6 +241,13 @@ test('관리자 홈은 처리할 업무를 실제 관리 메뉴에 연결한다'
   assert.match(source, /status==='checked'\|\|x\.status==='final'/);
 });
 
+test('관리자 홈은 월말 예상 HS가 목표에 못 미치는 매장을 바로 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const goalRisk=\(goals\|\|\[\]\)\.filter/);
+  assert.match(source, /actual\*forecastFactor<target/);
+  assert.match(source, /onGo\('storeGoals'\)[\s\S]*?HS 목표 위험 매장/);
+});
+
 test('중요한 성취 축하는 사용자별 한 번만 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /miso-celebration-badge-/);
