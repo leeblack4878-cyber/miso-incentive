@@ -196,6 +196,31 @@ test('관리자 고객 약속은 관리 범위·진행단계·월별 이행률�
   assert.match(source, /setCustomerCareFilter\('overdue'\)/);
 });
 
+test('직원 전환 시 선택한 직원의 고객·약속·홈 설치를 일관되게 관리한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const employeeView = source.match(/function EmployeeView[\s\S]*?function DailyInputTab/)?.[0]||'';
+  assert.match(employeeView, /const viewedUserId=currentEmp\?\.id\|\|authUser\?\.id/);
+  assert.match(employeeView, /직원 대리 관리 중/);
+  assert.match(employeeView, /<CustomerCareManager[\s\S]*?userId=\{viewedUserId\}/);
+  assert.match(employeeView, /homeProps=\{\{[\s\S]*?userId:viewedUserId/);
+  assert.match(employeeView, /<SalesExpensePanel[\s\S]*?userId=\{viewedUserId\}/);
+
+  const sql = await readFile(new URL('../supabase/migrations/20260907140000_manager_target_data_write_access.sql', import.meta.url), 'utf8');
+  for (const table of ['customers','customer_sales','customer_tasks','home_orders','sales_expenses']) {
+    assert.match(sql, new RegExp(`${table}_manager_(?:insert|update|delete)`));
+  }
+  assert.match(sql, /can_write_target\(user_id\)/);
+});
+
+test('직원 홈 설치 처리 내역은 완료와 취소를 별도로 조회한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const homeManager = source.match(/function HomeOrderManager[\s\S]*?function [A-Z]/)?.[0]||'';
+  assert.match(homeManager, /archiveFilter/);
+  assert.match(homeManager, /설치완료 \$\{fmtCount\(completed\.length\)\}건/);
+  assert.match(homeManager, /취소 \$\{fmtCount\(cancelled\.length\)\}건/);
+  assert.match(homeManager, /archiveFilter==='completed'\?completed:cancelled/);
+});
+
 test('관리자 고객 통합검색은 판매 이력과 약속을 함께 찾는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const customerCare = source.match(/function AdminCustomerCareOverview[\s\S]*?function AdminManagementAlerts/)?.[0]||'';
