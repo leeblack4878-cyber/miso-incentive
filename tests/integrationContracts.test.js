@@ -378,6 +378,12 @@ test('명예의 전당 위치와 프로필·실적 통합 카드를 간결하게
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const sql = await readFile(new URL('../supabase_employee_public_profiles.sql', import.meta.url), 'utf8');
   assert.match(source, /function HallOfFame/);
+  assert.match(source, /function RecognitionRankingHub/);
+  assert.match(source, /명예의 전당 · 월간 순위/);
+  const recognitionHub = source.match(/function RecognitionRankingHub[\s\S]*?function GamificationHub/)?.[0]||'';
+  assert.match(recognitionHub, /<HallOfFame/);
+  assert.match(recognitionHub, /<MonthlyPerformanceRankingCard/);
+  assert.doesNotMatch(recognitionHub, /setActiveTab|role="tab"/);
   assert.match(source, /전체 직원 프로필 보기/);
   assert.match(source, /employee_public_profiles.*status_message/);
   const hub = source.match(/function GamificationHub[\s\S]*?function SpecialBadgeAwardPanel/)?.[0]||'';

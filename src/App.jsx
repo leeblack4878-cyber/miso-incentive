@@ -3397,6 +3397,34 @@ function HallOfFame({rows,month}){
   return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이번 달 주인공들을 만나보세요</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-violet-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-violet-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
 }
 
+function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
+  return <section className="rounded-3xl border border-violet-100 bg-gradient-to-b from-violet-50/80 to-white p-2.5 shadow-sm">
+    <div className="px-2.5 pt-2 pb-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-bold tracking-wide text-violet-600">성과 라운지</div>
+          <div className="mt-0.5 text-base font-black text-gray-900">명예의 전당 · 월간 순위</div>
+          <div className="mt-1 text-[11px] leading-relaxed text-gray-500">이번 달 주인공과 내 순위를 한 번에 확인하세요.</div>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">🏆 명예</span>
+          <span className="rounded-full bg-violet-100 px-2 py-1 text-[9px] font-bold text-violet-700">순위</span>
+        </div>
+      </div>
+    </div>
+    <div className="space-y-2">
+      <HallOfFame rows={rows} month={month} />
+      <MonthlyPerformanceRankingCard
+        rows={rows}
+        userId={userId}
+        userName={userName}
+        userBranch={userBranch}
+        title={`${monthLabel(month)} 월 누적 순위`}
+      />
+    </div>
+  </section>;
+}
+
 function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp,currentAmount=0,onOpenPay,onGoInput}) {
   const [storedBadges,setStoredBadges]=useState([]);
   const [titleKey,setTitleKey]=useState('');
@@ -5941,13 +5969,12 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             <EmployeeHeadOfficeComparison userId={authUser?.id} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
-            <HallOfFame rows={competitionRows} month={month} />
-            <MonthlyPerformanceRankingCard
+            <RecognitionRankingHub
               rows={competitionRows}
+              month={month}
               userId={currentEmp?.id||authUser?.id}
               userName={currentEmp?.name||authProfile?.name||''}
               userBranch={currentEmp?.branch||''}
-              title={`${monthLabel(month)} 월 누적 순위`}
             />
           </> : <>
             {storeScopeOptions.length>1&&<div className="rounded-2xl border border-gray-100 bg-white p-3">
