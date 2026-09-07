@@ -493,6 +493,9 @@ test('지원 판매는 선택 매장 팀 실적에만 반영하고 개인 계산
   assert.match(source, /const personalSalesRows=salesRows\.filter\(\(r\)=>!r\.teamOnly\)/);
   assert.match(source, /source_type==='home'&&!credit\.is_completed/);
   assert.match(source, /storeName:activeTeamSupport\?teamSupportStore:null/);
+  assert.match(source, /const resetTeamSupportSelection=\(\)=>\{setTeamSupportMode\(false\);setTeamSupportStore\(''\);\}/);
+  assert.equal((source.match(/resetTeamSupportSelection\(\);/g)||[]).length, 2);
+  assert.match(source, /onChange=\{event=>\{setTeamSupportMode\(event\.target\.checked\);setTeamSupportStore\(''\)\}\}/);
   assert.match(schema, /max\(h\.actual_install_date\)/);
   assert.match(schema, /source_sale_id uuid references public\.customer_sales\(id\) on delete cascade/);
 });

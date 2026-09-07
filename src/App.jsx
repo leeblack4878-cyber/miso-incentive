@@ -6248,7 +6248,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const teamSupportEligible=!!loginEmp&&(String(loginEmp.position||'').includes('담당')||['김솔이','이강진','김진문'].includes(loginEmp.name));
   const salesStores=(stores||[]).filter(store=>!NON_SALES_STORES.includes(store));
   const activeTeamSupport=teamSupportEligible&&currentEmp?.id===authUser?.id&&teamSupportMode;
-  useEffect(()=>{if(!teamSupportStore&&salesStores.length)setTeamSupportStore(salesStores[0])},[teamSupportStore,salesStores.join('|')]); // eslint-disable-line
+  const resetTeamSupportSelection=()=>{setTeamSupportMode(false);setTeamSupportStore('');};
 
 
   const dayMatrix = day.matrix;
@@ -6726,6 +6726,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,storeName:activeTeamSupport?teamSupportStore:null,payload:{employee_id:currentEmp.id,customer_name:customer,store_name:activeTeamSupport?teamSupportStore:currentEmp.branch,team_only:activeTeamSupport,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
       const resultId=`home-${Date.now()}`;
       setToast({id:resultId,source:'home',kind:'normal',customerName:customer,label:products.map(p=>p.label).join(' + '),title:activeTeamSupport?'지원 홈 판매 등록 완료':'홈 판매 등록 완료',sub:activeTeamSupport?`${displayStoreName(teamSupportStore)} 팀 실적 전용${homeDirectComplete?'으로 반영했어요':' · 설치완료 후 반영돼요'}`:(homeDirectComplete?'설치완료 실적으로 반영했어요':'설치대기로 등록했어요'),promiseCount:homePromiseRows.length,customerSaleId:primarySaleId,pointDelta:0,teamOnly:activeTeamSupport});
+      if(activeTeamSupport)resetTeamSupportSelection();
       setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
       setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       setTimeout(loadDaySales,150);
@@ -7517,6 +7518,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         notifyStoreManagers({actorId:authUser.id,storeName:teamSupportStore,type:'daily_input',title:`${loginEmp?.name||'담당'}님이 지원 판매를 등록했어요`,message:`${customer} · ${mobileSaleDraft.label}`,payload:{employee_id:authUser.id,employee_name:loginEmp?.name,store_name:teamSupportStore,team_only:true,month,day:selectedDay,label:mobileSaleDraft.label}});
         const toastId=`team-mobile-${Date.now()}`;
         setToast({id:toastId,source:'mobile',kind:'normal',title:'지원 판매 등록 완료',sub:`${displayStoreName(teamSupportStore)} 팀 실적에만 반영했어요`,label:mobileSaleDraft.label,customerName:customer,promiseCount:mobileCareKeys.length,customerSaleId:saved.saleId,payDelta:0,salePayDelta:0,activityPayDelta:0,bonusPayDelta:0,pointDelta:0,strategicPointDelta:0,productivityDelta:0,teamOnly:true});
+        resetTeamSupportSelection();
         setTimeout(()=>setToast(value=>value?.id===toastId?null:value),10000);
       }else if(legacyConversion?.kind==='mobile' && legacyBaseOverride){
         // 구버전 원본 1건을 먼저 뺀 상태(legacyBaseOverride)에 새 판매 1건만 정확히 다시 반영
@@ -8037,7 +8039,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
           <div className="bg-white rounded-xl border border-gray-100 p-3">
             {teamSupportEligible&&currentEmp?.id===authUser?.id&&<div className={`mb-3 rounded-xl border p-3 ${teamSupportMode?'border-violet-200 bg-violet-50':'border-gray-100 bg-gray-50'}`}>
-              <label className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold text-gray-800">지원 판매 · 팀 실적만 반영</div><div className="text-[10px] text-gray-500 mt-0.5">내 개인 실적·급여에서는 제외돼요.</div></div><input type="checkbox" checked={teamSupportMode} onChange={event=>setTeamSupportMode(event.target.checked)} className="w-4 h-4"/></label>
+              <label className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold text-gray-800">지원 판매 · 팀 실적만 반영</div><div className="text-[10px] text-gray-500 mt-0.5">내 개인 실적·급여에서는 제외되며, 판매를 저장하면 선택이 초기화돼요.</div></div><input type="checkbox" checked={teamSupportMode} onChange={event=>{setTeamSupportMode(event.target.checked);setTeamSupportStore('')}} className="w-4 h-4"/></label>
               {teamSupportMode&&<select value={teamSupportStore} onChange={event=>setTeamSupportStore(event.target.value)} className="mt-3 w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-700"><option value="">실적을 반영할 매장 선택</option>{salesStores.map(store=><option key={store} value={store}>{displayStoreName(store)}</option>)}</select>}
             </div>}
             <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
