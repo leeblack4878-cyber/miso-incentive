@@ -359,6 +359,17 @@ test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산�
   assert.match(source, /vasKeys:\[\.\.\.mobileVasKeys\], bundleVasMap:mobileBundleVasMap/);
 });
 
+test('일일 입력은 기기 임시저장과 온라인 복구 재시도를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /miso_pending_daily_v1:/);
+  assert.match(source, /localStorage\.setItem\(pendingDayStorageKey/);
+  assert.match(source, /window\.addEventListener\('online',syncConnection\)/);
+  assert.match(source, /저장되지 않은 일일 입력을 복원했어요/);
+  assert.match(source, /저장 실패 · 다시 시도/);
+  assert.match(source, /오프라인 · 임시저장/);
+  assert.match(source, /동기화 정상/);
+});
+
 test('9월 모바일 입력은 사용하지 않는 33~84군을 숨기고 기존 선택을 그 외로 전환한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /option\.ci===3/);

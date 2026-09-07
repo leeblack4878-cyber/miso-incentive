@@ -6269,6 +6269,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const [legacyConversion,setLegacyConversion]=useState(null);
   const [teamSupportMode,setTeamSupportMode]=useState(false);
   const [teamSupportStore,setTeamSupportStore]=useState('');
+  const [isOnline,setIsOnline]=useState(()=>typeof navigator==='undefined'||navigator.onLine);
   const homeSubmitGuardRef=useRef(false);
   const mobileSubmitGuardRef=useRef(false);
 
@@ -6276,6 +6277,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const salesStores=(stores||[]).filter(store=>!NON_SALES_STORES.includes(store));
   const activeTeamSupport=teamSupportEligible&&currentEmp?.id===authUser?.id&&teamSupportMode;
   const resetTeamSupportSelection=()=>{setTeamSupportMode(false);setTeamSupportStore('');};
+  const pendingDayStorageKey=currentEmp?.id?`miso_pending_daily_v1:${currentEmp.id}:${month}`:'';
+  const rememberPendingDay=(value)=>{if(!pendingDayStorageKey)return;try{localStorage.setItem(pendingDayStorageKey,JSON.stringify(value));}catch{/* 저장공간 제한 시 서버 저장 흐름은 계속 유지 */}};
+  const clearPendingDay=()=>{if(!pendingDayStorageKey)return;try{localStorage.removeItem(pendingDayStorageKey);}catch{/* 저장공간 제한은 무시 */}};
 
 
   const dayMatrix = day.matrix;
@@ -6343,6 +6347,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const next = { ...normalizeDay(day), dayOff: nextOff, ...(nextOff ? { inputConfirmed:false, inputConfirmedAt:null } : {}) };
     setDay(next);
     pendingRef.current = { day: selectedDay, record: next };
+    rememberPendingDay(pendingRef.current);
     setSaveState('pending');
   };
 
@@ -6353,17 +6358,41 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   const flush = useCallback(async() => {
     const p = pendingRef.current;
     if (!p) return;
+    if(typeof navigator!=='undefined'&&!navigator.onLine){setSaveState('error');return;}
     pendingRef.current = null;
     const ok=await saveDailyDay(p.day,p.record);
     if(ok){
+      clearPendingDay();
       setSaveState('saved');
       setTimeout(()=>setSaveState('idle'),1200);
     }else{
       pendingRef.current=p;
+      rememberPendingDay(p);
       setSaveState('error');
     }
-  }, [saveDailyDay]);
+  }, [saveDailyDay,pendingDayStorageKey]); // eslint-disable-line
   flushRef.current = flush;
+
+  useEffect(()=>{
+    if(!pendingDayStorageKey)return;
+    try{
+      const restored=JSON.parse(localStorage.getItem(pendingDayStorageKey)||'null');
+      if(restored?.day&&restored?.record){
+        pendingRef.current={day:String(restored.day).padStart(2,'0'),record:normalizeDay(restored.record)};
+        setSelectedDay(pendingRef.current.day);
+        setDay(pendingRef.current.record);
+        setSaveState('pending');
+        showAppToast('저장되지 않은 일일 입력을 복원했어요.',{tone:'info'});
+      }
+    }catch{clearPendingDay();}
+  },[pendingDayStorageKey]); // eslint-disable-line
+
+  useEffect(()=>{
+    const syncConnection=()=>{const online=navigator.onLine;setIsOnline(online);if(online&&pendingRef.current)setTimeout(()=>flushRef.current(),0);};
+    window.addEventListener('online',syncConnection);
+    window.addEventListener('offline',syncConnection);
+    return()=>{window.removeEventListener('online',syncConnection);window.removeEventListener('offline',syncConnection);};
+  },[]);
 
   useEffect(() => {
     if(pendingRef.current)return;
@@ -6391,6 +6420,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     const record=dayHasPerformanceData(normalized)?{...normalized,inputConfirmed:false,inputConfirmedAt:null}:normalized;
     setDay(record);
     pendingRef.current = { day: selectedDay, record };
+    rememberPendingDay(pendingRef.current);
     setSaveState('pending');
   };
   const setZeroConfirmed = (confirmed) => {
@@ -7778,7 +7808,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">{monthLabel(month)} 일일입력</div>
         <div className="flex items-center gap-2">
-          <DailySaveBadge state={saveState} />
+          <DailySaveBadge state={saveState} isOnline={isOnline} onRetry={()=>flushRef.current()} />
           <span className="text-xs text-gray-400">누적 {monthTotal}건</span>
         </div>
       </div>
@@ -8760,11 +8790,13 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   );
 }
 
-function DailySaveBadge({ state }) {
-  if (state === 'error') return <span className="flex items-center gap-1 text-[11px] text-red-600"><AlertTriangle size={11} />자동저장 실패 · 연결 확인</span>;
-  if (state === 'pending') return <span className="flex items-center gap-1 text-[11px] text-amber-600"><UploadCloud size={11} />저장 대기 중</span>;
-  if (state === 'saved') return <span className="flex items-center gap-1 text-[11px] text-emerald-600"><Check size={11} />저장됨</span>;
-  return null;
+function DailySaveBadge({ state, isOnline=true, onRetry }) {
+  const base='inline-flex min-h-7 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold whitespace-nowrap';
+  if (!isOnline) return <button type="button" onClick={onRetry} className={`${base} border-red-100 bg-red-50 text-red-600`}><AlertTriangle size={11} />오프라인 · 임시저장</button>;
+  if (state === 'error') return <button type="button" onClick={onRetry} className={`${base} border-red-100 bg-red-50 text-red-600`}><AlertTriangle size={11} />저장 실패 · 다시 시도</button>;
+  if (state === 'pending') return <span className={`${base} border-amber-100 bg-amber-50 text-amber-700`}><UploadCloud size={11} />동기화 대기</span>;
+  if (state === 'saved') return <span className={`${base} border-emerald-100 bg-emerald-50 text-emerald-700`}><Check size={11} />저장 완료</span>;
+  return <span className={`${base} border-gray-100 bg-gray-50 text-gray-500`}><Check size={11} />동기화 정상</span>;
 }
 
 
