@@ -2364,22 +2364,27 @@ function SalesManagerPayrollPanel({month,rows=[]}){
     upsell:sumByBranch('upsell',row=>Number(row.draft?.tailoredCount||0)),
   };
   const result=calculateSalesManagerPayroll(company);
+  const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
+  const forecastCompany=Object.fromEntries(Object.entries(company).map(([key,value])=>[key,Number(value||0)*forecastFactor]));
+  const forecastResult=calculateSalesManagerPayroll(forecastCompany);
   const activePolicy=month>='2026-09';
   if(!activePolicy)return <div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">영업담당 정책은 2026년 9월부터 적용돼요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월 이후를 선택해 주세요.</div></div>;
   return <div className="space-y-3">
     <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-violet-800 text-white p-4 shadow-sm">
-      <div className="flex justify-between gap-3"><div><div className="text-[11px] text-violet-100">{SALES_MANAGER_POLICY_VERSION} 정책 · 월중 예상</div><div className="text-lg font-black mt-1">영업담당 급여</div><div className="text-xs text-violet-100 mt-1">김진백 · 임성준 동일한 회사 전체 실적 적용</div></div><div className="text-right shrink-0"><div className="text-[11px] text-violet-100">1인 예상 급여</div><div className="text-2xl font-black mt-1">{won(result.finalPay)}</div></div></div>
-      {result.guaranteeAdjustment>0&&<div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs">최저 600만원 보장 차액 +{won(result.guaranteeAdjustment)} 반영</div>}
+      <div><div className="text-[11px] text-violet-100">{SALES_MANAGER_POLICY_VERSION} 정책 · 월중 예상</div><div className="text-lg font-black mt-1">영업담당 급여</div><div className="text-xs text-violet-100 mt-1">김진백 · 임성준 동일한 회사 전체 실적 적용</div></div>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 mt-4 rounded-xl bg-white/10 px-3 py-3"><div><div className="text-[11px] text-violet-100">현재 기준액</div><div className="text-xl font-black mt-1">{won(result.finalPay)}</div></div><div className="text-violet-200 text-xl">→</div><div className="text-right"><div className="text-[11px] text-violet-100">월말 예상액</div><div className="text-xl font-black mt-1">{won(forecastResult.finalPay)}</div></div></div>
+      <div className="mt-2 text-[11px] text-violet-100 text-right">현재 {Math.round(forecastFactor===1?100:100/forecastFactor)}% 경과 기준 예상</div>
+      {result.guaranteeAdjustment>0&&<div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs">현재 최저 600만원 보장 차액 +{won(result.guaranteeAdjustment)} 반영</div>}
     </div>
     <div className="grid grid-cols-2 gap-2">
-      {[['기본급',2500000],['직책수당',800000],['HS 인센티브',result.hsIncentive],['홈 인센티브',result.homeIncentive],['맞춤제안 업셀',result.upsellIncentive],['보장 차액',result.guaranteeAdjustment]].map(([label,value])=><div key={label} className="bg-white rounded-xl border p-3"><div className="text-[11px] text-gray-400">{label}</div><div className="text-base font-black text-gray-800 mt-1">{won(value)}</div></div>)}
+      {[['기본급',2500000,2500000],['직책수당',800000,800000],['HS 인센티브',result.hsIncentive,forecastResult.hsIncentive],['홈 인센티브',result.homeIncentive,forecastResult.homeIncentive],['맞춤제안 업셀',result.upsellIncentive,forecastResult.upsellIncentive],['보장 차액',result.guaranteeAdjustment,forecastResult.guaranteeAdjustment]].map(([label,value,forecast])=><div key={label} className="bg-white rounded-xl border p-3"><div className="text-[11px] text-gray-400">{label}</div><div className="text-base font-black text-gray-800 mt-1">{won(value)}</div>{Number(value)!==Number(forecast)&&<div className="text-[11px] font-bold text-violet-600 mt-1">예상 {won(forecast)}</div>}</div>)}
     </div>
     <div className="bg-white rounded-2xl border overflow-hidden">
       <div className="px-4 py-3 border-b"><div className="text-sm font-bold">회사 전체 적용 근거</div><div className="text-[11px] text-gray-400 mt-1">두 영업담당 모두 같은 회사 전체 실적과 구간 단가를 적용합니다.</div></div>
       <div className="divide-y">
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)}건 적용</div></div></div>
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">설치 완료 홈 {fmtCount(company.home)}건</b><div className="text-[11px] text-gray-400 mt-1">가정망·소호 모두 포함</div></div><div className="text-right"><b className="text-violet-700">홈 건당 {won(result.homeTier.rate)}</b><div className="text-[11px] text-gray-400 mt-1">전체 홈 적용</div></div></div>
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">맞춤제안 업셀 {fmtCount(company.upsell)}건</b><div className="text-[11px] text-gray-400 mt-1">회사 전체 500건 이상부터 전 건 적용</div></div><div className="text-right"><b className="text-violet-700">건당 {won(result.upsellRate)}</b><div className="text-[11px] text-gray-400 mt-1">{result.upsellRate?'지급 구간':'지급 전'}</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastResult.mobileVolume,1)}건</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.mobileTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 HS {fmtNum(forecastCompany.hs,1)}건 적용</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">설치 완료 홈 {fmtCount(company.home)}건</b><div className="text-[11px] text-gray-400 mt-1">가정망·소호 모두 포함</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.home,1)}건</div></div><div className="text-right"><b className="text-violet-700">홈 건당 {won(result.homeTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.homeTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 홈 전체 적용</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">맞춤제안 업셀 {fmtCount(company.upsell)}건</b><div className="text-[11px] text-gray-400 mt-1">회사 전체 500건 이상부터 전 건 적용</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.upsell,1)}건</div></div><div className="text-right"><b className="text-violet-700">건당 {won(result.upsellRate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.upsellRate)}</div><div className="text-[10px] text-gray-400 mt-1">{forecastResult.upsellRate?'예상 지급 구간':'예상도 지급 전'}</div></div></div>
       </div>
     </div>
     <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800 leading-relaxed"><b>분기별 별도 정산</b><br/>담당 매장 HS·홈 합산 달성률 평균 우수 100만원, AA임팩트 평균 우수 50만원은 분기 평가 후 별도로 정산되며 현재 월 급여 예상액에는 포함되지 않습니다.</div>
@@ -5592,7 +5597,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 표시합니다.</div>}
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 보여드려요.</div>}
   </div>;
 }
 
@@ -9726,7 +9731,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
   </div>;
 }
 
-function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dailyRecords, isFullAdmin, config }) {
+function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dailyRecords, isFullAdmin, config, canViewSpotAdmin=false }) {
   const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0});
   useEffect(()=>{
     (async()=>{
@@ -9756,7 +9761,7 @@ function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dai
       <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">오늘 입력 누락 <b className="float-right">{missing}</b></button>
       <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
-      <button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>
+      {canViewSpotAdmin&&<button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>}
       <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount}</b></button>
       {isFullAdmin&&<button onClick={()=>onGo('headOfficeData')} className="bg-blue-50 text-blue-700 rounded-lg p-2 text-left">본사 데이터 차이 <b className="float-right">{counts.hqDiff}</b></button>}
       {isFullAdmin&&<button onClick={()=>onGo('settlement')} className="bg-emerald-50 text-emerald-700 rounded-lg p-2 text-left">정산 미검토 <b className="float-right">{counts.settlement}</b></button>}
@@ -10405,7 +10410,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, group:'고객 · 홈' },
     { key: 'homeCare', label: '홈 케어', icon: Home, group:'고객 · 홈' },
     { key: 'expenses', label: '영업비용/오퍼', icon: Wallet, group:'비용 · 승인' },
-    { key: 'spot', label: '스팟 승인', icon: Zap, group:'비용 · 승인' },
+    ...(canViewDailyBriefing ? [{ key: 'spot', label: '스팟 승인', icon: Zap, group:'비용 · 승인' }] : []),
     { key: 'employees', label: '직원 관리', icon: Users, group:'설정' },
     ...(canViewHqStructure ? [{ key: 'hqStructure', label: '본사 구조정책', icon: Building2, group:'본사 전용' }] : []),
     ...(isFullAdmin ? [
@@ -10421,6 +10426,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
     if (adminTab === 'hqStructure' && !canViewHqStructure) setAdminTab('dashboard');
     if (adminTab === 'dailyBriefing' && !canViewDailyBriefing) setAdminTab('dashboard');
+    if (adminTab === 'spot' && !canViewDailyBriefing) setAdminTab('dashboard');
   }, [adminTab, isFullAdmin, canViewHqStructure, canViewDailyBriefing]); // eslint-disable-line
 
   const downloadCSV = () => {
@@ -10486,7 +10492,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
       {adminTab === 'dashboard' && (
         <div className="space-y-4">
-          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin')setCustomerCareFilter('overdue');setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} />
+          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin')setCustomerCareFilter('overdue');setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} canViewSpotAdmin={canViewDailyBriefing} />
 
           <AdminPerformanceCalendar
             month={month}
@@ -10583,7 +10589,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
-      {adminTab === 'spot' && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}
+      {adminTab === 'spot' && canViewDailyBriefing && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}
       {adminTab === 'headOfficeData' && isFullAdmin && <HeadOfficeDataPanel month={month} employees={employees} rows={rows} config={config} authUserId={authUserId} />}
       {adminTab === 'settlement' && isFullAdmin && <SettlementReview month={month} rows={rows} employees={employees} config={config} authUserId={authUserId} />}
       {adminTab === 'calculationAudit' && isFullAdmin && <CalculationAuditPanel month={month} rows={rows} />}
