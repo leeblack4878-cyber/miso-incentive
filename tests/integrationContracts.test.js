@@ -276,6 +276,16 @@ test('관리자 큰 카테고리 아래 세부 탭은 아이콘과 선택 표시
   assert.match(source, /rounded-full bg-violet-500/);
 });
 
+test('관리자 세부 메뉴는 최대 3개의 개인 바로가기를 제공한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /miso_admin_favorites_v1:/);
+  assert.match(source, /내 바로가기/);
+  assert.match(source, /최대 3개까지 지정할 수 있어요/);
+  assert.match(source, /favoriteTabs\.map/);
+  assert.match(source, /즐겨찾기 추가/);
+  assert.match(source, /min-h-11/);
+});
+
 test('중요한 성취 축하는 사용자별 한 번만 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /miso-celebration-badge-/);

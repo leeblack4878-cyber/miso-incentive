@@ -3,7 +3,7 @@ import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
   Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2,
   UserPlus, Info, Layers, Calendar, ChevronLeft, ChevronRight, AlertTriangle, Zap,
-  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle
+  UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
@@ -10745,6 +10745,26 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     {key:'cost',label:'비용·승인',icon:Zap},
     {key:'settings',label:'관리 설정',icon:Settings},
   ].filter(section=>TABS.some(tab=>tab.section===section.key));
+  const favoriteStorageKey=authUserId?`miso_admin_favorites_v1:${authUserId}`:'';
+  const [favoriteTabKeys,setFavoriteTabKeys]=useState([]);
+  useEffect(()=>{
+    if(!favoriteStorageKey){setFavoriteTabKeys([]);return;}
+    try{const saved=JSON.parse(localStorage.getItem(favoriteStorageKey)||'[]');setFavoriteTabKeys(Array.isArray(saved)?saved.filter(key=>TABS.some(tab=>tab.key===key)).slice(0,3):[])}catch{setFavoriteTabKeys([])}
+  },[favoriteStorageKey,isFullAdmin,canViewHqStructure,canViewDailyBriefing]); // eslint-disable-line
+  const toggleFavoriteTab=(key)=>{
+    setFavoriteTabKeys(current=>{
+      if(current.includes(key)){
+        const next=current.filter(item=>item!==key);
+        try{localStorage.setItem(favoriteStorageKey,JSON.stringify(next))}catch{/* 기기 저장공간 제한 시 현재 화면에서만 유지 */}
+        return next;
+      }
+      if(current.length>=3){showAppToast('관리자 바로가기는 최대 3개까지 지정할 수 있어요.',{tone:'info'});return current;}
+      const next=[...current,key];
+      try{localStorage.setItem(favoriteStorageKey,JSON.stringify(next))}catch{/* 기기 저장공간 제한 시 현재 화면에서만 유지 */}
+      return next;
+    });
+  };
+  const favoriteTabs=favoriteTabKeys.map(key=>TABS.find(tab=>tab.key===key)).filter(Boolean);
   const activeAdminSection=TABS.find(tab=>tab.key===adminTab)?.section||'operations';
   const activeSectionTabs=TABS.filter(tab=>tab.section===activeAdminSection);
   useEffect(() => {
@@ -10781,12 +10801,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       <div className="mb-4 space-y-3">
         <div className="bg-white border border-gray-200 rounded-2xl p-2 space-y-2">
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-violet-600 text-white shadow-sm':'bg-gray-50 text-gray-500 hover:bg-violet-50'}`}><section.icon size={14}/>{section.label}</button>)}
+            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex min-h-11 flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-violet-600 text-white shadow-sm ring-1 ring-violet-500':'bg-gray-50 text-gray-500 hover:bg-violet-50'}`}><section.icon size={14}/>{section.label}</button>)}
           </div>
+          {favoriteTabs.length>0&&<div className="rounded-xl border border-amber-100 bg-amber-50/60 p-1.5"><div className="flex items-center gap-1 px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-amber-700"><Star size={10} fill="currentColor"/>내 바로가기</div><div className="flex gap-1.5 overflow-x-auto">{favoriteTabs.map(tab=><button key={tab.key} type="button" onClick={()=>setAdminTab(tab.key)} className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ${adminTab===tab.key?'border-violet-300 bg-white text-violet-700 shadow-sm':'border-amber-100 bg-white/80 text-gray-600'}`}><tab.icon size={13}/>{tab.label}</button>)}</div></div>}
           {activeSectionTabs.length>1&&<div className="rounded-xl border border-gray-100 bg-gray-50 p-1.5">
             <div className="px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-gray-400">{ADMIN_SECTIONS.find(section=>section.key===activeAdminSection)?.label} 세부 메뉴</div>
             <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            {activeSectionTabs.map(n=>{const selected=adminTab===n.key;return <button key={n.key} type="button" onClick={()=>setAdminTab(n.key)} className={`group flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-bold transition ${selected?'border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100':'border-transparent bg-transparent text-gray-500 hover:border-gray-200 hover:bg-white'}`}><span className={`flex h-5 w-5 items-center justify-center rounded-md ${selected?'bg-violet-600 text-white':'bg-white text-gray-400 group-hover:text-violet-500'}`}><n.icon size={12}/></span>{n.label}{selected&&<span className="h-1.5 w-1.5 rounded-full bg-violet-500"/>}</button>})}
+            {activeSectionTabs.map(n=>{const selected=adminTab===n.key,favorite=favoriteTabKeys.includes(n.key);return <div key={n.key} className={`flex shrink-0 items-stretch overflow-hidden rounded-lg border transition ${selected?'border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100':'border-transparent bg-transparent text-gray-500 hover:border-gray-200 hover:bg-white'}`}><button type="button" onClick={()=>setAdminTab(n.key)} className="group flex min-h-11 items-center gap-1.5 px-3 text-xs font-bold"><span className={`flex h-5 w-5 items-center justify-center rounded-md ${selected?'bg-violet-600 text-white':'bg-white text-gray-400 group-hover:text-violet-500'}`}><n.icon size={12}/></span>{n.label}{selected&&<span className="h-1.5 w-1.5 rounded-full bg-violet-500"/>}</button><button type="button" onClick={()=>toggleFavoriteTab(n.key)} aria-label={`${n.label} ${favorite?'즐겨찾기 해제':'즐겨찾기 추가'}`} className={`flex min-h-11 w-9 items-center justify-center border-l ${favorite?'border-amber-100 bg-amber-50 text-amber-500':'border-gray-100 text-gray-300 hover:text-amber-500'}`}><Star size={13} fill={favorite?'currentColor':'none'}/></button></div>})}
             </div>
           </div>}
         </div>
