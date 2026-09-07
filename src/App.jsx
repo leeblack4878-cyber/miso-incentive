@@ -2296,16 +2296,28 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
   });
   const managerForecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
-  const forecastActual=(key)=>Number(actual(key)||0)*managerForecastFactor;
+  // 실제 급여가 건 단위로 지급되는 항목은 월말 예상도 정수 건으로 환산합니다.
+  // 생산성(P)과 매출액은 본래 소수/금액 단위를 사용하므로 그대로 유지합니다.
+  const forecastActual=(key,unit)=>{
+    const value=Number(actual(key)||0)*managerForecastFactor;
+    return unit==='won'||unit==='point'||key==='productivity'||key==='tailoredAmount'?value:Math.round(value);
+  };
   const forecastCoreRaw=cappedAchievement(forecastActual('hs'),coreTargets.hs)*30+cappedAchievement(forecastActual('home'),coreTargets.home)*30+cappedAchievement(forecastActual('productivity'),coreTargets.productivity)*40;
-  const forecastAaBase=aaRows.reduce((sum,row)=>sum+aaMetricScore(forecastActual(row.key),row.storeTarget,row.normalizedWeight),0);
+  const forecastAaBase=aaRows.reduce((sum,row)=>sum+aaMetricScore(forecastActual(row.key,row.unit),row.storeTarget,row.normalizedWeight),0);
   const forecastAa100=Math.max(0,Math.min(100,forecastAaBase+adj.total));
   const forecastManagerScore=forecastCoreRaw*.5+forecastAa100*.5;
+  const forecastHs=forecastActual('hs'),forecastHome=forecastActual('home');
+  const forecastStrategicPoints=Number(strategicPoints||0)*managerForecastFactor;
+  const forecastPlan115Count=Math.round(Number(plan115Count||0)*managerForecastFactor);
+  const forecastSubTvHousehold=forecastActual('subTvHousehold'),forecastSmartHome=forecastActual('smartHome');
   const forecastManagerEstimate=calculateSeptemberManagerIncentive({
-    actual:{hs:forecastActual('hs'),home:forecastActual('home'),tvFree:forecastActual('tvFree'),smartHome:forecastActual('smartHome')},
+    actual:{hs:forecastHs,home:forecastHome,tvFree:forecastActual('tvFree'),smartHome:forecastSmartHome},
     targets:{hs:coreTargets.hs,home:coreTargets.home,tvFree:Number(goalMap[activeStore]?.tvFree||0),smartHome:Number(goalMap[activeStore]?.smartHome||0)},
-    managerScore:forecastManagerScore,strategicRatio,homeRatio:internetRatio,plan115Count:plan115Count*managerForecastFactor,plan115Ratio,
-    tailoredCount:forecastActual('tailoredCount'),bundledSecondCount:forecastActual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio,
+    managerScore:forecastManagerScore,
+    strategicRatio:forecastHs>0?forecastStrategicPoints/forecastHs*100:0,
+    homeRatio:forecastHs>0?forecastHome/forecastHs*100:0,
+    plan115Count:forecastPlan115Count,plan115Ratio:forecastHs>0?forecastPlan115Count/forecastHs*100:0,
+    tailoredCount:forecastActual('tailoredCount'),bundledSecondCount:forecastActual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio:forecastHs>0?(forecastSubTvHousehold+forecastSmartHome)/forecastHs*100:null,
     levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
     complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
     npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
@@ -2389,7 +2401,8 @@ function SalesManagerPayrollPanel({month,rows=[]}){
   };
   const result=calculateSalesManagerPayroll(company);
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
-  const forecastCompany=Object.fromEntries(Object.entries(company).map(([key,value])=>[key,Number(value||0)*forecastFactor]));
+  // 회사 정책의 기준 총량은 2ND만 0.2로 환산하고, 지급 대상 HS·홈·업셀은 정수 건으로 계산합니다.
+  const forecastCompany=Object.fromEntries(Object.entries(company).map(([key,value])=>[key,Math.round(Number(value||0)*forecastFactor)]));
   const forecastResult=calculateSalesManagerPayroll(forecastCompany);
   const activePolicy=month>='2026-09';
   if(!activePolicy)return <div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">영업담당 정책은 2026년 9월부터 적용돼요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월 이후를 선택해 주세요.</div></div>;
@@ -2406,7 +2419,7 @@ function SalesManagerPayrollPanel({month,rows=[]}){
     <div className="bg-white rounded-2xl border overflow-hidden">
       <div className="px-4 py-3 border-b"><div className="text-sm font-bold">회사 전체 적용 근거</div><div className="text-[11px] text-gray-400 mt-1">두 영업담당 모두 같은 회사 전체 실적과 구간 단가를 적용합니다.</div></div>
       <div className="divide-y">
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastResult.mobileVolume,1)}건</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.mobileTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 HS {fmtNum(forecastCompany.hs,1)}건 적용</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastResult.mobileVolume,1)}건</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.mobileTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 HS {fmtCount(forecastCompany.hs)}건 적용</div></div></div>
         <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">설치 완료 홈 {fmtCount(company.home)}건</b><div className="text-[11px] text-gray-400 mt-1">가정망·소호 모두 포함</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.home,1)}건</div></div><div className="text-right"><b className="text-violet-700">홈 건당 {won(result.homeTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.homeTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 홈 전체 적용</div></div></div>
         <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">맞춤제안 업셀 {fmtCount(company.upsell)}건</b><div className="text-[11px] text-gray-400 mt-1">회사 전체 500건 이상부터 전 건 적용</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.upsell,1)}건</div></div><div className="text-right"><b className="text-violet-700">건당 {won(result.upsellRate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.upsellRate)}</div><div className="text-[10px] text-gray-400 mt-1">{forecastResult.upsellRate?'예상 지급 구간':'예상도 지급 전'}</div></div></div>
       </div>
@@ -2692,7 +2705,8 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
         {metrics.map(m=>{
           const hasGoal=Number(m.target||0)>0;
           const pct=hasGoal?Math.max(0,Math.round(Number(m.current||0)/Number(m.target||1)*100)):null;
-          const forecast=Number(m.current||0)*forecastFactor,forecastHit=hasGoal&&forecast>=m.target;
+          const rawForecast=Number(m.current||0)*forecastFactor;
+          const forecast=m.unit==='count'?Math.round(rawForecast):rawForecast,forecastHit=hasGoal&&forecast>=m.target;
           return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
             <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
             {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
@@ -8986,7 +9000,10 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
     return elapsed>0?working/elapsed:1;
   },[dailyDays,month]);
 
-  const forecastFor=(m)=>Number(m.value||0)*forecastFactor;
+  const forecastFor=(m)=>{
+    const value=Number(m.value||0)*forecastFactor;
+    return m.unit==='count'?Math.round(value):value;
+  };
   const missingGoalCount=metrics.filter(m=>goalFor(m)<=0).length;
 
   const renderMetricValue=(m,value)=>{

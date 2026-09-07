@@ -474,3 +474,12 @@ test('특가 판매 미리보기는 선택한 날짜를 정책 계산에 전달�
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /const mobilePreview=\(\(\)=>\{[\s\S]*?const saleDate=`\$\{month\}-\$\{selectedDay\}`;[\s\S]*?calculateSeptemberSpecialSale\(\{policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup\(mobileSaleDraft\.ci\),strategicPoints,saleDate\}\)/);
 });
+
+test('월말 예상에서 건당 지급 수량은 정수 반올림하고 포인트와 금액은 소수를 유지한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /m\.unit==='count'\?Math\.round\(value\):value/);
+  assert.match(source, /m\.unit==='count'\?Math\.round\(rawForecast\):rawForecast/);
+  assert.match(source, /forecastCompany=Object\.fromEntries[\s\S]*Math\.round\(Number\(value\|\|0\)\*forecastFactor\)/);
+  assert.match(source, /forecastPlan115Count=Math\.round/);
+  assert.match(source, /key==='productivity'\|\|key==='tailoredAmount'\?value:Math\.round\(value\)/);
+});
