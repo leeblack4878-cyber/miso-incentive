@@ -368,16 +368,20 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       <BenefitGuide {...homeAwardGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['합산점수', `${homeAward.totalScore}점`],
-        ['② 적용점수', `${homeAward.setTopScore}점`],
-        ['건당 인센티브', wonText(homeAward.pointRate)],
-        ['지급 인터넷', `${countText(homeAward.payableInternet)}건`],
+        ['인터넷 개통건', `${countText(homeAward.payableInternet)}건`],
+        ['건당 금액', wonText(homeAward.pointRate)],
         ['최종금액', wonText(homeAward.totalAmount)],
-        ['인터넷 몫 60%', wonText(homeAward.internetShare)],
-        ['IPTV 몫 40%', wonText(homeAward.iptvShare)],
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-sm font-black text-teal-700">{value}</div></div>)}</div>
       <div className="border-t divide-y divide-gray-50">{[
-        ['IPTV 17 이상','iptv17Plus'],['부셋탑(프리 포함)','extraSetTop'],['TV프리','tvFree'],['1G','internet1g'],['스마트홈','smartHome'],
-      ].map(([label,key])=><div key={key} className="grid grid-cols-[1fr_70px_45px] items-center gap-2 px-4 py-3 text-xs"><span className="font-semibold text-gray-700">{label}</span><span className="text-right text-gray-500">{countText(homeAward.ratios[key])}%</span><b className="text-right text-teal-700">{homeAward.scores[key]}점</b></div>)}</div>
+        ['① IPTV 17군 이상 유지비중','iptv17Plus',homeAward.counts.iptv17Plus,homeAward.mainTv,'방송패스 주셋탑','전체 주셋탑'],
+        ['②-1 추가셋탑 유지비중','extraSetTop',homeAward.counts.extraSetTop,homeAward.mainTv,'부셋탑(프리 포함)','전체 주셋탑'],
+        ['②-2 TV프리 유지비중','tvFree',homeAward.counts.tvFree,homeAward.hs,'TV프리','SIM MNP 제외 HS'],
+        ['④ 1G 유치비중','internet1g',homeAward.counts.internet1g,homeAward.internet,'1G 인터넷','가정망 인터넷'],
+        ['⑤ 스마트홈 유치비중','smartHome',homeAward.counts.smartHome,homeAward.internet,'스마트홈','가정망 인터넷'],
+      ].map(([label,key,numerator,denominator,numeratorLabel,denominatorLabel])=><div key={key} className="px-4 py-3 text-xs">
+        <div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-700">{label}</span><b className="shrink-0 text-teal-700">{homeAward.scores[key]}점</b></div>
+        <div className="mt-1 text-[10px] text-gray-500">{numeratorLabel} {countText(numerator)}건 ÷ {denominatorLabel} {countText(denominator)}건 = <b className="text-gray-700">{countText(homeAward.ratios[key])}%</b></div>
+      </div>)}</div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500">②번 점수는 추가셋탑과 TV프리 점수를 모두 더하지 않고 둘 중 높은 점수 하나만 반영합니다.<br/>사운드바는 입력·점수 산정에서 제외합니다. 가정망 설치완료 기준이며 소호는 제외합니다.<br/>부셋탑 수량에는 일반 부셋탑과 TV프리(부)를 모두 인정합니다.<br/>인터넷 100M 단독은 지표에는 포함하되 지급 인터넷에서는 제외합니다.</div>
     </div>
 
