@@ -9921,21 +9921,22 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
 }
 
 function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dailyRecords, isFullAdmin, config, canViewSpotAdmin=false }) {
-  const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0,goalRisk:0});
+  const [counts,setCounts]=useState({customer:0,home:0,spot:0,profile:0,settlement:0,hqDiff:0,goalRisk:0,pushMissing:0,pushFailed:0,pushSent:0});
   useEffect(()=>{
     (async()=>{
       const today=new Date().toISOString().slice(0,10);
       const ids=(employees||[]).map(e=>e.id);
       if(!ids.length)return;
       const scopedBranches=[...new Set((employees||[]).map(employee=>employee.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
-      const [{data:t},{data:h},{data:s},{data:p},{data:sr},{data:hq},{data:goals}]=await Promise.all([
+      const [{data:t},{data:h},{data:s},{data:p},{data:sr},{data:hq},{data:goals},{data:pushRows}]=await Promise.all([
         supabase.from('customer_tasks').select('id').in('user_id',ids).eq('status','pending').lt('due_date',today),
         supabase.from('home_orders').select('id').in('user_id',ids).eq('status','pending').lt('planned_install_date',today),
         supabase.from('spot_claims').select('id').in('user_id',ids).eq('status','pending'),
         supabase.from('profile_edit_requests').select('id').in('user_id',ids).eq('status','pending'),
         supabase.from('settlement_reviews').select('user_id,status').eq('month',month).in('user_id',ids),
         supabase.from('head_office_performance').select('user_id,metrics').eq('month',month).in('user_id',ids),
-        supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',scopedBranches)
+        supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',scopedBranches),
+        supabase.rpc('get_push_delivery_overview')
       ]);
       const reviewed=new Set((sr||[]).filter(x=>x.status==='checked'||x.status==='final').map(x=>x.user_id));
       const rowMap=Object.fromEntries((rows||[]).map(x=>[x.id,x]));
@@ -9947,12 +9948,16 @@ function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dai
         const actual=(rows||[]).filter(row=>row.branch===goal.store_name).reduce((sum,row)=>sum+hsCount(row.draft),0);
         return actual*forecastFactor<target;
       }).length;
-      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length,profile:(p||[]).length,settlement:Math.max(0,ids.length-reviewed.size),hqDiff,goalRisk});
+      const scopedPush=(pushRows||[]).filter(push=>ids.includes(push.user_id));
+      const pushMissing=scopedPush.filter(push=>!push.has_active_subscription).length;
+      const pushFailed=scopedPush.filter(push=>push.last_delivery_status==='failed').length;
+      const pushSent=scopedPush.filter(push=>push.last_delivery_status==='sent').length;
+      setCounts({customer:(t||[]).length,home:(h||[]).length,spot:(s||[]).length,profile:(p||[]).length,settlement:Math.max(0,ids.length-reviewed.size),hqDiff,goalRisk,pushMissing,pushFailed,pushSent});
     })();
   },[employees,month,rows,config]);
   const now=new Date(),todayKey=String(now.getDate()).padStart(2,'0');
   const missing=monthKeyOf(now)===month?(employees||[]).filter(e=>{const d=normalizeDay(dailyRecords?.[e.id]?.[todayKey]);return !d.dayOff&&!dayHasData(d)}).length:0;
-  const total=Object.values(counts).reduce((a,v)=>a+Number(v||0),0)+missing+Number(pendingCount||0);
+  const total=['customer','home','spot','profile','settlement','hqDiff','goalRisk','pushMissing','pushFailed'].reduce((sum,key)=>sum+Number(counts[key]||0),0)+missing+Number(pendingCount||0);
   return <div className="bg-white rounded-xl border border-violet-100 p-3">
     <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${fmtCount(total)}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
     {total>0&&<div className="grid grid-cols-2 gap-2 mt-3 text-xs">
@@ -9965,6 +9970,9 @@ function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dai
       {isFullAdmin&&<button onClick={()=>onGo('headOfficeData')} className="bg-blue-50 text-blue-700 rounded-lg p-2 text-left">본사 데이터 차이 <b className="float-right">{counts.hqDiff}</b></button>}
       {isFullAdmin&&<button onClick={()=>onGo('settlement')} className="bg-emerald-50 text-emerald-700 rounded-lg p-2 text-left">정산 미검토 <b className="float-right">{counts.settlement}</b></button>}
       <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-700 rounded-lg p-2 text-left">프로필 수정 요청 <b className="float-right">{counts.profile}</b></button>
+      <button onClick={()=>onGo('employees')} className="bg-gray-50 text-gray-700 rounded-lg p-2 text-left">푸시 알림 미설정 <b className="float-right">{counts.pushMissing}</b></button>
+      {counts.pushFailed>0&&<div className="bg-red-50 text-red-600 rounded-lg p-2">최근 푸시 발송 실패 <b className="float-right">{counts.pushFailed}</b></div>}
+      {counts.pushSent>0&&<div className="bg-emerald-50 text-emerald-700 rounded-lg p-2">최근 발송 성공 <b className="float-right">{counts.pushSent}</b></div>}
     </div>}
   </div>;
 }
@@ -10666,8 +10674,11 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
             {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-violet-600 text-white shadow-sm':'bg-gray-50 text-gray-500 hover:bg-violet-50'}`}><section.icon size={14}/>{section.label}</button>)}
           </div>
-          {activeSectionTabs.length>1&&<div className="flex gap-1 overflow-x-auto border-t border-gray-100 pt-2 pb-0.5">
-            {activeSectionTabs.map(n=><button key={n.key} type="button" onClick={()=>setAdminTab(n.key)} className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition ${adminTab===n.key?'bg-violet-50 text-violet-700':'text-gray-500 hover:bg-gray-50'}`}>{n.label}</button>)}
+          {activeSectionTabs.length>1&&<div className="rounded-xl border border-gray-100 bg-gray-50 p-1.5">
+            <div className="px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-gray-400">{ADMIN_SECTIONS.find(section=>section.key===activeAdminSection)?.label} 세부 메뉴</div>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+            {activeSectionTabs.map(n=>{const selected=adminTab===n.key;return <button key={n.key} type="button" onClick={()=>setAdminTab(n.key)} className={`group flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-bold transition ${selected?'border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100':'border-transparent bg-transparent text-gray-500 hover:border-gray-200 hover:bg-white'}`}><span className={`flex h-5 w-5 items-center justify-center rounded-md ${selected?'bg-violet-600 text-white':'bg-white text-gray-400 group-hover:text-violet-500'}`}><n.icon size={12}/></span>{n.label}{selected&&<span className="h-1.5 w-1.5 rounded-full bg-violet-500"/>}</button>})}
+            </div>
           </div>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">

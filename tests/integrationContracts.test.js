@@ -248,6 +248,25 @@ test('관리자 홈은 월말 예상 HS가 목표에 못 미치는 매장을 바
   assert.match(source, /onGo\('storeGoals'\)[\s\S]*?HS 목표 위험 매장/);
 });
 
+test('관리자 홈은 푸시 미설정과 최근 발송 성공·실패를 구독 비밀값 없이 표시한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const migration = await readFile(new URL('../supabase/migrations/20260907130000_push_delivery_overview_rpc.sql', import.meta.url), 'utf8');
+  assert.match(source, /supabase\.rpc\('get_push_delivery_overview'\)/);
+  assert.match(source, /푸시 알림 미설정/);
+  assert.match(source, /최근 푸시 발송 실패/);
+  assert.match(source, /최근 발송 성공/);
+  assert.doesNotMatch(migration, /select\s+[^;]*endpoint[^_]/i);
+  assert.match(migration, /revoke all on function public\.get_push_delivery_overview\(\) from public/);
+});
+
+test('관리자 큰 카테고리 아래 세부 탭은 아이콘과 선택 표시가 분명한 버튼으로 보인다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /세부 메뉴/);
+  assert.match(source, /<n\.icon size=\{12\}/);
+  assert.match(source, /border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100/);
+  assert.match(source, /rounded-full bg-violet-500/);
+});
+
 test('중요한 성취 축하는 사용자별 한 번만 표시한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /miso-celebration-badge-/);
