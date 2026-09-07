@@ -226,6 +226,20 @@ test('대리관리 직원 목록은 대표·실장, 담당 상권, 임원 제외
   assert.match(sql, /v\.name = '임성준'/);
 });
 
+test('직원 시스템 권한 변경은 이강진 계정만 가능하고 변경 이력을 남긴다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /PRIMARY_PERMISSION_ADMIN_ID = 'a50a0979-acef-40b1-98b7-f05074f1c835'/);
+  assert.match(source, /canManagePermissions=\{authUser\?\.id===PRIMARY_PERMISSION_ADMIN_ID\}/);
+  assert.match(source, /canManagePermissions \? \[\{ key: 'permissions'/);
+  assert.match(source, /adminTab === 'permissions' && canManagePermissions/);
+
+  const sql = await readFile(new URL('../supabase/migrations/20260907170712_permission_admin_and_role_audit.sql', import.meta.url), 'utf8');
+  assert.match(sql, /create or replace function public\.is_permission_admin\(\)/);
+  assert.match(sql, /new\.role := old\.role/);
+  assert.match(sql, /create table if not exists public\.profile_role_audit/);
+  assert.match(sql, /changed_by/);
+});
+
 test('직원 홈 설치 처리 내역은 완료와 취소를 별도로 조회한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const homeManager = source.match(/function HomeOrderManager[\s\S]*?function [A-Z]/)?.[0]||'';
