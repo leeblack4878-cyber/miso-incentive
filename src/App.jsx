@@ -28,6 +28,7 @@ import {
   managerCompanyGoalShare,
   calculateSeptemberManagerIncentive,
 } from './managerPolicyEngine';
+import { calculateSalesManagerPayroll, SALES_MANAGER_POLICY_VERSION } from './salesManagerPolicyEngine';
 import {
   SEPTEMBER_POLICY_MONTH, SEPTEMBER_POLICY_VERSION, septemberMainTvPlan, SEPTEMBER_MATRIX_COLUMNS,
   SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale,
@@ -2230,13 +2231,14 @@ function managerActualFromDraft(d,key){
   return 0;
 }
 
-function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='' }){
+function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='', payrollOnly=false }){
   const quarter=quarterInfoFromMonth(month);
   const stores=sortStoresByOpenOrder([...new Set((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)))]);
   const [store,setStore]=useState(canSwitchStores?'':(loginBranch||stores[0]||''));
   const activeStore=store||stores[0]||'';
   const [aaConfig,setAaConfig]=useState(DEFAULT_AA_METRICS),[snap,setSnap]=useState({verified_metrics:{},external_inputs:{}}),[allGoals,setAllGoals]=useState([]),[saving,setSaving]=useState(false);
   const [managerMode,setManagerMode]=useState('dashboard');
+  const activeManagerMode=payrollOnly?'incentive':managerMode;
   useEffect(()=>{if(!canSwitchStores&&loginBranch)setStore(loginBranch)},[canSwitchStores,loginBranch]);
   useEffect(()=>{(async()=>{const [{data:c},{data:s},{data:g}]=await Promise.all([
     supabase.from('aa_impact_monthly').select('*').eq('month',month).maybeSingle(),
@@ -2296,9 +2298,9 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const saveSnapshot=async()=>{setSaving(true);const payload={month,store_name:activeStore,verified_metrics:{...live,...(snap.verified_metrics||{})},external_inputs:{...(snap.external_inputs||{})},verified_by:authUserId,verified_at:new Date().toISOString()};const {error}=await supabase.from('manager_eval_monthly').upsert(payload,{onConflict:'month,store_name'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));setSnap(payload);};
   const saveAa=async()=>{setSaving(true);const {error}=await supabase.from('aa_impact_monthly').upsert({month,metrics:aaConfig,updated_by:authUserId},{onConflict:'month'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));showLegacyAlert('AA임팩트 월 목표를 저장했어요.');};
   return <div className="space-y-3">
-    <div className={`grid gap-2 ${canSwitchStores?'grid-cols-3':canViewManagerIncentive?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='dashboard'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canViewManagerIncentive&&<button onClick={()=>setManagerMode('incentive')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='incentive'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>관리자 인센티브</button>}{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${managerMode==='settings'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>
+    {!payrollOnly&&<div className={`grid gap-2 ${canSwitchStores?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
     {canSwitchStores&&<select value={activeStore} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>}
-    {managerMode==='dashboard'?<>
+    {activeManagerMode==='dashboard'?<>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 관리자 평가 · {monthLabel(month)} 현재 기준</div><div className="text-lg font-bold mt-1">{displayStoreName(activeStore)}</div></div><div className="text-right"><div className="text-3xl font-black text-violet-700">{total.toFixed(1)}</div><div className="text-xs font-bold">{grade}등급</div></div></div><div className="grid grid-cols-2 gap-2 mt-4"><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">핵심성과 50%</div><div className="text-xl font-bold mt-1">{core50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">HS 30% · 홈 30% · 생산성 40%</div></div><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">AA임팩트 50%</div><div className="text-xl font-bold mt-1">{aa50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">AA 원점수 {aa100.toFixed(1)} / 100</div></div></div><div className="mt-3 text-[10px] text-gray-400">관리자 확인 실적 기준 · 마지막 최신화 {verifiedAt}</div></div>
       <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">핵심 성과</div></div>{[['HS','hs',30],['홈','home',30],['생산성','productivity',40]].map(([l,k,w])=>{const t=coreTargets[k],a=actual(k),pct=cappedAchievement(a,t)*100;return <div key={k} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between text-xs"><b>{l}</b><span>{fmtNum(a,1)} / {fmtNum(t,1)} · {pct.toFixed(0)}%</span></div><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}}/></div><div className="text-[9px] text-gray-400 mt-1">반영비중 {w}% · 100% 초과 미반영</div></div>})}</div>
       <div className="bg-white rounded-2xl border overflow-hidden">
@@ -2327,7 +2329,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
           </div>
         </div>
       </div>
-    </>:managerMode==='incentive'&&canViewManagerIncentive?<>
+    </>:activeManagerMode==='incentive'&&canViewManagerIncentive?<>
       {month!=='2026-09'?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">9월 관리자 정책이에요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월을 선택하면 정책과 예상액을 확인할 수 있어요.</div></div>:
        !operator?.name?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">지정된 운영 관리자가 없어요</div><div className="text-xs text-gray-400 mt-1">{displayStoreName(activeStore)}은 9월 관리자 인센티브 지급 대상자가 없습니다.</div></div>:<>
         <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white p-4 shadow-sm">
@@ -2343,6 +2345,55 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
       <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">소노 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(37건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
     </>}
+  </div>;
+}
+
+function SalesManagerPayrollPanel({month,rows=[]}){
+  const finalPerformances=useFinalStorePerformance(month);
+  const branches=[...new Set(rows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
+  const branchValue=(branch,key,input)=>finalStoreMetric(finalPerformances?.[branch],key,input);
+  const sumByBranch=(key,readInput)=>branches.reduce((total,branch)=>{
+    const members=rows.filter(row=>row.branch===branch);
+    return total+Number(branchValue(branch,key,members.reduce((sum,row)=>sum+Number(readInput(row)||0),0))||0);
+  },0);
+  const company={
+    hs:sumByBranch('hs',row=>hsCount(row.draft||{})),
+    simMnp:sumByBranch('simMnp',row=>(row.draft?.matrix?.[5]||[]).reduce((sum,value)=>sum+Number(value||0),0)),
+    second:sumByBranch('second',row=>(row.draft?.matrix?.[7]||[]).reduce((sum,value)=>sum+Number(value||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((sum,value)=>sum+Number(value||0),0)),
+    home:sumByBranch('home',row=>Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0)),
+    upsell:sumByBranch('upsell',row=>Number(row.draft?.tailoredCount||0)),
+  };
+  const result=calculateSalesManagerPayroll(company);
+  const activePolicy=month>='2026-09';
+  if(!activePolicy)return <div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">영업담당 정책은 2026년 9월부터 적용돼요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월 이후를 선택해 주세요.</div></div>;
+  return <div className="space-y-3">
+    <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-violet-800 text-white p-4 shadow-sm">
+      <div className="flex justify-between gap-3"><div><div className="text-[11px] text-violet-100">{SALES_MANAGER_POLICY_VERSION} 정책 · 월중 예상</div><div className="text-lg font-black mt-1">영업담당 급여</div><div className="text-xs text-violet-100 mt-1">김진백 · 임성준 동일한 회사 전체 실적 적용</div></div><div className="text-right shrink-0"><div className="text-[11px] text-violet-100">1인 예상 급여</div><div className="text-2xl font-black mt-1">{won(result.finalPay)}</div></div></div>
+      {result.guaranteeAdjustment>0&&<div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs">최저 600만원 보장 차액 +{won(result.guaranteeAdjustment)} 반영</div>}
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      {[['기본급',2500000],['직책수당',800000],['HS 인센티브',result.hsIncentive],['홈 인센티브',result.homeIncentive],['맞춤제안 업셀',result.upsellIncentive],['보장 차액',result.guaranteeAdjustment]].map(([label,value])=><div key={label} className="bg-white rounded-xl border p-3"><div className="text-[11px] text-gray-400">{label}</div><div className="text-base font-black text-gray-800 mt-1">{won(value)}</div></div>)}
+    </div>
+    <div className="bg-white rounded-2xl border overflow-hidden">
+      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">회사 전체 적용 근거</div><div className="text-[11px] text-gray-400 mt-1">두 영업담당 모두 같은 회사 전체 실적과 구간 단가를 적용합니다.</div></div>
+      <div className="divide-y">
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)}건 적용</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">설치 완료 홈 {fmtCount(company.home)}건</b><div className="text-[11px] text-gray-400 mt-1">가정망·소호 모두 포함</div></div><div className="text-right"><b className="text-violet-700">홈 건당 {won(result.homeTier.rate)}</b><div className="text-[11px] text-gray-400 mt-1">전체 홈 적용</div></div></div>
+        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">맞춤제안 업셀 {fmtCount(company.upsell)}건</b><div className="text-[11px] text-gray-400 mt-1">회사 전체 500건 이상부터 전 건 적용</div></div><div className="text-right"><b className="text-violet-700">건당 {won(result.upsellRate)}</b><div className="text-[11px] text-gray-400 mt-1">{result.upsellRate?'지급 구간':'지급 전'}</div></div></div>
+      </div>
+    </div>
+    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800 leading-relaxed"><b>분기별 별도 정산</b><br/>담당 매장 HS·홈 합산 달성률 평균 우수 100만원, AA임팩트 평균 우수 50만원은 분기 평가 후 별도로 정산되며 현재 월 급여 예상액에는 포함되지 않습니다.</div>
+  </div>;
+}
+
+function ManagerPayrollPanel({month,employees=[],rows=[],authUserId,canSwitchStores=false,loginBranch=''}){
+  const viewer=employees.find(employee=>employee.id===authUserId);
+  const canViewSales=COMPANY_SCOPE_VIEWERS.has(viewer?.name)||!!SALES_MANAGER_AREAS[viewer?.name];
+  const [mode,setMode]=useState('store');
+  return <div className="space-y-3">
+    <div><div className="text-xs text-violet-600 font-semibold">관리자 급여</div><div className="text-xl font-bold text-gray-900">월 급여 예상</div><div className="text-xs text-gray-400 mt-1">현재 입력·완료 실적 기준이며 월 마감 시 최종 금액이 달라질 수 있어요.</div></div>
+    {canViewSales&&<div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>매장 운영 관리자</button><button onClick={()=>setMode('sales')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='sales'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>영업담당</button></div>}
+    {mode==='sales'&&canViewSales?<SalesManagerPayrollPanel month={month} rows={rows}/>:<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} payrollOnly/>}
   </div>;
 }
 
@@ -2535,7 +2586,7 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
   </div>;
 }
 
-function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, userName='', canEditGoals=false, onOpenGoals }) {
+function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, userName='', canEditGoals=false, onOpenGoals, showRanking=true }) {
   const scopedBranches=[...new Set((branches||[]).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))];
   const members=(rows||[]).filter(r=>scopedBranches.includes(r.branch));
   const finalPerformances=useFinalStorePerformance(month);
@@ -2625,7 +2676,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
       </div>
     </div>
 
-    <MonthlyPerformanceRankingCard
+    {showRanking&&<MonthlyPerformanceRankingCard
       rows={members}
       userId={userId}
       userName={userName}
@@ -2633,7 +2684,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
       branchOnly={scopedBranches.length===1?scopedBranches[0]:''}
       title={`${scopeLabel||displayStoreName(scopedBranches[0])} 월 누적 순위`}
       showAll
-    />
+    />}
   </div>;
 }
 
@@ -5577,6 +5628,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
     setStoreScopeKey(current=>storeScopeOptions.some(option=>option.key===current)?current:storeScopeOptions[0].key);
   },[storeScopeOptions]);
   const selectedStoreScope=storeScopeOptions.find(option=>option.key===storeScopeKey)||storeScopeOptions[0];
+  const isSalesManager=!!SALES_MANAGER_AREAS[String(currentEmp?.name||'').trim()];
   const [homeApprovalPending,setHomeApprovalPending]=useState(0);
   const [approvalRows,setApprovalRows]=useState([]);
   const [approvalOpen,setApprovalOpen]=useState(false);
@@ -5772,8 +5824,14 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
                 {storeScopeOptions.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}
               </select>
             </div>}
-            <StoreHomeOverview rows={competitionRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
-              canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />
+            {isSalesManager&&String(selectedStoreScope?.key||'').startsWith('area:')?<>
+              <div className="px-1"><div className="text-sm font-bold text-gray-900">상권별 목표 비교</div><div className="text-[11px] text-gray-400 mt-1">상대 상권은 합산 현황만 비교하며 직원·고객 상세는 표시하지 않습니다.</div></div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <StoreHomeOverview rows={competitionRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+                <StoreHomeOverview rows={competitionRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+              </div>
+            </>:<StoreHomeOverview rows={competitionRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
+              canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />}
           </>}
         </div>
       )}
@@ -10339,6 +10397,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'dashboard', label: '대시보드', icon: LayoutDashboard, group:'현황' },
     { key: 'performance', label: '실적 순위', icon: Trophy, group:'현황' },
     { key: 'evaluation', label: '평가', icon: ClipboardCheck, group:'현황' },
+    { key: 'managerPayroll', label: '관리자 급여', icon: Wallet, group:'현황' },
     { key: 'storeGoals', label: '매장 목표', icon: Target, group:'현황' },
     ...(canViewDailyBriefing ? [{ key: 'dailyBriefing', label: '일일 브리핑', icon: ClipboardList, group:'현황' }] : []),
     { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, group:'실적 관리' },
@@ -10517,6 +10576,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
       {adminTab === 'evaluation' && <EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
+      {adminTab === 'managerPayroll' && <ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
