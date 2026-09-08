@@ -3915,11 +3915,11 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       return;
     }
     if (!await showAppConfirm({title:'홈 청약을 취소할까요?',message:'취소 건은 실적 요약과 정산 대상에서 제외됩니다.',confirmLabel:'취소 처리',tone:'danger'})) return;
-    const now = new Date().toISOString();
-    const { error } = await supabase.from('home_orders').update({
-      status:'cancelled', cancelled_at:now, updated_at:now
-    }).eq('id',order.id).eq('user_id',userId);
+    const { data:result, error } = await supabase.rpc('set_home_orders_status_atomic',{
+      p_user_id:userId,p_order_ids:[order.id],p_expected_status:order.status,p_new_status:'cancelled'
+    });
     if (error) return showLegacyAlert(`상태 변경 실패: ${friendlyError(error)}`);
+    if(Number(result?.updated_count)!==1)return showLegacyAlert('상태 변경 결과를 확인하지 못했어요.');
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
       message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel}`,
@@ -3933,6 +3933,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
     const [y,m,d]=homeActualCompleteDate.split('-');
     const completionMonth=`${y}-${m}`;
     const completionDay=d;
+    const completionWorkDate=`${completionMonth}-${completionDay}`;
+    let completionDailyRecord=null;
 
     const {data:supportCredit}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',[String(order.id)]).maybeSingle();
     if (!supportCredit&&order.source_group && order.source_key) {
@@ -3941,10 +3943,8 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         const current=Number(base.groups?.[order.source_group]?.[order.source_key]||0);
         const next={...base,groups:{...base.groups,[order.source_group]:{
           ...(base.groups?.[order.source_group]||{}),[order.source_key]:current+1}}};
-        const ok=await saveDailyDay(completionDay,next);
-        if (!ok) return showLegacyAlert('확정 실적 반영에 실패했어요. 다시 시도해주세요.');
+        completionDailyRecord=next;
       } else {
-        const completionWorkDate = `${completionMonth}-${completionDay}`;
         const { data: rec, error: loadError } = await supabase
           .from('daily_records')
           .select('data')
@@ -3969,26 +3969,16 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
           },
         };
 
-        const { error: de } = await supabase
-          .from('daily_records')
-          .upsert(
-            {
-              user_id: userId,
-              work_date: completionWorkDate,
-              data: next,
-            },
-            { onConflict: 'user_id,work_date' }
-          );
-
-        if (de) return showLegacyAlert(`확정 실적 반영 실패: ${friendlyError(de)}`);
+        completionDailyRecord=next;
       }
     }
 
-    const completedAt=new Date(`${homeActualCompleteDate}T12:00:00`).toISOString();
-    const {error}=await supabase.from('home_orders').update({
-      status:'completed',completed_at:completedAt,actual_install_date:homeActualCompleteDate,updated_at:new Date().toISOString()
-    }).eq('id',order.id).eq('user_id',userId);
+    const {data:result,error}=await supabase.rpc('set_home_orders_status_atomic',{
+      p_user_id:userId,p_order_ids:[order.id],p_expected_status:order.status,p_new_status:'completed',
+      p_actual_install_date:homeActualCompleteDate,p_daily_record:completionDailyRecord,p_work_date:completionDailyRecord?completionWorkDate:null
+    });
     if(error)return showLegacyAlert(`완료 처리 실패: ${friendlyError(error)}`);
+    if(Number(result?.updated_count)!==1)return showLegacyAlert('완료 처리 결과를 확인하지 못했어요.');
 
     const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
     notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
@@ -4014,10 +4004,11 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       if(!await showAppConfirm({title:`선택한 ${selected.length}개 상품을 취소할까요?`,message:'선택하지 않은 상품은 진행중 상태로 유지됩니다.',confirmLabel:'선택 상품 취소',tone:'danger'}))return;
       setHomeCareActionSaving(true);
       try{
-        const now=new Date().toISOString();
-        const {error}=await supabase.from('home_orders').update({status:'cancelled',cancelled_at:now,updated_at:now})
-          .in('id',selected.map(o=>o.id)).eq('user_id',userId).eq('status','pending');
+        const {data:result,error}=await supabase.rpc('set_home_orders_status_atomic',{
+          p_user_id:userId,p_order_ids:selected.map(o=>o.id),p_expected_status:'pending',p_new_status:'cancelled'
+        });
         if(error)throw error;
+        if(Number(result?.updated_count)!==selected.length)throw new Error('묶음 취소 결과가 요청 수와 다릅니다.');
         selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
           message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type}`,
           payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}}));
@@ -4038,6 +4029,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       const [y,m,d]=homeActualCompleteDate.split('-');
       const completionMonth=`${y}-${m}`, completionDay=d, completionWorkDate=`${completionMonth}-${completionDay}`;
       const countable=selected.filter(o=>!supportById[String(o.id)]&&o.source_group&&o.source_key);
+      let completionDailyRecord=null;
       if(countable.length){
         let base;
         if(completionMonth===month) base=normalizeDay(dailyDays?.[completionDay]);
@@ -4052,18 +4044,14 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
           groups[order.source_group][order.source_key]=Number(groups[order.source_group][order.source_key]||0)+1;
         });
         const next={...base,groups};
-        if(completionMonth===month){
-          const ok=await saveDailyDay(completionDay,next);
-          if(!ok)throw new Error('확정 실적 반영에 실패했어요.');
-        }else{
-          const {error}=await supabase.from('daily_records').upsert({user_id:userId,work_date:completionWorkDate,data:next},{onConflict:'user_id,work_date'});
-          if(error)throw error;
-        }
+        completionDailyRecord=next;
       }
-      const completedAt=new Date(`${homeActualCompleteDate}T12:00:00`).toISOString(), now=new Date().toISOString();
-      const {error}=await supabase.from('home_orders').update({status:'completed',completed_at:completedAt,actual_install_date:homeActualCompleteDate,updated_at:now})
-        .in('id',selected.map(o=>o.id)).eq('user_id',userId).eq('status','pending');
+      const {data:result,error}=await supabase.rpc('set_home_orders_status_atomic',{
+        p_user_id:userId,p_order_ids:selected.map(o=>o.id),p_expected_status:'pending',p_new_status:'completed',
+        p_actual_install_date:homeActualCompleteDate,p_daily_record:completionDailyRecord,p_work_date:completionDailyRecord?completionWorkDate:null
+      });
       if(error)throw error;
+      if(Number(result?.updated_count)!==selected.length)throw new Error('묶음 완료 결과가 요청 수와 다릅니다.');
       selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_completed',title:'홈 설치/개통 완료',
         message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type} · ${homeActualCompleteDate}`,
         storeName:supportById[String(order.id)]?.credited_store||null,
@@ -4110,7 +4098,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
   };
 
   const decrementCompletedPerformance = async (order) => {
-    if(!order?.source_group || !order?.source_key || !order?.actual_install_date) return;
+    if(!order?.source_group || !order?.source_key || !order?.actual_install_date) return null;
     const completedDate=String(order.actual_install_date).slice(0,10);
     const completedMonth=completedDate.slice(0,7);
     const completedDay=completedDate.slice(8,10);
@@ -4122,9 +4110,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
         ...(base.groups?.[order.source_group]||{}),
         [order.source_key]:Math.max(0,current-1)
       }}};
-      const ok=await saveDailyDay(completedDay,next);
-      if(!ok) throw new Error('확정 실적 원복에 실패했어요.');
-      return;
+      return {data:next,workDate:completedDate};
     }
 
     const {data:rec,error:loadError}=await supabase.from('daily_records')
@@ -4136,10 +4122,7 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
       ...(base.groups?.[order.source_group]||{}),
       [order.source_key]:Math.max(0,current-1)
     }}};
-    const {error}=await supabase.from('daily_records').upsert({
-      user_id:userId,work_date:completedDate,data:next
-    },{onConflict:'user_id,work_date'});
-    if(error)throw error;
+    return {data:next,workDate:completedDate};
   };
 
   const undoHomeStatus = async (order) => {
@@ -4152,15 +4135,13 @@ function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTe
 
     setHomeCareActionSaving(true);
     try{
-      if(isCompleted) await decrementCompletedPerformance(order);
-      const {error}=await supabase.from('home_orders').update({
-        status:'pending',
-        completed_at:null,
-        actual_install_date:null,
-        cancelled_at:null,
-        updated_at:new Date().toISOString()
-      }).eq('id',order.id).eq('user_id',userId);
+      const rollback=isCompleted?await decrementCompletedPerformance(order):null;
+      const {data:result,error}=await supabase.rpc('set_home_orders_status_atomic',{
+        p_user_id:userId,p_order_ids:[order.id],p_expected_status:order.status,p_new_status:'pending',
+        p_daily_record:rollback?.data||null,p_work_date:rollback?.workDate||null
+      });
       if(error)throw error;
+      if(Number(result?.updated_count)!==1)throw new Error('상태 되돌리기 결과를 확인하지 못했어요.');
       await load(); await onHomeOrdersChanged?.();
     }catch(e){
       showLegacyAlert(`상태 되돌리기 실패: ${friendlyError(e)}`);
@@ -6796,33 +6777,22 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     if(!skipConfirm&&!await showAppConfirm({title:'판매건을 삭제할까요?',message:`${name} · ${sale.metric_label}\n${bundleText}\n연결된 고객 약속과 영업비용도 함께 삭제됩니다.`,confirmLabel:'판매건 삭제',tone:'danger'}))return;
     const meta=sale.source_meta||{};
 
-    if(meta.teamOnly){
-      if(sale.source_type==='home_order'){
-        const {data:homeSales}=await supabase.from('customer_sales').select('id,source_ref').eq('user_id',currentEmp?.id).eq('sale_date',sale.sale_date).eq('customer_id',sale.customer_id).eq('source_type','home_order');
-        const ids=(homeSales||[]).map(item=>item.id),refs=(homeSales||[]).map(item=>item.source_ref).filter(Boolean);
-        if(ids.length){await supabase.from('customer_tasks').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('sales_expenses').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('customer_sales').delete().in('id',ids).eq('user_id',currentEmp?.id)}
-        if(refs.length)await supabase.from('home_orders').delete().in('id',refs).eq('user_id',currentEmp?.id);
-      }else{
-        await supabase.from('customer_tasks').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
-        await supabase.from('sales_expenses').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
-        await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id);
-      }
-      await onTeamCreditSaved?.();
-      if(sale.source_type==='home_order')await onHomeOrdersChanged?.();
-      loadDaySales();return;
+    if(sale.source_type==='home_order'){
+      const {data:result,error}=await supabase.rpc('delete_home_bundle_atomic',{p_user_id:currentEmp?.id,p_anchor_sale_id:sale.id});
+      if(error)return showLegacyAlert(`홈 판매 삭제 실패: ${friendlyError(error)}`);
+      if(!result||Number(result.sale_count)<1)return showLegacyAlert('삭제 결과를 확인하지 못했어요. 다시 확인해주세요.');
+      await onHomeOrdersChanged?.();
+      if(meta.teamOnly)await onTeamCreditSaved?.();
+      await loadDaySales();
+      return;
     }
 
-    if(sale.source_type==='home_order'){
-      const {data:hs,error:hErr}=await supabase.from('customer_sales').select('id,source_ref').eq('user_id',currentEmp?.id).eq('sale_date',sale.sale_date).eq('customer_id',sale.customer_id).eq('source_type','home_order');
-      if(hErr)return showLegacyAlert(friendlyError(hErr));
-      const ids=(hs||[]).map(x=>x.id),refs=(hs||[]).map(x=>x.source_ref).filter(Boolean); let orders=[];
-      if(refs.length){const {data:o}=await supabase.from('home_orders').select('*').in('id',refs);orders=o||[];}
-      const base=normalizeDay(day),groups={...base.groups};
-      orders.forEach(o=>{if(o.status==='completed'&&o.source_group&&o.source_key){groups[o.source_group]={...(groups[o.source_group]||{})};groups[o.source_group][o.source_key]=Math.max(0,Number(groups[o.source_group][o.source_key]||0)-1);}});
-      mutate({...base,groups});
-      if(ids.length){await supabase.from('customer_tasks').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('sales_expenses').delete().in('source_sale_id',ids).eq('user_id',currentEmp?.id);await supabase.from('customer_sales').delete().in('id',ids).eq('user_id',currentEmp?.id);}
-      if(refs.length)await supabase.from('home_orders').delete().in('id',refs).eq('user_id',currentEmp?.id);
-      await onHomeOrdersChanged?.();loadDaySales();return;
+    if(meta.teamOnly){
+      await supabase.from('customer_tasks').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
+      await supabase.from('sales_expenses').delete().eq('source_sale_id',sale.id).eq('user_id',currentEmp?.id);
+      await supabase.from('customer_sales').delete().eq('id',sale.id).eq('user_id',currentEmp?.id);
+      await onTeamCreditSaved?.();
+      loadDaySales();return;
     }
 
     if(sale.source_type==='extra'){
@@ -6946,6 +6916,8 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     try{
       const appliedAt=new Date(`${sourceWorkDate}T12:00:00`).toISOString();
       let workingDay=normalizeDay(day);
+      let replacedSaleIds=[];
+      let replacedOrderIds=[];
       // 구버전 홈 집계 1건을 정상 고객별 홈 판매로 전환: 원본 집계 1건을 먼저 차감
       if(homeOrderDraft?.legacyConversion && legacyConversion?.kind==='home'){
         const base=workingDay;
@@ -6967,15 +6939,12 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           }
         }
         workingDay={...base,groups};
-        const ids=editingHomeSales.map(x=>x.id); const refs=editingHomeSales.map(x=>x.source_ref).filter(Boolean);
-        if(ids.length){ await supabase.from('customer_tasks').delete().in('source_sale_id',ids).eq('user_id',currentEmp.id); await supabase.from('sales_expenses').delete().in('source_sale_id',ids).eq('user_id',currentEmp.id); await supabase.from('customer_sales').delete().in('id',ids).eq('user_id',currentEmp.id); }
-        if(refs.length)await supabase.from('home_orders').delete().in('id',refs).eq('user_id',currentEmp.id);
+        replacedSaleIds=editingHomeSales.map(x=>x.id);
+        replacedOrderIds=editingHomeSales.map(x=>x.source_ref).filter(Boolean);
       }
-      const now=new Date().toISOString();
-      let primarySaleId=null;
-      const createdOrderIds=[];
-      for(const product of products){
-        const {data:order,error}=await supabase.from('home_orders').insert({
+      const createdSaleIds=products.map(()=>crypto.randomUUID());
+      const primarySaleId=createdSaleIds[0];
+      const orderRows=products.map((product,index)=>({
           user_id:currentEmp.id,customer_name:customer,customer_id:linkedCustomerId,
           product_type:product.productType,network_type:homeNetworkType,sale_type:'normal',
           status:homeDirectComplete?'completed':'pending',applied_at:appliedAt,
@@ -6984,12 +6953,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           main_tv_plan:product.productType==='homeTv'?homeMainTvPlan:null,
           planned_install_date:homePlannedDate||null,actual_install_date:homeDirectComplete?homeActualCompleteDate:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-        }).select('id').single();
-        if(error)throw error;
-        createdOrderIds.push(String(order.id));
-        const {data:sale,error:saleError}=await supabase.from('customer_sales').insert({
+      }));
+      const saleRows=products.map((product,index)=>({
+          id:createdSaleIds[index],
           user_id:currentEmp.id,customer_id:linkedCustomerId,sale_date:sourceWorkDate,
-          metric_label:product.label,source_type:'home_order',source_ref:String(order?.id||''),
+          metric_label:product.label,source_type:'home_order',source_ref:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
             networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,
@@ -6998,44 +6966,38 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
             simulBase:homeInternet?'home':(!homeInternet&&homeSmartHome?'smartHome':null),teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null
           })
-        }).select('id').single();
-        if(saleError)throw saleError;
-        if(!primarySaleId)primarySaleId=sale.id;
-      }
+      }));
 
       // 홈 약속은 모바일 템플릿 없이 직접 작성만 저장
       const homePromiseRows=[{title:homeCustomTitle,dueDate:homeCustomDueDate},...(homeExtraPromises||[])].filter(x=>String(x.title||'').trim()&&x.dueDate);
-      if(homePromiseRows.length&&primarySaleId){
-        const {error:taskError}=await supabase.from('customer_tasks').insert(homePromiseRows.map(x=>({
+      const taskRows=homePromiseRows.map(x=>({
           user_id:currentEmp.id,customer_id:linkedCustomerId,source_sale_id:primarySaleId,task_type:'custom',title:String(x.title).trim(),base_date:sourceWorkDate,due_date:x.dueDate,status:'pending',task_meta:{}
-        })));
-        if(taskError)throw taskError;
-      }
+      }));
 
+      let spotClaimRow=null;
       if(homeSpotPolicyId){
-        const {error}=await supabase.from('spot_claims').insert({policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',source_context:'home'}); if(error)throw error;
+        spotClaimRow={policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',source_context:'home'};
       } else if(!isSeptemberPolicyActive(month)&&homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
-        const {error}=await supabase.from('spot_claims').insert({policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null,source_context:'home'}); if(error)throw error;
+        spotClaimRow={policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null,source_context:'home'};
       }
-      if(homeExpenseOpen&&primarySaleId){
-        const expRows=[{category:homeExpenseCategory,amount:homeExpenseAmount,memo:homeExpenseMemo},...(homeExtraExpenses||[])].filter(x=>Number(x.amount)>0);
-        if(expRows.length){ const {error}=await supabase.from('sales_expenses').insert(expRows.map(x=>({user_id:currentEmp.id,source_sale_id:primarySaleId,expense_date:sourceWorkDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null}))); if(error)throw error; }
-      }
+      const expenseRows=homeExpenseOpen?[{category:homeExpenseCategory,amount:homeExpenseAmount,memo:homeExpenseMemo},...(homeExtraExpenses||[])].filter(x=>Number(x.amount)>0).map(x=>({user_id:currentEmp.id,source_sale_id:primarySaleId,expense_date:sourceWorkDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null})):[];
 
-      if(activeTeamSupport){
-        const {error:creditError}=await supabase.from('team_sales_credits').insert({seller_id:authUser.id,credited_store:teamSupportStore,sale_date:sourceWorkDate,source_type:'home',source_sale_id:primarySaleId,source_refs:createdOrderIds,metrics:homeTeamCreditMetrics(products),is_completed:homeDirectComplete,note:`${loginEmp?.name||'담당'} 지원 판매`});
-        if(creditError)throw creditError;
-        await onTeamCreditSaved?.();
-      }else if(homeDirectComplete){
+      if(!activeTeamSupport&&homeDirectComplete){
         const base=workingDay; const groups={...base.groups};
         products.forEach(product=>{ groups[product.groupKey]={...(groups[product.groupKey]||{}),[product.itemKey]:Number(groups[product.groupKey]?.[product.itemKey]||0)+1}; });
         workingDay={...base,groups};
       }
-      if(!activeTeamSupport&&homeOrderDraft?.legacyConversion){
-        await persistLegacyConvertedDay(workingDay);
-      }else if(!activeTeamSupport&&(homeOrderDraft?.editing || homeDirectComplete)){
-        mutate(workingDay);
-      }
+      const shouldSaveDaily=!activeTeamSupport&&(homeOrderDraft?.legacyConversion||homeOrderDraft?.editing||homeDirectComplete);
+      const teamCreditRow=activeTeamSupport?{seller_id:authUser.id,credited_store:teamSupportStore,sale_date:sourceWorkDate,source_type:'home',source_sale_id:primarySaleId,source_refs:[],metrics:homeTeamCreditMetrics(products),is_completed:homeDirectComplete,note:`${loginEmp?.name||'담당'} 지원 판매`}:null;
+      const {data:atomicResult,error:atomicError}=await supabase.rpc('save_home_bundle_atomic',{
+        p_user_id:currentEmp.id,p_orders:orderRows,p_sales:saleRows,p_tasks:taskRows,p_expenses:expenseRows,
+        p_spot_claim:spotClaimRow,p_team_credit:teamCreditRow,p_replace_sale_ids:replacedSaleIds,
+        p_replace_order_ids:replacedOrderIds,p_daily_record:shouldSaveDaily?workingDay:null,p_work_date:shouldSaveDaily?sourceWorkDate:null
+      });
+      if(atomicError)throw atomicError;
+      if(Number(atomicResult?.order_count)!==products.length||Number(atomicResult?.sale_count)!==products.length)throw new Error('홈 저장 결과를 확인하지 못했어요.');
+      if(shouldSaveDaily)mutate(workingDay);
+      if(activeTeamSupport)await onTeamCreditSaved?.();
 
       notifyStoreManagers({actorId:currentEmp.id,type:homeDirectComplete?'home_completed':'home_order',title:homeDirectComplete?'홈 설치/개통 완료':'새 홈 청약 등록',message:`${customer} · ${homeNetworkLabel(homeNetworkType)} · ${products.map(p=>p.label).join(' + ')}`,storeName:activeTeamSupport?teamSupportStore:null,payload:{employee_id:currentEmp.id,customer_name:customer,store_name:activeTeamSupport?teamSupportStore:currentEmp.branch,team_only:activeTeamSupport,network_type:homeNetworkType,internet_speed:homeInternetSpeed||null,mobile_simul:homeMobileSimul||'none',status:homeDirectComplete?'completed':'pending',source_work_date:sourceWorkDate}});
       const resultId=`home-${Date.now()}`;

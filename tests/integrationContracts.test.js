@@ -653,7 +653,7 @@ test('같은 고객의 홈 상품은 선택 항목만 묶음 완료·취소한�
   assert.match(manager, /여러 상품 취소/);
   assert.match(manager, /homeBatchSelected\.includes\(String\(o\.id\)\)/);
   assert.match(manager, /선택하지 않은 상품은 진행중으로 남습니다/);
-  assert.match(manager, /\.in\('id',selected\.map\(o=>o\.id\)\)\.eq\('user_id',userId\)\.eq\('status','pending'\)/);
+  assert.match(manager, /rpc\('set_home_orders_status_atomic',[\s\S]*?p_order_ids:selected\.map\(o=>o\.id\)[\s\S]*?p_expected_status:'pending'/);
   assert.match(manager, /countable\.forEach\(order=>/);
 });
 
@@ -676,6 +676,25 @@ test('홈 상태 변경 직후 급여의 홈 수수료를 다시 계산한다', 
   assert.match(manager, /status:'completed'[\s\S]*?await load\(\); await onHomeOrdersChanged\?\.\(\)/);
   assert.match(manager, /상태 되돌리기 실패/);
   assert.ok((manager.match(/onHomeOrdersChanged\?\.\(\)/g)||[]).length>=5);
+});
+
+test('홈 등록·수정·상태변경·삭제는 원자적 RPC와 변경 건수 검증을 사용한다', async () => {
+  const [source, migration] = await Promise.all([
+    readFile(new URL('../src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260908130000_atomic_home_mutations.sql', import.meta.url), 'utf8'),
+  ]);
+  assert.match(source, /rpc\('save_home_bundle_atomic'/);
+  assert.match(source, /rpc\('delete_home_bundle_atomic'/);
+  assert.match(source, /rpc\('set_home_orders_status_atomic'/);
+  assert.match(source, /atomicResult\?\.order_count/);
+  assert.match(source, /result\?\.updated_count/);
+  assert.match(migration, /security invoker/g);
+  assert.match(migration, /HOME_INSERT_COUNT_MISMATCH/);
+  assert.match(migration, /HOME_STATUS_SOURCE_MISMATCH/);
+  assert.match(migration, /HOME_DELETE_ORDERS_MISMATCH/);
+  assert.match(migration, /p_user_id\s*=\s*auth\.uid\(\) or public\.can_write_target\(p_user_id\)/);
+  assert.doesNotMatch(migration, /security definer/);
+  assert.match(migration, /revoke all on function public\.save_home_bundle_atomic[\s\S]*from public, anon/);
 });
 
 test('취소된 구버전 홈 주문은 이전 방식 입력 실적으로 다시 나타나지 않는다', async () => {
