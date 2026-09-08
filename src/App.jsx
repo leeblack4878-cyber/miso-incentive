@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 211501)
+Total output lines: 12064
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Trophy, Home, ClipboardList, History, TrendingUp, Users, ChevronDown, Plus,
@@ -13,7 +16,7 @@ const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
 import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
-  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate,
+  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate, completedHomeCount,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
@@ -926,9 +929,12 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
   const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
 
-  const homeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
+  const legacyHomeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
     + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0)
     + Number(draft.homeFlat?.tvFree || 0) + Number(draft.homeFlat?.smartHome || 0);
+  const homeAnyCount = draft.homePolicy?.source === 'orders'
+    ? Math.max(legacyHomeAnyCount, completedHomeCount(draft))
+    : legacyHomeAnyCount;
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
 
@@ -2395,7 +2401,7 @@ function managerActualFromDraft(d,key){
   if(key==='tailoredAmount')return Number(d.tailoredAmount||0);
   if(key==='daemyung')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
   if(key==='prospectMnp')return 0;
-  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  if(key==='home')return completedHomeCount(d);
   return 0;
 }
 
@@ -2563,7 +2569,7 @@ function SalesManagerPayrollPanel({month,rows=[]}){
     hs:sumByBranch('hs',row=>hsCount(row.draft||{})),
     simMnp:sumByBranch('simMnp',row=>(row.draft?.matrix?.[5]||[]).reduce((sum,value)=>sum+Number(value||0),0)),
     second:sumByBranch('second',row=>(row.draft?.matrix?.[7]||[]).reduce((sum,value)=>sum+Number(value||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((sum,value)=>sum+Number(value||0),0)),
-    home:sumByBranch('home',row=>Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0)),
+    home:sumByBranch('home',row=>completedHomeCount(row.draft)),
     upsell:sumByBranch('upsell',row=>Number(row.draft?.tailoredCount||0)),
   };
   const result=calculateSalesManagerPayroll(company);
@@ -2706,7 +2712,7 @@ function EvaluationTab({ month, employee, config, isManagerView=false, canFinalA
 
 const MONTHLY_RANK_METRICS = [
   { key:'hs', label:'HS', unit:'건', value:(r)=>hsCount(r.draft) },
-  { key:'home', label:'홈', unit:'건', value:(r)=>Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0) },
+  { key:'home', label:'홈', unit:'건', value:(r)=>completedHomeCount(r.draft) },
   { key:'free', label:'프리', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.tvFree||0) },
   { key:'smart', label:'스홈', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.smartHome||0) },
   { key:'productivity', label:'생산성', unit:'P', value:(r)=>Number(r.pay?.kpiScore||0) },
@@ -2823,7 +2829,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
     {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.simMnp||0)},
     {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.second||0)},
     {key:'productivity',label:'생산성',unit:'point',current:sum(r=>r.pay?.kpiScore||0),target:Number(goal.productivity||goal.kpi||0)},
-    {key:'home',label:'홈',unit:'count',current:sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),target:Number(goal.home||0)},
+    {key:'home',label:'홈',unit:'count',current:sum(r=>completedHomeCount(r.draft)),target:Number(goal.home||0)},
     {key:'free',label:'프리',unit:'count',current:sum(r=>r.draft?.homeFlat?.tvFree||0),target:Number(goal.tvFree||goal.free||0)},
     {key:'smart',label:'스홈',unit:'count',current:sum(r=>r.draft?.homeFlat?.smartHome||0),target:Number(goal.smartHome||goal.smart||0)},
     {key:'sono',label:'소노',unit:'count',current:sum(r=>Object.values(r.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.sono||0)},
@@ -2839,7 +2845,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
         if(m.key==='simMnp')return sumValue+(row.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
         if(m.key==='second')return sumValue+(row.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
         if(m.key==='productivity')return sumValue+Number(row.pay?.kpiScore||0);
-        if(m.key==='home')return sumValue+Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0);
+        if(m.key==='home')return sumValue+completedHomeCount(row.draft);
         if(m.key==='free')return sumValue+Number(row.draft?.homeFlat?.tvFree||0);
         if(m.key==='smart')return sumValue+Number(row.draft?.homeFlat?.smartHome||0);
         if(m.key==='sono')return sumValue+Object.values(row.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0);
@@ -2977,7 +2983,7 @@ function WorkActivityCard({ dailyDays, month, onGoInput }) {
 
 const COMPETITION_METRICS = [
   { key: 'hs', label: 'HS', unit: '건', value: (r) => hsCount(r.draft) },
-  { key: 'home', label: '홈', unit: '건', value: (r) => Number((r.draft?.homeBase?.homeOnly || 0) + (r.draft?.homeBase?.homeTv || 0)) },
+  { key: 'home', label: '홈', unit: '건', value: (r) => completedHomeCount(r.draft) },
   { key: 'tvFree', label: 'TV프리(부)', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
   { key: 'smartHome', label: '스마트홈', unit: '건', value: (r) => Number(r.draft?.homeFlat?.smartHome || 0) },
   { key: 'kpi', label: '생산성', unit: 'P', value: (r) => Number(r.pay?.kpiScore || 0) },
@@ -3313,7 +3319,7 @@ function evaluateAutomaticBadges({
 }) {
   const earned=new Set();
   const hs=hsCount(mergedDraft);
-  const home=Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  const home=completedHomeCount(mergedDraft);
   const free=Number(mergedDraft?.homeFlat?.tvFree||0);
   const smart=Number(mergedDraft?.homeFlat?.smartHome||0);
   const upsell=Number(mergedDraft?.tailoredCount||0);
@@ -4658,7 +4664,7 @@ const STORE_GOAL_METRICS = [
 
 function storeGoalCurrent(mergedDraft, pay, key) {
   if (key === 'hs') return hsCount(mergedDraft);
-  if (key === 'home') return Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  if (key === 'home') return completedHomeCount(mergedDraft);
   if (key === 'productivity') return Number(pay?.kpiScore||0);
   if (key === 'tvFree') return Number(mergedDraft?.homeFlat?.tvFree||0);
   if (key === 'smartHome') return Number(mergedDraft?.homeFlat?.smartHome||0);
@@ -4975,7 +4981,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
           );
           let actual;
           if(m.key==='hs')actual=selectedRows.reduce((s,r)=>s+hsCount(r.draft),0);
-          else if(m.key==='home')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0),0);
+          else if(m.key==='home')actual=selectedRows.reduce((s,r)=>s+completedHomeCount(r.draft),0);
           else if(m.key==='productivity')actual=selectedRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
           else if(m.key==='tvFree')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.tvFree||0),0);
           else if(m.key==='smartHome')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0);
@@ -5939,663 +5945,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 보여드려요.</div>}
-  </div>;
-}
-
-function employeeStoreScopeOptions(employee, rows=[]) {
-  const available=[...new Set((rows||[]).map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
-  const keep=branches=>(branches||[]).filter(branch=>available.includes(branch));
-  const name=String(employee?.name||'').trim();
-  if(COMPANY_SCOPE_VIEWERS.has(name))return [
-    {key:'company',label:'회사 전체',branches:available},
-    {key:'area:ansan',label:SALES_AREA_LABELS.ansan,branches:keep(SALES_AREA_STORES.ansan)},
-    {key:'area:siheung',label:SALES_AREA_LABELS.siheung,branches:keep(SALES_AREA_STORES.siheung)},
-    ...available.map(branch=>({key:`store:${branch}`,label:displayStoreName(branch),branches:[branch]})),
-  ];
-  const areaKey=SALES_MANAGER_AREAS[name];
-  if(areaKey){
-    const branches=keep(employee?.storeScope?.length?employee.storeScope:SALES_AREA_STORES[areaKey]);
-    return [
-      {key:`area:${areaKey}`,label:SALES_AREA_LABELS[areaKey],branches},
-      ...branches.map(branch=>({key:`store:${branch}`,label:displayStoreName(branch),branches:[branch]})),
-    ];
-  }
-  return employee?.branch?[{key:`store:${employee.branch}`,label:displayStoreName(employee.branch),branches:[employee.branch]}]:[];
-}
-
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, onHomeOrdersChanged, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
-  const viewedUserId=currentEmp?.id||authUser?.id;
-  const isManagingAnotherEmployee=!!authUser?.id&&!!currentEmp?.id&&currentEmp.id!==authUser.id;
-  const [expenseTotal,setExpenseTotal]=useState(0);
-  const [homeDetailOpen,setHomeDetailOpen]=useState(false);
-  const [employeeHomeMode,setEmployeeHomeMode]=useState('personal'); // personal | store
-  const storeScopeOptions=useMemo(()=>employeeStoreScopeOptions(currentEmp,storeOverviewRows),[currentEmp?.name,currentEmp?.branch,storeOverviewRows]);
-  const [storeScopeKey,setStoreScopeKey]=useState('');
-  useEffect(()=>{
-    if(!storeScopeOptions.length){setStoreScopeKey('');return;}
-    setStoreScopeKey(current=>storeScopeOptions.some(option=>option.key===current)?current:storeScopeOptions[0].key);
-  },[storeScopeOptions]);
-  const selectedStoreScope=storeScopeOptions.find(option=>option.key===storeScopeKey)||storeScopeOptions[0];
-  const isSalesManager=!!SALES_MANAGER_AREAS[String(currentEmp?.name||'').trim()];
-  const [homeApprovalPending,setHomeApprovalPending]=useState(0);
-  const [approvalRows,setApprovalRows]=useState([]);
-  const [approvalOpen,setApprovalOpen]=useState(false);
-  const [homeTodayInputCount,setHomeTodayInputCount]=useState(0);
-  const [showClosingAmount,setShowClosingAmount]=useState(false);
-  const [payDialogTab,setPayDialogTab]=useState('forecast');
-  const [historyOpen,setHistoryOpen]=useState({mobile:false,home:false,spot:false,expense:false});
-  const [historySpotTotal,setHistorySpotTotal]=useState(0);
-  const [historySpotRows,setHistorySpotRows]=useState([]);
-  const [historyExpenseRows,setHistoryExpenseRows]=useState([]);
-  const [resetMonthOpen,setResetMonthOpen]=useState(false);
-  const [resetPhrase,setResetPhrase]=useState('');
-  const [resetBusy,setResetBusy]=useState(false);
-  const [careNavIntent,setCareNavIntent]=useState(null);
-  const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
-  useEffect(() => {
-    if (!viewedUserId) return;
-    (async () => {
-      const [y, m] = month.split('-').map(Number);
-      const next = new Date(y, m, 1);
-      const to = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-
-      const [expenseRes,spotRes]=await Promise.all([
-        supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').eq('user_id',viewedUserId).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
-        supabase.from('spot_claims').select('claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date')
-      ]);
-      if(!expenseRes.error){
-        setHistoryExpenseRows(expenseRes.data||[]);
-        setExpenseTotal((expenseRes.data||[]).reduce((sum,x)=>sum+Number(x.amount||0),0));
-      }
-      if(!spotRes.error){
-        const nonMobile=(spotRes.data||[]).filter(x=>x.source_context!=='mobile');
-        setHistorySpotRows(nonMobile);
-        setHistorySpotTotal(nonMobile.reduce((sum,x)=>sum+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),0));
-      }
-    })();
-  }, [viewedUserId, month]);
-
-  // v21.28: '승인 대기'는 실제 승인 대상(스팟/특판 예외금액)이 있을 때만 표시
-  useEffect(()=>{
-    if(!viewedUserId)return;
-    let alive=true;
-    (async()=>{
-      try{
-        const [y,m]=month.split('-').map(Number);
-        const next=new Date(y,m,1);
-        const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-        const now=new Date();
-        const todayKey=monthKeyOf(now);
-        const todayDate=`${todayKey}-${String(now.getDate()).padStart(2,'0')}`;
-
-        const [spotRes,saleRes,todayRes]=await Promise.all([
-          supabase.from('spot_claims').select('id,claim_date,customer_name,source_context,direct_title,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','pending').gte('claim_date',`${month}-01`).lt('claim_date',to),
-          supabase.from('customer_sales').select('id,sale_date,metric_label,source_meta,customers(customer_name)').eq('user_id',viewedUserId).eq('source_type','mobile').gte('sale_date',`${month}-01`).lt('sale_date',to),
-          todayKey===month
-            ? supabase.from('customer_sales').select('id').eq('user_id',viewedUserId).eq('sale_date',todayDate)
-            : Promise.resolve({data:[],error:null})
-        ]);
-
-        const specialPending=(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').length;
-        if(alive){
-          setHomeApprovalPending((spotRes.data||[]).length+specialPending);
-          setApprovalRows([
-            ...(spotRes.data||[]).map(x=>({id:`spot-${x.id}`,kind:'spot',date:x.claim_date,customer:x.customer_name||'고객명 없음',title:x.direct_title||x.spot_policies?.title||'스팟 인센티브',amount:Number(x.direct_amount??x.spot_policies?.amount??0),statusLabel:'관리자 승인 대기'})),
-            ...(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').map(x=>({id:`special-${x.id}`,kind:'special',date:x.sale_date,customer:x.customers?.customer_name||'고객명 없음',title:`특판 예외금액 · ${x.metric_label||'모바일'}`,amount:Number(x.source_meta?.specialPolicy?.exceptionRequestedAmount||0),statusLabel:'예외금액 승인 대기'}))
-          ]);
-          setHomeTodayInputCount((todayRes.data||[]).length);
-        }
-      }catch(e){
-        if(alive){setHomeApprovalPending(0);setApprovalRows([]);setHomeTodayInputCount(0);}
-      }
-    })();
-    return()=>{alive=false};
-  },[viewedUserId,month,dailyDays]);
-
-  const resetOwnMonthPerformance=async()=>{
-    if(monthLocked||policyInputBlocked)return showLegacyAlert(policyInputBlocked?'정책 준비 중인 월은 초기화할 수 없어요.':'마감된 월은 초기화할 수 없어요.');
-    if(String(resetPhrase).trim()!=='당월실적초기화')return;
-    if(!authUser?.id || currentEmp?.id!==authUser.id)return showLegacyAlert('본인의 실적만 초기화할 수 있어요.');
-    setResetBusy(true);
-    try{
-      const {data,error}=await supabase.rpc('reset_my_month_performance',{
-        p_month:month,
-        p_confirm_phrase:'당월실적초기화'
-      });
-      if(error)throw error;
-      showLegacyAlert(`${monthLabel(month)} 실적을 초기화했어요.\n초기화 직전 데이터는 백업되었습니다.`);
-      window.location.reload();
-    }catch(e){
-      showLegacyAlert(`실적 초기화 실패: ${friendlyError(e)}`);
-      setResetBusy(false);
-    }
-  };
-
-  const set = (group, next) => setDraft({ ...draft, [group]: next });
-  useEffect(() => {
-    if (tab === 'criteria' && !canSeeCriteria) setTab('home');
-  }, [tab, canSeeCriteria]); // eslint-disable-line
-  const dailyAgg = useMemo(() => aggregateDaily(dailyDays, month), [dailyDays, month]);
-  const groupAutoKeys = useMemo(() => {
-    const out = {};
-    DAILY_GROUP_KEYS.forEach((gk) => {
-      out[gk] = new Set(Object.entries(dailyAgg.groups[gk] || {}).filter(([, v]) => v > 0).map(([k]) => k));
-    });
-    return out;
-  }, [dailyAgg]);
-  const numericAuto = useMemo(() => {
-    const out = {};
-    DAILY_NUMERIC_KEYS.forEach((k) => { out[k] = (dailyAgg[k] || 0) > 0; });
-    return out;
-  }, [dailyAgg]);
-  const autoMobileKeys = useMemo(() => new Set([
-    ...(config.categoryMap || []).map((m) => m.mobilePointKey).filter(Boolean),
-    ...(config.gibyeonColumnMap || DEFAULT_GIBYEON_COLUMN_MAP).filter(Boolean),
-  ]), [config.categoryMap, config.gibyeonColumnMap]);
-  const autoKpiKeys = useMemo(() => new Set([
-    ...(config.categoryMap || []).map((m) => m.kpiKey).filter(Boolean),
-    ...HOME_KPI_MAP.filter((m) => m.sources.some((p) => {
-      const [gk, k] = p.split('.');
-      return ((dailyAgg.groups[gk] || {})[k] || 0) > 0;
-    })).map((m) => m.kpiKey),
-  ]), [config.categoryMap, dailyAgg]);
-
-  const nowForHome=new Date();
-  const isCurrentHomeMonth=monthKeyOf(nowForHome)===month;
-  const todayHomeKey=String(nowForHome.getDate()).padStart(2,'0');
-  const todayHasInput=isCurrentHomeMonth && (homeTodayInputCount>0 || dayHasData(dailyDays?.[todayHomeKey]));
-  const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
-  return (
-    <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
-      {isManagingAnotherEmployee&&<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><div className="text-[10px] font-bold text-amber-600">직원 대리 관리 중</div><div className="mt-0.5 text-sm font-black text-amber-900">{currentEmp?.name} 직원의 실적·고객·약속·홈 설치를 보고 수정합니다.</div><div className="mt-1 text-[10px] text-amber-700">판매·홈 변경 이력에는 실제 처리한 관리자 계정이 기록됩니다.</div></div>}
-      {tab === 'home' && (
-        <div className="space-y-4">
-          <div className="bg-gray-100 rounded-xl p-1 grid grid-cols-2 gap-1">
-            <button type="button" onClick={()=>setEmployeeHomeMode('personal')}
-              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
-              개인
-            </button>
-            <button type="button" onClick={()=>setEmployeeHomeMode('store')}
-              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
-              매장
-            </button>
-          </div>
-
-          {employeeHomeMode==='personal' ? <>
-            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} currentEmp={currentEmp}
-              currentAmount={Number(pay.currentPerformanceAmount||0)-Number(expenseTotal||0)}
-              onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
-            <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
-              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
-              onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
-
-            {showClosingAmount&&<div className="fixed inset-0 z-[95] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowClosingAmount(false)}>
-              <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
-                <div className="flex items-center justify-between"><div className="text-sm font-bold text-gray-900">급여 확인·비교</div><button type="button" onClick={()=>setShowClosingAmount(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div>
-                <div className="grid grid-cols-2 gap-1 mt-4 rounded-xl bg-gray-100 p-1">
-                  <button type="button" onClick={()=>setPayDialogTab('forecast')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='forecast'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>예상 마감</button>
-                  <button type="button" onClick={()=>setPayDialogTab('history')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='history'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>이전 급여</button>
-                </div>
-                {payDialogTab==='forecast'?<>
-                  <div className="text-[11px] text-gray-400 mt-5">현재 실적 기준 예상 마감</div>
-                  <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
-                  <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
-                </>:<>
-                  <div className="mt-5 rounded-xl bg-violet-50 px-4 py-4"><div className="text-sm font-bold text-violet-900">원하는 월의 급여를 확인하세요</div><div className="text-xs text-violet-600 mt-1">내역 화면에서 월을 선택하면 수수료와 차감 내역까지 볼 수 있어요.</div></div>
-                  <button type="button" onClick={()=>{setShowClosingAmount(false);setTab('history')}} className="w-full mt-4 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">이전 급여 내역 보기 ›</button>
-                </>}
-              </div>
-            </div>}
-
-            {approvalOpen&&<div className="fixed inset-0 z-[96] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setApprovalOpen(false)}>
-              <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
-                <div className="p-5 border-b"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-amber-600">승인 전 금액은 아직 미반영</div><div className="text-lg font-bold text-gray-900 mt-0.5">승인 대기 {approvalRows.length}건</div><div className="text-[10px] text-gray-400 mt-1">관리자가 확인하면 예상 수수료에 반영돼요.</div></div><button onClick={()=>setApprovalOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div></div>
-                <div className="overflow-y-auto max-h-[55vh] divide-y">{approvalRows.map(x=><div key={x.id} className="p-4"><div className="flex justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{x.title}</div><div className="text-[10px] text-gray-400 mt-1">{x.date} · {x.customer}</div><div className="text-[10px] text-amber-600 mt-1">{x.statusLabel}</div></div><b className="text-sm text-gray-900 shrink-0">{won(x.amount)}</b></div></div>)}</div>
-                <div className="p-4 bg-amber-50"><div className="text-center text-[11px] text-amber-800 font-semibold">아직 관리자가 확인 중이에요. 점장님께 살짝 콕 찔러볼까요? 😆</div><button onClick={()=>setApprovalOpen(false)} className="w-full mt-3 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold">확인했어요</button></div>
-              </div>
-            </div>}
-
-            <EmployeeHeadOfficeComparison userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
-
-            <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
-            <RecognitionRankingHub
-              rows={competitionRows}
-              month={month}
-              userId={currentEmp?.id||authUser?.id}
-              userName={currentEmp?.name||authProfile?.name||''}
-              userBranch={currentEmp?.branch||''}
-            />
-          </> : <>
-            {storeScopeOptions.length>1&&<div className="rounded-2xl border border-gray-100 bg-white p-3">
-              <div className="mb-2 text-[10px] font-bold text-gray-500">조회 범위</div>
-              <select value={storeScopeKey} onChange={event=>setStoreScopeKey(event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700">
-                {storeScopeOptions.map(option=><option key={option.key} value={option.key}>{option.label}</option>)}
-              </select>
-            </div>}
-            {isSalesManager&&String(selectedStoreScope?.key||'').startsWith('area:')?<>
-              <div className="px-1"><div className="text-sm font-bold text-gray-900">상권별 목표 비교</div><div className="text-[11px] text-gray-400 mt-1">상대 상권은 합산 현황만 비교하며 직원·고객 상세는 표시하지 않습니다.</div></div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
-                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
-              </div>
-            </>:<StoreHomeOverview rows={storeOverviewRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
-              showRanking={canViewStoreRanking} canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />}
-          </>}
-        </div>
-      )}
-
-      {tab === 'daily' && (
-        <>
-          {monthLocked && (
-            <div className="mb-3 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg p-3 flex items-center gap-2">
-              <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
-            </div>
-          )}
-          {policyInputBlocked && (
-            <div className="mb-3 bg-amber-50 border border-amber-100 text-amber-700 text-xs rounded-lg p-3 flex items-center gap-2">
-              <Info size={13} className="shrink-0" /> {monthLabel(month)} 지급기준 정책을 준비하고 있어요. 정책 확정 후 입력이 열립니다.
-            </div>
-          )}
-
-          <DailyInputTab
-            month={month}
-            dailyDays={dailyDays}
-            saveDailyDay={saveDailyDay}
-            config={config}
-            draft={draft}
-            setDraft={setDraft}
-            pay={pay}
-            locked={monthLocked||policyInputBlocked}
-            currentEmp={currentEmp}
-            loginEmp={loginEmp}
-            stores={stores}
-            onTeamCreditSaved={onTeamCreditSaved}
-            onHomeOrdersChanged={onHomeOrdersChanged}
-            authUser={authUser}
-            resetMonthOpen={resetMonthOpen}
-            setResetMonthOpen={setResetMonthOpen}
-            resetPhrase={resetPhrase}
-            setResetPhrase={setResetPhrase}
-            resetBusy={resetBusy}
-            resetOwnMonthPerformance={resetOwnMonthPerformance}
-          />
-
-          <div className="mt-4">
-            <SalesExpensePanel
-              userId={viewedUserId}
-              month={month}
-              onTotal={setExpenseTotal}
-            />
-          </div>
-        </>
-      )}
-
-      {tab === 'customerCare' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-xs text-gray-400">판매 후 약속까지 한 번에</div>
-              <div className="text-lg font-bold text-gray-900">고객관리</div>
-            </div>
-            <select value={month} onChange={(e)=>setMonth(e.target.value)}
-              className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
-              {months.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
-            </select>
-          </div>
-          <CustomerCareManager
-            userId={viewedUserId}
-            month={month}
-            navIntent={careNavIntent}
-            homeProps={{
-              userId:viewedUserId,
-              month,
-              locked:monthLocked||policyInputBlocked,
-              dailyDays,
-              saveDailyDay,
-              onTeamCreditSaved,
-              onHomeOrdersChanged
-            }}
-          />
-        </div>
-      )}
-
-      {tab === 'evaluation' && (
-        <EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===viewedUserId)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} />
-      )}
-
-      {tab === 'history' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div><div className="text-xs text-violet-600 font-semibold">수수료 내역</div><div className="text-lg font-bold">{monthLabel(month)}</div></div>
-            <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
-              {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-            </select>
-          </div>
-
-          <MyInputSummary userId={currentEmp?.id||authUser?.id} month={month} config={config} />
-
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
-            <RowKV label="영업 활동 지원 정책" value={won(pay.tenurePay)} />
-            <RowKV label="월 성과 등급 지원비" value={won(pay.gradeBonus)} />
-            <RowKV label="직책 수당" value={won(pay.positionAllowance)} />
-
-            <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
-              <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
-            </button>
-            {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
-              {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
-              {Number(pay.strategicAdjustment||0)!==0&&<RowKV label={pay.strategicAdjustment>0?'└ 전략P 200% 이상 보너스':'└ 전략P 160% 미만 디메리트'} value={won(pay.strategicAdjustment)} />}
-              {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
-              {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
-              {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
-              {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
-              {Number(pay.specialMatrixOffset||0)!==0&&<RowKV label="└ 특판 요금제 제외" value={`-${won(pay.specialMatrixOffset)}`} />}
-              {Number(pay.specialVasOffset||0)!==0&&<RowKV label="└ 특판 VAS 제외" value={`-${won(pay.specialVasOffset)}`} />}
-              {Number(pay.specialReplacementPay||0)!==0&&<RowKV label="└ 특판 대체 인센티브" value={won(pay.specialReplacementPay)} />}
-              {Number(pay.approvedMobileSpotPay||0)!==0&&<RowKV label="└ 승인 모바일 스팟" value={won(pay.approvedMobileSpotPay)} />}
-            </div>}
-
-            <button type="button" onClick={()=>setHistoryOpen(v=>({...v,home:!v.home}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
-              <span className="font-semibold">홈 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.homeGradePay||0)+Number(pay.homeFlatPay||0)+Number(pay.homeAddonPay||0)+Number(pay.renewPay||0))}<ChevronDown size={15} className={historyOpen.home?'rotate-180':''}/></span>
-            </button>
-            {historyOpen.home&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
-              {Number(pay.homeGradePay||0)!==0&&<RowKV label="└ 인터넷+TV 그레이드" value={won(pay.homeGradePay)} />}
-              {Number(pay.homePolicy?.soloPay||0)!==0&&<RowKV label="└ 인터넷 단독" value={won(pay.homePolicy.soloPay)} />}
-              {Number(pay.homePolicy?.simulPay||0)!==0&&<>
-                {Object.entries((pay.homePolicy?.details||[]).filter(x=>String(x.item||'').includes('동시판매')).reduce((a,x)=>{a[x.item]=(a[x.item]||0)+Number(x.amount||0);return a;},{})).map(([l,v])=><RowKV key={l} label={`└ ${l}`} value={won(v)} />)}
-              </>}
-              {Number(pay.tvFreePay||0)!==0&&<RowKV label="└ TV프리(부)" value={won(pay.tvFreePay)} />}
-              {Number(pay.smartHomePay||0)!==0&&<RowKV label="└ 스마트홈" value={won(pay.smartHomePay)} />}
-              {Number(pay.homePolicy?.subSetTopPay||0)!==0&&<RowKV label="└ 부셋탑" value={won(pay.homePolicy.subSetTopPay)} />}
-              {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
-              {Number(pay.homePolicy?.weekendPolicy?.tvFreeBonus||0)!==0&&<RowKV label="└ 9월 주말 TV프리 추가 지급" value={won(pay.homePolicy.weekendPolicy.tvFreeBonus)} />}
-              {Number(pay.renewPay||0)!==0&&<RowKV label="└ 인터넷 재약정" value={won(pay.renewPay)} />}
-            </div>}
-
-            <RowKV label="소노" value={won(pay.sonoPay)} />
-            <RowKV label="맞춤제안" value={won(Number(pay.tailoredBonus||0)+Number(pay.tailoredAmountBonus||0))} />
-            <RowKV label="우리매장 등록 수수료" value={won(pay.custRegBonus)} />
-
-            <button type="button" onClick={()=>setHistoryOpen(v=>({...v,spot:!v.spot}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
-              <span>스팟</span><span className="flex items-center gap-2 font-semibold">{won(Number(pay.approvedMobileSpotPay||0)+historySpotTotal)}<ChevronDown size={15} className={historyOpen.spot?'rotate-180':''}/></span>
-            </button>
-            {historyOpen.spot&&historySpotRows.length>0&&<div className="bg-gray-50 px-4 py-2 space-y-1">{historySpotRows.map((x,i)=><div key={i} className="flex justify-between text-[11px]"><span className="text-gray-500">{String(x.claim_date||'').slice(5)} · {x.customer_name||'이름 없음'} · {x.reviewed_title||x.direct_title||x.spot_policies?.title||'스팟'}</span><b>+{won(Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0))}</b></div>)}</div>}
-
-            <button type="button" onClick={()=>setHistoryOpen(v=>({...v,expense:!v.expense}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
-              <span>영업 비용 총액</span><span className="flex items-center gap-2 font-semibold text-red-500">-{won(expenseTotal)}<ChevronDown size={15} className={historyOpen.expense?'rotate-180':''}/></span>
-            </button>
-            {historyOpen.expense&&historyExpenseRows.length>0&&<div className="bg-red-50/40 px-4 py-2 space-y-1">{historyExpenseRows.map((x,i)=><div key={i} className="flex justify-between text-[11px]"><span className="text-gray-500">{String(x.expense_date||'').slice(5)} · {x.customer_name||'이름 없음'} · {x.category}{x.memo?` · ${x.memo}`:''}</span><b className="text-red-500">-{won(x.amount)}</b></div>)}</div>}
-
-            <div className="px-4 py-4 bg-violet-50 flex justify-between items-center">
-              <span className="font-bold text-violet-800">예상 총 수수료</span>
-              <span className="text-xl font-black text-violet-700">{won(Number(pay.total||0)+historySpotTotal-expenseTotal)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className="max-w-5xl mx-auto grid grid-cols-5">
-          {[
-            { key: 'home', label: '홈', icon: Home },
-            { key: 'daily', label: '실적입력', icon: Calendar },
-            { key: 'customerCare', label: '고객관리', icon: ClipboardList },
-            { key: 'evaluation', label: '평가', icon: ClipboardCheck },
-            { key: 'history', label: '내역', icon: History },
-          ].map((n) => (
-            <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
-              <n.icon size={18} />{n.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
-  const n = daysInMonth(month);
-  const todayKey = (() => {
-    const now = new Date();
-    return monthKeyOf(now) === month ? String(now.getDate()).padStart(2, '0') : '01';
-  })();
-  const [selectedDay, setSelectedDay] = useState(todayKey);
-  const [day, setDay] = useState(() => normalizeDay(dailyDays[todayKey]));
-  const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
-  const [inputCategory, setInputCategory] = useState(null); // mobile | home | extra
-  const [standalonePromiseOpen,setStandalonePromiseOpen]=useState(false);
-  const [toast, setToast] = useState(null);         // 등록 피드백 카드
-  const [saveState, setSaveState] = useState('idle'); // idle | pending | saved | error
-  const [homeOrderDraft, setHomeOrderDraft] = useState(null); // { groupKey, itemKey, label, productType }
-  const [homeCustomerName, setHomeCustomerName] = useState('');
-  const [homeNetworkType, setHomeNetworkType] = useState('');
-  const [homeInternet,setHomeInternet]=useState(false);
-  const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
-  const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
-  const [homeMainTv,setHomeMainTv]=useState(false);
-  const [homeMainTvPlan,setHomeMainTvPlan]=useState(''); // household: broadcastPass|premium|belowPremium, soho: premium|belowPremium
-  const [homeSubTv,setHomeSubTv]=useState(false);
-  const [homeSubTvType,setHomeSubTvType]=useState('');
-  const [homeSmartHome,setHomeSmartHome]=useState(false);
-  const [homeDirectComplete, setHomeDirectComplete] = useState(false);
-  const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
-  const [homePlannedDate, setHomePlannedDate] = useState('');
-  const [homeCareKeys,setHomeCareKeys]=useState([]);
-  const [homeCustomTitle,setHomeCustomTitle]=useState('');
-  const [homeCustomDueDate,setHomeCustomDueDate]=useState('');
-  const [homeTargetPlan,setHomeTargetPlan]=useState('');
-  const [homeOrderSaving, setHomeOrderSaving] = useState(false);
-  const [homeSpotPolicies,setHomeSpotPolicies]=useState([]);
-  const [homeSpotPolicyId,setHomeSpotPolicyId]=useState('');
-  const [homeSpotDirectOpen,setHomeSpotDirectOpen]=useState(false);
-  const [homeSpotDirectTitle,setHomeSpotDirectTitle]=useState('');
-  const [homeSpotDirectAmount,setHomeSpotDirectAmount]=useState('');
-  const [homeSpotDirectMemo,setHomeSpotDirectMemo]=useState('');
-  const [homeExpenseOpen,setHomeExpenseOpen]=useState(false);
-  const [homeExpenseCategory,setHomeExpenseCategory]=useState('오퍼');
-  const [homeExpenseAmount,setHomeExpenseAmount]=useState('');
-  const [homeExpenseMemo,setHomeExpenseMemo]=useState('');
-  const [homeExtraPromises,setHomeExtraPromises]=useState([]); // [{title,dueDate}]
-  const [homeExtraExpenses,setHomeExtraExpenses]=useState([]); // [{category,amount,memo}]
-  const [editingHomeSales,setEditingHomeSales]=useState([]);
-  const [householdRenewOpen,setHouseholdRenewOpen]=useState(false);
-  const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
-  const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
-  const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
-  const [recentMobileCombos,setRecentMobileCombos]=useState([]);
-  const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
-  const [mobileCalcOpen,setMobileCalcOpen]=useState(false);
-  const [mobileMoreVasOpen,setMobileMoreVasOpen]=useState(false);
-  const [editingSale,setEditingSale]=useState(null);
-  const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
-  const [mobileCustomerName,setMobileCustomerName]=useState('');
-  const [mobileCareKeys,setMobileCareKeys]=useState([]);
-  const [mobileCustomTitle,setMobileCustomTitle]=useState('');
-  const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
-  const [mobileTargetPlan,setMobileTargetPlan]=useState('');
-  const [mobilePaymentFirstDate,setMobilePaymentFirstDate]=useState('');
-  const [mobilePaymentCount,setMobilePaymentCount]=useState(3);
-  const [mobileAffiliateCard,setMobileAffiliateCard]=useState({cardName:'',approvalRequired:false,taskMeta:null});
-  const [mobileVasKeys,setMobileVasKeys]=useState([]);
-  const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
-  const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
-  const [mobileBundleSearch,setMobileBundleSearch]=useState('');
-  // v21.18: 2ND 번들 회선별 VAS를 따로 기록합니다. { [bundleKey]: [vasKey, ...] }
-  const [mobileBundleVasMap,setMobileBundleVasMap]=useState({});
-  const [mobileBundleSaleTypeMap,setMobileBundleSaleTypeMap]=useState({}); // {bundleKey:'normal'|'free'}
-  const [mobileUsedMnpBundle,setMobileUsedMnpBundle]=useState(false);
-  const [mobileSpotPolicies,setMobileSpotPolicies]=useState([]);
-  const [mobileSpotPolicyId,setMobileSpotPolicyId]=useState('');
-  const [mobileSpotDirectOpen,setMobileSpotDirectOpen]=useState(false);
-  const [mobileSpotDirectTitle,setMobileSpotDirectTitle]=useState('');
-  const [mobileSpotDirectAmount,setMobileSpotDirectAmount]=useState('');
-  const [mobileSpotDirectMemo,setMobileSpotDirectMemo]=useState('');
-  const [mobileExpenseOpen,setMobileExpenseOpen]=useState(false);
-  const [mobileExpenseCategory,setMobileExpenseCategory]=useState('케이스');
-  const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
-  const [mobileExpenseMemo,setMobileExpenseMemo]=useState('');
-  const [mobileExtraPromises,setMobileExtraPromises]=useState([]);
-  const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
-  const [specialPolicies,setSpecialPolicies]=useState([]);
-  // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
-  const [mobileSaleKind,setMobileSaleKind]=useState(''); // '' | normal | special | incentive_unpaid
-  const [mobileSpecialPolicyId,setMobileSpecialPolicyId]=useState('');
-  const [mobileSpecialExceptionAmount,setMobileSpecialExceptionAmount]=useState('');
-  const [extraInput,setExtraInput]=useState(null); // sono | tailored | customerReg
-  const [extraCustomer,setExtraCustomer]=useState('');
-  const [extraSonoKey,setExtraSonoKey]=useState('sonoBasic');
-  const [extraCount,setExtraCount]=useState('1');
-  const [extraAmount,setExtraAmount]=useState('');
-  const [mobileSaleSaving,setMobileSaleSaving]=useState(false);
-  const [daySales,setDaySales]=useState([]);
-  // customer_sales가 없던 구버전 홈 주문도 일일 집계의 원본으로 인식합니다.
-  // 특히 취소된 주문을 '이전 방식 입력 실적'으로 다시 복원하게 만드는 것을 막습니다.
-  const [dayHomeOrders,setDayHomeOrders]=useState([]);
-  const [homePreviewPolicy,setHomePreviewPolicy]=useState(null); // 설치예정 포함, 입력건 예상 홈 인센티브
-  const [saleIncentiveOpen,setSaleIncentiveOpen]=useState(null);
-  const [daySalesLoading,setDaySalesLoading]=useState(false);
-  const [legacyEditorOpen,setLegacyEditorOpen]=useState(false);
-  const [legacyMatrixDraft,setLegacyMatrixDraft]=useState(null);
-  // 구버전 집계 1건을 현재 모바일/홈 입력 UI로 복원하는 동안 원본 위치를 기억
-  const [legacyConversion,setLegacyConversion]=useState(null);
-  const [teamSupportMode,setTeamSupportMode]=useState(false);
-  const [teamSupportStore,setTeamSupportStore]=useState('');
-  const [isOnline,setIsOnline]=useState(()=>typeof navigator==='undefined'||navigator.onLine);
-  const homeSubmitGuardRef=useRef(false);
-  const mobileSubmitGuardRef=useRef(false);
-
-  const teamSupportEligible=!!loginEmp&&(String(loginEmp.position||'').includes('담당')||['김솔이','이강진','김진문'].includes(loginEmp.name));
-  const salesStores=(stores||[]).filter(store=>!NON_SALES_STORES.includes(store));
-  const activeTeamSupport=teamSupportEligible&&currentEmp?.id===authUser?.id&&teamSupportMode;
-  const resetTeamSupportSelection=()=>{setTeamSupportMode(false);setTeamSupportStore('');};
-  const pendingDayStorageKey=currentEmp?.id?`miso_pending_daily_v1:${currentEmp.id}:${month}`:'';
-  const rememberPendingDay=(value)=>{if(!pendingDayStorageKey)return;try{localStorage.setItem(pendingDayStorageKey,JSON.stringify(value));}catch{/* 저장공간 제한 시 서버 저장 흐름은 계속 유지 */}};
-  const clearPendingDay=()=>{if(!pendingDayStorageKey)return;try{localStorage.removeItem(pendingDayStorageKey);}catch{/* 저장공간 제한은 무시 */}};
-
-
-  const dayMatrix = day.matrix;
-  const activeMatrixCols=isSeptemberPolicyActive(month)?SEPTEMBER_MATRIX_COLUMNS:MATRIX_COLS;
-  // 9월의 33~84군은 현장 입력에서 사용하지 않습니다. 해당 고객은 '그 외'로 기록합니다.
-  // 저장 배열 인덱스는 과거 데이터 호환을 위해 그대로 두고 선택지만 숨깁니다.
-  const activeMatrixOptions=activeMatrixCols
-    .map((label,ci)=>({label,ci}))
-    .filter(option=>!(isSeptemberPolicyActive(month)&&option.ci===3));
-  const normalizedMainVas=(config.vas||DEFAULT_VAS).filter(v=>!(isSeptemberPolicyActive(month)&&v.key==='vasVcolor'));
-  const primaryVasKeys=new Set(['vasKyobo','vasVcolorBundle','vasVcolor','vasPhonePass','vasSafePass']);
-  const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key));
-  const additionalMainVas=normalizedMainVas.filter(v=>!primaryVasKeys.has(v.key));
-  const isDayOff = !!day.dayOff;
-
-  const recentComboStorageKey=currentEmp?.id?`miso_recent_mobile_combos_v1:${currentEmp.id}`:'';
-  useEffect(()=>{
-    if(!recentComboStorageKey){setRecentMobileCombos([]);return;}
-    try{
-      const parsed=JSON.parse(localStorage.getItem(recentComboStorageKey)||'[]');
-      setRecentMobileCombos(Array.isArray(parsed)?parsed.slice(0,3):[]);
-    }catch{setRecentMobileCombos([]);}
-  },[recentComboStorageKey]);
-
-  const rememberMobileCombo=()=>{
-    if(!recentComboStorageKey||!mobileSaleDraft)return;
-    const combo={
-      ri:Number(mobileSaleDraft.ri),ci:Number(mobileSaleDraft.ci),label:mobileSaleDraft.label,
-      strategicPlan:!!mobileStrategicPlan,vasKeys:[...(mobileVasKeys||[])],
-      bundle2ndKeys:[...(mobileBundle2ndKeys||[])],bundleVasMap:{...(mobileBundleVasMap||{})},
-      bundleSaleTypeMap:{...(mobileBundleSaleTypeMap||{})},usedMnpBundle:!!mobileUsedMnpBundle
-    };
-    const signature=JSON.stringify(combo);
-    const next=[combo,...recentMobileCombos.filter(x=>JSON.stringify(x)!==signature)].slice(0,3);
-    setRecentMobileCombos(next);
-    try{localStorage.setItem(recentComboStorageKey,JSON.stringify(next));}catch{/* 기기 저장공간 제한 시 빠른 선택만 생략 */}
-  };
-
-  const applyRecentMobileCombo=(combo)=>{
-    const ri=Number(combo?.ri),maxCi=Math.max(0,activeMatrixCols.length-1);
-    if(!Number.isInteger(ri)||!MATRIX_ROW_DEFS[ri])return;
-    const storedCi=Math.min(Math.max(0,Number(combo?.ci)||0),maxCi);
-    const ci=MATRIX_ROW_DEFS[ri].hasTiers?(isSeptemberPolicyActive(month)&&storedCi===3?5:storedCi):0;
-    const vasKeys=(combo.vasKeys||[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k).filter((k,i,a)=>(k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k))&&a.indexOf(k)===i);
-    const bundleKeys=(combo.bundle2ndKeys||[]).filter(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).some(v=>v.key===k)).slice(0,2);
-    setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
-    setMobileSaleKind('normal');
-    setMobileStrategicPlan(!!combo.strategicPlan);
-    setMobileVasKeys(vasKeys);
-    setMobileBundle2ndKeys(bundleKeys);
-    setMobileBundleVasMap(Object.fromEntries(bundleKeys.map(k=>[k,(combo.bundleVasMap?.[k]||[]).filter(v=>v==='vasNone'||(config.vas||DEFAULT_VAS).some(x=>x.key===v))])));
-    setMobileBundleSaleTypeMap(Object.fromEntries(bundleKeys.map(k=>[k,combo.bundleSaleTypeMap?.[k]||'normal'])));
-    setMobileUsedMnpBundle(!!combo.usedMnpBundle);
-    setMobileDetailsOpen(bundleKeys.length>0);
-    setMobileMoreVasOpen(vasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
-    showAppToast('최근 판매 조합을 불러왔어요.',{tone:'info'});
-  };
-
-  const setDayOff = async (nextOff) => {
-    if (locked) return;
-    if (nextOff && dayHasPerformanceData(day)) {
-      const ok = await showAppConfirm({title:'실적이 있는 날짜예요',message:'휴무로 표시해도 입력된 실적은 그대로 유지됩니다.',confirmLabel:'휴무로 표시',tone:'warning'});
-      if (!ok) return;
-    }
-    const next = { ...normalizeDay(day), dayOff: nextOff, ...(nextOff ? { inputConfirmed:false, inputConfirmedAt:null } : {}) };
-    setDay(next);
-    pendingRef.current = { day: selectedDay, record: next };
-    rememberPendingDay(pendingRef.current);
-    setSaveState('pending');
-  };
-
-  // 저장되지 않은 변경을 담아두는 칸 — 날짜를 바꾸거나 화면을 떠날 때 이걸 먼저 비움
-  const pendingRef = useRef(null);
-  const flushRef = useRef(() => {});
-
-  const flush = useCallback(async() => {
-    const p = pendingRef.current;
-    if (!p) return;
-    if(typeof navigator!=='undefined'&&!navigator.onLine){setSaveState('error');return;}
-    pendingRef.current = null;
-    const ok=await saveDailyDay(p.day,p.record);
-    if(ok){
-      clearPendingDay();
-      setSaveState('saved');
-      setTimeout(()=>setSaveState('idle'),1200);
-    }else{
-      pendingRef.current=p;
-      rememberPendingDay(p);
-      setSaveState('error');
-    }
-  }, [saveDailyDay,pendingDayStorageKey]); // eslint-disable-line
-  flushRef.current = flush;
-
-  useEffect(()=>{
-    if(!pendingDayStorageKey)return;
-    try{
-      const restored=JSON.parse(localStorage.getItem(pendingDayStorageKey)||'null');
-      if(restored?.day&&restored?.record){
-        pendingRef.current={day:String(restored.day).padStart(2,'0'),record:normalizeDay(restored.record)};
-        setSelectedDay(pendingRef.current.day);
-        setDay(pendingRef.current.record);
-        setSaveState('pending');
-        showAppToast('저장되지 않은 일일 입력을 복원했어요.',{tone:'info'});
-      }
-    }catch{clearPendingDay();}
-  },[pendingDayStorageKey]); // eslint-disable-line
-
-  useEffect(()=>{
-    const syncConnection=()=>{const online=navigator.onLine;setIsOnline(online);if(online&&pendingRef.current)setTimeout(()=>flushRef.current(),0);};
-    window.addEventListener('online',syncConnection);
-    window.addEventListener('offline',syncConnection);
-    return()=>{window.removeEventListener('online',syncConnection);window.removeEventListener('offline',syncConnection);};
-  },[]);
-
-  useEffect(() => {
-    if(pendingRef.current)return;
-    setDay(normalizeDay(dailyDays[selectedDay]));
-    setSaveState('idle');
-  }, [selectedDay, month, dailyDays[selectedDay]]); // eslint-disable-line
-
-  // 마지막 입력 후 0.8초 조용하면 자동 저장
-  useEffect(() => {
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3…11501 tokens truncated… {
     if (!pendingRef.current) return;
     const t = setTimeout(flush, 800);
     return () => clearTimeout(t);
@@ -9192,7 +8542,7 @@ function getPersonalGoalActuals(mergedDraft, pay) {
 
   return {
     hs,
-    home: Number((mergedDraft?.homeBase?.homeOnly || 0) + (mergedDraft?.homeBase?.homeTv || 0)),
+    home: completedHomeCount(mergedDraft),
     tvFree: Number(mergedDraft?.homeFlat?.tvFree || 0),
     smartHome: Number(mergedDraft?.homeFlat?.smartHome || 0),
     tailoredAmount: Number(mergedDraft?.tailoredAmount || 0),
@@ -9410,7 +8760,7 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
     {key:'simMnp',goalKey:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
     {key:'second',goalKey:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
     {key:'productivity',goalKey:'kpi',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
-    {key:'home',goalKey:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
+    {key:'home',goalKey:'home',label:'홈',unit:'count',value:completedHomeCount(draft)},
     {key:'tvFree',goalKey:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
     {key:'smartHome',goalKey:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
     {key:'sono',goalKey:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
@@ -9949,7 +9299,7 @@ function adminMetricValue(row,key){
   if(key==='hs')return hsCount(d);
   if(key==='simMnp')return Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0);
   if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  if(key==='home')return completedHomeCount(d);
   if(key==='free')return Number(d.homeFlat?.tvFree||0);
   if(key==='smart')return Number(d.homeFlat?.smartHome||0);
   if(key==='upsell')return Number(d.tailoredCount||0);
@@ -10801,7 +10151,7 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
       <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">관리자 최신화 매장</div><div className="text-xl font-bold text-violet-700 mt-1">{Object.keys(verifiedMap).length}개</div></div>
     </div>
     {missing.length>0&&<div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">{Number(selectedDay)}일 미입력</div>{missing.map(r=><div key={r.id} className="px-4 py-2.5 border-b last:border-0 flex justify-between text-xs"><span><b>{r.name}</b> · {displayStoreName(r.branch)}</span><span className="text-red-500">입력 없음</span></div>)}</div>}
-    <div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 입력 vs 관리자 확인</div><div className="text-[10px] text-gray-400 mt-1">평가의 ‘실적 최신화’에서 저장한 관리자 확인값과 현재 직원 입력 누적을 비교합니다.</div></div>{workRows.map(r=>{const v=verifiedMap[r.branch]?.verified_metrics; if(!v)return null; const hs=hsCount(r.draft),home=Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0);return <div key={r.id} className="px-4 py-2.5 border-b last:border-0 text-xs"><div className="font-semibold">{r.name} · {displayStoreName(r.branch)}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 HS {fmtCount(hs)} / 홈 {fmtCount(home)} · 매장 관리자확인 HS {fmtCount(v.hs||0)} / 홈 {fmtCount(v.home||0)}</div></div>})}</div>
+    <div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 입력 vs 관리자 확인</div><div className="text-[10px] text-gray-400 mt-1">평가의 ‘실적 최신화’에서 저장한 관리자 확인값과 현재 직원 입력 누적을 비교합니다.</div></div>{workRows.map(r=>{const v=verifiedMap[r.branch]?.verified_metrics; if(!v)return null; const hs=hsCount(r.draft),home=completedHomeCount(r.draft);return <div key={r.id} className="px-4 py-2.5 border-b last:border-0 text-xs"><div className="font-semibold">{r.name} · {displayStoreName(r.branch)}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 HS {fmtCount(hs)} / 홈 {fmtCount(home)} · 매장 관리자확인 HS {fmtCount(v.hs||0)} / 홈 {fmtCount(v.home||0)}</div></div>})}</div>
     {duplicateRows.length>0&&<div className="bg-amber-50 rounded-xl border border-amber-100 overflow-hidden"><div className="px-4 py-3 font-bold text-sm text-amber-800">중복 가능 판매건</div>{duplicateRows.map((x,i)=>{const emp=(employees||[]).find(e=>e.id===x.userId);return <div key={i} className="px-4 py-2.5 border-t border-amber-100 text-xs"><b>{emp?.name||'직원'}</b> · {x.customer} · {x.count}개 항목 <span className="text-gray-400">({x.labels.join(' / ')})</span></div>})}</div>}
   </div>;
 }
@@ -10872,7 +10222,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   targetRows.forEach(r=>(r.draft?.matrix||[]).forEach((arr,ri)=>(arr||[]).forEach((v,ci)=>{if(inputMatrix[ri])inputMatrix[ri][ci]+=Number(v||0)})));
   const bundleCount=targetRows.reduce((s,r)=>s+Object.values(r.draft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0),0);
   const inputExtras={
-    home:targetRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0),0),
+    home:targetRows.reduce((s,r)=>s+completedHomeCount(r.draft),0),
     tv:targetRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeTv||0),0),
     subSetTop:targetRows.reduce((s,r)=>s+Number(r.draft?.homeAddon?.addSetTop||0),0),
     smartHome:targetRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0),
@@ -11204,7 +10554,7 @@ const COMPARE_METRICS = [
   },
   { key:'simMnp', label:'SIM MNP', unit:'count', calc:(d)=>Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0) },
   { key:'second', label:'2ND', unit:'count', calc:(d)=>Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0) },
-  { key:'home', label:'홈 실적', unit:'count', calc:(d)=>Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0) },
+  { key:'home', label:'홈 실적', unit:'count', calc:(d)=>completedHomeCount(d) },
   { key:'free', label:'프리', unit:'count', calc:(d)=>Number(d.homeFlat?.tvFree||0) },
   { key:'smart', label:'스마트홈', unit:'count', calc:(d)=>Number(d.homeFlat?.smartHome||0) },
   { key:'productivity', label:'생산성', unit:'point', calc:(d,p)=>Number(p?.kpiScore||0) },
