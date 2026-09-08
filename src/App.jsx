@@ -1233,6 +1233,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [lockedMonths, setLockedMonths] = useState([]);
   const [policyBlockedMonths, setPolicyBlockedMonths] = useState([]);
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
+  const [employeeGoalMap, setEmployeeGoalMap] = useState({}); // 관리자 범위 직원의 월 개인 목표
+  const [employeeGoalsLoading, setEmployeeGoalsLoading] = useState(false);
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
@@ -1522,6 +1524,26 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setPersonalGoals(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
   }, [authUser?.id, month]);
 
+  const loadScopedEmployeeGoals = useCallback(async () => {
+    if (!authUser?.id || !['manager', 'admin'].includes(authProfile?.role)) {
+      setEmployeeGoalMap({});
+      return;
+    }
+
+    setEmployeeGoalsLoading(true);
+    const { data, error } = await supabase.rpc('get_scoped_monthly_goals', { target_month: month });
+    if (error) {
+      console.error('SCOPED MONTHLY GOALS LOAD ERROR:', error);
+      setEmployeeGoalMap({});
+    } else {
+      setEmployeeGoalMap(Object.fromEntries((data || []).map((row) => [row.user_id, {
+        goals: row.goals && typeof row.goals === 'object' && !Array.isArray(row.goals) ? row.goals : {},
+        updatedAt: row.updated_at || null,
+      }])));
+    }
+    setEmployeeGoalsLoading(false);
+  }, [authUser?.id, authProfile?.role, month]);
+
   const savePersonalGoals = async (goals) => {
     if (!authUser?.id) return false;
 
@@ -1553,6 +1575,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     }
 
     setPersonalGoals(clean);
+    setEmployeeGoalMap((prev) => ({ ...prev, [authUser.id]: { goals: clean, updatedAt: new Date().toISOString() } }));
     setGoalSaving(false);
     return true;
   };
@@ -1775,10 +1798,15 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
   useEffect(() => { loadPolicyBlockedMonths(); }, [loadPolicyBlockedMonths]);
   useEffect(() => { loadPersonalGoals(); }, [loadPersonalGoals]);
+  useEffect(() => { loadScopedEmployeeGoals(); }, [loadScopedEmployeeGoals]);
 
   useEffect(() => {
     if (!authUser) return;
     (async () => {
+      // Supabase Auth의 last_sign_in_at은 기존 세션으로 앱만 다시 열면 바뀌지 않습니다.
+      // 실제 앱 접속 시각을 먼저 기록한 뒤 직원 목록을 불러옵니다.
+      const { error: accessError } = await supabase.rpc('touch_app_access');
+      if (accessError) console.error('APP ACCESS TOUCH ERROR:', accessError);
       const list = await loadEmployees();
       const own = list.find((e) => e.id === authUser.id);
       const first = own?.id || list[0]?.id || '';
@@ -1791,6 +1819,23 @@ export default function App({ authUser, authProfile, onSignOut }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.id]);
+  useEffect(() => {
+    if (!authUser?.id) return undefined;
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { error } = await supabase.rpc('touch_app_access');
+      if (error) console.error('APP ACCESS RESUME ERROR:', error);
+      if (role === 'admin' && adminTab === 'employees') await loadEmployees();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [authUser?.id, role, adminTab, loadEmployees]);
+  useEffect(() => {
+    if (role === 'admin' && adminTab === 'employees') {
+      loadEmployees();
+      loadScopedEmployeeGoals();
+    }
+  }, [role, adminTab, month]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (employees.length) { loadMonth(month, employees); loadDaily(month, employees); loadTeamSalesCredits(month); loadHomePolicies(month, employees); loadShadowLedgers(month, employees); } }, [month]); // eslint-disable-line
   // 홈 고객별 저장/수정으로 일일 실적이 바뀌면 새 정책 금액도 다시 계산합니다.
   useEffect(() => { if (employees.length) loadHomePolicies(month, employees); }, [dailyRecords]); // eslint-disable-line
@@ -2245,6 +2290,9 @@ export default function App({ authUser, authProfile, onSignOut }) {
           canSwitchStores={isFullAdmin||isHQManager}
           canViewHqStructure={canViewHqStructure}
           canViewDailyBriefing={canViewDailyBriefing}
+          employeeGoalMap={employeeGoalMap}
+          employeeGoalsLoading={employeeGoalsLoading}
+          refreshEmployeeGoals={loadScopedEmployeeGoals}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
           policyInputBlocked={policyBlockedMonths.includes(month)} togglePolicyInputBlock={togglePolicyInputBlock}
         />
@@ -10910,7 +10958,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
   const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
@@ -11150,7 +11198,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'hqStructure' && canViewHqStructure && <React.Suspense fallback={<DeferredAdminPanelFallback label="본사 구조정책"/>}><HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} /></React.Suspense>}
 
       {adminTab === 'employees' && (
-        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} />
+        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
       )}
 
       {adminTab === 'rates' && isFullAdmin && (
@@ -11473,7 +11521,27 @@ function ComparisonView({ rows }) {
   );
 }
 
-function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, authUserId }) {
+const EMPLOYEE_GOAL_LABELS = {
+  hs:'HS', simMnp:'SIM MNP', second:'2ND', home:'홈', tvFree:'프리', smartHome:'스홈',
+  sono:'소노', tailoredAmount:'맞춤제안 매출', tailored:'업셀건', points:'성과등급P',
+  kpi:'생산성', productivity:'생산성', incentive:'인센티브',
+};
+
+function EmployeeGoalSummary({ month, entry }) {
+  const goals = entry?.goals || {};
+  const rows = Object.entries(goals).filter(([, value]) => Number(value) > 0);
+  if (!rows.length) return <div className="mt-2 text-[10px] font-medium text-red-400">{monthLabel(month)} 개인 목표 미설정</div>;
+  return <div className="mt-2">
+    <div className="text-[10px] font-semibold text-violet-600">{monthLabel(month)} 개인 목표</div>
+    <div className="mt-1 flex flex-wrap gap-1">
+      {rows.map(([key,value])=><span key={key} className="rounded-md bg-violet-50 px-1.5 py-1 text-[9px] font-medium text-violet-700">
+        {EMPLOYEE_GOAL_LABELS[key]||key} {key==='tailoredAmount'||key==='incentive'?won(value):`${fmtNum(value,1)}${['points','kpi','productivity'].includes(key)?'P':'건'}`}
+      </span>)}
+    </div>
+  </div>;
+}
+
+function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, authUserId, month, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
   const [form, setForm] = useState({ name: '', branch: stores[0] || '', position: '사원', hireDate: '' });
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -11576,6 +11644,9 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
           <option value="branch">매장순</option>
         </select>
         <span className="text-xs text-gray-400">{visibleEmployees.length}명</span>
+        <button type="button" onClick={()=>refreshEmployeeGoals?.()} disabled={employeeGoalsLoading} className="ml-auto text-xs font-medium text-violet-600 disabled:text-gray-300">
+          {employeeGoalsLoading ? '목표 확인 중' : '목표 새로고침'}
+        </button>
       </div>
       <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
         {visibleEmployees.map((e) => (
@@ -11606,6 +11677,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                     {e.hireDate ? `입사 ${e.hireDate}` : '입사일 미등록'}
                     {` · 최종 접속 ${formatLastSignIn(e.lastSignInAt)}`}
                   </div>
+                  <EmployeeGoalSummary month={month} entry={employeeGoalMap[e.id]} />
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
