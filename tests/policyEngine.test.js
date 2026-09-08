@@ -4,9 +4,24 @@ import {
   calculateSecondPolicy, calculateActivitySupport, calculateFreePhoneSpecialOutcome,
   summarizeHomeStatuses, summarizeVasQuality, calculateMobileCommissionParts,
   calculateHomePolicyFromOrders,
+  completedHomeCount,
   calculateSeptemberWeekendHomeBonus,
   homeMainTvPlanAdjustment,
 } from '../src/policyEngine.js';
+
+test('신규 홈 완료 원본이 있으면 개인·관리자 공통 홈 건수에 우선 반영한다', () => {
+  assert.equal(completedHomeCount({
+    homeBase: { homeOnly: 0, homeTv: 0 },
+    homePolicy: { source: 'orders', totalInternetCount: 1 },
+  }), 1);
+  assert.equal(completedHomeCount({
+    homeBase: { homeOnly: 2, homeTv: 1 },
+  }), 3);
+  assert.equal(completedHomeCount({
+    homeBase: { homeOnly: 4, homeTv: 0 },
+    homePolicy: { source: 'orders', totalInternetCount: 0 },
+  }), 0);
+});
 
 test('2ND 정책 조합표: 단독과 번들은 모두 실적·활동지원·성과P에 동일 반영된다', () => {
   const cases = [
