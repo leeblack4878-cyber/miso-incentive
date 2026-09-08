@@ -6,7 +6,7 @@ export {
   calculatePayrollSettlement,
   CURRENT_POLICY_VERSION, createPolicySnapshot, resolveSalePolicySnapshot,
   calculateMobileSale, latestActiveSales, calculateMonthlySaleLedger,
-  buildHomeBundlesFromOrders, calculateHomePolicyFromOrders,
+  buildHomeBundlesFromOrders, calculateHomePolicyFromOrders, completedHomeCount,
 } from './policyEngine.js';
 
 import { calculateSecondPolicy, summarizeHomeStatuses } from './policyEngine.js';

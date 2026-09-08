@@ -701,6 +701,14 @@ test('홈 본판매가 없으면 구버전 동시판매 부가 수수료를 지�
   assert.match(source, /homeAnyCount>0 \? calculateFlatIncentive\(draft\.homeAddon \|\| \{\}, config\.homeAddon \|\| \[\]\) : 0/);
 });
 
+test('신규 홈 완료 건수는 개인·관리자·목표·순위에서 같은 원본을 사용한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /function adminMetricValue[\s\S]*?key==='home'.*?completedHomeCount\(d\)/);
+  assert.match(source, /MONTHLY_RANK_METRICS[\s\S]*?key:'home'[\s\S]*?completedHomeCount\(r\.draft\)/);
+  assert.match(source, /goalKey:'home'[\s\S]*?completedHomeCount\(draft\)/);
+  assert.match(source, /home:\s*completedHomeCount\(mergedDraft\)/);
+});
+
 test('모바일 작은 글씨와 긴 문구는 카드 밖으로 넘치지 않는다', async () => {
   const css = await readFile(new URL('../src/index.css', import.meta.url), 'utf8');
   assert.match(css, /\.text-\\\[9px\\\] \{ font-size: 11px !important/);

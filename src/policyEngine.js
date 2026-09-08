@@ -445,6 +445,18 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   };
 }
 
+// 신규 홈 원본(home_orders)으로 계산된 완료 인터넷 건수가 있으면 이를 우선합니다.
+// 구버전 월/일 집계만 있는 기록은 기존 homeBase 값을 그대로 사용합니다.
+export function completedHomeCount(draft = {}) {
+  if (draft?.homePolicy?.source === 'orders') {
+    return Math.max(0, Number(draft.homePolicy.totalInternetCount || 0));
+  }
+  return Math.max(0,
+    Number(draft?.homeBase?.homeOnly || 0)
+    + Number(draft?.homeBase?.homeTv || 0)
+  );
+}
+
 export function allowedSecondVas(items = []) {
   return (items || []).filter(item => SECOND_ALLOWED_VAS_KEYS.includes(item?.key));
 }

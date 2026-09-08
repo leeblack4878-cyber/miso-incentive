@@ -13,7 +13,7 @@ const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
 import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
-  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate,
+  summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate, completedHomeCount,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
@@ -926,9 +926,12 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
   const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
 
-  const homeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
+  const legacyHomeAnyCount = Number(draft.homeBase?.homeOnly || 0) + Number(draft.homeBase?.homeTv || 0)
     + Number(draft.homeFlat?.home1GBOnly || 0) + Number(draft.homeFlat?.home500Only || 0) + Number(draft.homeFlat?.home100Only || 0)
     + Number(draft.homeFlat?.tvFree || 0) + Number(draft.homeFlat?.smartHome || 0);
+  const homeAnyCount = draft.homePolicy?.source === 'orders'
+    ? Math.max(legacyHomeAnyCount, completedHomeCount(draft))
+    : legacyHomeAnyCount;
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
 
@@ -2395,7 +2398,7 @@ function managerActualFromDraft(d,key){
   if(key==='tailoredAmount')return Number(d.tailoredAmount||0);
   if(key==='daemyung')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
   if(key==='prospectMnp')return 0;
-  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  if(key==='home')return completedHomeCount(d);
   return 0;
 }
 
@@ -2563,7 +2566,7 @@ function SalesManagerPayrollPanel({month,rows=[]}){
     hs:sumByBranch('hs',row=>hsCount(row.draft||{})),
     simMnp:sumByBranch('simMnp',row=>(row.draft?.matrix?.[5]||[]).reduce((sum,value)=>sum+Number(value||0),0)),
     second:sumByBranch('second',row=>(row.draft?.matrix?.[7]||[]).reduce((sum,value)=>sum+Number(value||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((sum,value)=>sum+Number(value||0),0)),
-    home:sumByBranch('home',row=>Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0)),
+    home:sumByBranch('home',row=>completedHomeCount(row.draft)),
     upsell:sumByBranch('upsell',row=>Number(row.draft?.tailoredCount||0)),
   };
   const result=calculateSalesManagerPayroll(company);
@@ -2706,7 +2709,7 @@ function EvaluationTab({ month, employee, config, isManagerView=false, canFinalA
 
 const MONTHLY_RANK_METRICS = [
   { key:'hs', label:'HS', unit:'건', value:(r)=>hsCount(r.draft) },
-  { key:'home', label:'홈', unit:'건', value:(r)=>Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0) },
+  { key:'home', label:'홈', unit:'건', value:(r)=>completedHomeCount(r.draft) },
   { key:'free', label:'프리', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.tvFree||0) },
   { key:'smart', label:'스홈', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.smartHome||0) },
   { key:'productivity', label:'생산성', unit:'P', value:(r)=>Number(r.pay?.kpiScore||0) },
@@ -2823,7 +2826,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
     {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.simMnp||0)},
     {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.second||0)},
     {key:'productivity',label:'생산성',unit:'point',current:sum(r=>r.pay?.kpiScore||0),target:Number(goal.productivity||goal.kpi||0)},
-    {key:'home',label:'홈',unit:'count',current:sum(r=>(r.draft?.homeBase?.homeOnly||0)+(r.draft?.homeBase?.homeTv||0)),target:Number(goal.home||0)},
+    {key:'home',label:'홈',unit:'count',current:sum(r=>completedHomeCount(r.draft)),target:Number(goal.home||0)},
     {key:'free',label:'프리',unit:'count',current:sum(r=>r.draft?.homeFlat?.tvFree||0),target:Number(goal.tvFree||goal.free||0)},
     {key:'smart',label:'스홈',unit:'count',current:sum(r=>r.draft?.homeFlat?.smartHome||0),target:Number(goal.smartHome||goal.smart||0)},
     {key:'sono',label:'소노',unit:'count',current:sum(r=>Object.values(r.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.sono||0)},
@@ -2839,7 +2842,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
         if(m.key==='simMnp')return sumValue+(row.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
         if(m.key==='second')return sumValue+(row.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
         if(m.key==='productivity')return sumValue+Number(row.pay?.kpiScore||0);
-        if(m.key==='home')return sumValue+Number(row.draft?.homeBase?.homeOnly||0)+Number(row.draft?.homeBase?.homeTv||0);
+        if(m.key==='home')return sumValue+completedHomeCount(row.draft);
         if(m.key==='free')return sumValue+Number(row.draft?.homeFlat?.tvFree||0);
         if(m.key==='smart')return sumValue+Number(row.draft?.homeFlat?.smartHome||0);
         if(m.key==='sono')return sumValue+Object.values(row.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0);
@@ -2977,7 +2980,7 @@ function WorkActivityCard({ dailyDays, month, onGoInput }) {
 
 const COMPETITION_METRICS = [
   { key: 'hs', label: 'HS', unit: '건', value: (r) => hsCount(r.draft) },
-  { key: 'home', label: '홈', unit: '건', value: (r) => Number((r.draft?.homeBase?.homeOnly || 0) + (r.draft?.homeBase?.homeTv || 0)) },
+  { key: 'home', label: '홈', unit: '건', value: (r) => completedHomeCount(r.draft) },
   { key: 'tvFree', label: 'TV프리(부)', unit: '건', value: (r) => Number(r.draft?.homeFlat?.tvFree || 0) },
   { key: 'smartHome', label: '스마트홈', unit: '건', value: (r) => Number(r.draft?.homeFlat?.smartHome || 0) },
   { key: 'kpi', label: '생산성', unit: 'P', value: (r) => Number(r.pay?.kpiScore || 0) },
@@ -3313,7 +3316,7 @@ function evaluateAutomaticBadges({
 }) {
   const earned=new Set();
   const hs=hsCount(mergedDraft);
-  const home=Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  const home=completedHomeCount(mergedDraft);
   const free=Number(mergedDraft?.homeFlat?.tvFree||0);
   const smart=Number(mergedDraft?.homeFlat?.smartHome||0);
   const upsell=Number(mergedDraft?.tailoredCount||0);
@@ -4658,7 +4661,7 @@ const STORE_GOAL_METRICS = [
 
 function storeGoalCurrent(mergedDraft, pay, key) {
   if (key === 'hs') return hsCount(mergedDraft);
-  if (key === 'home') return Number(mergedDraft?.homeBase?.homeOnly||0)+Number(mergedDraft?.homeBase?.homeTv||0);
+  if (key === 'home') return completedHomeCount(mergedDraft);
   if (key === 'productivity') return Number(pay?.kpiScore||0);
   if (key === 'tvFree') return Number(mergedDraft?.homeFlat?.tvFree||0);
   if (key === 'smartHome') return Number(mergedDraft?.homeFlat?.smartHome||0);
@@ -4975,7 +4978,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
           );
           let actual;
           if(m.key==='hs')actual=selectedRows.reduce((s,r)=>s+hsCount(r.draft),0);
-          else if(m.key==='home')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0),0);
+          else if(m.key==='home')actual=selectedRows.reduce((s,r)=>s+completedHomeCount(r.draft),0);
           else if(m.key==='productivity')actual=selectedRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
           else if(m.key==='tvFree')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.tvFree||0),0);
           else if(m.key==='smartHome')actual=selectedRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0);
@@ -9192,7 +9195,7 @@ function getPersonalGoalActuals(mergedDraft, pay) {
 
   return {
     hs,
-    home: Number((mergedDraft?.homeBase?.homeOnly || 0) + (mergedDraft?.homeBase?.homeTv || 0)),
+    home: completedHomeCount(mergedDraft),
     tvFree: Number(mergedDraft?.homeFlat?.tvFree || 0),
     smartHome: Number(mergedDraft?.homeFlat?.smartHome || 0),
     tailoredAmount: Number(mergedDraft?.tailoredAmount || 0),
@@ -9410,7 +9413,7 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
     {key:'simMnp',goalKey:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
     {key:'second',goalKey:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
     {key:'productivity',goalKey:'kpi',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
-    {key:'home',goalKey:'home',label:'홈',unit:'count',value:Number(draft?.homeBase?.homeOnly||0)+Number(draft?.homeBase?.homeTv||0)},
+    {key:'home',goalKey:'home',label:'홈',unit:'count',value:completedHomeCount(draft)},
     {key:'tvFree',goalKey:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
     {key:'smartHome',goalKey:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
     {key:'sono',goalKey:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
@@ -9949,7 +9952,7 @@ function adminMetricValue(row,key){
   if(key==='hs')return hsCount(d);
   if(key==='simMnp')return Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0);
   if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='home')return Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0);
+  if(key==='home')return completedHomeCount(d);
   if(key==='free')return Number(d.homeFlat?.tvFree||0);
   if(key==='smart')return Number(d.homeFlat?.smartHome||0);
   if(key==='upsell')return Number(d.tailoredCount||0);
@@ -10801,7 +10804,7 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
       <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">관리자 최신화 매장</div><div className="text-xl font-bold text-violet-700 mt-1">{Object.keys(verifiedMap).length}개</div></div>
     </div>
     {missing.length>0&&<div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">{Number(selectedDay)}일 미입력</div>{missing.map(r=><div key={r.id} className="px-4 py-2.5 border-b last:border-0 flex justify-between text-xs"><span><b>{r.name}</b> · {displayStoreName(r.branch)}</span><span className="text-red-500">입력 없음</span></div>)}</div>}
-    <div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 입력 vs 관리자 확인</div><div className="text-[10px] text-gray-400 mt-1">평가의 ‘실적 최신화’에서 저장한 관리자 확인값과 현재 직원 입력 누적을 비교합니다.</div></div>{workRows.map(r=>{const v=verifiedMap[r.branch]?.verified_metrics; if(!v)return null; const hs=hsCount(r.draft),home=Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0);return <div key={r.id} className="px-4 py-2.5 border-b last:border-0 text-xs"><div className="font-semibold">{r.name} · {displayStoreName(r.branch)}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 HS {fmtCount(hs)} / 홈 {fmtCount(home)} · 매장 관리자확인 HS {fmtCount(v.hs||0)} / 홈 {fmtCount(v.home||0)}</div></div>})}</div>
+    <div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 입력 vs 관리자 확인</div><div className="text-[10px] text-gray-400 mt-1">평가의 ‘실적 최신화’에서 저장한 관리자 확인값과 현재 직원 입력 누적을 비교합니다.</div></div>{workRows.map(r=>{const v=verifiedMap[r.branch]?.verified_metrics; if(!v)return null; const hs=hsCount(r.draft),home=completedHomeCount(r.draft);return <div key={r.id} className="px-4 py-2.5 border-b last:border-0 text-xs"><div className="font-semibold">{r.name} · {displayStoreName(r.branch)}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 HS {fmtCount(hs)} / 홈 {fmtCount(home)} · 매장 관리자확인 HS {fmtCount(v.hs||0)} / 홈 {fmtCount(v.home||0)}</div></div>})}</div>
     {duplicateRows.length>0&&<div className="bg-amber-50 rounded-xl border border-amber-100 overflow-hidden"><div className="px-4 py-3 font-bold text-sm text-amber-800">중복 가능 판매건</div>{duplicateRows.map((x,i)=>{const emp=(employees||[]).find(e=>e.id===x.userId);return <div key={i} className="px-4 py-2.5 border-t border-amber-100 text-xs"><b>{emp?.name||'직원'}</b> · {x.customer} · {x.count}개 항목 <span className="text-gray-400">({x.labels.join(' / ')})</span></div>})}</div>}
   </div>;
 }
@@ -10872,7 +10875,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   targetRows.forEach(r=>(r.draft?.matrix||[]).forEach((arr,ri)=>(arr||[]).forEach((v,ci)=>{if(inputMatrix[ri])inputMatrix[ri][ci]+=Number(v||0)})));
   const bundleCount=targetRows.reduce((s,r)=>s+Object.values(r.draft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0),0);
   const inputExtras={
-    home:targetRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeOnly||0)+Number(r.draft?.homeBase?.homeTv||0),0),
+    home:targetRows.reduce((s,r)=>s+completedHomeCount(r.draft),0),
     tv:targetRows.reduce((s,r)=>s+Number(r.draft?.homeBase?.homeTv||0),0),
     subSetTop:targetRows.reduce((s,r)=>s+Number(r.draft?.homeAddon?.addSetTop||0),0),
     smartHome:targetRows.reduce((s,r)=>s+Number(r.draft?.homeFlat?.smartHome||0),0),
@@ -11204,7 +11207,7 @@ const COMPARE_METRICS = [
   },
   { key:'simMnp', label:'SIM MNP', unit:'count', calc:(d)=>Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0) },
   { key:'second', label:'2ND', unit:'count', calc:(d)=>Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0) },
-  { key:'home', label:'홈 실적', unit:'count', calc:(d)=>Number(d.homeBase?.homeOnly||0)+Number(d.homeBase?.homeTv||0) },
+  { key:'home', label:'홈 실적', unit:'count', calc:(d)=>completedHomeCount(d) },
   { key:'free', label:'프리', unit:'count', calc:(d)=>Number(d.homeFlat?.tvFree||0) },
   { key:'smart', label:'스마트홈', unit:'count', calc:(d)=>Number(d.homeFlat?.smartHome||0) },
   { key:'productivity', label:'생산성', unit:'point', calc:(d,p)=>Number(p?.kpiScore||0) },
