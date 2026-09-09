@@ -27,6 +27,10 @@ export function projectMetric({ current = 0, target = 0, factor = 1 } = {}) {
   return { current: actual, target: goal, forecast, forecastRate, progressRate, state };
 }
 
+export function resolveStoreBriefingGoals({ defaults = {}, companyGoals = {}, challengeGoals = {} } = {}) {
+  return { ...defaults, ...companyGoals, ...challengeGoals };
+}
+
 function metricText(metric) {
   const suffix = metric.unit === 'won' ? '원' : metric.unit === 'point' ? 'P' : '건';
   const round = metric.unit === 'point'

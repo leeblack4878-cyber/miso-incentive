@@ -48,6 +48,7 @@ import {
   canAccessDailyBriefing,
   dailyInputStatus,
   projectMetric,
+  resolveStoreBriefingGoals,
 } from './dailyBriefing';
 
 let feedbackBridge={toast:null,confirm:null};
@@ -10520,7 +10521,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
       setLoading(true);
       const employeeIds=(employees||[]).map(emp=>emp.id).filter(Boolean);
       const [{data,error},taskResult,homeResult,customerResult]=await Promise.all([
-        supabase.from('store_goals').select('store_name,company_goals').eq('month',month),
+        supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month),
         employeeIds.length?supabase.from('customer_tasks').select('id,user_id,customer_id,title,due_date,status').in('user_id',employeeIds):Promise.resolve({data:[]}),
         employeeIds.length?supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date').in('user_id',employeeIds):Promise.resolve({data:[]}),
         employeeIds.length?supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds):Promise.resolve({data:[]}),
@@ -10535,7 +10536,11 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
     return()=>{alive=false};
   },[month,employees.map(emp=>emp.id).join('|')]); // eslint-disable-line
 
-  const goalMap=Object.fromEntries(goalRows.map(row=>[row.store_name,{...companyGoalDefaults(row.store_name),...(row.company_goals||{})}]));
+  const goalMap=Object.fromEntries(goalRows.map(row=>[row.store_name,resolveStoreBriefingGoals({
+    defaults:companyGoalDefaults(row.store_name),
+    companyGoals:row.company_goals,
+    challengeGoals:row.challenge_goals,
+  })]));
   const branches=sortStoresByOpenOrder([...new Set((employees||[]).map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
   const reportDay=Math.max(1,Number(selectedDay||1));
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/reportDay:1;
