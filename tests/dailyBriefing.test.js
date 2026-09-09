@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, projectMetric } from '../src/dailyBriefing.js';
+import { buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, projectMetric, resolveStoreBriefingGoals } from '../src/dailyBriefing.js';
 
 test('일일 브리핑은 이강진 계정만 접근한다', () => {
   assert.equal(canAccessDailyBriefing('a50a0979-acef-40b1-98b7-f05074f1c835'), true);
@@ -20,6 +20,21 @@ test('예상마감 달성률로 잘함·주의·부족을 구분한다', () => {
   assert.equal(projectMetric({ current: 4, target: 10, factor: 2 }).state, 'watch');
   assert.equal(projectMetric({ current: 3, target: 10, factor: 2 }).state, 'low');
   assert.equal(projectMetric({ current: 3, target: 0, factor: 2 }).state, 'unset');
+});
+
+test('브리핑 목표는 매장 도전 목표를 우선하고 없는 값은 회사 기준으로 보완한다', () => {
+  const goals = resolveStoreBriefingGoals({
+    defaults: { hs: 52, home: 5, productivity: 65, tvFree: 4, smartHome: 3, tailoredCount: 26 },
+    companyGoals: { hs: 52, home: 5, productivity: 65, tvFree: 4, smartHome: 3, tailoredCount: 26 },
+    challengeGoals: { hs: 52, simMnp: 5, second: 10, home: 5, productivity: 65, tvFree: 4, smartHome: 2, sono: 2, tailoredAmount: 243868 },
+  });
+
+  assert.equal(goals.simMnp, 5);
+  assert.equal(goals.second, 10);
+  assert.equal(goals.sono, 2);
+  assert.equal(goals.tailoredAmount, 243868);
+  assert.equal(goals.smartHome, 2);
+  assert.equal(goals.tailoredCount, 26);
 });
 
 test('매장별 복사 문구는 매장 단톡방에 바로 전달할 수 있는 대화형 피드백이다', () => {
