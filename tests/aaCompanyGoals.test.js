@@ -11,7 +11,7 @@ test('9월 AA 회사 목표는 영업팀 확정표와 일치한다', () => {
   ]) assert.match(app, new RegExp(`key:'${key}'.*target:${target}`));
 });
 
-test('AA MNP와 SIM MNP는 별도 지표로 집계한다', () => {\n  assert.match(app, /\\{key:'mnp',label:'MNP',weight:8,target:209/);\n  assert.match(app, /if\\(key==='mnp'\\)return hsMnp;/);\n  assert.doesNotMatch(app, /if\\(key==='mnp'\\)return hsMnp\\+simMnp;/);\n});\n\ntest('확정 HS 비중과 대명·타사개통 가점 목표를 적용한다', () => {
+test('AA MNP는 일반 MNP와 SIM MNP를 합산한다', () => {\n  assert.match(app, /\\{key:'mnp',label:'MNP \\(HS MNP \\+ SIM MNP\\)',weight:8,target:209/);\n  assert.match(app, /if\\(key==='mnp'\\)return hsMnp\\+simMnp;/);\n});\n\ntest('확정 HS 비중과 대명·타사개통 가점 목표를 적용한다', () => {
   const hs = [102,63,100,52,70,54,100,64,37,129,39,41,41];
   assert.equal(hs.reduce((sum,value)=>sum+value,0), 892);
   assert.equal(Number((102/892*100).toFixed(2)), 11.43);
