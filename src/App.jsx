@@ -2326,7 +2326,7 @@ function roundedTarget(v,unit='count'){return unit==='won'?Math.max(0,Number(v||
 function cappedAchievement(actual,target,cap=1){if(!(Number(target)>0))return 0;return Math.min(cap,Math.max(0,Number(actual||0)/Number(target||1)));}
 
 const DEFAULT_AA_METRICS=[
-  {key:'mnp',label:'MNP (HS MNP + SIM MNP)',weight:8,target:209,unit:'count'},
+  {key:'mnp',label:'MNP',weight:8,target:209,unit:'count'},
   {key:'simMnp',label:'SIM MNP',weight:7,target:84,unit:'count'},
   {key:'subTvHousehold',label:'TV부셋탑(가정망)',weight:7,target:77,unit:'count'},
   {key:'tvFree',label:'TV프리(부)',weight:6,target:65,unit:'count'},
@@ -2436,7 +2436,7 @@ function managerActualFromDraft(d,key){
   if(key==='plan115')return HS_PARTS.reduce((sum,part)=>sum+Number(d.matrix?.[part.idx]?.[0]||0),0);
   const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
   const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='mnp')return hsMnp+simMnp;
+  // AA 표의 MNP와 SIM MNP는 각각 독립 지표다. MNP에 SIM MNP를 중복 합산하지 않는다.\n  if(key==='mnp')return hsMnp;
   if(key==='simMnp')return simMnp;
   if(key==='subTvHousehold')return Number(d.homeAddon?.addSetTop||0)+Number(d.homeFlat?.tvFree||0);
   if(key==='tvFree')return Number(d.homeFlat?.tvFree||0);
