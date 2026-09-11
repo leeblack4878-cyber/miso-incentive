@@ -3,6 +3,8 @@ export {
   allowedSecondVas, summarizeVasQuality, calculateSecondPolicy,
   calculateActivitySupport, calculateFreePhoneSpecialOutcome, summarizeHomeStatuses,
   calculateFlatIncentive, calculateMatrixIncentive, calculateMobileCommissionParts,
+  calculateSeptemberWeekendSimMnpBonus,
+  countSeptemberWeekendSimMnp,
   calculatePayrollSettlement,
   CURRENT_POLICY_VERSION, createPolicySnapshot, resolveSalePolicySnapshot,
   calculateMobileSale, latestActiveSales, calculateMonthlySaleLedger,

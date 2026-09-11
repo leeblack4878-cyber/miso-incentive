@@ -115,6 +115,13 @@ test('직원 실적입력 화면에는 스팟 추가 인센티브 카드를 표�
   assert.doesNotMatch(source, /<SpotClaimPanel\s+userId=/);
 });
 
+test('9월 11~14일 SIM MNP 추가 지급은 급여 합계와 모바일 상세에 함께 반영한다', async () => {
+  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(source, /septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy\.amount/);
+  assert.match(source, /pay\.septemberWeekendSimMnpPolicy\?\.amount/);
+  assert.match(source, /9월 주말 SIM MNP 추가 지급/);
+});
+
 test('과거 판매 수정은 이전 source_meta를 보존 병합한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /mergeSaleMetaPreservingLegacy\(editingSale\.source_meta/);

@@ -15,6 +15,8 @@ import {
   SECOND_PERFORMANCE_POINT, allowedSecondVas,
   summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate, completedHomeCount,
   mergeSaleMetaPreservingLegacy, calculateSecondPolicy, calculateActivitySupport,
+  calculateSeptemberWeekendSimMnpBonus,
+  countSeptemberWeekendSimMnp,
   calculateFlatIncentive, calculateMobileCommissionParts,
   calculatePayrollSettlement,
   CURRENT_POLICY_VERSION, createPolicySnapshot,
@@ -852,6 +854,11 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
 
   const numeric = {};
   DAILY_NUMERIC_KEYS.forEach((k) => { numeric[k] = agg[k] || 0; });
+  const septemberWeekendSimMnpCount = month === '2026-09'
+    ? countSeptemberWeekendSimMnp(Object.fromEntries(
+        Object.entries(dailyDaysMap || {}).map(([dayKey, raw]) => [dayKey, normalizeDay(raw)])
+      ))
+    : 0;
 
   return {
     ...draft,
@@ -860,6 +867,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     matrix: aggMatrix,
     mobilePoint: { ...draft.mobilePoint, ...autoMobilePoint },
     kpi: { ...draft.kpi, ...autoKpi },
+    septemberWeekendSimMnpCount,
   };
 }
 
@@ -989,11 +997,14 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const employeeStrategic = month >= SEPTEMBER_POLICY_MONTH
     ? calculateEmployeeStrategicAdjustment({hsCount:hsCount(draft),simMnpCount:Object.values(draft.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0),strategicPoints})
     : {ratio:null,amount:0,band:'not_applicable'};
+  const septemberWeekendSimMnpPolicy = calculateSeptemberWeekendSimMnpBonus(
+    month === '2026-09' ? draft.septemberWeekendSimMnpCount : 0
+  );
 
   const settlement=calculatePayrollSettlement({
     minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
     specialReplacementPay,strategicAdjustment:employeeStrategic.amount,positionAllowance,
-    extras:{gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
+    extras:{gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
   });
   const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
 
@@ -1016,7 +1027,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     currentPerformanceAmount, closingAmount, postGuaranteeExtras,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
-    mnpBundlePay, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
+    mnpBundlePay, septemberWeekendSimMnpPolicy, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
     strategicPoints, strategicRatio:employeeStrategic.ratio, strategicAdjustment:employeeStrategic.amount,
     strategicAdjustmentBand:employeeStrategic.band, total,
   };
@@ -2437,7 +2448,8 @@ function managerActualFromDraft(d,key){
   if(key==='plan115')return HS_PARTS.reduce((sum,part)=>sum+Number(d.matrix?.[part.idx]?.[0]||0),0);
   const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
   const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
-  // AA 임팩트의 MNP 항목은 일반 MNP와 SIM MNP를 합산한다.\n  if(key==='mnp')return hsMnp+simMnp;
+  // AA 임팩트의 MNP 항목은 일반 MNP와 SIM MNP를 합산한다.
+  if(key==='mnp')return hsMnp+simMnp;
   if(key==='simMnp')return simMnp;
   if(key==='subTvHousehold')return Number(d.homeAddon?.addSetTop||0)+Number(d.homeFlat?.tvFree||0);
   if(key==='tvFree')return Number(d.homeFlat?.tvFree||0);
@@ -6316,12 +6328,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
               <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
+              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
             </button>
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
               {Number(pay.strategicAdjustment||0)!==0&&<RowKV label={pay.strategicAdjustment>0?'└ 전략P 200% 이상 보너스':'└ 전략P 160% 미만 디메리트'} value={won(pay.strategicAdjustment)} />}
               {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
+              {Number(pay.septemberWeekendSimMnpPolicy?.amount||0)!==0&&<RowKV label="└ 9월 주말 SIM MNP 추가 지급" value={won(pay.septemberWeekendSimMnpPolicy.amount)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
               {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
               {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
