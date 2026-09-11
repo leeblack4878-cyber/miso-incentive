@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, projectMetric, resolveStoreBriefingGoals } from '../src/dailyBriefing.js';
+import { buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, isBriefingMonthOverdueHome, projectMetric, resolveStoreBriefingGoals } from '../src/dailyBriefing.js';
 
 test('일일 브리핑은 이강진 계정만 접근한다', () => {
   assert.equal(canAccessDailyBriefing('a50a0979-acef-40b1-98b7-f05074f1c835'), true);
@@ -37,6 +37,13 @@ test('브리핑 목표는 매장 도전 목표를 우선하고 없는 값은 회
   assert.equal(goals.tailoredCount, 26);
 });
 
+test('당월 브리핑의 미완료 경고는 당월 청약건만 포함한다', () => {
+  const today = '2026-09-11';
+  assert.equal(isBriefingMonthOverdueHome({ source_work_date: '2026-08-31', plannedDate: '2026-09-03' }, '2026-09', today), false);
+  assert.equal(isBriefingMonthOverdueHome({ source_work_date: '2026-09-01', plannedDate: '2026-09-03' }, '2026-09', today), true);
+  assert.equal(isBriefingMonthOverdueHome({ source_work_date: '2026-09-01', plannedDate: '2026-09-12' }, '2026-09', today), false);
+});
+
 test('매장별 복사 문구는 매장 단톡방에 바로 전달할 수 있는 대화형 피드백이다', () => {
   const inputRows = [
     { name: '직원A', status: 'input', summary: 'HS 1건' },
@@ -59,7 +66,7 @@ test('매장별 복사 문구는 매장 단톡방에 바로 전달할 수 있는
   assert.match(text, /아직 입력이 확인되지 않은 직원은 직원C입니다/);
   assert.match(text, /\[월말 예상 · 좋은 흐름\]\n- HS 10건 \(목표 대비 100%\)/);
   assert.match(text, /\[월말 예상 · 보완 필요\]\n- 홈 4건 \(목표 대비 40%\)/);
-  assert.match(text, /\[오늘 함께 챙길 것\]\n- 홈 실적을 우선 보완해주세요\.\n- 직원C님의 입력 여부를 확인해주세요\./);
+  assert.match(text, /\[오늘 함께 챙길 것\]\n- 고객 약속 1건을 확인해주세요\.\n- 오늘 홈 설치 1건을 확인해주세요\.\n- 직원C님의 입력 여부를 확인해주세요\.\n- 홈 실적을 우선 보완해주세요\./);
   assert.match(text, /고객 약속 1건 · 김고객\(제휴카드 확인\)/);
   assert.match(text, /홈 설치 예정 1건 · 이고객/);
   assert.match(text, /예정일이 지난 홈 미완료 1건 · 박고객\(2026-09-03\)/);
