@@ -6,8 +6,36 @@ import {
   calculateHomePolicyFromOrders,
   completedHomeCount,
   calculateSeptemberWeekendHomeBonus,
+  calculateSeptemberWeekendSimMnpBonus,
+  countSeptemberWeekendSimMnp,
   homeMainTvPlanAdjustment,
 } from '../src/policyEngine.js';
+
+test('9월 11~14일 SIM MNP는 개인 누적 그레이드 단가를 인정 건 전체에 적용한다', () => {
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(0), { count: 0, rate: 0, amount: 0 });
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(1), { count: 1, rate: 20000, amount: 20000 });
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(2), { count: 2, rate: 30000, amount: 60000 });
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(3), { count: 3, rate: 50000, amount: 150000 });
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(4), { count: 4, rate: 50000, amount: 200000 });
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(5), { count: 5, rate: 70000, amount: 350000 });
+});
+
+test('9월 11~14일 SIM MNP는 요금제 칸 구분 없이 합산하고 기간 밖 실적만 제외한다', () => {
+  const matrix = (policyCounts = [], nonPolicyCount = 0) => {
+    const rows = Array.from({ length: 8 }, () => Array(6).fill(0));
+    rows[5] = [...policyCounts, 0, 0, 0, 0, 0].slice(0, 5).concat(nonPolicyCount);
+    return rows;
+  };
+  const count = countSeptemberWeekendSimMnp({
+    '10': { matrix: matrix([9]) },
+    '11': { matrix: matrix([1], 5) },
+    '12': { matrix: matrix([0, 1]) },
+    '14': { matrix: matrix([0, 0, 1]) },
+    '15': { matrix: matrix([9]) },
+  });
+  assert.equal(count, 8);
+  assert.deepEqual(calculateSeptemberWeekendSimMnpBonus(count), { count: 8, rate: 70000, amount: 560000 });
+});
 
 test('신규 홈 완료 원본이 있으면 개인·관리자 공통 홈 건수에 우선 반영한다', () => {
   assert.equal(completedHomeCount({
@@ -52,34 +80,58 @@ test('TV(주) 요금제에 따라 가정망·소호망 그레이드 수수료를
 });
 
 test('9월 주말 홈 정책은 개인 누적 건수와 망별 TV 요금제 조건으로 추가 지급한다', () => {
-  const makeBundle = (customer_id, network_type, main_tv_plan) => {
+  const makeBundle = (customer_id, network_type, main_tv_plan, product_type = 'internet500') => {
     const base = {
-      customer_id, customer_name: customer_id, source_work_date: '2026-09-05',
+      customer_id, customer_name: customer_id, source_work_date: '2026-09-11',
       actual_install_date: '2026-09-20', status: 'completed', network_type, sale_type: 'normal',
     };
     return [
-      { ...base, id: `${customer_id}-internet`, product_type: 'internet500' },
+      { ...base, id: `${customer_id}-internet`, product_type },
       { ...base, id: `${customer_id}-tv`, product_type: 'homeTv', main_tv_plan },
     ];
   };
   const result = calculateHomePolicyFromOrders([
-    ...makeBundle('home-a', 'household', 'broadcastPass'),
-    ...makeBundle('home-b', 'soho', 'premium'),
+    ...makeBundle('home-a', 'household', 'broadcastPass', 'internet1g'),
+    ...makeBundle('home-b', 'household', 'broadcastPass'),
+    ...makeBundle('home-c', 'soho', 'premium'),
   ]);
-  assert.equal(result.weekendPolicy.homeCount, 2);
+  assert.equal(result.weekendPolicy.homeGradeCount, 3);
+  assert.equal(result.weekendPolicy.homePaidCount, 2);
   assert.equal(result.weekendPolicy.homeRate, 150000);
-  assert.equal(result.weekendPolicy.homeBonus, 300000);
-  assert.equal(result.limitedPolicyPay, 300000);
-  assert.equal(result.homeAddonPay, 300000);
+  assert.equal(result.weekendPolicy.homeOneGigBonus, 50000);
+  assert.equal(result.weekendPolicy.homeBonus, 350000);
+  assert.equal(result.limitedPolicyPay, 350000);
+  assert.equal(result.homeAddonPay, 350000);
 });
 
 test('9월 주말 홈 정책은 요금제·기간·설치완료 조건이 맞지 않으면 제외한다', () => {
   const bundles = [
-    { date: '2026-09-05', actualInstallDate: '2026-09-20', hasInternet: true, speed: '500', hasTv: true, networkType: 'household', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
-    { date: '2026-09-08', actualInstallDate: '2026-09-20', hasInternet: true, speed: '1g', hasTv: true, networkType: 'soho', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
-    { date: '2026-09-05', actualInstallDate: '2026-10-01', hasInternet: true, speed: '1g', hasTv: true, networkType: 'household', mainTvPlan: 'broadcastPass', saleType: 'normal', types: new Set() },
+    { date: '2026-09-11', actualInstallDate: '2026-09-20', hasInternet: true, speed: '500', hasTv: true, networkType: 'household', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
+    { date: '2026-09-10', actualInstallDate: '2026-09-20', hasInternet: true, speed: '1g', hasTv: true, networkType: 'soho', mainTvPlan: 'premium', saleType: 'normal', types: new Set() },
+    { date: '2026-09-11', actualInstallDate: '2026-10-01', hasInternet: true, speed: '1g', hasTv: true, networkType: 'household', mainTvPlan: 'broadcastPass', saleType: 'normal', types: new Set() },
   ];
   assert.equal(calculateSeptemberWeekendHomeBonus(bundles).homeBonus, 0);
+});
+
+test('9월 주말 홈은 소호를 그레이드에 포함하지만 가정망 건에만 지급한다', () => {
+  const common = { date: '2026-09-12', actualInstallDate: '2026-09-25', hasInternet: true, speed: '500', hasTv: true, saleType: 'normal', types: new Set() };
+  const householdTwo = [
+    { ...common, networkType: 'household', mainTvPlan: 'broadcastPass' },
+    { ...common, networkType: 'household', mainTvPlan: 'broadcastPass' },
+  ];
+  const twoResult = calculateSeptemberWeekendHomeBonus(householdTwo);
+  assert.equal(twoResult.homeGradeCount, 2);
+  assert.equal(twoResult.homeRate, 100000);
+  assert.equal(twoResult.homeBonus, 200000);
+
+  const result = calculateSeptemberWeekendHomeBonus([
+    ...householdTwo,
+    { ...common, networkType: 'soho', mainTvPlan: 'premium' },
+  ]);
+  assert.equal(result.homeGradeCount, 3);
+  assert.equal(result.homePaidCount, 2);
+  assert.equal(result.homeRate, 150000);
+  assert.equal(result.homeBonus, 300000);
 });
 
 test('9월 주말 TV프리는 개인 누적 구간별 건당 추가 지급하며 7일까지 설치해야 한다', () => {

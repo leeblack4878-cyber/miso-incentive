@@ -13,7 +13,7 @@ test('9월 AA 회사 목표는 영업팀 확정표와 일치한다', () => {
 
 test('AA MNP는 일반 MNP와 SIM MNP를 합산한다', () => {
   assert.match(app, /\{key:'mnp',label:'MNP \(HS MNP \+ SIM MNP\)',weight:8,target:209/);
-  assert.match(app, /if\(key==='mnp'\)return hsMnp\+simMnp;/);
+  assert.match(app, /합산한다\.\n\s+if\(key==='mnp'\)return hsMnp\+simMnp;/);
 });
 
 test('확정 HS 비중과 대명·타사개통 가점 목표를 적용한다', () => {

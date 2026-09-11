@@ -46,6 +46,20 @@ export function calculateMatrixIncentive(countMatrix = [], rateMatrix = []) {
   ), 0);
 }
 
+export function calculateSeptemberWeekendSimMnpBonus(eligibleCount = 0) {
+  const count = Math.max(0, Number(eligibleCount || 0));
+  const rate = count >= 5 ? 70000 : count >= 3 ? 50000 : count >= 2 ? 30000 : count >= 1 ? 20000 : 0;
+  return { count, rate, amount: count * rate };
+}
+
+export function countSeptemberWeekendSimMnp(dailyDays = {}) {
+  return ['11', '12', '13', '14'].reduce((sum, dayKey) => {
+    const matrix = dailyDays?.[dayKey]?.matrix || [];
+    return sum + (matrix[5] || [])
+      .reduce((daySum, value) => daySum + Number(value || 0), 0);
+  }, 0);
+}
+
 export function calculateMobileCommissionParts({
   matrix = [], matrixRates = [], specialMatrixOffset = 0,
   vasCounts = {}, vasRates = [], specialVasOffset = 0, bundleFreeVasOffset = 0,
@@ -322,10 +336,11 @@ export function buildHomeBundlesFromOrders(orders = []) {
 }
 
 export function calculateSeptemberWeekendHomeBonus(bundles = []) {
-  const inApplicationPeriod = bundle => bundle.date >= '2026-09-04' && bundle.date <= '2026-09-07';
+  const inHomeApplicationPeriod = bundle => bundle.date >= '2026-09-11' && bundle.date <= '2026-09-14';
+  const inTvFreeApplicationPeriod = bundle => bundle.date >= '2026-09-04' && bundle.date <= '2026-09-07';
   const installedBy = (bundle, deadline) => Boolean(bundle.actualInstallDate) && bundle.actualInstallDate <= deadline;
-  const eligibleHome = (bundles || []).filter(bundle =>
-    inApplicationPeriod(bundle)
+  const homeGradeEligible = (bundles || []).filter(bundle =>
+    inHomeApplicationPeriod(bundle)
     && bundle.hasInternet
     && ['500', '1g'].includes(bundle.speed)
     && bundle.hasTv
@@ -334,23 +349,32 @@ export function calculateSeptemberWeekendHomeBonus(bundles = []) {
     && installedBy(bundle, '2026-09-30')
     && bundle.saleType !== 'allinone'
   );
-  const homeRate = eligibleHome.length >= 2 ? 150000 : eligibleHome.length >= 1 ? 100000 : 0;
+  const homePaidEligible = homeGradeEligible.filter(bundle => bundle.networkType !== 'soho');
+  const homeRate = homeGradeEligible.length >= 3 ? 150000 : homeGradeEligible.length >= 1 ? 100000 : 0;
+  const homeOneGigCount = homePaidEligible.filter(bundle => bundle.speed === '1g').length;
+  const homeBaseBonus = homePaidEligible.length * homeRate;
+  const homeOneGigBonus = homeOneGigCount * 50000;
 
   const eligibleTvFree = (bundles || []).filter(bundle =>
-    inApplicationPeriod(bundle)
+    inTvFreeApplicationPeriod(bundle)
     && bundle.types.has('tvFree')
     && installedBy(bundle, '2026-09-07')
     && bundle.saleType !== 'allinone'
   );
   const tvFreeRate = eligibleTvFree.length >= 5 ? 30000 : eligibleTvFree.length >= 3 ? 20000 : eligibleTvFree.length >= 1 ? 10000 : 0;
   return {
-    homeCount: eligibleHome.length,
+    homeCount: homeGradeEligible.length,
+    homeGradeCount: homeGradeEligible.length,
+    homePaidCount: homePaidEligible.length,
     homeRate,
-    homeBonus: eligibleHome.length * homeRate,
+    homeBaseBonus,
+    homeOneGigCount,
+    homeOneGigBonus,
+    homeBonus: homeBaseBonus + homeOneGigBonus,
     tvFreeCount: eligibleTvFree.length,
     tvFreeRate,
     tvFreeBonus: eligibleTvFree.length * tvFreeRate,
-    total: eligibleHome.length * homeRate + eligibleTvFree.length * tvFreeRate,
+    total: homeBaseBonus + homeOneGigBonus + eligibleTvFree.length * tvFreeRate,
   };
 }
 
@@ -433,7 +457,7 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   });
 
   const homeFlatPay = soloPay + tvFreePay + smartHomePay;
-  if (weekendPolicy.homeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 홈 활성화', amount: weekendPolicy.homeBonus, note: `${weekendPolicy.homeCount}건 × ${weekendPolicy.homeRate.toLocaleString()}원` });
+  if (weekendPolicy.homeBonus) details.push({ date: '2026-09-11~14', customer: '개인 누적', type: '한시정책', item: '9월 주말 홈 활성화', amount: weekendPolicy.homeBonus, note: `그레이드 ${weekendPolicy.homeGradeCount}건 · 가정망 지급 ${weekendPolicy.homePaidCount}건 × ${weekendPolicy.homeRate.toLocaleString()}원${weekendPolicy.homeOneGigCount ? ` · 1G ${weekendPolicy.homeOneGigCount}건 × 50,000원` : ''}` });
   if (weekendPolicy.tvFreeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 TV프리 활성화', amount: weekendPolicy.tvFreeBonus, note: `${weekendPolicy.tvFreeCount}건 × ${weekendPolicy.tvFreeRate.toLocaleString()}원` });
   const limitedPolicyPay = weekendPolicy.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
