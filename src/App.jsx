@@ -47,6 +47,7 @@ import {
   buildStoreBriefingText,
   canAccessDailyBriefing,
   dailyInputStatus,
+  isBriefingMonthOverdueHome,
   projectMetric,
   resolveStoreBriefingGoals,
 } from './dailyBriefing';
@@ -10592,7 +10593,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
       ...order,employeeName:employeeMap[order.user_id]?.name||'',customerName:order.customer_name||customerMap[order.customer_id]?.customer_name||'고객명 미입력',plannedDate:String(order.planned_install_date||'').slice(0,10),
     }));
     const todayInstalls=homeRows.filter(order=>order.plannedDate===today);
-    const overdueInstalls=homeRows.filter(order=>order.plannedDate&&order.plannedDate<today);
+    const overdueInstalls=homeRows.filter(order=>isBriefingMonthOverdueHome(order,month,today));
     return {storeName:displayStoreName(branch),branch,inputRows,metrics,todayTasks,todayInstalls,overdueInstalls};
   });
   const visibleStores=storeKey==='all'?briefingStores:briefingStores.filter(store=>store.branch===storeKey);

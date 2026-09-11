@@ -31,6 +31,12 @@ export function resolveStoreBriefingGoals({ defaults = {}, companyGoals = {}, ch
   return { ...defaults, ...companyGoals, ...challengeGoals };
 }
 
+export function isBriefingMonthOverdueHome(order = {}, month = '', today = '') {
+  const sourceMonth = String(order.source_work_date || '').slice(0, 7);
+  const plannedDate = String(order.plannedDate || order.planned_install_date || '').slice(0, 10);
+  return sourceMonth === month && Boolean(plannedDate) && plannedDate < today;
+}
+
 function metricText(metric) {
   const suffix = metric.unit === 'won' ? '원' : metric.unit === 'point' ? 'P' : '건';
   const round = metric.unit === 'point'
@@ -109,11 +115,11 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
   if (overdueInstalls.length) lines.push(`⚠️ 예정일이 지난 홈 미완료 ${overdueInstalls.length}건 · ${overdueInstalls.map((row) => `${row.customerName || '고객명 미입력'}(${row.plannedDate || '일정 미정'}${row.employeeName ? ` · ${row.employeeName}` : ''})`).join(', ')}`);
 
   const actions = [];
-  if (weak.length) actions.push(`${weak.slice(0, 2).map((metric) => metric.label).join('·')} 실적을 우선 보완해주세요.`);
-  if (missingNames.length) actions.push(`${missingNames.join(', ')}님의 입력 여부를 확인해주세요.`);
-  if (unset.length) actions.push('미설정 목표도 확인해주세요.');
   if (todayTasks.length) actions.push(`고객 약속 ${todayTasks.length}건을 확인해주세요.`);
   if (todayInstalls.length) actions.push(`오늘 홈 설치 ${todayInstalls.length}건을 확인해주세요.`);
+  if (missingNames.length) actions.push(`${missingNames.join(', ')}님의 입력 여부를 확인해주세요.`);
+  if (weak.length) actions.push(`${weak.slice(0, 2).map((metric) => metric.label).join('·')} 실적을 우선 보완해주세요.`);
+  if (unset.length) actions.push('미설정 목표도 확인해주세요.');
   if (overdueInstalls.length) actions.push(`설치 지연 ${overdueInstalls.length}건의 진행 상태를 확인해주세요.`);
   if (actions.length) lines.push('', `[오늘 함께 챙길 것]`, ...actions.map((action) => `- ${action}`));
   else lines.push('', '오늘도 현재의 좋은 흐름을 함께 이어가겠습니다.');
