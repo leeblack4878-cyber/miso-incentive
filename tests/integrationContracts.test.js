@@ -704,6 +704,17 @@ test('홈 등록·수정·상태변경·삭제는 원자적 RPC와 변경 건수
   assert.match(migration, /revoke all on function public\.save_home_bundle_atomic[\s\S]*from public, anon/);
 });
 
+test('일반 직원은 본인 홈 주문만 원자적 수정 과정에서 교체 삭제할 수 있다', async () => {
+  const migration = await readFile(
+    new URL('../supabase/migrations/20260912120315_allow_employee_delete_own_home_orders.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /create policy home_orders_delete_own/);
+  assert.match(migration, /for delete\s+to authenticated/);
+  assert.match(migration, /using \(\(select auth\.uid\(\)\) = user_id\)/);
+  assert.doesNotMatch(migration, /can_write_target|security definer|for all/);
+});
+
 test('취소된 구버전 홈 주문은 이전 방식 입력 실적으로 다시 나타나지 않는다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(source, /const \[dayHomeOrders,setDayHomeOrders\]=useState\(\[\]\)/);
