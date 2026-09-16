@@ -6738,9 +6738,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setMobileSpotPolicies(data||[]);
       setMobileSpotPolicyId('');
       if(isSeptemberPolicyActive(month)){
-        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.filter(p=>!p.startDate||p.startDate<=saleDate).map(p=>({
+        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.filter(p=>(!p.startDate||p.startDate<=saleDate)&&(!p.endDate||p.endDate>=saleDate)).map(p=>({
           id:p.key,title:`${p.model} · ${p.saleType}`,replacement_amount:p.additionalAmount,
-          policy_type:'additive',start_date:p.startDate||'2026-09-01',end_date:'2099-12-31',...p,
+          policy_type:'additive',start_date:p.startDate||'2026-09-01',end_date:p.endDate||'2099-12-31',...p,
         })));
       }else{
         const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
@@ -7662,7 +7662,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
           legacySchemaVersion:saleSchemaVersion(editingSale),
           policySnapshot:editingSale.source_meta?.policySnapshot||currentPolicySnapshot(config),
           ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),
-          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:'additive',replacementAmount:newReplacement,normalMatrixFee:0,normalVasFee:0,eligible:!!(specialOutcome?.eligible??true),strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION} : unpaid?{policyId:null,policyTitle:'인센미지급 특가',policyType:'incentive_unpaid',replacementAmount:0,normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,policyVersion:SEPTEMBER_POLICY_VERSION}:null
+          specialPolicy: mobileSaleKind==='special' && mobileSpecialPolicyId ? {policyId:mobileSpecialPolicyId,policyTitle:newPolicy?.title||oldSp.policyTitle||'',policyType:'additive',replacementAmount:newReplacement,normalMatrixFee:0,normalVasFee:0,eligible:!!(specialOutcome?.eligible??true),strategicPoints,policyVersion:newPolicy?.policyVersion||SEPTEMBER_POLICY_VERSION} : unpaid?{policyId:null,policyTitle:'인센미지급 특가',policyType:'incentive_unpaid',replacementAmount:0,normalMatrixFee:newMatrixFee,normalVasFee:newVasFee,policyVersion:SEPTEMBER_POLICY_VERSION}:null
         }));
 
         const {error:saleUpdateError}=await supabase.from('customer_sales')
@@ -7810,7 +7810,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
         const replacement=unpaid?0:Number(outcome.additionalAmount||0);
         await supabase.from('customer_sales').update({
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
-          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:replacement,normalMatrixFee:unpaid?matrixFee:0,normalVasFee:unpaid?vasFee:0,eligible:!!outcome.eligible,strategicPoints,policyVersion:SEPTEMBER_POLICY_VERSION}})
+          source_meta:withCurrentSaleSchema({ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:salePolicySnapshot,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:(Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 ? mobileUsedMnpBundle : false),teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:replacement,normalMatrixFee:unpaid?matrixFee:0,normalVasFee:unpaid?vasFee:0,eligible:!!outcome.eligible,strategicPoints,policyVersion:unpaid?SEPTEMBER_POLICY_VERSION:(policy?.policyVersion||SEPTEMBER_POLICY_VERSION)}})
         }).eq('id',saved.saleId);
         saved._special={matrixFee:unpaid?matrixFee:0,vasFee:unpaid?vasFee:0,replacement};
       }
@@ -8116,7 +8116,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             const hasCalSummary=calHs>0||calSim>0||calHome>0;
             const dow = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, d).getDay();
             return (
-              <button key={d} onClick={() => selectDay(key)}
+              <button key={d} data-testid={`sale-day-${key}`} onClick={() => selectDay(key)}
                 className={`relative min-w-0 h-[58px] sm:h-[64px] rounded-lg text-xs font-medium flex flex-col items-center justify-start pt-2.5 overflow-hidden
                   ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
                 <span className="leading-none shrink-0">{d}</span>
@@ -8260,7 +8260,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                     });
 
                     const inc=meta.teamOnly?{total:0,rows:[]}:saleIncentiveBreakdown(sale); // 지원판매는 개인 인센티브 제외
-                    return <div key={group.key} className="px-4 py-3">
+                    return <div key={group.key} data-testid={`sale-bundle-${sale.customer_id}`} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-sm font-bold text-gray-900">{customerName}</div>
@@ -8819,7 +8819,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       )}
 
       {homeOrderDraft && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div role="dialog" aria-label="홈 실적 입력" className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="text-xs text-violet-500 font-semibold">한 번에 홈 판매 등록</div>
             <div className="text-lg font-bold text-gray-900 mt-1">홈 실적 입력</div>
@@ -8896,7 +8896,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
                         <div className="mt-4 rounded-xl border border-gray-100 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">고객약속 / 유지사항 <span className="font-normal text-gray-400">· 직접 작성</span></div>
               <input value={homeCustomTitle} onChange={e=>setHomeCustomTitle(e.target.value)} placeholder="약속 내용을 직접 작성해주세요" className="w-full border rounded-lg px-3 py-2.5 text-xs bg-white" />
-              <input type="date" value={homeCustomDueDate} onChange={e=>setHomeCustomDueDate(e.target.value)} className="mt-2 w-full border rounded-lg px-3 py-2.5 text-xs bg-white" />
+              <input aria-label="홈 약속 예정일" type="date" value={homeCustomDueDate} onChange={e=>setHomeCustomDueDate(e.target.value)} className="mt-2 w-full border rounded-lg px-3 py-2.5 text-xs bg-white" />
               {homeExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setHomeExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setHomeExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button onClick={()=>setHomeExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}
               <button type="button" onClick={()=>setHomeExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-violet-600">+ 약속 추가</button>
             </div>
@@ -8925,7 +8925,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
             {homeDirectComplete&&<div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
               <label className="block text-xs font-semibold text-emerald-800 mb-1.5">설치완료일 <span className="text-red-500">*</span></label>
-              <input type="date" value={homeActualCompleteDate} onChange={e=>setHomeActualCompleteDate(e.target.value)} className="w-full border border-emerald-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
+              <input aria-label="설치완료일" type="date" value={homeActualCompleteDate} onChange={e=>setHomeActualCompleteDate(e.target.value)} className="w-full border border-emerald-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
             </div>}
 
             <div className="text-[11px] text-gray-400 mt-2">

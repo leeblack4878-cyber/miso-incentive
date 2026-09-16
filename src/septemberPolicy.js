@@ -70,22 +70,26 @@ export const SEPTEMBER_SPECIAL_SALES = [
   ['s937_change', 'S937', '기기변경', 100000, 'high', 2],
   ['f776_mnp', 'F776-256/512', 'MNP', 50000, 'high', 2],
   ['f776_change', 'F776-256/512', '기기변경', 50000, 'high', 2],
-  ['f971_256_mnp', 'F971-256', 'MNP', 0, 'high', 2, '2026-09-11'],
-  ['f971_256_change', 'F971-256', '기기변경', 0, 'high', 2, '2026-09-11'],
+  ['f971_256_mnp', 'F971-256', 'MNP', 0, 'high', 2, '2026-09-11', '2026-09-14'],
+  ['f971_256_change', 'F971-256', '기기변경', 0, 'high', 2, '2026-09-11', '2026-09-14'],
+  ['f971_256_mnp_0915', 'F971-256', 'MNP', 50000, 'high', 2, '2026-09-15', '2099-12-31', '2026-09-v2'],
+  ['f971_256_change_0915', 'F971-256', '기기변경', 50000, 'high', 2, '2026-09-15', '2099-12-31', '2026-09-v2'],
   ['f971_mnp', 'F971-512', 'MNP', 50000, 'high', 2],
   ['f971_change', 'F971-512', '기기변경', 50000, 'high', 2],
   ['f976_mnp', 'F976-256/512', 'MNP', 0, 'high', 2],
   ['f976_change', 'F976-256/512', '기기변경', 0, 'high', 2],
   ['a175_m2_new', 'A175-M2', '010 신규', 50000, 'junior', 1.8],
   ['a176_mnp', 'A176', 'MNP', 0, '33plus', 2],
-].map(([key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate = '2026-09-01']) => ({
-  key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate,
+].map(([key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate = '2026-09-01', endDate = '2099-12-31', policyVersion = SEPTEMBER_POLICY_VERSION]) => ({
+  key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate, endDate, policyVersion,
 }));
 
 export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '' } = {}) {
   const policy = SEPTEMBER_SPECIAL_SALES.find(item => item.key === policyKey);
   if (!policy) return { eligible: false, additionalAmount: 0, reason: '정책 미선택' };
-  const dateEligible = !saleDate || !policy.startDate || String(saleDate).slice(0, 10) >= policy.startDate;
+  const normalizedSaleDate = String(saleDate || '').slice(0, 10);
+  const dateEligible = !normalizedSaleDate
+    || ((!policy.startDate || normalizedSaleDate >= policy.startDate) && (!policy.endDate || normalizedSaleDate <= policy.endDate));
   const planEligible = policy.planRule === 'high'
     ? ['115', 'youth85'].includes(planGroup)
     : policy.planRule === 'junior'

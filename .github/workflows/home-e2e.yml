@@ -1,0 +1,31 @@
+name: Authenticated home bundle regression
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: home-e2e-test-accounts
+  cancel-in-progress: false
+jobs:
+  home-e2e:
+    runs-on: ubuntu-latest
+    environment: home-e2e
+    timeout-minutes: 15
+    env:
+      E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      E2E_ALLOWED_PROJECT_REF: ${{ secrets.E2E_ALLOWED_PROJECT_REF }}
+      E2E_SUPABASE_PUBLIC_KEY: ${{ secrets.E2E_SUPABASE_PUBLIC_KEY }}
+      E2E_SUPABASE_SERVICE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_KEY }}
+      E2E_EMPLOYEE_EMAIL: ${{ secrets.E2E_EMPLOYEE_EMAIL }}
+      E2E_EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
+      E2E_OTHER_EMAIL: ${{ secrets.E2E_OTHER_EMAIL }}
+      E2E_OTHER_PASSWORD: ${{ secrets.E2E_OTHER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
