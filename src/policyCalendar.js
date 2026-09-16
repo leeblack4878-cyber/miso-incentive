@@ -40,6 +40,17 @@ export function isSeptemberPolicyActive(value = '') {
   return policyPeriodFor(value).version === SEPTEMBER_POLICY_VERSION;
 }
 
+// Display only: do not infer or activate a new month's payment policy.
+export function policyDisplayFor(month) {
+  const period = policyPeriodFor(month);
+  const policyMonth = period.version.slice(0, 7);
+  return {
+    version: period.version,
+    label: `${policyMonth} 지급기준`,
+    carriedForward: String(month).slice(0, 7) > policyMonth,
+  };
+}
+
 export function resolvePolicyConfigForMonth(month, legacyConfig = {}, history = null) {
   const period = policyPeriodFor(month);
   const frozenBase = history?.baseSnapshots?.[period.baseVersion]

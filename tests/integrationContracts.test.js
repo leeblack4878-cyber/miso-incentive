@@ -281,7 +281,7 @@ test('판매 저장 피드백은 최저보장 마감액이 아닌 실제 누적 
 });
 
 test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const source = (await Promise.all(['../src/App.jsx','../src/components/TodayWorkCard.jsx','../src/components/SpecialSalePolicyAdmin.jsx'].map(path=>readFile(new URL(path,import.meta.url),'utf8')))).join('\n');
   assert.match(source, /goCustomerCare=\(type\)=>/);
   assert.match(source, /navIntent\.type==='today'/);
   assert.match(source, /navIntent\.type==='overdue'/);
@@ -290,7 +290,7 @@ test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다
 });
 
 test('취소된 고객 약속은 직원 홈의 오늘·기한경과 건수에서 제외한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const source = (await Promise.all(['../src/App.jsx','../src/components/TodayWorkCard.jsx','../src/components/SpecialSalePolicyAdmin.jsx'].map(path=>readFile(new URL(path,import.meta.url),'utf8')))).join('\n');
   assert.match(source, /const pending=\(tasks\|\|\[\]\)\.filter\(x=>x\.status!==['"]completed['"]&&x\.status!==['"]cancelled['"]\)/);
   assert.match(source, /window\.dispatchEvent\(new CustomEvent\('customer-tasks-changed'/);
   assert.match(source, /window\.addEventListener\('customer-tasks-changed',refresh\)/);
@@ -356,7 +356,7 @@ test('중요한 성취 축하는 사용자별 한 번만 표시한다', async ()
 });
 
 test('알림센터는 본인 조회와 관리 범위 발송 RLS를 함께 사용한다', async () => {
-  const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const source = (await Promise.all(['../src/App.jsx','../src/components/TodayWorkCard.jsx','../src/components/SpecialSalePolicyAdmin.jsx'].map(path=>readFile(new URL(path,import.meta.url),'utf8')))).join('\n');
   const sql = await readFile(new URL('../supabase_employee_notifications.sql', import.meta.url), 'utf8');
   assert.match(source, /<NotificationBell userId=\{authUser\?\.id\}/);
   assert.match(source, /special_(approved|rejected)/);
