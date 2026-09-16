@@ -1,5 +1,3 @@
-const CustomerCareManager=React.lazy(()=>import('./components/CustomerCareManager'));
-const DailyInputTab=React.lazy(()=>import('./components/DailyInputTab'));
 import { isIncentiveUnpaidSpecial, currentPolicySnapshot, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, homeNetworkLabel, DEFAULT_RENEW, MATRIX_ROWS, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, tierBonus, monthsSince, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, HOME_ORDER_PRODUCTS, careTaskCategory, addDaysDate, HS_PARTS, matrixRowCount, hsCount } from './appShared';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Trophy, Home, ClipboardList, History, Users, ChevronDown, Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2, UserPlus, Info, Calendar, ChevronRight, AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star } from 'lucide-react';
@@ -16,6 +14,8 @@ import PolicyVersionNotice from './components/PolicyVersionNotice';
 import Section from './components/Section';
 import ColHeader from './components/ColHeader';
 import { POSITIONS, ROLE_LABELS, MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName, fmtNum, fmtInputNumber, won } from './uiDefinitions';
+const CustomerCareManager=React.lazy(()=>import('./components/CustomerCareManager'));
+const DailyInputTab=React.lazy(()=>import('./components/DailyInputTab'));
 const RatesManager=React.lazy(()=>import('./components/RatesManager'));
 const PermissionsManager=React.lazy(()=>import('./components/PermissionsManager'));
 const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePolicyAdmin'));
