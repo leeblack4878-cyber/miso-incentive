@@ -2,10 +2,9 @@ import React, {useState,useEffect} from 'react';
 import {Info,Loader2} from 'lucide-react';
 import {supabase} from '../supabase';
 import {friendlyError} from '../errorMessages';
-import {POSITIONS,displayStoreName} from '../uiDefinitions';
+import {POSITIONS,ROLE_LABELS,displayStoreName} from '../uiDefinitions';
 import Section from './Section';
 
-const ROLE_LABELS = { employee: '일반 직원', manager: '매니저(관리자 권한)', admin: '전체 관리자' };
 
 function PermissionsManager({ employees }) {
   const [rolesById, setRolesById] = useState({});

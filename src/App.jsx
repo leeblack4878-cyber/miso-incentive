@@ -17,7 +17,7 @@ import PolicyVersionNotice from './components/PolicyVersionNotice';
 import PolicyInputNotice from './components/PolicyInputNotice';
 import Section from './components/Section';
 import ColHeader from './components/ColHeader';
-import {POSITIONS,DEFAULT_ACTIVITY_SUPPORT_MAX,MATRIX_ROW_DEFS,MATRIX_COLS,displayStoreName,fmtNum,fmtInputNumber,won} from './uiDefinitions';
+import {POSITIONS,ROLE_LABELS,DEFAULT_ACTIVITY_SUPPORT_MAX,MATRIX_ROW_DEFS,MATRIX_COLS,displayStoreName,fmtNum,fmtInputNumber,won} from './uiDefinitions';
 const RatesManager=React.lazy(()=>import('./components/RatesManager'));
 const PermissionsManager=React.lazy(()=>import('./components/PermissionsManager'));
 const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePolicyAdmin'));

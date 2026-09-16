@@ -1,5 +1,7 @@
 export const POSITIONS = ['점장', '부점장', '매니저', '사원', '기타'];
 
+export const ROLE_LABELS = { employee: '일반 직원', manager: '매니저(관리자 권한)', admin: '전체 관리자' };
+
 export const DEFAULT_ACTIVITY_SUPPORT_MAX = 2300000;
 
 export const MATRIX_ROW_DEFS = [
