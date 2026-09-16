@@ -3,7 +3,7 @@
 ## 확인된 운영 상태 (2026-09-16)
 
 - PR #16은 main 1bfc95036c66907f6db40dbb3bff50defab9b1df로 병합, Vercel Production 성공 및 main CI 35111365951(190개+모킹 UI 9개+빌드) 성공 확인.
-- 문서 추가 후 동일 코드 재실행 35111221677에서 홈 재저장 자체는 성공했으나 새로고침 중 사라진 배지 팝업 클릭 대기로 timeout, fixture 후처리가 미완료됐다. 테스트 팝업 대기/독립 후처리 timeout을 보완하는 fix/home-e2e-transient-popup 진행 중. 운영 정책/화면 변경은 없다.
+- 문서 추가 후 동일 코드 재실행 35111221677에서 첫 홈 저장은 성공했으나 새로고침 중 사라진 배지 팝업 클릭 대기로 timeout, fixture 후처리가 미완료됐다. [PR #17](https://github.com/leeblack4878-cyber/miso-incentive/pull/17)에서 팝업 대기/독립 후처리 timeout을 보완했다. 검증된 staging 가상 계정 2개의 잔여 데이터만 정리했고 운영 정책/화면 변경은 없다. 최종 회귀 및 병합 상태는 PR #17 본문과 CI에 기록한다.
 - 최신 개선 PR: [#16](https://github.com/leeblack4878-cyber/miso-incentive/pull/16). 코드 SHA 8b74e924e9344cbea8528808dc45275677adc5d6에서 단위·계약 **190개**, 모킹 UI **9개**, 빌드 및 실제 Auth/Chromium/DB 홈 E2E **4개** 통과. 정책/UI run 35110245188, 실제 Auth run 35110245127.
 - 운영 DB migration bind_permission_scopes_to_ids **20260916144810 적용 완료**. 전체 접근 결과 동등성 검사 통과, 함수 ACL/보안 속성 유지 재확인. 보안 advisor 항목/건수는 적용 전과 같으며 기존 경고 해소 작업은 포함하지 않았다.
 - 운영은 GitHub main → Vercel 자동 배포. 최종 병합 SHA와 Production 배포 증거는 PR #16 본문에 기록한다. 이전 PR #14·#15의 기준 SHA 6e25caf47fa2f313264b38e6146fcd7ea4636393도 Production 성공 확인.
