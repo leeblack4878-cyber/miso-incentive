@@ -30,7 +30,9 @@ export function payload(userId, customerId, customerName, smart = false, complet
       metric_label:p[3],source_type:'home_order',schema_version:3,
       source_meta:{schemaVersion:3,unifiedHome:true,networkType:'household',internetSpeed:'500',mainTvPlanLevel:'broadcastPass',mobileSimul:'none'} })),
     p_tasks:[{user_id:userId,customer_id:customerId,source_sale_id:ids[0],task_type:'custom',title:'E2E 유지 확인',base_date:date,due_date:'2026-09-20',status:'pending',task_meta:{}}],
-    p_expenses:[{user_id:userId,source_sale_id:ids[0],expense_date:date,amount:33000,category:'오퍼',customer_name:customerName,memo:'E2E 설치비'}],
+    // Deliberately attach expense to a different sale: no query order can recover
+    // both children by reading only the first sale in the bundle.
+    p_expenses:[{user_id:userId,source_sale_id:ids[1],expense_date:date,amount:33000,category:'오퍼',customer_name:customerName,memo:'E2E 설치비'}],
     p_replace_sale_ids:[],p_replace_order_ids:[],p_daily_record:null };
 }
 export const test = base.extend({
