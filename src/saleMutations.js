@@ -56,3 +56,26 @@ export async function deleteExpense(client, id, userId) {
   if (error) throw error;
   if (data?.length !== 1) throw new Error('EXPENSE_DELETE_MISMATCH');
 }
+
+export async function readSaleChildren(client,userId,saleId) {
+  const [tasks,expenses]=await Promise.all([
+    client.from('customer_tasks').select('*').eq('user_id',userId).eq('source_sale_id',saleId).order('id'),
+    client.from('sales_expenses').select('*').eq('user_id',userId).eq('source_sale_id',saleId).order('id'),
+  ]);
+  if(tasks.error)throw tasks.error;
+  if(expenses.error)throw expenses.error;
+  return {tasks:tasks.data||[],expenses:expenses.data||[]};
+}
+
+export async function saveSaleAtomic(client,p) {
+  const {data,error}=await client.rpc('save_sale_atomic',{
+    p_user_id:p.userId,p_sale_id:p.saleId,p_customer_name:p.customerName,p_sale_date:p.saleDate,
+    p_source_type:p.sourceType,p_metric_label:p.metricLabel,p_meta:p.meta,
+    p_tasks:p.tasks||[],p_expenses:p.expenses||[],p_spot:p.spot||null,p_credit:p.credit||null,
+    p_expected_day:p.expectedDay,p_next_day:p.nextDay,p_edit:!!p.editingSale,
+    p_expected_meta:p.editingSale?.source_meta??null,p_expected_children:p.editingSale?.children??null,
+  });
+  if(error)throw error;
+  if(data?.sale_count!==1)throw new Error('SALE_SAVE_MISMATCH');
+  return data;
+}

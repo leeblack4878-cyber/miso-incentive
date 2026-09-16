@@ -53,3 +53,17 @@ test('10월은 기존 9월 정책 유지 사실만 표시하며 정책 선택을
  assert.equal(policyDisplayFor('2026-10').version,policyPeriodFor('2026-10').version);
  assert.equal(policyPeriodFor('2026-10').version,'2026-09-v1');
 });
+
+test('atomic save rejects a zero-row result and preserves the original database error',async()=>{
+ const {saveSaleAtomic}=await import('../src/saleMutations.js');
+ const params={userId:'owner',saleId:'sale',customerName:'customer',saleDate:'2026-09-16',sourceType:'mobile',meta:{ri:0,ci:0},expectedDay:null,nextDay:{matrix:[[1]]}};
+ await assert.rejects(saveSaleAtomic({rpc:async()=>({data:{sale_count:0},error:null})},params),/SALE_SAVE_MISMATCH/);
+ const original=new Error('db rollback');
+ await assert.rejects(saveSaleAtomic({rpc:async()=>({data:null,error:original})},params),e=>e===original);
+});
+
+test('mobile edit refuses an unreadable expense snapshot instead of opening an empty form',async()=>{
+ const {readSaleChildren}=await import('../src/saleMutations.js');
+ const client={from(table){const q={select(){return q},eq(){return q},order(){return q},then(resolve){return Promise.resolve({data:[],error:table==='sales_expenses'?new Error('expense lookup failed'):null}).then(resolve)}};return q;}};
+ await assert.rejects(readSaleChildren(client,'owner','sale'),/expense lookup failed/);
+});
