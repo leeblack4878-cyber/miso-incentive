@@ -2,6 +2,8 @@
 
 ## 확인된 운영 상태 (2026-09-16)
 
+- PR #16은 main 1bfc95036c66907f6db40dbb3bff50defab9b1df로 병합, Vercel Production 성공 및 main CI 35111365951(190개+모킹 UI 9개+빌드) 성공 확인.
+- 문서 추가 후 동일 코드 재실행 35111221677에서 첫 홈 저장은 성공했으나 새로고침 중 사라진 배지 팝업 클릭 대기로 timeout, fixture 후처리가 미완료됐다. [PR #17](https://github.com/leeblack4878-cyber/miso-incentive/pull/17)에서 팝업 대기/독립 후처리 timeout을 보완했다. 검증된 staging 가상 계정 2개의 잔여 데이터만 정리했고 운영 정책/화면 변경은 없다. 최종 회귀 및 병합 상태는 PR #17 본문과 CI에 기록한다.
 - 최신 개선 PR: [#16](https://github.com/leeblack4878-cyber/miso-incentive/pull/16). 코드 SHA 8b74e924e9344cbea8528808dc45275677adc5d6에서 단위·계약 **190개**, 모킹 UI **9개**, 빌드 및 실제 Auth/Chromium/DB 홈 E2E **4개** 통과. 정책/UI run 35110245188, 실제 Auth run 35110245127.
 - 운영 DB migration bind_permission_scopes_to_ids **20260916144810 적용 완료**. 전체 접근 결과 동등성 검사 통과, 함수 ACL/보안 속성 유지 재확인. 보안 advisor 항목/건수는 적용 전과 같으며 기존 경고 해소 작업은 포함하지 않았다.
 - 운영은 GitHub main → Vercel 자동 배포. 최종 병합 SHA와 Production 배포 증거는 PR #16 본문에 기록한다. 이전 PR #14·#15의 기준 SHA 6e25caf47fa2f313264b38e6146fcd7ea4636393도 Production 성공 확인.
@@ -19,7 +21,7 @@
 - staging 적용 및 tests/db/permission-scopes.sql 통과: 전 범위, 이름 변경, 임원 제외, 허용된 세 역할×승인상태×활성 여부, 동명이인, 지원판매/다른 seller 차단. 모든 fixture 롤백.
 - 기존 tests/db/sale-integrity.sql도 ID fixture로 갱신 후 통과: 삭제/승인 롤백, 반복요청, 개인 격리, 월 마감. staging에 E2E 직원 2명만 남고 판매·주문 0건 재확인.
 - 지급기준·권한 관리 화면과 공통 표시 컴포넌트/상수를 App에서 분리. 관리자 탭 진입 시 지연 로딩. 추출한 함수/상수 본문이 원본과 동일함을 확인.
-- 단위·계약 **190개**, 로컬 빌드 통과. 메인 JS 970.19 → 952.70kB, gzip 277.09 → 273.15kB. 전체 App 분해 완료는 아니며 번들 크기 경고는 남는다.
+- 단위·계약 **190개**, 빌드 통과. 최종 메인 JS 970.19 → 952.76kB, gzip 277.09 → 273.17kB. 전체 App 분해 완료는 아니며 번들 크기 경고는 남는다.
 - 이번 코드의 GitHub UI/실제 Auth CI와 운영 DB 적용은 완료. 프런트 배포는 PR #16의 최종 상태와 Production status를 확인한다. 모킹 UI 통과만으로 실제 Auth 통과를 대신하지 않는다.
 - 첫 PR CI에서 ROLE_LABELS 공유 상수 누락을 직원 캘린더 브라우저 검사가 검출했다. 공용 모듈에서 App과 권한 화면 모두 가져오도록 수정했고 운영에는 실패한 버전을 반영하지 않았다.
 
