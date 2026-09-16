@@ -227,27 +227,7 @@ export default function ProfileEditRequests() {
     setBusyId(req.id);
     setError('');
 
-    if (approve) {
-      const { error: applyError } = await supabase
-        .from('profiles')
-        .update(req.changes)
-        .eq('id', req.user_id);
-
-      if (applyError) {
-        console.error('APPLY EDIT ERROR:', applyError);
-        setError(friendlyError(applyError));
-        setBusyId(null);
-        return;
-      }
-    }
-
-    const { error: decisionError } = await supabase
-      .from('profile_edit_requests')
-      .update({
-        status: approve ? 'approved' : 'rejected',
-        decided_at: new Date().toISOString(),
-      })
-      .eq('id', req.id);
+    const { error: decisionError } = await supabase.rpc('decide_profile_edit_atomic',{p_request_id:req.id,p_approve:approve});
 
     if (decisionError) {
       console.error('DECIDE EDIT REQUEST ERROR:', decisionError);

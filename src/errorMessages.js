@@ -24,6 +24,7 @@ export function friendlyError(err) {
     return '이번 달은 마감되어 수정할 수 없어요. 관리자에게 문의해주세요.';
   }
   if (lower.includes('row-level security') || lower.includes('row level security')) return '처리가 허용되지 않았어요. 로그인 계정의 권한과 해당 월의 마감 여부를 관리자에게 확인해주세요.';
+  if (err?.code === 'PGRST116') return '변경할 내역이 없거나 수정 권한을 확인하지 못했어요. 새로고침 후 다시 확인해주세요.';
   if (err?.code === 'PGRST202') return '저장 기능 업데이트가 필요해요. 관리자에게 문의해주세요.';
 
   return msg ? `오류: ${msg}` : '알 수 없는 오류가 발생했어요. 잠시 후 다시 시도해주세요.';

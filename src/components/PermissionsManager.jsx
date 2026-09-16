@@ -29,7 +29,7 @@ function PermissionsManager({ employees }) {
   const saveRole = async (id, role) => {
     setSavingId(id);
     setError('');
-    const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', id).select('id').single();
     if (error) { console.error('ROLE SAVE ERROR:', error); setError(friendlyError(error)); }
     setSavingId(null);
   };

@@ -1,5 +1,7 @@
 // Real App/calendar rendering with mocked configuration API; not authenticated E2E.
 import {test,expect} from '@playwright/test';
+test.beforeEach(async({page})=>{page.on('pageerror',error=>console.log('CALENDAR_RUNTIME_ERROR',error.message));});
+test.afterEach(async({page},info)=>{if(info.status!==info.expectedStatus)console.log('CALENDAR_FAILURE_VIEW',(await page.locator('body').innerText()).slice(0,1200));});
 async function openCalendar(page,{ready=[],failed=false}={}){
  const writes=[];
  await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
@@ -36,4 +38,10 @@ test('정책 상태 조회 실패는 입력 가능 상태로 바뀌지 않는다
  await expect(page.getByTestId('policy-input-pending')).toContainText('10월 정책 입력 전');
  await expect(page.getByRole('button',{name:/모바일 실적 입력/})).toBeDisabled();
  expect(writes).toEqual([]);
+});
+
+for(const width of [320,390])test(`${width}px 분리된 실적입력 화면이 가로로 넘치지 않는다`,async({page})=>{
+ await page.setViewportSize({width,height:844});await openCalendar(page,{ready:['2026-10']});
+ await expect(page.getByRole('button',{name:/모바일 실적 입력/})).toBeEnabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

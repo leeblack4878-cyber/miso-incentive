@@ -80,7 +80,7 @@ export default function PendingApprovals() {
     const { error } = await supabase
       .from('profiles')
       .update(patch)
-      .eq('id', id);
+      .eq('id', id).select('id').single();
 
     if (error) {
       console.error('APPROVE/REJECT ERROR:', error);

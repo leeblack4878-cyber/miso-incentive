@@ -6,7 +6,7 @@ function fakeClient(failTable) {
   const calls=[];
   return {calls,from(table){
     const query={};
-    for(const method of ['select','eq','in','neq','order']) query[method]=(...args)=>{calls.push([table,method,...args]);return query;};
+    for(const method of ['select','eq','in','neq','not','order']) query[method]=(...args)=>{calls.push([table,method,...args]);return query;};
     query.then=(resolve,reject)=>Promise.resolve({data:[{id:table,source_sale_id:'second'}],error:table===failTable?new Error('lookup failed'):null}).then(resolve,reject);
     return query;
   }};
