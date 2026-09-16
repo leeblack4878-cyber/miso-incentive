@@ -4,7 +4,19 @@
 DB 응답을 mock하지 않는다. 로컬 Vite 서버만 열고 테스트 전용 Supabase에 연결한다.
 기존 `npm test`의 소스 계약 검사와 별도이며, 설정이 없으면 실패한다(skip/pass 아님).
 
-## 최초 환경 준비
+## 현재 준비된 CI 환경
+
+서울 `ahmvrflklvmdprolauuy`에 운영 스키마와 권한을 복제했으며 운영 업무 데이터는 복사하지 않았다.
+GitHub Settings → Environments → `home-e2e` → Environment secrets에 **테스트 프로젝트의**
+`E2E_SUPABASE_SERVICE_KEY` 하나만 등록한 뒤 Actions → Authenticated home bundle regression → Run workflow를 실행한다.
+URL·프로젝트 ID·공개 키는 workflow에 설정되어 있다. 비밀 키는 코드·채팅에 기록하지 않는다.
+`provision-ci.js`가 Auth Admin API로 테스트 직원 두 명을 생성하고 승인된 사원 fixture를 삽입한다.
+이는 회원가입 승인 흐름 자체를 검증하는 테스트가 아니다. 기존 정책/트리거/RLS는 수정하지 않는다.
+다음 실행부터는 서버 관리 fixture 표시와 프로필·업무 데이터 부재를 확인한 후 전용 비밀번호만 재생성한다.
+비밀번호는 마스킹하고 runner 환경에만 전달한다. 계정은 테스트 후 유지된다.
+상세 검증/제외 범위는 `staging-setup.md` 참고.
+
+## 별도 환경 또는 로컬 실행 준비
 
 1. 운영과 분리된 Supabase 프로젝트에 현재 운영 스키마·함수·RLS를 배포한다.
    운영 고객/판매 데이터는 복사하지 않는다. 이 저장소의 마이그레이션은 초기 전체 스키마를
