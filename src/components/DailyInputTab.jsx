@@ -1471,7 +1471,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             return (
               <button key={d} data-testid={`sale-day-${key}`} onClick={() => selectDay(key)}
                 className={`relative min-w-0 h-[58px] sm:h-[64px] rounded-lg text-xs font-medium flex flex-col items-center justify-start pt-2.5 overflow-hidden
-                  ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-violet-50 text-violet-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
+                  ${isSel ? (off ? 'bg-emerald-600 text-white' : 'bg-brand-600 text-white') : off ? 'bg-emerald-50 text-emerald-700' : has ? 'bg-brand-50 text-brand-700' : dow === 0 ? 'bg-red-50/50 text-red-400' : dow === 6 ? 'bg-blue-50/50 text-blue-400' : 'bg-gray-50 text-gray-500'}`}>
                 <span className="leading-none shrink-0">{d}</span>
                 <div className="h-[32px] mt-1.5 flex flex-col items-center justify-start shrink-0">
                   {off ? (
@@ -1484,7 +1484,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                     </div>
                   )}
                 </div>
-                {!off && !hasCalSummary && has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-violet-500" />}
+                {!off && !hasCalSummary && has && !isSel && <span className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
               </button>
             );
           })}
@@ -1517,7 +1517,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             onClick={()=>setZeroConfirmed(!day.inputConfirmed)}
             disabled={locked||dayHasPerformanceData(day)}
             className={`shrink-0 px-3 py-2 rounded-lg text-xs font-semibold border ${
-              dayHasPerformanceData(day)?'bg-gray-100 text-gray-400 border-gray-100':day.inputConfirmed?'bg-violet-600 text-white border-violet-600':'bg-white text-violet-600 border-violet-200'
+              dayHasPerformanceData(day)?'bg-gray-100 text-gray-400 border-gray-100':day.inputConfirmed?'bg-brand-600 text-white border-brand-600':'bg-white text-brand-600 border-brand-200'
             } disabled:opacity-60`}
           >
             {dayHasPerformanceData(day)?'실적 입력됨':day.inputConfirmed?'0건 확인 ✓':'0건 확인'}
@@ -1621,18 +1621,18 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             {labels.map((label,i)=><div key={i} className="text-xs text-gray-600">{label}</div>)}
                           </div>
                           {homeSales.some(legacySaleBadge)&&<span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
-                          {meta.teamOnly&&<span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">지원 판매 · {displayStoreName(meta.creditedStore)} 팀 실적</span>}
+                          {meta.teamOnly&&<span className="inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-100">지원 판매 · {displayStoreName(meta.creditedStore)} 팀 실적</span>}
                         </div>
                         <div className="shrink-0 text-right">
                           <div className="relative mb-2">
                             <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
-                              className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
+                              className={`text-[12px] font-bold ${inc.total>0?'text-brand-700':'text-gray-400'}`}>
                               {inc.total>0?`+${won(inc.total)}`:'0원'}
                             </button>
                             <div className="text-[9px] text-gray-400">예상 인센티브</div>
                             {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
                               <div className="text-[10px] font-bold text-gray-700 mb-1">이 판매건 예상 인센티브</div><div className="text-[9px] text-gray-400 mb-2">설치예정 홈은 현재 월 입력 기준으로 미리 계산하며, 실제 지급은 설치완료 후 반영돼요.</div>
-                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
                             </div>}
                           </div>
                           <div className="flex gap-1">
@@ -1660,18 +1660,18 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                           </div>
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
                           {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&<div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
-                          {meta.teamOnly&&<div className="text-[10px] font-semibold text-violet-600 mt-1">지원 판매 · {displayStoreName(meta.creditedStore)} 팀 실적 전용</div>}
+                          {meta.teamOnly&&<div className="text-[10px] font-semibold text-brand-600 mt-1">지원 판매 · {displayStoreName(meta.creditedStore)} 팀 실적 전용</div>}
                         </div>
                         <div className="shrink-0 text-right">
                           <div className="relative mb-2">
                             <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
-                              className={`text-[12px] font-bold ${inc.total>0?'text-violet-700':'text-gray-400'}`}>
+                              className={`text-[12px] font-bold ${inc.total>0?'text-brand-700':'text-gray-400'}`}>
                               {inc.total>0?`+${won(inc.total)}`:'0원'}
                             </button>
                             <div className="text-[9px] text-gray-400">인센티브</div>
                             {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
                               <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
-                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-violet-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
                             </div>}
                           </div>
                           <div className="flex gap-1">
@@ -1709,19 +1709,19 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           )}
 
           <div className="bg-white rounded-xl border border-gray-100 p-3">
-            {teamSupportEligible&&currentEmp?.id===authUser?.id&&<div className={`mb-3 rounded-xl border p-3 ${teamSupportMode?'border-violet-200 bg-violet-50':'border-gray-100 bg-gray-50'}`}>
+            {teamSupportEligible&&currentEmp?.id===authUser?.id&&<div className={`mb-3 rounded-xl border p-3 ${teamSupportMode?'border-brand-200 bg-brand-50':'border-gray-100 bg-gray-50'}`}>
               <label className="flex items-center justify-between gap-3"><div><div className="text-xs font-bold text-gray-800">지원 판매 · 팀 실적만 반영</div><div className="text-[10px] text-gray-500 mt-0.5">내 개인 실적·급여에서는 제외되며, 판매를 저장하면 선택이 초기화돼요.</div></div><input type="checkbox" checked={teamSupportMode} onChange={event=>{setTeamSupportMode(event.target.checked);setTeamSupportStore('')}} className="w-4 h-4"/></label>
-              {teamSupportMode&&<select value={teamSupportStore} onChange={event=>setTeamSupportStore(event.target.value)} className="mt-3 w-full rounded-xl border border-violet-200 bg-white px-3 py-2.5 text-sm font-semibold text-violet-700"><option value="">실적을 반영할 매장 선택</option>{salesStores.map(store=><option key={store} value={store}>{displayStoreName(store)}</option>)}</select>}
+              {teamSupportMode&&<select value={teamSupportStore} onChange={event=>setTeamSupportStore(event.target.value)} className="mt-3 w-full rounded-xl border border-brand-200 bg-white px-3 py-2.5 text-sm font-semibold text-brand-700"><option value="">실적을 반영할 매장 선택</option>{salesStores.map(store=><option key={store} value={store}>{displayStoreName(store)}</option>)}</select>}
             </div>}
             <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
             <div className="grid grid-cols-2 gap-2">
               <button type="button" disabled={locked} onClick={()=>{setInputCategory('mobile');setPickedRow(null);addOne();}}
-                className={`p-4 rounded-2xl border text-left ${inputCategory==='mobile'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
+                className={`p-4 rounded-2xl border text-left ${inputCategory==='mobile'?'bg-brand-50 border-brand-300':'bg-white border-gray-200'}`}>
                 <div className="text-xl">📱</div><div className="text-sm font-bold text-gray-800 mt-1">모바일 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가입구분 · 요금제 · VAS · 스팟 · 오퍼</div>
               </button>
               <button type="button" disabled={locked} onClick={()=>{setInputCategory('home');setPickedRow(null);openHomeOrder();}}
-                className={`p-4 rounded-2xl border text-left ${inputCategory==='home'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
+                className={`p-4 rounded-2xl border text-left ${inputCategory==='home'?'bg-brand-50 border-brand-300':'bg-white border-gray-200'}`}>
                 <div className="text-xl">🏠</div><div className="text-sm font-bold text-gray-800 mt-1">홈 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
               </button>
@@ -1731,7 +1731,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </button>
               <button type="button" disabled={locked||activeTeamSupport} onClick={()=>setExtraInput('sono')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'상품 · 건수 · 고객(선택)'}</div></button>
               <button type="button" disabled={locked||activeTeamSupport} onClick={()=>setExtraInput('tailored')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'업셀 건수 · 금액'}</div></button>
-              <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-violet-50 border-violet-200"><div className="text-xl">📌</div><div className="text-sm font-bold text-violet-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-violet-500 mt-1">기존·신규 고객 약속</div></button>
+              <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-brand-50 border-brand-200"><div className="text-xl">📌</div><div className="text-sm font-bold text-brand-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-brand-500 mt-1">기존·신규 고객 약속</div></button>
               <button type="button" disabled={locked} onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
             </div>
 
@@ -1743,31 +1743,31 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       </>
       )}
 
-      {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-violet-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
+      {extraInput&&(<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"><div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl"><div className="text-lg font-bold">{extraInput==='sono'?'소노 입력':extraInput==='tailored'?'맞춤제안 입력':'고객등록 입력'}</div><input value={extraCustomer} onChange={e=>setExtraCustomer(e.target.value)} placeholder="고객명 (선택)" className="mt-4 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='sono'&&<select value={extraSonoKey} onChange={e=>setExtraSonoKey(e.target.value)} className="mt-2 w-full border rounded-xl px-3 py-3 text-sm">{(config.sono||DEFAULT_SONO).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}</select>}<input inputMode="numeric" value={fmtInputNumber(extraCount)} onChange={e=>setExtraCount(e.target.value.replace(/\D/g,''))} placeholder="건수" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>{extraInput==='tailored'&&<input inputMode="numeric" value={fmtInputNumber(extraAmount)} onChange={e=>setExtraAmount(e.target.value.replace(/\D/g,''))} placeholder="업셀 금액" className="mt-2 w-full border rounded-xl px-3 py-3 text-sm"/>}<div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setExtraInput(null)} className="py-2.5 bg-gray-100 rounded-xl">취소</button><button onClick={submitExtraInput} className="py-2.5 bg-brand-600 text-white rounded-xl font-bold">등록</button></div></div></div>)}
 
       {standalonePromiseOpen&&<StandalonePromiseModal userId={currentEmp?.id} month={month} selectedDay={selectedDay} onClose={()=>setStandalonePromiseOpen(false)}/>}
 
       {householdRenewOpen&&(
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">인터넷 재약정</div>
+            <div className="text-xs text-brand-500 font-semibold">인터넷 재약정</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{householdRenewEditIndex===null?'재약정 실적 입력':'재약정 실적 수정'}</div>
             <div className="text-xs text-gray-400 mt-1">재약정일 {month}-{selectedDay}</div>
             <label className="block text-xs font-semibold text-gray-600 mt-4 mb-1.5">고객명 (선택)</label>
             <input value={householdRenewForm.customer||''} onChange={e=>setHouseholdRenewForm({...householdRenewForm,customer:e.target.value})} className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm" placeholder="고객명"/>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">인터넷 속도</div>
-            <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
+            <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 상품</div>
-            <div className="space-y-1.5">{(isSeptemberPolicyActive(month)?[{key:'premiumSafe',label:'프리미엄 안심 보상'},{key:'premium',label:'동일 또는 그 외 요금제'}]:HOUSEHOLD_RENEW_PLANS).map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
+            <div className="space-y-1.5">{(isSeptemberPolicyActive(month)?[{key:'premiumSafe',label:'프리미엄 안심 보상'},{key:'premium',label:'동일 또는 그 외 요금제'}]:HOUSEHOLD_RENEW_PLANS).map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 구성</div>
-            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
+            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
             {householdRenewForm.homeOnly&&!isSeptemberPolicyActive(month)&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
             <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
             <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2">{isSeptemberPolicyActive(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>속도 상향 재약정 (+30,000원)</span><input type="checkbox" checked={!!householdRenewForm.speedUp} onChange={e=>setHouseholdRenewForm({...householdRenewForm,speedUp:e.target.checked})}/></label>}<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label>{!isSeptemberPolicyActive(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label>}<div className="text-[10px] text-gray-400 leading-relaxed">{isSeptemberPolicyActive(month)?'인터넷 요금제 하향 재약정은 지급되지 않습니다.':'100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.'}</div></div>
-            <div className="mt-4 rounded-2xl bg-violet-50 border border-violet-100 p-4"><div className="text-[10px] text-violet-500">자동 계산 지급액</div><div className="text-2xl font-bold text-violet-700 mt-0.5">{won(householdRenewPreview.amount)}</div><div className="text-[10px] text-violet-600 mt-1">생산성 KPI · 인터넷 0.3P{householdRenewForm.homeOnly?'':' + TV 0.3P'}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
-            {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-violet-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
-            <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
+            <div className="mt-4 rounded-2xl bg-brand-50 border border-brand-100 p-4"><div className="text-[10px] text-brand-500">자동 계산 지급액</div><div className="text-2xl font-bold text-brand-700 mt-0.5">{won(householdRenewPreview.amount)}</div><div className="text-[10px] text-brand-600 mt-1">생산성 KPI · 인터넷 0.3P{householdRenewForm.homeOnly?'':' + TV 0.3P'}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
+            {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-brand-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
+            <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
           </div>
         </div>
       )}
@@ -1775,18 +1775,18 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       {mobileSaleDraft && (
         <div role="dialog" aria-label="모바일 실적 입력" className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">{editingSale?'판매건 수정':legacyConversion?.kind==='mobile'?'이전 판매건 복원':'한 번에 판매 등록'}</div>
+            <div className="text-xs text-brand-500 font-semibold">{editingSale?'판매건 수정':legacyConversion?.kind==='mobile'?'이전 판매건 복원':'한 번에 판매 등록'}</div>
             <div className="text-lg font-bold text-gray-900 mt-1">{legacyConversion?.kind==='mobile'?'모바일 실적 수정':'모바일 실적 입력'}</div>
             <div className="text-xs text-gray-400 mt-1">개통일 {month}-{selectedDay}</div>
             <div className="mt-3 grid grid-cols-3 gap-1.5 text-[10px] font-bold">
-              <div className="rounded-lg bg-violet-600 text-white py-2 text-center">1 판매정보</div>
-              <div className={`rounded-lg py-2 text-center ${mobileDetailsOpen?'bg-violet-100 text-violet-700':'bg-gray-100 text-gray-400'}`}>2 추가항목</div>
+              <div className="rounded-lg bg-brand-600 text-white py-2 text-center">1 판매정보</div>
+              <div className={`rounded-lg py-2 text-center ${mobileDetailsOpen?'bg-brand-100 text-brand-700':'bg-gray-100 text-gray-400'}`}>2 추가항목</div>
               <div className={`rounded-lg py-2 text-center ${mobileCustomerName.trim()?'bg-emerald-50 text-emerald-700':'bg-gray-100 text-gray-400'}`}>3 확인·등록</div>
             </div>
-            {!editingSale&&recentMobileCombos.length>0&&<div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
-              <div className="text-[10px] font-bold text-violet-700 mb-2">최근 판매 조합 빠른 선택</div>
+            {!editingSale&&recentMobileCombos.length>0&&<div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+              <div className="text-[10px] font-bold text-brand-700 mb-2">최근 판매 조합 빠른 선택</div>
               <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                {recentMobileCombos.map((combo,i)=><button key={`${combo.label}-${i}`} type="button" onClick={()=>applyRecentMobileCombo(combo)} className="shrink-0 rounded-lg bg-white border border-violet-100 px-3 py-2 text-left">
+                {recentMobileCombos.map((combo,i)=><button key={`${combo.label}-${i}`} type="button" onClick={()=>applyRecentMobileCombo(combo)} className="shrink-0 rounded-lg bg-white border border-brand-100 px-3 py-2 text-left">
                   <div className="text-[11px] font-bold text-gray-700">{combo.label}</div>
                   <div className="text-[9px] text-gray-400 mt-0.5">VAS {(combo.vasKeys||[]).filter(k=>k!=='vasNone').length} · 2ND {(combo.bundle2ndKeys||[]).length}</div>
                 </button>)}
@@ -1803,7 +1803,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="grid grid-cols-3 gap-2">
                 <button type="button"
                   onClick={()=>{setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileSpecialExceptionAmount('')}}
-                  className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='normal'?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>
+                  className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='normal'?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>
                   {mobileSaleKind==='normal'?'✓ ':''}일반 판매
                 </button>
                 <button type="button"
@@ -1930,7 +1930,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       }}
                       className={`text-left px-3 py-2.5 rounded-xl border text-xs ${
                         selected
-                          ? 'bg-violet-50 border-violet-200 text-violet-700'
+                          ? 'bg-brand-50 border-brand-200 text-brand-700'
                           : 'bg-white border-gray-100 text-gray-600'
                       }`}
                     >
@@ -1949,7 +1949,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 </button>
                 {mobileMoreVasOpen&&<div className="grid grid-cols-1 gap-1.5 mt-1.5">
                   {additionalMainVas.map(v=>{const selected=mobileVasKeys.includes(v.key);return <button key={v.key} type="button" onClick={()=>setMobileVasKeys(prev=>{const clean=prev.filter(k=>k!=='vasNone');return selected?clean.filter(k=>k!==v.key):[...clean,v.key]})}
-                    className={`text-left px-3 py-2.5 rounded-xl border text-xs ${selected?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
+                    className={`text-left px-3 py-2.5 rounded-xl border text-xs ${selected?'bg-brand-50 border-brand-200 text-brand-700':'bg-white border-gray-100 text-gray-600'}`}>
                     <span className="font-semibold">{selected?'✓ ':''}{v.label}</span>{v.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>}
                   </button>})}
                 </div>}
@@ -1963,16 +1963,16 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="mt-4">
                 <div className="text-xs font-semibold text-gray-600 mb-2">4. 중고 MNP 결합 인센티브</div>
                 <button type="button" onClick={()=>setMobileUsedMnpBundle(v=>!v)}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs ${mobileUsedMnpBundle?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border text-xs ${mobileUsedMnpBundle?'bg-brand-50 border-brand-200 text-brand-700':'bg-white border-gray-100 text-gray-600'}`}>
                   <span className="font-semibold">{mobileUsedMnpBundle?'✓ ':''}중고 MNP 61군↑ 결합</span>
-                  <span className="float-right text-[10px] text-violet-600 font-bold">+{won(Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||100000))}</span>
+                  <span className="float-right text-[10px] text-brand-600 font-bold">+{won(Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||100000))}</span>
                 </button>
                 <div className="text-[10px] text-gray-400 mt-1.5">SIM MNP(선약) · 61군 이상 · 개통 및 결합완료 건만 체크해주세요.</div>
               </div>
             )}
 
             <button type="button" onClick={()=>setMobileDetailsOpen(v=>!v)}
-              className={`mt-4 w-full rounded-xl border px-3 py-3 text-left ${mobileDetailsOpen?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-100 text-gray-700'}`}>
+              className={`mt-4 w-full rounded-xl border px-3 py-3 text-left ${mobileDetailsOpen?'bg-brand-50 border-brand-200 text-brand-700':'bg-gray-50 border-gray-100 text-gray-700'}`}>
               <span className="text-xs font-bold">{mobileDetailsOpen?'추가 항목 접기':'2ND·고객약속·영업비용 추가'}</span>
               <span className="float-right text-xs">{mobileDetailsOpen?'▲':'▼'}</span>
               {!mobileDetailsOpen&&<div className="text-[10px] text-gray-400 mt-1">필요한 경우에만 열어 입력하세요.</div>}
@@ -1986,7 +1986,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
                   const bundleVasKeys=mobileBundleVasMap[v.key]||[];
-                  return <div key={v.key} className={`rounded-xl border ${selected?'bg-violet-50 border-violet-200':'bg-white border-gray-100'}`}>
+                  return <div key={v.key} className={`rounded-xl border ${selected?'bg-brand-50 border-brand-200':'bg-white border-gray-100'}`}>
                     <button type="button" onClick={()=>setMobileBundle2ndKeys(prev=>{
                       if(prev.includes(v.key)){
                         setMobileBundleVasMap(m=>{const n={...m};delete n[v.key];return n;});
@@ -1996,7 +1996,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       if(prev.length>=2){ showAppToast('2ND 판매는 최대 2개까지 선택할 수 있어요.',{tone:'info'}); return prev; }
                       setMobileBundleSaleTypeMap(m=>({...m,[v.key]:m[v.key]||'normal'}));
                       return [...prev,v.key];
-                    })} className={`w-full text-left px-3 py-2.5 text-xs ${selected?'text-violet-700':'text-gray-600'}`}>
+                    })} className={`w-full text-left px-3 py-2.5 text-xs ${selected?'text-brand-700':'text-gray-600'}`}>
                       <span className="font-semibold">{selected?'✓ ':''}{v.label.replace('2ND · ','')}</span><span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>
                     </button>
                     {selected&&<div className="px-3 pb-3">
@@ -2006,7 +2006,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                           {(isSeptemberPolicyActive(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
-                              className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-violet-50 border-violet-200 text-violet-700'):'bg-white border-gray-100 text-gray-500'}`}>
+                              className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-brand-50 border-brand-200 text-brand-700'):'bg-white border-gray-100 text-gray-500'}`}>
                               {current===kind?'✓ ':''}{label}
                             </button>
                           })}
@@ -2029,7 +2029,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                               next=vasSelected?clean.filter(k=>k!==vas.key):[...clean,vas.key];
                             }
                             return {...prev,[v.key]:next};
-                          })} className={`text-left px-2.5 py-2 rounded-lg border text-[11px] ${vasSelected?'bg-white border-violet-200 text-violet-700':'bg-white/80 border-gray-100 text-gray-600'}`}>
+                          })} className={`text-left px-2.5 py-2 rounded-lg border text-[11px] ${vasSelected?'bg-white border-brand-200 text-brand-700':'bg-white/80 border-gray-100 text-gray-600'}`}>
                             <span className="font-semibold">{vasSelected?'✓ ':''}{vas.label}</span>{vas.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(vas.rate)}</span>}
                           </button>
                         })}
@@ -2047,7 +2047,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   const el=document.getElementById('mobile-care-options');
                   if(el)el.classList.toggle('hidden');
                 }}
-                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileCareKeys.length||mobileCustomTitle?'bg-violet-50 border-violet-200 text-violet-700':'bg-gray-50 border-gray-100 text-gray-600'}`}
+                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileCareKeys.length||mobileCustomTitle?'bg-brand-50 border-brand-200 text-brand-700':'bg-gray-50 border-gray-100 text-gray-600'}`}
               >
                 + 고객 약속{mobileCareKeys.length?` ${mobileCareKeys.length}`:''}
               </button>
@@ -2087,7 +2087,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 saleDate={`${month}-${selectedDay}`}
               />
               {mobileExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button type="button" onClick={()=>setMobileExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}
-              <button type="button" onClick={()=>setMobileExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-violet-600">+ 약속 추가</button>
+              <button type="button" onClick={()=>setMobileExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-brand-600">+ 약속 추가</button>
             </div>
 
             {!editingSale&&!isSeptemberPolicyActive(month)&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
@@ -2134,27 +2134,27 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </>}
 
             {editingSale&&(
-              <div className="mt-4 rounded-xl bg-violet-50 px-3 py-2.5 text-[11px] text-violet-700">
+              <div className="mt-4 rounded-xl bg-brand-50 px-3 py-2.5 text-[11px] text-brand-700">
                 가입구분·요금제군·VAS·고객 약속을 함께 수정해요.
                 {editingCompletedTaskCount>0&&<div className="mt-1 font-semibold">이미 완료된 약속 {editingCompletedTaskCount}건은 그대로 유지됩니다.</div>}
-                <div className="mt-1 text-violet-500">기존 스팟은 유지되고, 영업비용과 고객약속은 함께 수정할 수 있어요.</div>
+                <div className="mt-1 text-brand-500">기존 스팟은 유지되고, 영업비용과 고객약속은 함께 수정할 수 있어요.</div>
               </div>
             )}
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
-              {mobilePreview&&<div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5">
-                <div className="text-[10px] font-bold text-violet-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
-                <div className="text-[9px] text-violet-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
-                {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-violet-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
+              {mobilePreview&&<div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5">
+                <div className="text-[10px] font-bold text-brand-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
+                <div className="text-[9px] text-brand-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
+                {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-brand-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
                 {!editingSale&&<>
                   <div className="mt-2 text-sm font-black text-emerald-700">이번 판매 총 +{won(mobilePreview.incentive)}</div>
                   <div className="mt-2 grid grid-cols-3 gap-1.5">
-                    {[['성과P',mobilePreview.points],['생산성',mobilePreview.productivity],['전략P',mobilePreview.strategicPoints]].map(([label,value])=><div key={label} className="rounded-lg bg-white/80 px-2 py-1.5 text-center"><div className="text-[9px] text-violet-400">{label}</div><div className="text-[11px] font-bold text-violet-700">+{fmtNum(value,1)}P</div></div>)}
+                    {[['성과P',mobilePreview.points],['생산성',mobilePreview.productivity],['전략P',mobilePreview.strategicPoints]].map(([label,value])=><div key={label} className="rounded-lg bg-white/80 px-2 py-1.5 text-center"><div className="text-[9px] text-brand-400">{label}</div><div className="text-[11px] font-bold text-brand-700">+{fmtNum(value,1)}P</div></div>)}
                   </div>
-                  <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-violet-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
+                  <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-brand-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
                   {mobileCalcOpen&&<div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 space-y-1">
-                    {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-violet-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
-                    <div className="pt-1 border-t border-violet-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
+                    {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-brand-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
+                    <div className="pt-1 border-t border-brand-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
                   </div>}
                 </>}
               </div>}
@@ -2162,7 +2162,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 <button onClick={()=>{setMobileSaleDraft(null);setEditingSale(null);setEditingCompletedTaskCount(0)}} disabled={mobileSaleSaving}
                   className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button>
                 <button onClick={submitMobileSale} disabled={mobileSaleSaving||!mobileCustomerName.trim()||!mobileSaleKind||!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci)}
-                  className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">
+                  className="py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold disabled:opacity-50">
                   {mobileSaleSaving?(editingSale?'수정 중...':'판매건 등록 중...'):(editingSale?'수정 저장':'실적 등록')}
                 </button>
               </div>
@@ -2174,7 +2174,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       {homeOrderDraft && (
         <div role="dialog" aria-label="홈 실적 입력" className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="text-xs text-violet-500 font-semibold">한 번에 홈 판매 등록</div>
+            <div className="text-xs text-brand-500 font-semibold">한 번에 홈 판매 등록</div>
             <div className="text-lg font-bold text-gray-900 mt-1">홈 실적 입력</div>
             <div className="text-xs text-gray-400 mt-1">{month}-{selectedDay} 접수</div>
             {!homeOrderDraft?.editing&&<div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-700">항목 선택만으로는 저장되지 않아요. 맨 아래 <b>등록</b>을 눌러야 홈 주문·고객정보·약속이 함께 등록됩니다.</div>}
@@ -2187,7 +2187,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               value={homeCustomerName}
               onChange={(e) => setHomeCustomerName(e.target.value)}
               placeholder="고객명을 입력해주세요"
-              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-violet-200"
+              className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-200"
             />
 
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">
@@ -2198,7 +2198,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 <button key={n.key} type="button" onClick={()=>{setHomeNetworkType(n.key);setHomeMainTvPlan('')}}
                   className={`py-3 rounded-xl border text-sm font-bold ${
                     homeNetworkType===n.key
-                      ? 'bg-violet-50 border-violet-300 text-violet-700'
+                      ? 'bg-brand-50 border-brand-300 text-brand-700'
                       : 'bg-white border-gray-200 text-gray-500'
                   }`}>
                   {homeNetworkType===n.key?'✓ ':''}{n.label}
@@ -2212,22 +2212,22 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             <div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">3. 판매 상품 <span className="font-normal text-gray-400">· 상품을 누른 뒤 바로 세부 선택</span></div>
               <div className="space-y-2">
-                <div className={`rounded-xl border p-2.5 ${homeInternet?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
-                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-violet-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-violet-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
-                  {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">{l}</button>)}</div>}
+                <div className={`rounded-xl border p-2.5 ${homeInternet?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
+                  {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">{l}</button>)}</div>}
                   {homeInternet&&homeInternetSpeed&&<button type="button" onClick={()=>setHomeInternetSpeed('')} className="mt-1 text-[10px] font-semibold text-gray-400">속도 변경</button>}
                 </div>
-                <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
-                  <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});if(homeMainTv){setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeMainTv(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeMainTv?'text-violet-700':'text-gray-600'}>{homeMainTv?'✓ ':''}TV(주)</span>{homeMainTvPlan&&<span className="text-xs text-violet-600">{homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}</span>}</button>
-                  {homeMainTv&&!homeMainTvPlan&&<div className={`grid ${homeNetworkType==='soho'?'grid-cols-2':'grid-cols-3'} gap-2 mt-2`}>{(homeNetworkType==='soho'?[['premium','프리미엄'],['belowPremium','프리미엄 미만']]:[['broadcastPass','방송패스'],['premium','프리미엄'],['belowPremium','프리미엄 미만']]).map(([k,l])=><button key={k} type="button" onClick={()=>setHomeMainTvPlan(k)} className="py-2.5 rounded-lg border border-violet-200 bg-white text-[11px] font-bold text-violet-700">{l}</button>)}</div>}
+                <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{if(!homeInternet)return showAppToast('TV(주)는 인터넷과 함께 선택해주세요.',{tone:'info'});if(homeMainTv){setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeMainTv(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeMainTv?'text-brand-700':'text-gray-600'}>{homeMainTv?'✓ ':''}TV(주)</span>{homeMainTvPlan&&<span className="text-xs text-brand-600">{homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}</span>}</button>
+                  {homeMainTv&&!homeMainTvPlan&&<div className={`grid ${homeNetworkType==='soho'?'grid-cols-2':'grid-cols-3'} gap-2 mt-2`}>{(homeNetworkType==='soho'?[['premium','프리미엄'],['belowPremium','프리미엄 미만']]:[['broadcastPass','방송패스'],['premium','프리미엄'],['belowPremium','프리미엄 미만']]).map(([k,l])=><button key={k} type="button" onClick={()=>setHomeMainTvPlan(k)} className="py-2.5 rounded-lg border border-brand-200 bg-white text-[11px] font-bold text-brand-700">{l}</button>)}</div>}
                   {homeMainTv&&homeMainTvPlan&&<button type="button" onClick={()=>setHomeMainTvPlan('')} className="mt-1 text-[10px] font-semibold text-gray-400">요금제 변경</button>}
                 </div>
-                <div className={`rounded-xl border p-2.5 ${homeSubTv?'border-violet-300 bg-violet-50/50':'border-gray-200 bg-white'}`}>
-                  <button type="button" onClick={()=>{setHomeSubTv(v=>!v);if(homeSubTv)setHomeSubTvType('')}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeSubTv?'text-violet-700':'text-gray-600'}>{homeSubTv?'✓ ':''}TV(부)</span>{homeSubTv&&homeSubTvType&&<span className="text-xs text-violet-600">{homeSubTvType==='free'?'프리 부셋탑':'일반 부셋탑'}</span>}</button>
-                  {homeSubTv&&!homeSubTvType&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className="py-2.5 rounded-lg border border-violet-200 bg-white text-xs font-bold text-violet-700">프리 부셋탑</button></div>}
+                <div className={`rounded-xl border p-2.5 ${homeSubTv?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
+                  <button type="button" onClick={()=>{setHomeSubTv(v=>!v);if(homeSubTv)setHomeSubTvType('')}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeSubTv?'text-brand-700':'text-gray-600'}>{homeSubTv?'✓ ':''}TV(부)</span>{homeSubTv&&homeSubTvType&&<span className="text-xs text-brand-600">{homeSubTvType==='free'?'프리 부셋탑':'일반 부셋탑'}</span>}</button>
+                  {homeSubTv&&!homeSubTvType&&<div className="grid grid-cols-2 gap-2 mt-2"><button type="button" onClick={()=>setHomeSubTvType('normal')} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">일반 부셋탑</button><button type="button" onClick={()=>setHomeSubTvType('free')} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">프리 부셋탑</button></div>}
                   {homeSubTv&&homeSubTvType&&<button type="button" onClick={()=>setHomeSubTvType('')} className="mt-1 text-[10px] font-semibold text-gray-400">종류 변경</button>}
                 </div>
-                <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`w-full rounded-xl border p-3 text-left text-sm font-bold ${homeSmartHome?'border-violet-300 bg-violet-50 text-violet-700':'border-gray-200 bg-white text-gray-600'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
+                <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`w-full rounded-xl border p-3 text-left text-sm font-bold ${homeSmartHome?'border-brand-300 bg-brand-50 text-brand-700':'border-gray-200 bg-white text-gray-600'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
               </div>
               <div className="text-[10px] text-gray-400 mt-2">TV(부)와 스마트홈은 인터넷 없이도 선택할 수 있어요.</div>
             </div>
@@ -2235,7 +2235,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             <div className="mt-4 rounded-xl border border-gray-100 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">4. 모바일 동시판매 <span className="font-normal text-gray-400">· 해당 시 선택</span></div>
               <div className="grid grid-cols-1 gap-2">
-                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-violet-50 border-violet-300 text-violet-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
+                {[['none','없음'],['newChange','신규/기변 동시판매'],['mnp','MNP 동시판매'],['usedMnp','중고 MNP 동시판매']].map(([k,l])=><button key={k} type="button" onClick={()=>{if(k==='usedMnp'&&homeNetworkType!=='household')return showAppToast('중고 MNP 동시판매는 가정망에서만 적용할 수 있어요.',{tone:'info'});setHomeMobileSimul(k)}} className={`py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${homeMobileSimul===k?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>{homeMobileSimul===k?'✓ ':''}{l}</button>)}
               </div>
               {homeMobileSimul==='usedMnp'&&<div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-700">✓ 중고 MNP 85군↑ 선약 동시판매 · 가정망에서만 적용</div>}
             </div>
@@ -2251,7 +2251,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <input value={homeCustomTitle} onChange={e=>setHomeCustomTitle(e.target.value)} placeholder="약속 내용을 직접 작성해주세요" className="w-full border rounded-lg px-3 py-2.5 text-xs bg-white" />
               <input aria-label="홈 약속 예정일" type="date" value={homeCustomDueDate} onChange={e=>setHomeCustomDueDate(e.target.value)} className="mt-2 w-full border rounded-lg px-3 py-2.5 text-xs bg-white" />
               {homeExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setHomeExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setHomeExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button onClick={()=>setHomeExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}
-              <button type="button" onClick={()=>setHomeExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-violet-600">+ 약속 추가</button>
+              <button type="button" onClick={()=>setHomeExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-brand-600">+ 약속 추가</button>
             </div>
 
 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -2286,7 +2286,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </div>
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
-            <div className="mb-2.5 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5"><div className="text-[10px] font-bold text-violet-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-violet-500 mt-1">{[homeInternet&&(homeMainTv?`인터넷+TV(주)${isSeptemberPolicyActive(month)?` ${homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}`:''}`:`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
+            <div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5"><div className="text-[10px] font-bold text-brand-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-brand-500 mt-1">{[homeInternet&&(homeMainTv?`인터넷+TV(주)${isSeptemberPolicyActive(month)?` ${homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}`:''}`:`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -2300,7 +2300,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 type="button"
                 onClick={submitHomeOrder}
                 disabled={homeOrderSaving || !homeCustomerName.trim() || !homeNetworkType || (!homeInternet&&!homeMainTv&&!homeSubTv&&!homeSmartHome) || (homeMainTv&&!homeMainTvPlan)}
-                className="py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
+                className="py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold disabled:opacity-50"
               >
                 {homeOrderSaving ? (homeOrderDraft?.editing?'수정 중...':'등록 중...') : (homeOrderDraft?.editing?'수정 저장':'등록')}
               </button>
@@ -2314,7 +2314,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-24px)] max-w-sm">
           <div className={`rounded-2xl shadow-xl border p-4 ${
             toast.kind === 'achievement'
-              ? 'bg-violet-700 border-violet-600 text-white'
+              ? 'bg-brand-700 border-brand-600 text-white'
               : 'bg-gray-900 border-gray-800 text-white'
           }`}>
             <div className="flex items-start justify-between gap-3">

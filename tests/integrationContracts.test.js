@@ -285,7 +285,7 @@ test('직원 오늘 할 일은 항목별 화면과 필터로 바로 이동한다
   assert.match(source, /navIntent\.type==='today'/);
   assert.match(source, /navIntent\.type==='overdue'/);
   assert.match(source, /navIntent\.type==='home'/);
-  assert.match(source, /마감 전 확인할 누락/);
+  assert.match(source, /todayInputDone\?'입력 완료':'실적 입력'/);
 });
 
 test('취소된 고객 약속은 직원 홈의 오늘·기한경과 건수에서 제외한다', async () => {
@@ -330,10 +330,10 @@ test('관리자 홈은 푸시 미설정과 최근 발송 성공·실패를 구�
 
 test('관리자 큰 카테고리 아래 세부 탭은 아이콘과 선택 표시가 분명한 버튼으로 보인다', async () => {
   const source = await readAppSource();
-  assert.match(source, /세부 메뉴/);
+  assert.match(source, /activeSectionTabs\.map/);
   assert.match(source, /<n\.icon size=\{12\}/);
-  assert.match(source, /border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100/);
-  assert.match(source, /rounded-full bg-violet-500/);
+  assert.match(source, /border-brand-300 bg-white text-brand-700 shadow-sm ring-1 ring-brand-100/);
+  assert.match(source, /rounded-full bg-brand-500/);
 });
 
 test('관리자 세부 메뉴는 최대 3개의 개인 바로가기를 제공한다', async () => {

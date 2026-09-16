@@ -28,8 +28,8 @@ const BASELINE_LABELS = {
 const HQ_STRUCTURE_EDITOR_ID = 'a50a0979-acef-40b1-98b7-f05074f1c835';
 
 const FORECAST_TONES = {
-  violet: { wrap: 'bg-violet-50', label: 'text-violet-500', value: 'text-violet-800', arrow: 'text-violet-300' },
-  indigo: { wrap: 'bg-indigo-50', label: 'text-indigo-500', value: 'text-indigo-800', arrow: 'text-indigo-300' },
+  violet: { wrap: 'bg-brand-50', label: 'text-brand-500', value: 'text-brand-800', arrow: 'text-brand-300' },
+  indigo: { wrap: 'bg-brand-50', label: 'text-brand-500', value: 'text-brand-800', arrow: 'text-brand-300' },
   emerald: { wrap: 'bg-emerald-50', label: 'text-emerald-500', value: 'text-emerald-800', arrow: 'text-emerald-300' },
   amber: { wrap: 'bg-amber-50', label: 'text-amber-600', value: 'text-amber-800', arrow: 'text-amber-300' },
 };
@@ -297,15 +297,15 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
     increase: positiveIncrease(iptvNext.totalAmount, iptvGrade.totalAmount),
   };
   return <div className="space-y-4">
-    <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-violet-900 p-5 text-white">
-      <div className="flex items-center gap-2 text-xs font-bold text-violet-200"><Building2 size={15}/> 본사 구조정책</div>
+    <div className="rounded-2xl bg-gradient-to-br from-slate-900 to-brand-900 p-5 text-white">
+      <div className="flex items-center gap-2 text-xs font-bold text-brand-200"><Building2 size={15}/> 본사 구조정책</div>
       <div className="mt-2 text-xl font-black">{month.replace('-', '년 ')}월 마감 전망</div>
       <div className="mt-1 text-xs text-slate-300">자가매장 운영비 · 월간판매량 · 매출지표 · 월간 시상 · 홈 구조정책 합계</div>
       {state.loading ? <div className="mt-6 flex items-center gap-2 text-sm text-slate-300"><Loader2 size={16} className="animate-spin"/> 계산 중...</div> : <>
         {runRate?.isCurrentMonth ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-2 rounded-2xl bg-white/10 p-4">
           <div className="min-w-0"><div className="text-[10px] text-slate-300">현재 실적 기준 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black">{wonText(state.currentTotalAmount)}</div></div>
-          <div className="pb-1 text-xl text-violet-300">→</div>
-          <div className="min-w-0 text-right"><div className="text-[10px] text-violet-200">월말 예상 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black text-white">{wonText(state.forecastTotalAmount)}</div></div>
+          <div className="pb-1 text-xl text-brand-300">→</div>
+          <div className="min-w-0 text-right"><div className="text-[10px] text-brand-200">월말 예상 합계</div><div className="mt-1 whitespace-nowrap text-xl font-black text-white">{wonText(state.forecastTotalAmount)}</div></div>
         </div> : <div className="mt-5 rounded-2xl bg-white/10 p-4"><div className="text-[10px] text-slate-300">마감 기준 합계</div><div className="mt-1 text-2xl font-black">{wonText(state.currentTotalAmount)}</div></div>}
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">{[
           ['자가매장 운영비', forecastSelfStore.totalAmount],
@@ -327,7 +327,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       {[
         ['base', '기존 구조정책', '4개'],
         ['home', '홈 구조정책', '4개'],
-      ].map(([key, label, count]) => <button key={key} type="button" onClick={() => setPolicyTab(key)} className={`rounded-xl px-3 py-3 text-xs font-bold transition ${policyTab === key ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500'}`}><span>{label}</span><span className={`ml-1.5 text-[9px] ${policyTab === key ? 'text-violet-400' : 'text-gray-400'}`}>{count}</span></button>)}
+      ].map(([key, label, count]) => <button key={key} type="button" onClick={() => setPolicyTab(key)} className={`rounded-xl px-3 py-3 text-xs font-bold transition ${policyTab === key ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}><span>{label}</span><span className={`ml-1.5 text-[9px] ${policyTab === key ? 'text-brand-400' : 'text-gray-400'}`}>{count}</span></button>)}
     </div>
 
     {policyTab === 'home' && <>
@@ -402,8 +402,8 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
 
     {policyTab === 'base' && <>
 
-    <div className="rounded-2xl border border-violet-100 bg-white overflow-hidden">
-      <div className="bg-violet-50 px-4 py-4"><div className="text-lg font-black text-gray-900">자가매장 운영비 지원제도</div><div className="mt-1 text-[10px] text-gray-500">인정 실적이 회사 기준 668건을 넘는 구간부터 누진 지급합니다.</div></div>
+    <div className="rounded-2xl border border-brand-100 bg-white overflow-hidden">
+      <div className="bg-brand-50 px-4 py-4"><div className="text-lg font-black text-gray-900">자가매장 운영비 지원제도</div><div className="mt-1 text-[10px] text-gray-500">인정 실적이 회사 기준 668건을 넘는 구간부터 누진 지급합니다.</div></div>
       <ForecastAmountStrip currentAmount={result.totalAmount} forecastAmount={forecastSelfStore.totalAmount} runRate={runRate} detail={`현재 ${countText(result.recognized)}건 · 월말 예상 ${countText(forecastSelfStore.recognized)}건`} />
       <BenefitGuide {...selfGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
@@ -411,7 +411,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         ['월말 예상 인정', `${countText(forecastSelfStore.recognized)}건`],
         ['회사 기준', `${countText(result.baseline)}건`],
         ['예상 초과', `${countText(forecastSelfStore.excess)}건`],
-      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-violet-700">{value}</div></div>)}</div>
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-brand-700">{value}</div></div>)}</div>
     </div>
 
     <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
@@ -419,18 +419,18 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       <div className="divide-y divide-gray-50">
         {Object.keys(SELF_STORE_WEIGHTS).map(key => <div key={key} className="grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3">
           <div className="min-w-0"><div className="text-xs font-semibold text-gray-700">{PRODUCT_LABELS[key]}</div><div className="mt-1 text-[10px] text-gray-400">{key==='hs'?'SIM MNP 제외 · ':''}{countText(result.counts[key])}건 × {SELF_STORE_WEIGHTS[key]}</div></div>
-          <div className="text-sm font-black text-violet-700">{countText(result.counts[key] * SELF_STORE_WEIGHTS[key])}건</div>
+          <div className="text-sm font-black text-brand-700">{countText(result.counts[key] * SELF_STORE_WEIGHTS[key])}건</div>
         </div>)}
       </div>
     </div>
 
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="rounded-2xl border border-gray-100 bg-white p-4"><div className="text-sm font-bold">기준 수량 668건</div><div className="mt-3 grid grid-cols-2 gap-2">{Object.entries(SELF_STORE_BASELINE).map(([key, value]) => <div key={key} className="flex justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs"><span className="text-gray-500">{BASELINE_LABELS[key]}</span><b>{value}건</b></div>)}</div></div>
-      <div className="rounded-2xl border border-gray-100 bg-white p-4"><div className="text-sm font-bold">초과 구간별 예상 지급</div><div className="mt-3 space-y-2"><div className="flex justify-between rounded-xl bg-violet-50 p-3 text-xs"><span>초과 1~150건 · 건당 5만원</span><b className="text-violet-700">{countText(result.tier1Count)}건 · {wonText(result.tier1Amount)}</b></div><div className="flex justify-between rounded-xl bg-indigo-50 p-3 text-xs"><span>초과 151번째부터 · 건당 6만원</span><b className="text-indigo-700">{countText(result.tier2Count)}건 · {wonText(result.tier2Amount)}</b></div></div><div className="mt-3 text-[10px] leading-relaxed text-gray-400">151건을 넘겨도 앞선 150건의 단가는 바뀌지 않습니다. 월말 최종 개통·설치 상태에 따라 확정 금액은 달라질 수 있어요.</div></div>
+      <div className="rounded-2xl border border-gray-100 bg-white p-4"><div className="text-sm font-bold">초과 구간별 예상 지급</div><div className="mt-3 space-y-2"><div className="flex justify-between rounded-xl bg-brand-50 p-3 text-xs"><span>초과 1~150건 · 건당 5만원</span><b className="text-brand-700">{countText(result.tier1Count)}건 · {wonText(result.tier1Amount)}</b></div><div className="flex justify-between rounded-xl bg-brand-50 p-3 text-xs"><span>초과 151번째부터 · 건당 6만원</span><b className="text-brand-700">{countText(result.tier2Count)}건 · {wonText(result.tier2Amount)}</b></div></div><div className="mt-3 text-[10px] leading-relaxed text-gray-400">151건을 넘겨도 앞선 150건의 단가는 바뀌지 않습니다. 월말 최종 개통·설치 상태에 따라 확정 금액은 달라질 수 있어요.</div></div>
     </div>
 
-    <div className="rounded-2xl border border-indigo-100 bg-white overflow-hidden">
-      <div className="bg-indigo-50 px-4 py-4"><div className="text-lg font-black text-gray-900">월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
+    <div className="rounded-2xl border border-brand-100 bg-white overflow-hidden">
+      <div className="bg-brand-50 px-4 py-4"><div className="text-lg font-black text-gray-900">월간판매량 정책</div><div className="mt-1 text-[10px] text-gray-500">월 포인트 구간별 누진금액에 115군 비중 지급률을 적용합니다.</div></div>
       <ForecastAmountStrip currentAmount={retail.totalAmount} forecastAmount={forecastRetail.totalAmount} runRate={runRate} tone="indigo" detail={`현재 ${countText(retail.points)}P · 월말 예상 ${countText(forecastRetail.points)}P`} />
       <BenefitGuide {...retailGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
@@ -438,7 +438,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
         ['115군 비중', `${countText(retail.plan115Ratio)}%`],
         ['지급률', `${countText(retail.paymentRate * 100)}%`],
         ['현재 기준액', wonText(retail.totalAmount)],
-      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-indigo-700">{value}</div></div>)}</div>
+      ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-brand-700">{value}</div></div>)}</div>
       <div className="border-t px-4 py-3"><div className="text-xs font-bold text-gray-700">포인트 구간별 계산</div><div className="mt-2 space-y-1.5">{retail.tiers.map((tier,index)=><div key={tier.from} className="rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-700">{index===0?'150~300P':index===retail.tiers.length-1?'1,501P 이상':`${tier.from+1}~${tier.to}P`}</span><b>{wonText(tier.amount)}</b></div><div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-gray-400"><span>1P당 {wonText(tier.rate)}</span><span>적용 {countText(tier.pointCount)}P</span></div></div>)}</div></div>
       <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500"><b className="text-gray-700">포인트:</b> MNP·010신규 2P, 기변 95군↑ 1P, 기변 95군 미만 0.3P, 2ND·SIM MNP 1P<br/><b className="text-gray-700">115군 비중:</b> HS 중 115군 비중이며 SIM MNP는 분모·자수 모두 제외 · 40%↑ 110%, 50%↑ 120%, 60%↑ 130%</div>
     </div>

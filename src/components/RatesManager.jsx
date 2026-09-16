@@ -47,7 +47,7 @@ function MobilePointItemsEditor({ items, onChange }) {
           <input type="checkbox" checked={newCountsTenure} onChange={(e) => setNewCountsTenure(e.target.checked)} className="w-3.5 h-3.5" />
           근속수당 포함
         </label>
-        <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold"><Plus size={14} /> 항목 추가</button>
+        <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold"><Plus size={14} /> 항목 추가</button>
       </div>
     </Section>
   );
@@ -87,7 +87,7 @@ function KpiItemsEditor({ items, onChange }) {
           <input type="number" step="0.1" placeholder="포인트" value={newPoint} onChange={(e) => setNewPoint(e.target.value)} className="w-20 text-right border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm" />
           <span className="text-xs text-gray-400">P</span>
         </div>
-        <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold"><Plus size={14} /> 항목 추가</button>
+        <button onClick={addItem} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold"><Plus size={14} /> 항목 추가</button>
       </div>
     </Section>
   );
@@ -218,7 +218,7 @@ function RatesManager({ config, persistConfig }) {
               </div>
             )}
           </div>)}
-          <div className="flex items-center justify-between px-4 py-3 gap-3 bg-violet-50/40">
+          <div className="flex items-center justify-between px-4 py-3 gap-3 bg-brand-50/40">
             <div><div className="text-sm font-semibold text-gray-700">영업 활동 지원 정책 MAX</div><div className="text-[10px] text-gray-400">6개월 미만 고정 지급액도 이 금액을 사용합니다.</div></div>
             <div className="flex items-center gap-1">
               <input type="text" inputMode="numeric" value={fmtInputNumber(draft.tenureCap||DEFAULT_ACTIVITY_SUPPORT_MAX)}
@@ -278,7 +278,7 @@ function RatesManager({ config, persistConfig }) {
         </div>
       </Section>
 
-      <button onClick={save} className="px-4 py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold">지급 기준 저장</button>
+      <button onClick={save} className="px-4 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold">지급 기준 저장</button>
     </div>
   );
 }

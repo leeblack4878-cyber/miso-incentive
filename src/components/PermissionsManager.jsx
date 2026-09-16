@@ -57,7 +57,7 @@ function PermissionsManager({ employees }) {
         <div className="px-4 pb-4 flex flex-wrap gap-2">
           {POSITIONS.map((p) => (
             <button key={p} onClick={() => toggleAutoPosition(p)} disabled={autoSaving}
-              className={`text-xs font-medium px-3 py-1.5 rounded-full border ${autoPositions.includes(p) ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-gray-500 border-gray-200'}`}>
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border ${autoPositions.includes(p) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-500 border-gray-200'}`}>
               {p}
             </button>
           ))}
@@ -85,7 +85,7 @@ function PermissionsManager({ employees }) {
                 <button
                   onClick={() => saveRole(e.id, rolesById[e.id])}
                   disabled={savingId === e.id || (rolesById[e.id] || 'employee') === (e.role || 'employee')}
-                  className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white disabled:opacity-40"
+                  className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-brand-600 text-white disabled:opacity-40"
                 >
                   {savingId === e.id ? <Loader2 size={13} className="animate-spin" /> : '저장'}
                 </button>

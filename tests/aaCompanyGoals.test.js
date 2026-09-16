@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const app = fs.readFileSync(new URL('../src/components/EvaluationViews.jsx', import.meta.url), 'utf8');
 
 test('9월 AA 회사 목표는 영업팀 확정표와 일치한다', () => {
   for (const [key, target] of [
