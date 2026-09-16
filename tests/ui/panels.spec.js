@@ -11,7 +11,7 @@ async function routes(page,{failWork=false,emptyDelete=false}={}){
 test('조회 실패를 업무 0건으로 표시하지 않는다',async({page})=>{
  await routes(page,{failWork:true});await page.goto('/tests/ui/panels.html');
  await expect(page.getByRole('alert')).toContainText('불러오지 못했어요');
- await expect(page.getByRole('button',{name:'— 오늘 고객 약속 ›'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'오늘 고객 약속 —'})).toBeVisible();
 });
 test('RLS 0건 비용 삭제는 성공 문구와 합계 차감이 없다',async({page})=>{
  await routes(page,{emptyDelete:true});await page.goto('/tests/ui/panels.html');
