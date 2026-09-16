@@ -39,3 +39,9 @@ test('정책 상태 조회 실패는 입력 가능 상태로 바뀌지 않는다
  await expect(page.getByRole('button',{name:/모바일 실적 입력/})).toBeDisabled();
  expect(writes).toEqual([]);
 });
+
+for(const width of [320,390])test(`${width}px 분리된 실적입력 화면이 가로로 넘치지 않는다`,async({page})=>{
+ await page.setViewportSize({width,height:844});await openCalendar(page,{ready:['2026-10']});
+ await expect(page.getByRole('button',{name:/모바일 실적 입력/})).toBeEnabled();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

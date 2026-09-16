@@ -10,6 +10,8 @@
 - 신규 모바일 스팟만 source_sale_id FK로 연결해 판매 삭제 시 함께 삭제. 기존 스팟과 홈 스팟은 연결 대상을 추정하지 않음.
 - SQL 원본: sql/atomic_sale_save_and_history.sql + sql/preserve_home_closed_history.sql. CLI 미설치이므로 임의 timestamp 파일 생성 없이 Supabase migration으로 기록. 현재 staging 적용, 운영 미적용.
 - 테스트: 단위·계약 192개 통과; tests/db/sale-save.sql staging authenticated-role 롤백 검사 통과. 실제 Auth/브라우저 회귀는 PR CI에서 확인 필요. 로컬 Chromium 다운로드 불가.
+- 추가 조사: 직원 정보 수정 승인과 커리어 최종 승인도 원자적 RPC로 변경. 스팟 검토/권한/가입승인/평가취소의 0건 검사 보완. tests/db/admin-decisions.sql의 권한 차단 및 두 번째 쓰기 실패 전체 롤백 통과.
+- 화면 분리의 React 초기화 순서 문제를 UI CI가 검출해 수정, run 35121871203에서 192개+UI 9개+빌드 성공. 최종 추가 검사 진행.
 - 최종 운영 DB 적용/CI/배포는 후속 검증 기록 갱신 전까지 완료로 간주하지 않음.
 
 

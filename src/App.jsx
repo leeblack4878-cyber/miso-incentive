@@ -1775,12 +1775,12 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
     if(error)return showLegacyAlert(`평가 내역 저장 실패: ${friendlyError(error)}`);
     setNote('');setCount(1);const {data}=await supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false});setEvents(data||[]);
   };
-  const cancelEvent=async(id)=>{if(!canManage)return;await supabase.from('career_eval_penalties').update({status:'cancelled'}).eq('id',id);setEvents(v=>v.map(x=>x.id===id?{...x,status:'cancelled'}:x));};
+  const cancelEvent=async(id)=>{if(!canManage)return;const {error}=await supabase.from('career_eval_penalties').update({status:'cancelled'}).eq('id',id).select('id').single();if(error)return showLegacyAlert(friendlyError(error));setEvents(v=>v.map(x=>x.id===id?{...x,status:'cancelled'}:x));};
   const saveDecision=async(action)=>{
     if(!canManage)return;
     const nextFail=streakFail;
     const payload={quarter:quarter.key,user_id:selected.id,score,result:pass?'PASS':'FAIL',action,consecutive_fail_count:nextFail};
-    const {error}=await supabase.from('career_eval_decisions').upsert(payload,{onConflict:'quarter,user_id'});if(error)return showLegacyAlert(friendlyError(error));setDecision({...decision,...payload});
+    const {error}=await supabase.rpc('save_career_decision_atomic',{p_payload:payload,p_expected_position:selected.position});if(error)return showLegacyAlert(friendlyError(error));setDecision({...decision,...payload});
   };
   const typeLabel={nps_negative:'NPS 비추천/강한 비추천',label:'꼬리표',home_no_experience:'홈 무체험'};
   return <div className="space-y-3">
@@ -1797,7 +1797,7 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
       {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
     </div>
     {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);if(action==='promote_manager')await supabase.from('profiles').update({position:'매니저'}).eq('id',selected.id);if(action==='demote_employee')await supabase.from('profiles').update({position:'사원'}).eq('id',selected.id);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
+    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
   </div>;
 }
 
@@ -3026,7 +3026,7 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     const path=`${userId}/avatar`;
     const {error:uploadError}=await supabase.storage.from('profile-avatars').upload(path,file,{upsert:true,contentType:file.type,cacheControl:'3600'});
     if(uploadError){setAvatarBusy(false);return showAppToast(friendlyError(uploadError),{tone:'error',title:'사진 등록 실패'})}
-    const {error:updateError}=await supabase.from('profiles').update({avatar_path:path,updated_at:new Date().toISOString()}).eq('id',userId);
+    const {error:updateError}=await supabase.from('profiles').update({avatar_path:path,updated_at:new Date().toISOString()}).eq('id',userId).select('id').single();
     if(updateError){setAvatarBusy(false);return showAppToast(friendlyError(updateError),{tone:'error',title:'프로필 저장 실패'})}
     const {error:publicError}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:path,status_message:statusMessage||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
     if(publicError){setAvatarBusy(false);return showAppToast(friendlyError(publicError),{tone:'error',title:'공개 프로필 저장 실패'})}
@@ -3908,7 +3908,7 @@ function SpotAdmin({ authUserId, isFullAdmin, month }) {
       threshold:p.threshold?Number(p.threshold):null,
       reward_metric:p.reward_metric||null,
       threshold_scope:p.threshold_scope||'all'
-    }).eq('id',id);
+    }).eq('id',id).select('id').single();
     if(error)return showLegacyAlert(`정책 수정 실패: ${friendlyError(error)}`);
     setEditingPolicyId(null);setEditPolicy({});load();
   };
@@ -3921,7 +3921,7 @@ function SpotAdmin({ authUserId, isFullAdmin, month }) {
       final_amount:status==='approved'?amount:null,
       reviewed_title:String(edit.title||'').trim()||null,
       reviewed_memo:String(edit.memo||'').trim()||null
-    }).eq('id',id);
+    }).eq('id',id).eq('status','pending').select('id').single();
     if(error)return showLegacyAlert(`스팟 처리 실패: ${friendlyError(error)}`);
     const claim=claims.find(x=>x.id===id);
     if(claim)await notifyEmployee({actorId:authUserId,recipientId:claim.user_id,type:status==='approved'?'spot_approved':'spot_rejected',title:`스팟 ${status==='approved'?'승인':'반려'}`,message:`${String(edit.title||'스팟')} · ${status==='approved'?won(amount):'반려됨'}`,payload:{claim_id:id,status}});

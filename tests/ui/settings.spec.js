@@ -17,7 +17,7 @@ test('분리된 권한 화면은 선택한 직원 ID와 역할만 저장한다',
  const writes=[];const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://placeholder.supabase.co/**',async route=>{
   if(route.request().method()==='PATCH')writes.push({url:route.request().url(),body:route.request().postDataJSON()});
-  return route.fulfill({json:route.request().method()==='GET'?{value:[]}:[]});
+  return route.fulfill({json:route.request().method()==='GET'?{value:[]}:{id:'fixture-employee'}});
  });
  await page.goto('/tests/ui/settings.html?permissions');
  await expect(page.getByRole('button',{name:'저장',exact:true})).toBeDisabled();
@@ -27,4 +27,14 @@ test('분리된 권한 화면은 선택한 직원 ID와 역할만 저장한다',
  expect(new URL(writes[0].url).searchParams.get('id')).toBe('eq.fixture-employee');
  expect(writes[0].body).toEqual({role:'manager'});
  expect(errors).toEqual([]);
+});
+
+test('권한 변경 0건 응답은 저장 성공으로 숨기지 않는다',async({page})=>{
+ await page.route('https://placeholder.supabase.co/**',async route=>{
+  if(route.request().method()==='PATCH')return route.fulfill({status:406,json:{code:'PGRST116',message:'JSON object requested, multiple (or no) rows returned'}});
+  return route.fulfill({json:{value:[]}});
+ });
+ await page.goto('/tests/ui/settings.html?permissions');
+ await page.getByRole('combobox').selectOption('manager');await page.getByRole('button',{name:'저장',exact:true}).click();
+ await expect(page.getByText(/변경할 내역이 없거나 수정 권한/)).toBeVisible();
 });
