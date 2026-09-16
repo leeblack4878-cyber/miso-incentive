@@ -221,10 +221,7 @@ test('직원 전환 시 선택한 직원의 고객·약속·홈 설치를 일관
 
 test('대리관리 직원 목록은 대표·실장, 담당 상권, 임원 제외 전사 범위를 구분한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(source, /NON_EXECUTIVE_COMPANY_CONTROLLERS = new Set\(\['정유미', '김솔이'\]\)/);
-  assert.match(source, /COMPANY_SCOPE_VIEWERS\.has\(loginName\)[\s\S]*?employees/);
-  assert.match(source, /NON_EXECUTIVE_COMPANY_CONTROLLERS\.has\(loginName\)[\s\S]*?!COMPANY_SCOPE_VIEWERS\.has/);
-  assert.match(source, /loginAreaKey[\s\S]*?e\.id===authUser\?\.id\|\|SALES_AREA_STORES\[loginAreaKey\]/);
+  assert.match(source, /scopedEmployeesFor\(\{viewer:loginEmp,authUserId:authUser\?\.id,isStoreLeader,employees,areaStores:SALES_AREA_STORES\}\)/);
 
   const sql = await readFile(new URL('../supabase/migrations/20260907165135_refine_employee_proxy_scope.sql', import.meta.url), 'utf8');
   assert.match(sql, /v\.name in \('이강진', '김진문'\)/);
@@ -235,7 +232,8 @@ test('대리관리 직원 목록은 대표·실장, 담당 상권, 임원 제외
 
 test('직원 시스템 권한 변경은 이강진 계정만 가능하고 변경 이력을 남긴다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(source, /PRIMARY_PERMISSION_ADMIN_ID = 'a50a0979-acef-40b1-98b7-f05074f1c835'/);
+  const scopes = await readFile(new URL('../src/permissionScopes.js', import.meta.url), 'utf8');
+  assert.match(scopes, /PRIMARY_PERMISSION_ADMIN_ID='a50a0979-acef-40b1-98b7-f05074f1c835'/);
   assert.match(source, /canManagePermissions=\{authUser\?\.id===PRIMARY_PERMISSION_ADMIN_ID\}/);
   assert.match(source, /canManagePermissions \? \[\{ key: 'permissions'/);
   assert.match(source, /adminTab === 'permissions' && canManagePermissions/);
@@ -628,7 +626,7 @@ test('월말 예상에서 건당 지급 수량은 정수 반올림하고 포인�
 test('지원 판매는 선택 매장 팀 실적에만 반영하고 개인 계산에서 제외한다', async () => {
   const source = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const schema = await readFile(new URL('../sql/team_sales_credits.sql', import.meta.url), 'utf8');
-  assert.match(source, /\['김솔이','이강진','김진문'\]\.includes\(loginEmp\.name\)/);
+  assert.match(source, /teamSupportEligibleFor\(loginEmp\)/);
   assert.match(source, /from\('team_sales_credits'\)\.insert\(\{seller_id:authUser\.id,credited_store:teamSupportStore/);
   assert.match(source, /if\(sale\.source_meta\?\.teamOnly\)return/);
   assert.match(source, /const personalSalesRows=salesRows\.filter\(\(r\)=>!r\.teamOnly\)/);
