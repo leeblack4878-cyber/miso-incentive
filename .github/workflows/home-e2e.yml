@@ -1,6 +1,11 @@
 name: Authenticated home bundle regression
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/e2e/**'
+      - '.github/workflows/home-e2e.yml'
 permissions:
   contents: read
 concurrency:
@@ -8,6 +13,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   home-e2e:
+    # Secrets are never made available to fork PRs or outside authors.
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == github.repository_owner)
     runs-on: ubuntu-latest
     environment: home-e2e
     timeout-minutes: 15

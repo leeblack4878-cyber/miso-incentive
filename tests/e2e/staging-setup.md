@@ -25,8 +25,17 @@ Negative control: within a staging-only transaction, temporarily omitted `home_o
 
 This is real database regression, **not authenticated browser regression**: SQL role/JWT setup does not test Auth token issuance, browser selectors or the actual form payload. Daily aggregation input in SQL is synthetic. The four Playwright cases are still required.
 
-## Remaining prerequisite
+## Authenticated browser regression completed
+
+2026-09-16: user registered the staging server key in `home-e2e`. Auth provisioning succeeded.
+First run `35104258039` exposed a real pending-bundle promise loss on repeat edit (3/4 pass).
+Commit `bb43389` fixes the first-sale-only lookup; tasks and expenses are seeded on different
+sales so the regression cannot accidentally pass due to query order. Run `35104998203`:
+**4/4 actual Auth/Chromium/PostgREST/DB scenarios passed**, including fixture cleanup.
+Production browser/deployment confirmation is separate and is not implied by this result.
+
+## Original credential setup notes (resolved)
 
 The connected Supabase tool can run SQL and return public keys but cannot retrieve a server secret key or create Auth users via the Admin API. No credentials were extracted from internal DB settings.
 
-Register the **staging-only** server secret/service-role key as `E2E_SUPABASE_SERVICE_KEY` in GitHub environment `home-e2e`. The workflow then provisions two dedicated Auth employees and runs all four Playwright cases. Browser results must be recorded after execution; current status is not run.
+The **staging-only** server secret/service-role key is registered as `E2E_SUPABASE_SERVICE_KEY` in GitHub environment `home-e2e`. The workflow provisions two dedicated Auth employees and runs all four Playwright cases. No secrets are stored in source or browser traces.

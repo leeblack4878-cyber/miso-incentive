@@ -9,6 +9,7 @@ import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
 import { feedbackBridge, showAppToast, showAppConfirm, showLegacyAlert } from './feedback';
 import { deleteSaleAtomic } from './saleMutations';
+import { loadHomeBundleChildren } from './homeBundleEditor';
 import TodayWorkCard from './components/TodayWorkCard';
 import SalesExpensePanel from './components/SalesExpensePanel';
 import PolicyVersionNotice from './components/PolicyVersionNotice';
@@ -7307,6 +7308,9 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       const refs=(homeSales||[]).map(x=>x.source_ref).filter(Boolean);
       let orders=[];
       if(refs.length){ const {data:o,error:oErr}=await supabase.from('home_orders').select('*').in('id',refs); if(oErr)return showLegacyAlert(`홈 주문 조회 실패: ${friendlyError(oErr)}`); orders=o||[]; }
+      let bundleChildren;
+      try { bundleChildren=await loadHomeBundleChildren(supabase,currentEmp?.id,homeSales); }
+      catch(error) { return showLegacyAlert(`홈 약속·비용 조회 실패: ${friendlyError(error)}`); }
       setEditingHomeSales(homeSales||[]);
       setHomeOrderDraft({unified:true,editing:true,label:'홈 판매건 수정',legacy:(homeSales||[]).some(legacySaleBadge)});
       setHomeCustomerName(sale.customers?.customer_name||'');
@@ -7327,13 +7331,11 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       setHomeDirectComplete(compatOrders.length>0 && compatOrders.every(o=>o.status==='completed'));
       setHomeActualCompleteDate(compatOrders.find(o=>o.actual_install_date)?.actual_install_date?.slice?.(0,10)||'');
       setHomePlannedDate(compatOrders.find(o=>o.planned_install_date)?.planned_install_date?.slice?.(0,10)||'');
-      const primary=(homeSales||[])[0];
-      if(primary){
-        const {data:tasks}=await supabase.from('customer_tasks').select('*').eq('source_sale_id',primary.id).eq('user_id',currentEmp?.id).neq('status','completed').order('created_at');
+      {
+        const {tasks,expenses}=bundleChildren;
         const customs=(tasks||[]).filter(t=>t.task_type==='custom');
         setHomeCustomTitle(customs[0]?.title||''); setHomeCustomDueDate(customs[0]?.due_date||'');
         setHomeExtraPromises(customs.slice(1).map(t=>({title:t.title||'',dueDate:t.due_date||''})));
-        const {data:expenses}=await supabase.from('sales_expenses').select('*').eq('source_sale_id',primary.id).eq('user_id',currentEmp?.id).order('created_at');
         const ex=expenses||[]; setHomeExpenseOpen(ex.length>0); setHomeExpenseCategory(ex[0]?.category||'오퍼'); setHomeExpenseAmount(ex[0]?.amount?String(ex[0].amount):''); setHomeExpenseMemo(ex[0]?.memo||'');
         setHomeExtraExpenses(ex.slice(1).map(e=>({category:e.category||'기타',amount:String(e.amount||''),memo:e.memo||''})));
       }
