@@ -12,6 +12,7 @@ import { deleteSaleAtomic } from './saleMutations';
 import TodayWorkCard from './components/TodayWorkCard';
 import SalesExpensePanel from './components/SalesExpensePanel';
 import PolicyVersionNotice from './components/PolicyVersionNotice';
+import PolicyInputNotice from './components/PolicyInputNotice';
 const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePolicyAdmin'));
 const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
@@ -45,6 +46,8 @@ import {
 import { calculateSaleStrategicPoints, calculateEmployeeStrategicAdjustment } from './strategicPoints';
 import {
   POLICY_HISTORY_CONFIG_KEY,
+  POLICY_READY_MONTHS_KEY,
+  isPolicyInputBlocked,
   isPolicyConfigReadOnly,
   isSeptemberPolicyActive,
   resolvePolicyConfigForMonth,
@@ -1240,6 +1243,9 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [dbError, setDbError] = useState('');
   const [lockedMonths, setLockedMonths] = useState([]);
   const [policyBlockedMonths, setPolicyBlockedMonths] = useState([]);
+  const [policyReadyMonths,setPolicyReadyMonths]=useState([]);
+  const [policyReadinessLoaded,setPolicyReadinessLoaded]=useState(false);
+  const policyInputBlocked=isPolicyInputBlocked(month,{loaded:policyReadinessLoaded,readyMonths:policyReadyMonths,blockedMonths:policyBlockedMonths});
   const [personalGoals, setPersonalGoals] = useState({}); // 본인 월 항목별 목표
   const [employeeGoalMap, setEmployeeGoalMap] = useState({}); // 관리자 범위 직원의 월 개인 목표
   const [employeeGoalsLoading, setEmployeeGoalsLoading] = useState(false);
@@ -1496,21 +1502,29 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   const loadPolicyBlockedMonths = useCallback(async () => {
     try {
-      const {data,error}=await supabase.from('app_config').select('value').eq('config_key','policy_blocked_months').maybeSingle();
+      const {data,error}=await supabase.from('app_config').select('config_key,value').in('config_key',['policy_blocked_months',POLICY_READY_MONTHS_KEY]);
       if(error)throw error;
-      setPolicyBlockedMonths(Array.isArray(data?.value)?data.value:[]);
-    } catch(e){console.error('POLICY INPUT BLOCK LOAD ERROR',e);setPolicyBlockedMonths([]);}
+      const values=Object.fromEntries((data||[]).map(row=>[row.config_key,row.value]));
+      setPolicyBlockedMonths(Array.isArray(values.policy_blocked_months)?values.policy_blocked_months:[]);
+      setPolicyReadyMonths(Array.isArray(values[POLICY_READY_MONTHS_KEY])?values[POLICY_READY_MONTHS_KEY]:[]);
+      setPolicyReadinessLoaded(true);
+    } catch(e){console.error('POLICY INPUT BLOCK LOAD ERROR',e);setPolicyReadinessLoaded(false);}
   },[]);
 
   const togglePolicyInputBlock = async (targetMonth, block) => {
+    if(!policyReadinessLoaded)return showAppToast('정책 상태를 확인하지 못했어요. 새로고침 후 다시 시도해주세요.',{tone:'error'});
     if(!block){
-      const ok=await showAppConfirm({title:`${monthLabel(targetMonth)} 입력을 시작할까요?`,message:'지급기준 정책 수정과 검증이 모두 끝난 경우에만 입력을 열어주세요.',confirmLabel:'입력 시작'});
+      const ok=await showAppConfirm({title:`${monthLabel(targetMonth)} 입력을 시작할까요?`,message:'전달받은 해당 월 정책의 반영과 검증이 모두 끝난 경우에만 입력을 열어주세요. 다음 달은 별도로 잠금이 유지됩니다.',confirmLabel:'정책 반영 완료 · 입력 열기'});
       if(!ok)return;
     }
     const next=block?[...new Set([...policyBlockedMonths,targetMonth])]:policyBlockedMonths.filter(m=>m!==targetMonth);
-    const {error}=await supabase.from('app_config').upsert({config_key:'policy_blocked_months',value:next},{onConflict:'config_key'});
-    if(error){setDbError(`정책 준비 잠금 저장 실패: ${friendlyError(error)}`);return;}
-    setPolicyBlockedMonths(next);
+    const ready=block?policyReadyMonths.filter(m=>m!==targetMonth):[...new Set([...policyReadyMonths,targetMonth])];
+    const {data,error}=await supabase.from('app_config').upsert([
+      {config_key:'policy_blocked_months',value:next},
+      {config_key:POLICY_READY_MONTHS_KEY,value:ready},
+    ],{onConflict:'config_key'}).select('config_key');
+    if(error||data?.length!==2){setDbError(`정책 입력 상태 저장 실패: ${friendlyError(error||'저장 결과를 확인하지 못했어요.')}`);return;}
+    setPolicyBlockedMonths(next);setPolicyReadyMonths(ready);
   };
 
   const loadPersonalGoals = useCallback(async () => {
@@ -1774,7 +1788,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   },[config]);
 
   const saveDailyDay = async (day, record) => {
-    if (!empId) return false;
+    if (!empId || lockedMonths.includes(month) || policyInputBlocked) return false;
 
     setDbError('');
 
@@ -1802,7 +1816,12 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStores(); }, [loadStores]);
   useEffect(() => { loadLockedMonths(); }, [loadLockedMonths]);
-  useEffect(() => { loadPolicyBlockedMonths(); }, [loadPolicyBlockedMonths]);
+  useEffect(() => {
+    loadPolicyBlockedMonths();
+    const refresh=()=>{if(document.visibilityState==='visible')loadPolicyBlockedMonths();};
+    window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);
+    return()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh);};
+  }, [loadPolicyBlockedMonths]);
   useEffect(() => { loadPersonalGoals(); }, [loadPersonalGoals]);
   useEffect(() => { loadScopedEmployeeGoals(); }, [loadScopedEmployeeGoals]);
 
@@ -1929,7 +1948,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   const saveDraft = async (payload) => {
     const body = payload || draft;
-    if (!empId) return;
+    if (!empId || lockedMonths.includes(month) || policyInputBlocked) return;
 
     setSaving(true);
     setDbError('');
@@ -1972,7 +1991,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
   // 실적입력 탭 변경을 표시만 해두고, 아래 자동저장 타이머가 실제 저장을 맡음
   const updateDraft = (next) => {
-    if (lockedMonths.includes(month) || policyBlockedMonths.includes(month)) return;
+    if (lockedMonths.includes(month) || policyInputBlocked) return;
     setDraft(next);
     setDirty(true);
   };
@@ -2263,7 +2282,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
           dailyDays={effectiveDailyRecords[empId] || {}} allDailyRecords={effectiveDailyRecords} saveDailyDay={saveDailyDay}
           monthLocked={lockedMonths.includes(month)}
-          policyInputBlocked={policyBlockedMonths.includes(month)}
+          policyInputBlocked={policyInputBlocked}
           canSeeCriteria={currentEmp?.branch === '운영진' || ['점장', '부점장'].includes(currentEmp?.position)}
           myRank={myRank} myRankTotal={myRankTotal} myBranchRank={myBranchRank} myBranchTotal={myBranchRanked.length}
           currentEmp={currentEmp}
@@ -2301,7 +2320,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           employeeGoalsLoading={employeeGoalsLoading}
           refreshEmployeeGoals={loadScopedEmployeeGoals}
           monthLocked={lockedMonths.includes(month)} toggleMonthLock={toggleMonthLock}
-          policyInputBlocked={policyBlockedMonths.includes(month)} togglePolicyInputBlock={togglePolicyInputBlock}
+          policyInputBlocked={policyInputBlocked} togglePolicyInputBlock={togglePolicyInputBlock}
         />
       )}
     </div>
@@ -6057,7 +6076,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
   return (
     <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
-      <PolicyVersionNotice month={month} blocked={policyInputBlocked} />
+      {!(tab==='daily'&&policyInputBlocked)&&<PolicyVersionNotice month={month} blocked={policyInputBlocked} />}
       {isManagingAnotherEmployee&&<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><div className="text-[10px] font-bold text-amber-600">직원 대리 관리 중</div><div className="mt-0.5 text-sm font-black text-amber-900">{currentEmp?.name} 직원의 실적·고객·약속·홈 설치를 보고 수정합니다.</div><div className="mt-1 text-[10px] text-amber-700">판매·홈 변경 이력에는 실제 처리한 관리자 계정이 기록됩니다.</div></div>}
       {tab === 'home' && (
         <div className="space-y-4">
@@ -6142,11 +6161,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <Info size={13} className="shrink-0" /> {monthLabel(month)}은 마감되어 더 이상 수정할 수 없어요. 수정이 필요하면 관리자에게 문의해주세요.
             </div>
           )}
-          {policyInputBlocked && (
-            <div className="mb-3 bg-amber-50 border border-amber-100 text-amber-700 text-xs rounded-lg p-3 flex items-center gap-2">
-              <Info size={13} className="shrink-0" /> {monthLabel(month)} 지급기준 정책을 준비하고 있어요. 정책 확정 후 입력이 열립니다.
-            </div>
-          )}
+
 
           <DailyInputTab
             month={month}
@@ -6157,6 +6172,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             setDraft={setDraft}
             pay={pay}
             locked={monthLocked||policyInputBlocked}
+            policyInputBlocked={policyInputBlocked}
             currentEmp={currentEmp}
             loginEmp={loginEmp}
             stores={stores}
@@ -6308,7 +6324,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   );
 }
 
-function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
+function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -6503,7 +6519,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
 
   const flush = useCallback(async() => {
     const p = pendingRef.current;
-    if (!p) return;
+    if (!p || locked) return;
     if(typeof navigator!=='undefined'&&!navigator.onLine){setSaveState('error');return;}
     pendingRef.current = null;
     const ok=await saveDailyDay(p.day,p.record);
@@ -6516,7 +6532,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       rememberPendingDay(p);
       setSaveState('error');
     }
-  }, [saveDailyDay,pendingDayStorageKey]); // eslint-disable-line
+  }, [saveDailyDay,pendingDayStorageKey,locked]); // eslint-disable-line
   flushRef.current = flush;
 
   useEffect(()=>{
@@ -6605,6 +6621,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
     mutate({...baseDay,householdRenewals:items,householdRenewLegacyCounts:legacyCounts,renewSoloDiscountAmount:agg.soloDiscount,groups:{...baseDay.groups,renew:combined}});
   };
   const saveHouseholdRenew=()=>{
+    if(locked)return;
     const items=[...(day.householdRenewals||[])];
     const item={...householdRenewForm,id:householdRenewEditIndex===null?`renew-${Date.now()}-${Math.random().toString(36).slice(2,7)}`:(items[householdRenewEditIndex]?.id||`renew-${Date.now()}`)};
     if(householdRenewEditIndex===null)items.push(item); else items[householdRenewEditIndex]=item;
@@ -6692,6 +6709,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   useEffect(()=>{loadDaySales()},[loadDaySales]);
 
   const deleteSale=async(sale,{skipConfirm=false}={})=>{
+    if(locked)return;
     const name=sale.customers?.customer_name||'고객';
     const bundleText=sale.source_type==='home_order'?'이 고객의 같은 날 홈 판매 묶음을 삭제할까요?':'이 판매 건을 삭제할까요?';
     if(!skipConfirm&&!await showAppConfirm({title:'판매건을 삭제할까요?',message:`${name} · ${sale.metric_label}\n${bundleText}\n연결된 고객 약속과 영업비용도 함께 삭제됩니다.`,confirmLabel:'판매건 삭제',tone:'danger'}))return;
@@ -7464,7 +7482,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
   };
 
   const submitMobileSale = async () => {
-    if(!mobileSaleDraft||!currentEmp?.id||mobileSubmitGuardRef.current)return;
+    if(locked||!mobileSaleDraft||!currentEmp?.id||mobileSubmitGuardRef.current)return;
     if(!mobileSaleKind)return showAppToast('판매 구분을 선택해주세요.',{tone:'error'});
     if(activeTeamSupport&&!teamSupportStore)return showAppToast('팀 실적을 반영할 매장을 선택해주세요.',{tone:'error'});
     if(!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return showAppToast('가입구분과 요금제군을 선택해주세요.',{tone:'error'});
@@ -7960,6 +7978,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 p-3">
+        {policyInputBlocked&&<PolicyInputNotice month={month} />}
         <label className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-gray-100 cursor-pointer">
           <div>
             <div className="text-sm font-semibold text-gray-700">활동 시간 충족</div>
@@ -7969,6 +7988,7 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             <input
               type="checkbox"
               checked={draft.activityTimeMet}
+              disabled={locked}
               onChange={(e) => setDraft({ ...draft, activityTimeMet: e.target.checked })}
               className="w-4 h-4"
             />
@@ -8247,24 +8267,24 @@ function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft
             </div>}
             <div className="text-[11px] text-gray-400 mb-2">판매 카테고리</div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={()=>{setInputCategory('mobile');setPickedRow(null);addOne();}}
+              <button type="button" disabled={locked} onClick={()=>{setInputCategory('mobile');setPickedRow(null);addOne();}}
                 className={`p-4 rounded-2xl border text-left ${inputCategory==='mobile'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
                 <div className="text-xl">📱</div><div className="text-sm font-bold text-gray-800 mt-1">모바일 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가입구분 · 요금제 · VAS · 스팟 · 오퍼</div>
               </button>
-              <button type="button" onClick={()=>{setInputCategory('home');setPickedRow(null);openHomeOrder();}}
+              <button type="button" disabled={locked} onClick={()=>{setInputCategory('home');setPickedRow(null);openHomeOrder();}}
                 className={`p-4 rounded-2xl border text-left ${inputCategory==='home'?'bg-violet-50 border-violet-300':'bg-white border-gray-200'}`}>
                 <div className="text-xl">🏠</div><div className="text-sm font-bold text-gray-800 mt-1">홈 실적 입력</div>
                 <div className="text-[10px] text-gray-400 mt-1">고객명 · 가정/소호 · 상품 · 스팟 · 오퍼</div>
               </button>
-              <button type="button" disabled={activeTeamSupport} onClick={()=>openHouseholdRenew(null)} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}>
+              <button type="button" disabled={locked||activeTeamSupport} onClick={()=>openHouseholdRenew(null)} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}>
                 <div><div className="text-xl">♻️</div><div className="text-sm font-bold text-gray-800 mt-1">인터넷 재약정</div></div>
                 <div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'조건 선택 시 인센티브 자동 계산'}</div>
               </button>
-              <button type="button" disabled={activeTeamSupport} onClick={()=>setExtraInput('sono')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'상품 · 건수 · 고객(선택)'}</div></button>
-              <button type="button" disabled={activeTeamSupport} onClick={()=>setExtraInput('tailored')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'업셀 건수 · 금액'}</div></button>
+              <button type="button" disabled={locked||activeTeamSupport} onClick={()=>setExtraInput('sono')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">🎫</div><div className="text-sm font-bold text-gray-800 mt-1">소노</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'상품 · 건수 · 고객(선택)'}</div></button>
+              <button type="button" disabled={locked||activeTeamSupport} onClick={()=>setExtraInput('tailored')} className={`p-4 rounded-2xl border text-left bg-white border-gray-200 ${activeTeamSupport?'opacity-40':''}`}><div className="text-xl">💡</div><div className="text-sm font-bold text-gray-800 mt-1">맞춤제안</div><div className="text-[10px] text-gray-400 mt-1">{activeTeamSupport?'지원 판매 대상 아님':'업셀 건수 · 금액'}</div></button>
               <button type="button" onClick={()=>setStandalonePromiseOpen(true)} className="p-4 rounded-2xl border text-left bg-violet-50 border-violet-200"><div className="text-xl">📌</div><div className="text-sm font-bold text-violet-800 mt-1">고객 약속 등록</div><div className="text-[10px] text-violet-500 mt-1">기존·신규 고객 약속</div></button>
-              <button type="button" onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
+              <button type="button" disabled={locked} onClick={()=>setExtraInput('customerReg')} className="p-4 rounded-2xl border text-left bg-white border-gray-200 col-span-2"><div className="text-xl">👤</div><div className="text-sm font-bold text-gray-800 mt-1">고객등록</div><div className="text-[10px] text-gray-400 mt-1">타매고 등록 건수 빠른 입력</div></button>
             </div>
 
 
@@ -10937,7 +10957,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
           {isFullAdmin && (
             <button onClick={() => togglePolicyInputBlock(month,!policyInputBlocked)}
               className={`text-xs font-medium px-3 py-2 rounded-lg border ${policyInputBlocked?'bg-amber-50 text-amber-700 border-amber-200':'bg-white text-gray-600 border-gray-200'}`}>
-              {policyInputBlocked?'🛠 정책 준비 중 (입력 열기)':'정책 입력 잠금'}
+              {policyInputBlocked?'정책 입력 전 (반영 후 열기)':'정책 입력 잠금'}
             </button>
           )}
           <button onClick={downloadCSV} className="flex items-center gap-1 text-xs font-medium px-3 py-2 rounded-lg bg-emerald-600 text-white">

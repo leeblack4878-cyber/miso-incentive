@@ -6,6 +6,19 @@ import {
 } from './septemberPolicy.js';
 
 export const POLICY_HISTORY_CONFIG_KEY = 'policy_history_v1';
+export const POLICY_READY_MONTHS_KEY = 'policy_ready_months';
+// Months already operated before the monthly readiness workflow was introduced.
+export const POLICY_READINESS_START_MONTH = '2026-10';
+
+export function isPolicyInputBlocked(month, { loaded = false, readyMonths = [], blockedMonths = [] } = {}) {
+  if (!loaded || !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) return true;
+  if (blockedMonths.includes(month)) return true;
+  return month >= POLICY_READINESS_START_MONTH && !readyMonths.includes(month);
+}
+
+export function policyInputPendingLabel(month) {
+  return `${Number(String(month).slice(5, 7))}월 정책 입력 전`;
+}
 
 export const BUILTIN_POLICY_PERIODS = Object.freeze([
   Object.freeze({
