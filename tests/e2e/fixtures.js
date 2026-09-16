@@ -36,7 +36,7 @@ export function payload(userId, customerId, customerName, smart = false, complet
     p_replace_sale_ids:[],p_replace_order_ids:[],p_daily_record:null };
 }
 export const test = base.extend({
-  world: async ({ page }, use) => {
+  world: [async ({ page }, use) => {
     const env=readEnvironment();
     const admin=createClient(env.url,env.serviceKey,options);
     const actors=[];
@@ -71,7 +71,9 @@ export const test = base.extend({
       }};
     try { await use(world); }
     finally {
-      await page.close();
+      try {
+        if(!page.isClosed()) await page.close();
+      } finally {
       // Only the two verified, dedicated accounts; never truncate or touch policies.
       for(const actor of actors) {
         for(const table of ['customer_tasks','sales_expenses','customer_sales','home_orders','daily_records','monthly_status','customers'])
@@ -82,13 +84,22 @@ export const test = base.extend({
         expect(profile).toEqual(actor.profile);
         await actor.client.auth.signOut();
       }
+      }
     }
-  },
+  // Give teardown its own budget even when a UI action consumes the test timeout.
+  }, {timeout:120000}],
 });
 
 export async function openEmployee(page, world) {
   await page.clock.setFixedTime(new Date(`${date}T03:00:00Z`));
-  await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),async locator=>locator.click());
+  await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),async locator=>{
+    try { await locator.click({timeout:2000}); }
+    catch(error) {
+      // Navigation can unmount the transient badge between detection and click.
+      // A popup that remains visible is still a real failure; never force-click.
+      if(await locator.isVisible())throw error;
+    }
+  });
   await page.goto('/');
   await page.locator('input[type=email]').fill(world.employee.credentials.email);
   await page.locator('input[type=password]').fill(world.employee.credentials.password);
