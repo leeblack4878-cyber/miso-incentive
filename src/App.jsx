@@ -1509,7 +1509,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       <div className="app-header border-b border-gray-200 sticky top-0 z-20">
         <div className="app-header-main max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-ink flex items-center justify-center"><Trophy size={18} className="text-white" /></div>
+            <div className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center"><Trophy size={18} className="text-white" /></div>
             <div>
               <div className="font-bold text-gray-900 leading-tight">미소페이</div>
 
@@ -2562,35 +2562,35 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
         <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">좋아요!</button>
       </div>
     </div>}
-    <div className="summary-hero w-full text-white">
-      <div className="flex items-start justify-between gap-2">
+    <div className="summary-hero w-full">
+      <div className="summary-profile flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-        <label className="relative w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
+        <label className="relative w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
           {avatarUrl?<img src={avatarUrl} alt="내 프로필" className="w-full h-full object-cover"/>:<span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>}
-          <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
+          <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-white text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
         </label>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold truncate">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-brand-100/75 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
-          <div className="text-[10px] text-brand-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
+          <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold break-words">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-gray-500 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
+          <div className="text-[10px] text-gray-500 mt-0.5 break-words">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
         </div>
         </div>
-        <button type="button" onClick={()=>setShowCollection(true)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
-          <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'배지 선택'}</span><span className="text-brand-100">›</span>
+        <button type="button" onClick={()=>setShowCollection(true)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-gray-50 border border-gray-100 text-[10px] font-bold">
+          <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'배지 선택'}</span><span className="text-gray-500">›</span>
         </button>
       </div>
 
-      <div className="summary-hero-actions mt-5 pt-1 flex items-end justify-between gap-3">
-        <div className="min-w-0"><div className="text-[10px] text-brand-100/80">{monthLabel(month)} 현재 실적 금액</div><div className="metric-value text-3xl font-bold mt-2">{currentAmount===null?'—':won(currentAmount)}</div></div>
-        <button type="button" onClick={onOpenPay} className="shrink-0 px-3 py-2.5 rounded-xl bg-white/12 border border-white/20 text-[10px] font-bold">급여 확인·비교 ›</button>
+      <div className="summary-hero-actions flex flex-col items-start gap-1">
+        <div className="min-w-0"><div className="text-[10px] text-gray-500">{monthLabel(month)} 현재 실적 금액</div><div className="summary-amount metric-value mt-2">{currentAmount===null?'—':won(currentAmount)}</div></div>
+        <button type="button" onClick={onOpenPay} className="shrink-0 py-2 text-sm text-gray-500">급여 확인·비교 ›</button>
       </div>
 
-      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 mt-3 pt-3 border-t border-white/15 items-center">
-        <div><div className="text-[9px] text-brand-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay?.gradeEligible?pay.grade:'D(미달)'}</div></div>
-        <div><div className="text-[9px] text-brand-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.totalPoints||0,1)}P</div></div>
-        <div><div className="text-[9px] text-brand-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.kpiScore||0,1)}P</div></div>
-        <button type="button" onClick={onGoInput} className="px-3 py-2.5 rounded-xl bg-white text-brand-700 text-[10px] font-bold whitespace-nowrap">실적 입력 ›</button>
+      <div className="summary-stats">
+        <div><div className="text-[9px] text-gray-500">등급</div><div className="text-base font-semibold mt-1">{pay?.gradeEligible?pay.grade:'D(미달)'}</div></div>
+        <div><div className="text-[9px] text-gray-500">성과등급P</div><div className="text-base font-semibold mt-1">{fmtNum(pay?.totalPoints||0,1)}P</div></div>
+        <div><div className="text-[9px] text-gray-500">생산성</div><div className="text-base font-semibold mt-1">{fmtNum(pay?.kpiScore||0,1)}P</div></div>
       </div>
+      <button type="button" onClick={onGoInput} className="w-full py-3.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-base font-semibold">실적 입력 ›</button>
     </div>
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
@@ -3901,12 +3901,12 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
-            <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
-              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length} approvalError={approvalError}
-              onNavigate={goCustomerCare} onOpenApprovals={()=>approvalError?showAppToast('승인 현황을 불러오지 못했어요. 잠시 후 다시 확인해주세요.',{tone:'error'}):homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} currentEmp={currentEmp}
               currentAmount={ledgerReady?displayPay.current:null}
               onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
+            <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
+              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length} approvalError={approvalError}
+              onNavigate={goCustomerCare} onOpenApprovals={()=>approvalError?showAppToast('승인 현황을 불러오지 못했어요. 잠시 후 다시 확인해주세요.',{tone:'error'}):homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
 
             {showClosingAmount&&<div className="fixed inset-0 z-[95] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowClosingAmount(false)}>
               <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>

@@ -1,5 +1,6 @@
 import React,{useState,useEffect} from 'react';
 import {supabase} from '../supabase';
+import {CalendarDays,Clock3,House,CalendarClock,ChevronRight} from 'lucide-react';
 export default function TodayWorkCard({userId,onNavigate,onGoInput,onOpenApprovals,todayInputDone=false,approvalPending=0,approvalDone=0,approvalError=false}){
   const [state,setState]=useState({loading:true,todayTasks:0,overdue:0,installs:0,unscheduled:0,error:false});
   useEffect(()=>{
@@ -27,14 +28,14 @@ export default function TodayWorkCard({userId,onNavigate,onGoInput,onOpenApprova
     return()=>{alive=false;window.removeEventListener('customer-tasks-changed',refresh)};
   },[userId]);
   const items=[
-    ['오늘 고객 약속',state.todayTasks,'today'],['기한 경과',state.overdue,'overdue'],
-    ['오늘 홈 설치',state.installs,'home'],['일정 미정 홈',state.unscheduled,'home'],
+    ['오늘 고객 약속',state.todayTasks,'today',CalendarDays],['기한 경과',state.overdue,'overdue',Clock3],
+    ['오늘 홈 설치',state.installs,'home',House],['일정 미정 홈',state.unscheduled,'home',CalendarClock],
   ];
-  return <section aria-label="오늘 할 일" className="surface-card p-4 sm:p-5">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-bold text-ink">오늘 할 일</h2><button onClick={onGoInput} className={`px-2.5 py-1.5 rounded-full text-xs font-bold ${todayInputDone?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-700'}`}>{todayInputDone?'입력 완료':'실적 입력'}</button></div>
+  return <section aria-label="오늘 할 일" className="surface-card p-5 sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold text-ink">오늘 할 일</h2><button onClick={onGoInput} className={`px-2.5 py-1.5 rounded-full text-xs font-bold ${todayInputDone?'bg-emerald-50 text-emerald-700':'bg-gray-50 text-gray-600'}`}>{todayInputDone?'입력 완료':'실적 입력'}</button></div>
     <>{state.error&&<p role="alert" className="mt-2 text-xs text-red-600">업무 현황을 불러오지 못했어요. 고객관리에서 확인해주세요.</p>}</>
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 text-center">
-      {items.map(([label,count,type])=><button key={label} onClick={()=>onNavigate(type)} className={`rounded-xl px-1 py-2.5 border border-transparent hover:border-brand-200 ${Number(count)>0?'bg-brand-50':'bg-gray-50'}`}><div className={`text-lg font-black ${Number(count)>0?'text-brand-700':'text-gray-300'}`}>{state.loading?'·':state.error?'—':count}</div><div className="text-xs text-gray-500 mt-0.5 leading-tight">{label} ›</div></button>)}
+    <div className="mt-3">
+      {items.map(([label,count,type,Icon])=><button key={label} onClick={()=>onNavigate(type)} className="today-work-row"><Icon size={20} className="text-gray-400 shrink-0" aria-hidden="true"/><span className="work-label">{label}</span><span className="work-count">{state.loading?'·':state.error?'—':count}</span><ChevronRight size={16} className="text-gray-300 shrink-0" aria-hidden="true"/></button>)}
     </div>
     <button onClick={onOpenApprovals} className="w-full mt-3 border-t border-gray-100 px-1 pt-3 flex flex-wrap gap-2 items-center justify-between text-xs"><span className="font-semibold text-gray-600">승인 현황</span><span className="text-gray-500">{approvalError?'조회 실패 · 다시 확인':`대기 ${approvalPending} · 완료 ${approvalDone} ›`}</span></button>
   </section>;
