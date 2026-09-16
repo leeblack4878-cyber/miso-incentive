@@ -1,4 +1,7 @@
-import { isIncentiveUnpaidSpecial, currentPolicySnapshot, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, homeNetworkLabel, DEFAULT_RENEW, MATRIX_ROWS, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, tierBonus, monthsSince, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, HOME_ORDER_PRODUCTS, careTaskCategory, addDaysDate, HS_PARTS, matrixRowCount, hsCount } from './appShared';
+import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
+import { payDisplay } from './payDisplay';
+import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, useFinalStorePerformance, finalStoreMetric } from './viewShared';
+import { isIncentiveUnpaidSpecial, currentPolicySnapshot, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, homeNetworkLabel, DEFAULT_RENEW, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, tierBonus, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, HOME_ORDER_PRODUCTS, careTaskCategory, addDaysDate, HS_PARTS, matrixRowCount, hsCount } from './appShared';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Trophy, Home, ClipboardList, History, Users, ChevronDown, Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2, UserPlus, Info, Calendar, ChevronRight, AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star } from 'lucide-react';
 import { supabase } from './supabase';
@@ -14,6 +17,8 @@ import PolicyVersionNotice from './components/PolicyVersionNotice';
 import Section from './components/Section';
 import ColHeader from './components/ColHeader';
 import { POSITIONS, ROLE_LABELS, MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName, fmtNum, fmtInputNumber, won } from './uiDefinitions';
+const EvaluationTab=React.lazy(()=>import('./components/EvaluationViews').then(m=>({default:m.EvaluationTab})));
+const ManagerPayrollPanel=React.lazy(()=>import('./components/EvaluationViews').then(m=>({default:m.ManagerPayrollPanel})));
 const CustomerCareManager=React.lazy(()=>import('./components/CustomerCareManager'));
 const DailyInputTab=React.lazy(()=>import('./components/DailyInputTab'));
 const RatesManager=React.lazy(()=>import('./components/RatesManager'));
@@ -23,15 +28,9 @@ const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
-import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, homePerformanceDate, completedHomeCount, calculateMobileSale, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
-import {
-  SEPTEMBER_MANAGER_POLICY_VERSION,
-  managerOperatorForStore,
-  septemberManagerStoreType,
-  managerCompanyGoalShare,
-  calculateSeptemberManagerIncentive,
-} from './managerPolicyEngine';
-import { calculateSalesManagerPayroll, SALES_MANAGER_POLICY_VERSION } from './salesManagerPolicyEngine';
+import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
+
+
 import { SEPTEMBER_SPECIAL_SALES } from './septemberPolicy';
 
 import {
@@ -81,7 +80,7 @@ function AppFeedbackHost(){
   const finish=value=>{dialog?.resolve?.(value);setDialog(null)};
   return <>
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[120] w-[calc(100%-24px)] max-w-sm space-y-2 pointer-events-none">{toasts.map(t=><div key={t.id} className={`pointer-events-auto rounded-2xl px-4 py-3 shadow-xl border ${t.tone==='error'?'bg-red-600 border-red-500 text-white':t.tone==='info'?'bg-gray-900 border-gray-800 text-white':'bg-emerald-600 border-emerald-500 text-white'}`}><div className="text-xs font-bold">{t.title|| (t.tone==='error'?'처리하지 못했어요':'처리 완료')}</div><div className="text-[11px] opacity-90 mt-0.5">{t.message}</div></div>)}</div>
-    {dialog&&<div className="fixed inset-0 z-[125] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>finish(false)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${dialog.tone==='danger'?'bg-red-50 text-red-500':'bg-violet-50 text-violet-600'}`}><AlertTriangle size={20}/></div><div className="text-lg font-bold text-gray-900 mt-3">{dialog.title||'확인해주세요'}</div><div className="text-xs text-gray-500 mt-2 whitespace-pre-line leading-relaxed">{dialog.message}</div><div className="grid grid-cols-2 gap-2 mt-5"><button onClick={()=>finish(false)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">{dialog.cancelLabel||'돌아가기'}</button><button onClick={()=>finish(true)} className={`py-3 rounded-xl text-white text-sm font-bold ${dialog.tone==='danger'?'bg-red-500':'bg-violet-600'}`}>{dialog.confirmLabel||'확인'}</button></div></div></div>}
+    {dialog&&<div className="fixed inset-0 z-[125] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>finish(false)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${dialog.tone==='danger'?'bg-red-50 text-red-500':'bg-brand-50 text-brand-600'}`}><AlertTriangle size={20}/></div><div className="text-lg font-bold text-gray-900 mt-3">{dialog.title||'확인해주세요'}</div><div className="text-xs text-gray-500 mt-2 whitespace-pre-line leading-relaxed">{dialog.message}</div><div className="grid grid-cols-2 gap-2 mt-5"><button onClick={()=>finish(false)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">{dialog.cancelLabel||'돌아가기'}</button><button onClick={()=>finish(true)} className={`py-3 rounded-xl text-white text-sm font-bold ${dialog.tone==='danger'?'bg-red-500':'bg-brand-600'}`}>{dialog.confirmLabel||'확인'}</button></div></div></div>}
   </>;
 }
 
@@ -101,7 +100,7 @@ function PwaInstallButton(){
     setGuideOpen(true);
   };
   const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  return <><button onClick={install} className="hidden sm:flex h-9 items-center gap-1 rounded-xl border border-violet-100 bg-violet-50 px-2.5 text-[10px] font-bold text-violet-700" title="홈 화면에 앱 설치"><Home size={14}/>앱 설치</button><button onClick={install} className="sm:hidden w-9 h-9 rounded-xl border border-violet-100 bg-violet-50 text-violet-700 flex items-center justify-center" title="앱 설치"><Home size={15}/></button>{guideOpen&&<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-violet-600 text-white flex items-center justify-center"><Trophy size={24}/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">브라우저 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. Chrome 최신 버전에서 가장 원활해요.</div>}<div className="mt-3 rounded-xl bg-violet-50 p-3 text-xs text-violet-700">설치하면 주소창 없이 앱처럼 열리고, 다음 단계에서 휴대폰 푸시 알림도 연결할 수 있어요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>}</>;
+  return <><button onClick={install} className="hidden sm:flex h-9 items-center gap-1 rounded-xl border border-brand-100 bg-brand-50 px-2.5 text-[10px] font-bold text-brand-700" title="홈 화면에 앱 설치"><Home size={14}/>앱 설치</button><button onClick={install} className="sm:hidden w-9 h-9 rounded-xl border border-brand-100 bg-brand-50 text-brand-700 flex items-center justify-center" title="앱 설치"><Home size={15}/></button>{guideOpen&&<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center"><Trophy size={24}/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">브라우저 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. Chrome 최신 버전에서 가장 원활해요.</div>}<div className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">설치하면 주소창 없이 앱처럼 열리고, 다음 단계에서 휴대폰 푸시 알림도 연결할 수 있어요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>}</>;
 }
 
 function AppQuickGuide({open,onClose,isManager=false}){
@@ -119,7 +118,7 @@ function AppQuickGuide({open,onClose,isManager=false}){
     ['4','관리 설정','본사 데이터와 지급기준 같은 민감 메뉴는 권한이 있을 때만 보여요.'],
   ];
   const steps=isManager?managerSteps:employeeSteps;
-  return <div className="fixed inset-0 z-[127] flex items-end justify-center bg-black/45 sm:items-center" onClick={onClose}><div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl" onClick={event=>event.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-violet-600">빠른 사용 안내</div><div className="mt-1 text-xl font-black text-gray-900">미소페이, 이렇게 사용하세요</div><div className="mt-1 text-xs text-gray-400">{isManager?'관리자가 매일 확인할 흐름이에요.':'직원이 매일 사용할 핵심 흐름이에요.'}</div></div><button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500"><X size={15}/></button></div><div className="mt-4 space-y-2">{steps.map(([number,title,description])=><div key={number} className="flex gap-3 rounded-2xl bg-gray-50 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-xs font-black text-white">{number}</span><div><div className="text-sm font-bold text-gray-900">{title}</div><div className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{description}</div></div></div>)}</div><div className="mt-3 rounded-xl bg-violet-50 px-3 py-2.5 text-[11px] text-violet-700">오른쪽 위 <b>?</b> 버튼을 누르면 언제든 다시 볼 수 있어요.</div><button type="button" onClick={onClose} className="mt-4 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">확인하고 시작하기</button></div></div>;
+  return <div className="fixed inset-0 z-[127] flex items-end justify-center bg-black/45 sm:items-center" onClick={onClose}><div className="w-full max-w-md rounded-t-3xl bg-white p-5 sm:rounded-3xl" onClick={event=>event.stopPropagation()}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-brand-600">빠른 사용 안내</div><div className="mt-1 text-xl font-black text-gray-900">미소페이, 이렇게 사용하세요</div><div className="mt-1 text-xs text-gray-400">{isManager?'관리자가 매일 확인할 흐름이에요.':'직원이 매일 사용할 핵심 흐름이에요.'}</div></div><button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500"><X size={15}/></button></div><div className="mt-4 space-y-2">{steps.map(([number,title,description])=><div key={number} className="flex gap-3 rounded-2xl bg-gray-50 p-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-xs font-black text-white">{number}</span><div><div className="text-sm font-bold text-gray-900">{title}</div><div className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{description}</div></div></div>)}</div><div className="mt-3 rounded-xl bg-brand-50 px-3 py-2.5 text-[11px] text-brand-700">오른쪽 위 <b>?</b> 버튼을 누르면 언제든 다시 볼 수 있어요.</div><button type="button" onClick={onClose} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">확인하고 시작하기</button></div></div>;
 }
 
 /* v21.26: 2ND 번들별 일반/무료판매 구분. 무료판매는 실적/KPI 인정, 번들+해당 VAS 인센티브 제외. */
@@ -142,12 +141,7 @@ const DEFAULT_BASE_PAY = { 점장: 2800000, 부점장: 2600000, 매니저: 25000
 const DEFAULT_BASE_PENALTY = 200000; // 활동시간 미충족시 차감
 const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0, 기타: 0 }; // 직책수당 — 영업활동 지원금과 분리하여 최종 가산
 
-const DEFAULT_STORES = [
-  '신천동_삼미시장점', '신천동_삼미시장2호점', '본오3동_상록수역점', '대야동_롯데마트점',
-  '본오3동_주민센터점', '장곡동_장곡역점', '거모동_도일시장점', '월곶동_월곶점',
-  '월피동_성포역점', '광정동_산본점', '고잔동_법조타운점', '은행동_은계사거리점', '본오1동_본오중학교점',
-  '영업지원팀',
-];
+
 // 실제 영업을 하지 않는 조직 — 실적표/실적비교/지급 총액 집계에서 제외
 
 const SALES_AREA_STORES = Object.freeze({
@@ -194,21 +188,9 @@ const DEFAULT_HOME_TIERS = [
   { min: 10, rate: 1000000 },
 ];
 
-const DEFAULT_HOME_FLAT = [
-  { key: 'home1GBOnly', label: '1GB 단독', rate: 200000, point: 0 },
-  { key: 'home500Only', label: '500MB 단독', rate: 100000, point: 0 },
-  { key: 'home100Only', label: '100MB 단독', rate: 50000, point: 0 },
-  { key: 'tvFree', label: 'TV프리(부)', rate: 100000, point: 0.5 },
-  { key: 'smartHome', label: '스마트홈', rate: 100000, point: 0.5 },
-];
 
-const DEFAULT_HOME_ADDON = [
-  { key: 'addNewChange', label: '신규/기변 동시판매', rate: 100000 },
-  { key: 'addMnp', label: 'MNP 동시판매', rate: 300000 },
-  { key: 'addUsedMnp', label: '중고MNP 동시판매 (85군↑ 선약, 가정망)', rate: 200000 },
-  { key: 'addSetTop', label: '부셋탑 동시청약', rate: 50000 },
-  { key: 'smartHomeSimul', label: '스마트홈 동시판매', rate: 50000 },
-];
+
+
 
 
 const DEFAULT_MATRIX = [
@@ -260,15 +242,7 @@ const DEFAULT_TAILORED_TIERS = [
 ];
 
 
-function sortStoresByOpenOrder(list=[]) {
-  const order = new Map(DEFAULT_STORES.map((name, idx) => [name, idx]));
-  return [...new Set((list || []).filter(Boolean))].sort((a,b)=>{
-    const ai = order.has(a) ? order.get(a) : 9999;
-    const bi = order.has(b) ? order.get(b) : 9999;
-    if (ai !== bi) return ai - bi;
-    return displayStoreName(a).localeCompare(displayStoreName(b), 'ko');
-  });
-}
+
 
 function defaultConfig() {
   return {
@@ -296,26 +270,7 @@ function defaultConfig() {
   };
 }
 
-function emptyDraft() {
-  return {
-    activityTimeMet: true,
-    homeNoPerformance: false,
-    mobilePoint: {},
-    kpi: {},
-    homeBase: Object.fromEntries(HOME_BASE_ITEMS.map((i) => [i.key, 0])),
-    homeFlat: Object.fromEntries(DEFAULT_HOME_FLAT.map((i) => [i.key, 0])),
-    homeAddon: Object.fromEntries(DEFAULT_HOME_ADDON.map((i) => [i.key, 0])),
-    renew: Object.fromEntries(DEFAULT_RENEW.map((i) => [i.key, 0])),
-    matrix: MATRIX_ROWS.map(() => MATRIX_COLS.map(() => 0)),
-    vas: Object.fromEntries(DEFAULT_VAS.map((i) => [i.key, 0])),
-    bundle2nd: Object.fromEntries(DEFAULT_BUNDLE2ND.map((i) => [i.key, 0])),
-    sono: Object.fromEntries(DEFAULT_SONO.map((i) => [i.key, 0])),
-    mnpBundle: Object.fromEntries(DEFAULT_MNP_BUNDLE.map((i) => [i.key, 0])),
-    custRegCount: 0,
-    tailoredCount: 0,
-    tailoredAmount: 0,
-  };
-}
+
 
 /* ===================== 유틸 ===================== */
 
@@ -434,7 +389,7 @@ function LastSaved({ updatedAt }) {
 }
 
 function SaveStatus({ saving, dirty, lastSavedAt }) {
-  if (saving) return <span className="flex items-center gap-1 text-[11px] text-violet-600"><Loader2 size={11} className="animate-spin" />저장 중</span>;
+  if (saving) return <span className="flex items-center gap-1 text-[11px] text-brand-600"><Loader2 size={11} className="animate-spin" />저장 중</span>;
   if (dirty) return <span className="flex items-center gap-1 text-[11px] text-amber-600"><UploadCloud size={11} />저장 대기 중</span>;
   if (lastSavedAt) {
     const d = new Date(lastSavedAt);
@@ -449,7 +404,7 @@ function Stepper({ value, onChange }) {
     <div className="flex items-center gap-2">
       <button onClick={() => onChange(Math.max(0, value - 1))} className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600"><Minus size={13} /></button>
       <span className="min-w-7 text-center font-semibold text-gray-800 text-sm tabular-nums">{fmtCount(value)}</span>
-      <button onClick={() => onChange(value + 1)} className="w-7 h-7 rounded-lg bg-violet-100 hover:bg-violet-200 flex items-center justify-center text-violet-700"><Plus size={13} /></button>
+      <button onClick={() => onChange(value + 1)} className="w-7 h-7 rounded-lg bg-brand-100 hover:bg-brand-200 flex items-center justify-center text-brand-700"><Plus size={13} /></button>
     </div>
   );
 }
@@ -464,7 +419,7 @@ function CountRow({ label, sub, value, onChange, disabled }) {
       </div>
       {disabled ? (
         <div className="flex items-center gap-1.5">
-          <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-500">자동</span>
+          <span className="text-xs px-1.5 py-0.5 rounded bg-brand-50 text-brand-500">자동</span>
           <span className="min-w-7 text-center font-semibold text-gray-500 text-sm tabular-nums">{fmtCount(value)}</span>
         </div>
       ) : (
@@ -1390,7 +1345,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
         { onConflict: 'user_id,month' }
       )
       .then(({ error }) => {
-        if (error) console.error('PENDING MONTH SAVE ERROR:', error);
+        if (error) showAppToast(friendlyError(error),{tone:'error',title:'이전 화면의 변경사항 저장 실패'});
       });
   }, [month, empId]);
   const approve = async (id) => {
@@ -1551,20 +1506,20 @@ export default function App({ authUser, authProfile, onSignOut }) {
           </div>
         </div>
       )}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div className="app-header border-b border-gray-200 sticky top-0 z-20">
+        <div className="app-header-main max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center"><Trophy size={18} className="text-white" /></div>
+            <div className="w-9 h-9 rounded-xl bg-ink flex items-center justify-center"><Trophy size={18} className="text-white" /></div>
             <div>
               <div className="font-bold text-gray-900 leading-tight">미소페이</div>
-              <div className="text-[11px] text-gray-400 leading-tight">2026년 MS직군 수수료 정책 반영</div>
+
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button onClick={() => setRole('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'employee' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>직원</button>
+              <button onClick={() => setRole('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'employee' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>직원</button>
               {['manager', 'admin'].includes(authProfile?.role) && (
-                <button onClick={() => setRole('admin')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'admin' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>관리자</button>
+                <button onClick={() => setRole('admin')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${role === 'admin' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>관리자</button>
               )}
             </div>
             <div className="hidden sm:block text-right leading-tight">
@@ -1572,7 +1527,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
               <div className="text-[10px] text-gray-400">{ROLE_LABELS[authProfile?.role] || authProfile?.role}</div>
             </div>
             <PwaInstallButton />
-            <button type="button" onClick={()=>setQuickGuideOpen(true)} title="사용 안내" className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-violet-600"><HelpCircle size={16}/></button>
+            <button type="button" onClick={()=>setQuickGuideOpen(true)} title="사용 안내" className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-brand-600"><HelpCircle size={16}/></button>
             <NotificationBell userId={authUser?.id} onOpen={()=>setNotificationOpen(true)} />
             {onSignOut && (
               <button onClick={onSignOut} title="로그아웃" className="text-gray-400 hover:text-red-500 p-1.5 shrink-0">
@@ -1583,12 +1538,12 @@ export default function App({ authUser, authProfile, onSignOut }) {
         </div>
         {role === 'employee' && (
           <div className="max-w-5xl mx-auto px-4 pb-3 flex items-center gap-2">
-            <span className="text-xs text-gray-400">로그인:</span>
+            <span className="text-xs text-gray-400">조회 직원</span>
             <select
               value={empId}
               onChange={(e) => setEmpId(e.target.value)}
               disabled={scopedEmployees.length <= 1}
-              className="text-sm font-medium bg-violet-50 text-violet-700 px-2.5 py-1 rounded-lg border border-violet-100 disabled:opacity-80"
+              className="text-sm font-medium bg-brand-50 text-brand-700 px-2.5 py-1 rounded-lg border border-brand-100 disabled:opacity-80"
             >
               {scopedEmployees.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -1620,7 +1575,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       {loading ? (
         <div className="flex items-center justify-center py-24 text-gray-400 gap-2"><Loader2 size={18} className="animate-spin" /> 불러오는 중...</div>
       ) : role === 'employee' ? (
-        <EmployeeView
+        <EmployeeView key={`${empId}:${month}`}
           tab={tab} setTab={setTab} months={months} month={month} setMonth={setMonth}
           draft={draft} setDraft={updateDraft} config={config} pay={myPay} mergedDraft={myMergedDraft}
           status={(monthRecords[empId] || {}).status || 'none'}
@@ -1674,451 +1629,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* ===================== v21.60 평가 시스템 ===================== */
 
-const CAREER_PASS_SCORE = 90;
-const MANAGER_GRADE = (score) => score >= 100 ? 'S' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
 
-function quarterInfoFromMonth(month){
-  const [y,m]=String(month).split('-').map(Number);
-  const q=Math.floor((m-1)/3)+1;
-  const start=(q-1)*3+1;
-  const months=[0,1,2].map(i=>`${y}-${String(start+i).padStart(2,'0')}`);
-  return {year:y,quarter:q,key:`${y}-Q${q}`,label:`${y}년 ${q}분기`,months,from:`${months[0]}-01`,to:(()=>{const d=new Date(y,start+2,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;})()};
-}
-function previousQuarterKey(q){
-  const [yStr,qStr]=String(q).split('-Q');const y=Number(yStr),n=Number(qStr);return n===1?`${y-1}-Q4`:`${y}-Q${n-1}`;
-}
-function careerTenureBonus(hireDate, quarterEndMonth){
-  const months=monthsSince(hireDate,quarterEndMonth);
-  if(months<=12)return 0;
-  return Math.min(5,Math.floor((months-1)/12));
-}
-function roundedTarget(v,unit='count'){return unit==='won'?Math.max(0,Number(v||0)):Math.max(0,Math.round(Number(v||0)));}
-function cappedAchievement(actual,target,cap=1){if(!(Number(target)>0))return 0;return Math.min(cap,Math.max(0,Number(actual||0)/Number(target||1)));}
-
-const DEFAULT_AA_METRICS=[
-  {key:'mnp',label:'MNP (HS MNP + SIM MNP)',weight:8,target:209,unit:'count'},
-  {key:'simMnp',label:'SIM MNP',weight:7,target:84,unit:'count'},
-  {key:'subTvHousehold',label:'TV부셋탑(가정망)',weight:7,target:77,unit:'count'},
-  {key:'tvFree',label:'TV프리(부)',weight:6,target:65,unit:'count'},
-  {key:'smartHome',label:'스마트홈',weight:4,target:28,unit:'count'},
-  {key:'otherCustomer',label:'타사 고객 등록',weight:4,target:360,unit:'count'},
-  {key:'tailoredAmount',label:'맞춤제안 매출액',weight:4,target:4120864,unit:'won'},
-];
-function normalizeAaWeights(metrics){
-  const sum=(metrics||[]).reduce((s,x)=>s+Number(x.weight||0),0)||1;
-  return (metrics||[]).map(x=>({...x,normalizedWeight:Number(x.weight||0)/sum*100}));
-}
-function aaMetricScore(actual,target,normalizedWeight){return cappedAchievement(actual,target,1.1)*Number(normalizedWeight||0);}
-function aaAdjustments(input={}){
-  const nps=Number(input.npsScore||0);
-  const npsAdj=nps?Number(((nps-95)).toFixed(1)):0;
-  const unkind=-5*Number(input.unkindCount||0);
-  const complaints=-1*Number(input.complaintCount||0);
-  const security=Number(input.securityScore||0)>0&&Number(input.securityScore)<90?-5:0;
-  const privacy=input.privacyViolation?-10:0;
-  const noExp=Number(input.noExperienceRate||0)>0&&Number(input.noExperienceRate)<=40?2:0;
-  const leveling=String(input.leveling||'')==='4'?3:(input.leveling?-3:0);
-  const internetRatio=Number(input.internetRatio||0);
-  const internet=internetRatio>=10?8:internetRatio>=8?3:0;
-  const daemyung=input.daemyungAchieved?3:0;
-  const prospect=input.prospectMnpAchieved?3:0;
-  return {npsAdj,unkind,complaints,security,privacy,noExp,leveling,internet,daemyung,prospect,total:npsAdj+unkind+complaints+security+privacy+noExp+leveling+internet+daemyung+prospect};
-}
-
-async function loadQuarterCareerKpi(userId,quarter,config){
-  if(!userId)return 0;
-  let total=0;
-  for(const m of quarter.months){
-    const [yy,mm]=m.split('-').map(Number);const next=new Date(yy,mm,1);const to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-    const [{data:ms},{data:daily}]=await Promise.all([
-      supabase.from('monthly_status').select('data,activity_time_met').eq('user_id',userId).eq('month',m).maybeSingle(),
-      supabase.from('daily_records').select('work_date,data').eq('user_id',userId).gte('work_date',`${m}-01`).lt('work_date',to)
-    ]);
-    const base={...emptyDraft(),...(ms?.data?.draft||{}),activityTimeMet:ms?.activity_time_met??true};
-    const map={};(daily||[]).forEach(r=>map[String(r.work_date).slice(8,10)]=r.data);
-    const merged=applyDailyToDraft(base,map,m,config?.categoryMap,config?.gibyeonColumnMap);
-    const kpi=(config?.kpiItems||DEFAULT_KPI_ITEMS).reduce((s,it)=>s+Number(merged.kpi?.[it.key]||0)*Number(it.point||0),0);
-    total+=kpi;
-  }
-  return total;
-}
-
-function CareerEvaluationPanel({ employee, month, config, canManage=false, canFinalApprove=false, managerScopeEmployees=[] }){
-  const quarter=quarterInfoFromMonth(month);
-  const [selectedId,setSelectedId]=useState(employee?.id||'');
-  const selected=(managerScopeEmployees||[]).find(e=>e.id===selectedId)||employee;
-  const [kpi,setKpi]=useState(0),[events,setEvents]=useState([]),[loading,setLoading]=useState(true),[note,setNote]=useState('');
-  const [eventType,setEventType]=useState('nps_negative'),[eventDate,setEventDate]=useState(new Date().toISOString().slice(0,10)),[count,setCount]=useState(1);
-  const [decision,setDecision]=useState(null),[prevDecision,setPrevDecision]=useState(null);
-  useEffect(()=>{if(employee?.id&&!canManage)setSelectedId(employee.id)},[employee?.id,canManage]);
-  useEffect(()=>{
-    if(!selected?.id)return;
-    (async()=>{setLoading(true);
-      const [k,{data:e},{data:d}]=await Promise.all([
-        loadQuarterCareerKpi(selected.id,quarter,config),
-        supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false}),
-        supabase.from('career_eval_decisions').select('*').eq('user_id',selected.id).in('quarter',[quarter.key,previousQuarterKey(quarter.key)])
-      ]);
-      const decisions=d||[];
-      setKpi(Number(k||0));setEvents(e||[]);setDecision(decisions.find(x=>x.quarter===quarter.key)||null);setPrevDecision(decisions.find(x=>x.quarter===previousQuarterKey(quarter.key))||null);setLoading(false);
-    })();
-  },[selected?.id,quarter.key,config]);
-  const active=events.filter(x=>x.status!=='cancelled');
-  const penalty=active.reduce((s,x)=>s+Number(x.count||1),0);
-  const tenure=careerTenureBonus(selected?.hireDate,quarter.months[2]);
-  const score=Number((kpi+tenure-penalty).toFixed(1));
-  const pass=score>=CAREER_PASS_SCORE;
-  const streakFail=pass?0:(Number(prevDecision?.result==='FAIL'?prevDecision?.consecutive_fail_count||1:0)+1);
-  const addEvent=async()=>{
-    if(!selected?.id||!canManage)return;
-    const {error}=await supabase.from('career_eval_penalties').insert({user_id:selected.id,event_date:eventDate,event_type:eventType,count:Math.max(1,Number(count||1)),note:note.trim()||null,status:'active'});
-    if(error)return showLegacyAlert(`평가 내역 저장 실패: ${friendlyError(error)}`);
-    setNote('');setCount(1);const {data}=await supabase.from('career_eval_penalties').select('*').eq('user_id',selected.id).gte('event_date',quarter.from).lt('event_date',quarter.to).order('event_date',{ascending:false});setEvents(data||[]);
-  };
-  const cancelEvent=async(id)=>{if(!canManage)return;const {error}=await supabase.from('career_eval_penalties').update({status:'cancelled'}).eq('id',id).select('id').single();if(error)return showLegacyAlert(friendlyError(error));setEvents(v=>v.map(x=>x.id===id?{...x,status:'cancelled'}:x));};
-  const saveDecision=async(action)=>{
-    if(!canManage)return;
-    const nextFail=streakFail;
-    const payload={quarter:quarter.key,user_id:selected.id,score,result:pass?'PASS':'FAIL',action,consecutive_fail_count:nextFail};
-    const {error}=await supabase.rpc('save_career_decision_atomic',{p_payload:payload,p_expected_position:selected.position});if(error)return showLegacyAlert(friendlyError(error));setDecision({...decision,...payload});
-  };
-  const typeLabel={nps_negative:'NPS 비추천/강한 비추천',label:'꼬리표',home_no_experience:'홈 무체험'};
-  return <div className="space-y-3">
-    {canManage&&(managerScopeEmployees||[]).length>0&&<select value={selectedId} onChange={e=>setSelectedId(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{managerScopeEmployees.map(e=><option key={e.id} value={e.id}>{e.name} · {e.position} · {displayStoreName(e.branch)}</option>)}</select>}
-    <div className="bg-white rounded-2xl border border-gray-100 p-4">
-      <div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 커리어 등급</div><div className="text-lg font-bold mt-1">{selected?.name||'-'} · {selected?.position||'-'}</div></div><div className={`px-3 py-1.5 rounded-full h-fit text-xs font-bold ${pass?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-600'}`}>{loading?'계산중':pass?'PASS':'FAIL'}</div></div>
-      <div className="mt-4 flex items-end gap-2"><span className="text-3xl font-bold text-gray-900">{score.toFixed(1)}P</span><span className="text-xs text-gray-400 mb-1">통과 90P</span></div>
-      <div className="grid grid-cols-4 gap-2 mt-4">{[['3개월 KPI',kpi.toFixed(1)],['근속 가점',`+${tenure}`],['감점',`-${penalty}`],['연속 FAIL',`${streakFail}회`]].map(([l,v])=><div key={l} className="bg-gray-50 rounded-xl p-2.5 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold mt-1">{v}P</div></div>)}</div>
-      {selected?.position==='사원'&&pass&&<div className="mt-3 bg-violet-50 text-violet-700 rounded-xl px-3 py-2 text-xs font-semibold">승급 대상 · 면담 후 매니저 승급 승인 필요</div>}
-      {selected?.position==='매니저'&&!pass&&streakFail>=2&&<div className="mt-3 bg-red-50 text-red-700 rounded-xl px-3 py-2 text-xs font-semibold">⚠ 2회 연속 FAIL · 사원 전환 검토 대상</div>}
-    </div>
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">평가 근거</div><div className="text-[10px] text-gray-400">NPS · 꼬리표 · 홈 무체험은 관리자 등록 내역만 반영돼요.</div></div>
-      {active.length===0?<div className="py-8 text-center text-xs text-gray-400">등록된 감점 내역이 없어요.</div>:<div className="divide-y">{active.map(x=><div key={x.id} className="px-4 py-3 flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.event_date} · {typeLabel[x.event_type]||x.event_type}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-1">{x.note}</div>}</div><div className="flex gap-2 items-center"><b className="text-sm text-red-500">-{x.count}P</b>{canManage&&<button onClick={()=>cancelEvent(x.id)} className="text-[10px] text-gray-400 underline">취소</button>}</div></div>)}</div>}
-    </div>
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 내역 등록</div><div className="grid grid-cols-2 gap-2 mt-3"><select value={eventType} onChange={e=>setEventType(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"><option value="nps_negative">NPS 비추천</option><option value="label">꼬리표</option><option value="home_no_experience">홈 무체험</option></select><input type="date" value={eventDate} onChange={e=>setEventDate(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input type="number" min="1" value={count} onChange={e=>setCount(e.target.value)} className="border rounded-xl px-3 py-2 text-xs"/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="사유/메모" className="border rounded-xl px-3 py-2 text-xs"/></div><button onClick={addEvent} className="w-full mt-2 py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">감점 내역 등록</button></div>}
-    {canManage&&<div className="bg-white rounded-2xl border border-gray-100 p-4"><div className="text-sm font-bold">평가 처리</div><div className="text-[10px] text-gray-400 mt-1">현장 관리자는 평가 확인까지, 최고 관리자는 면담 후 승급·강등을 최종 승인합니다.</div><div className={`grid gap-2 mt-3 ${canFinalApprove?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>saveDecision('reviewed')} className="py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold">평가 확인</button>{canFinalApprove&&<button onClick={async()=>{const action=pass&&selected?.position==='사원'?'promote_manager':(!pass&&selected?.position==='매니저'&&streakFail>=2?'demote_employee':'no_change');await saveDecision(action);}} className="py-2.5 rounded-xl bg-violet-600 text-white text-xs font-bold">면담 결과 최종 승인</button>}</div></div>}
-  </div>;
-}
-
-function managerActualFromDraft(d,key){
-  if(key==='hs')return hsCount(d);
-  if(key==='plan115')return HS_PARTS.reduce((sum,part)=>sum+Number(d.matrix?.[part.idx]?.[0]||0),0);
-  const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
-  const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
-  // AA 임팩트의 MNP 항목은 일반 MNP와 SIM MNP를 합산한다.
-  if(key==='mnp')return hsMnp+simMnp;
-  if(key==='simMnp')return simMnp;
-  if(key==='subTvHousehold')return Number(d.homeAddon?.addSetTop||0)+Number(d.homeFlat?.tvFree||0);
-  if(key==='tvFree')return Number(d.homeFlat?.tvFree||0);
-  if(key==='smartHome')return Number(d.homeFlat?.smartHome||0);
-  if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='tailoredCount')return Number(d.tailoredCount||0);
-  if(key==='otherCustomer')return Number(d.custRegCount||0);
-  if(key==='tailoredAmount')return Number(d.tailoredAmount||0);
-  if(key==='daemyung')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='prospectMnp')return 0;
-  if(key==='home')return completedHomeCount(d);
-  return 0;
-}
-
-function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='', payrollOnly=false }){
-  const quarter=quarterInfoFromMonth(month);
-  const stores=sortStoresByOpenOrder([...new Set((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)))]);
-  const [store,setStore]=useState(canSwitchStores?'':(loginBranch||stores[0]||''));
-  const activeStore=store||stores[0]||'';
-  const [aaConfig,setAaConfig]=useState(DEFAULT_AA_METRICS),[snap,setSnap]=useState({verified_metrics:{},external_inputs:{}}),[allGoals,setAllGoals]=useState([]),[saving,setSaving]=useState(false);
-  const [managerMode,setManagerMode]=useState('dashboard');
-  const activeManagerMode=payrollOnly?'incentive':managerMode;
-  useEffect(()=>{if(!canSwitchStores&&loginBranch)setStore(loginBranch)},[canSwitchStores,loginBranch]);
-  useEffect(()=>{(async()=>{const [{data:c},{data:s},{data:g}]=await Promise.all([
-    supabase.from('aa_impact_monthly').select('*').eq('month',month).maybeSingle(),
-    supabase.from('manager_eval_monthly').select('*').eq('month',month).eq('store_name',activeStore).maybeSingle(),
-    supabase.from('store_goals').select('store_name,company_goals').eq('month',month)
-  ]);if(Array.isArray(c?.metrics)&&c.metrics.length)setAaConfig(c.metrics);setSnap(s||{verified_metrics:{},external_inputs:{}});setAllGoals(g||[]);})();},[month,activeStore]);
-  const storeRows=(rows||[]).filter(r=>r.branch===activeStore);
-  const live={};['hs','plan115','home','mnp','simMnp','subTvHousehold','tvFree','smartHome','second','tailoredCount','otherCustomer','tailoredAmount','daemyung','prospectMnp'].forEach(k=>live[k]=storeRows.reduce((s,r)=>s+managerActualFromDraft(r.draft,k),0));
-  live.productivity=storeRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
-  live.strategicPoints=storeRows.reduce((s,r)=>s+Number(r.pay?.strategicPoints||0),0);
-  const verified=snap?.verified_metrics||{};
-  const actual=(key)=>Number(verified[key]??live[key]??0);
-  // 관리자 > 회사 목표 > 회사 기준수량을 평가의 단일 기준으로 사용합니다.
-  // DB에 해당 월 저장값이 있으면 우선하고, 아직 저장 전인 매장은 회사 기본 기준수량을 보완값으로 사용합니다.
-  const goalMap=Object.fromEntries(stores.map(storeName=>{
-    const saved=(allGoals||[]).find(g=>g.store_name===storeName);
-    return [storeName,{...companyGoalDefaults(storeName),...(saved?.company_goals||{})}];
-  }));
-  const storeHsTarget=Number(goalMap[activeStore]?.hs||0);
-  // 현장 관리자는 권한상 자기 매장 직원만 조회하므로 `stores`에는 한 매장만 들어옵니다.
-  // AA 회사 목표 배분의 분모는 조회 범위가 아니라 정책서의 전체 매장 HS 기준수량이어야 합니다.
-  const allStoreHsTargets=COMPANY_STORE_GOAL_BASE.map(row=>Number(row.hs||0));
-  const totalHsTarget=allStoreHsTargets.reduce((sum,value)=>sum+value,0);
-  const share=managerCompanyGoalShare(storeHsTarget,allStoreHsTargets);
-  const coreTargets={
-    hs:Number(goalMap[activeStore]?.hs||0),
-    home:Number(goalMap[activeStore]?.home||0),
-    productivity:Number(goalMap[activeStore]?.productivity||0)
-  };
-  const hasCompanyGoalBasis=storeHsTarget>0&&totalHsTarget>0;
-  const coreRaw=cappedAchievement(actual('hs'),coreTargets.hs)*30+cappedAchievement(actual('home'),coreTargets.home)*30+cappedAchievement(actual('productivity'),coreTargets.productivity)*40;
-  const core50=coreRaw*0.5;
-  const normalized=normalizeAaWeights(aaConfig);
-  const aaRows=normalized.map(m=>{const target=roundedTarget(Number(m.target||0)*share,m.unit);const a=actual(m.key);const score=aaMetricScore(a,target,m.normalizedWeight);return {...m,storeTarget:target,actual:a,score};});
-  const ext=snap?.external_inputs||{};
-  const hsActual=actual('hs'),householdHome=actual('home'),internetRatio=hsActual>0?householdHome/hsActual*100:0;
-  const daemyungTarget=roundedTarget(35*share,'count'),prospectTarget=roundedTarget(21*share,'count');
-  const adj=aaAdjustments({...ext,internetRatio,daemyungAchieved:daemyungTarget>0&&actual('daemyung')>=daemyungTarget,prospectMnpAchieved:prospectTarget>0&&actual('prospectMnp')>=prospectTarget});
-  const aaBase=aaRows.reduce((s,x)=>s+x.score,0),aa100=Math.max(0,Math.min(100,aaBase+adj.total)),aa50=aa100*0.5,total=core50+aa50,grade=MANAGER_GRADE(total);
-  const operator=managerOperatorForStore(activeStore);
-  const viewer=(employees||[]).find(e=>e.id===authUserId);
-  const canViewManagerIncentive=canSwitchStores||!!(operator?.name&&viewer?.name===operator.name&&viewer?.branch===activeStore);
-  const strategicPoints=Number(verified.strategicPoints??live.strategicPoints??0);
-  const strategicRatio=hsActual>0?strategicPoints/hsActual*100:0;
-  const plan115Count=Number(verified.plan115Count??live.plan115??0),plan115Ratio=hsActual>0?plan115Count/hsActual*100:0;
-  const subTvSmartRatio=hsActual>0?(actual('subTvHousehold')+actual('smartHome'))/hsActual*100:null;
-  const managerEstimate=calculateSeptemberManagerIncentive({
-    actual:{hs:hsActual,home:actual('home'),tvFree:actual('tvFree'),smartHome:actual('smartHome')},
-    targets:{hs:coreTargets.hs,home:coreTargets.home,tvFree:Number(goalMap[activeStore]?.tvFree||0),smartHome:Number(goalMap[activeStore]?.smartHome||0)},
-    managerScore:total,strategicRatio,homeRatio:internetRatio,plan115Count,plan115Ratio,
-    tailoredCount:actual('tailoredCount'),bundledSecondCount:actual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio,
-    levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
-    complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
-    npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
-  });
-  const managerForecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
-  // 실제 급여가 건 단위로 지급되는 항목은 월말 예상도 정수 건으로 환산합니다.
-  // 생산성(P)과 매출액은 본래 소수/금액 단위를 사용하므로 그대로 유지합니다.
-  const forecastActual=(key,unit)=>{
-    const value=Number(actual(key)||0)*managerForecastFactor;
-    return unit==='won'||unit==='point'||key==='productivity'||key==='tailoredAmount'?value:Math.round(value);
-  };
-  const forecastCoreRaw=cappedAchievement(forecastActual('hs'),coreTargets.hs)*30+cappedAchievement(forecastActual('home'),coreTargets.home)*30+cappedAchievement(forecastActual('productivity'),coreTargets.productivity)*40;
-  const forecastAaBase=aaRows.reduce((sum,row)=>sum+aaMetricScore(forecastActual(row.key,row.unit),row.storeTarget,row.normalizedWeight),0);
-  const forecastAa100=Math.max(0,Math.min(100,forecastAaBase+adj.total));
-  const forecastManagerScore=forecastCoreRaw*.5+forecastAa100*.5;
-  const forecastHs=forecastActual('hs'),forecastHome=forecastActual('home');
-  const forecastStrategicPoints=Number(strategicPoints||0)*managerForecastFactor;
-  const forecastPlan115Count=Math.round(Number(plan115Count||0)*managerForecastFactor);
-  const forecastSubTvHousehold=forecastActual('subTvHousehold'),forecastSmartHome=forecastActual('smartHome');
-  const forecastManagerEstimate=calculateSeptemberManagerIncentive({
-    actual:{hs:forecastHs,home:forecastHome,tvFree:forecastActual('tvFree'),smartHome:forecastSmartHome},
-    targets:{hs:coreTargets.hs,home:coreTargets.home,tvFree:Number(goalMap[activeStore]?.tvFree||0),smartHome:Number(goalMap[activeStore]?.smartHome||0)},
-    managerScore:forecastManagerScore,
-    strategicRatio:forecastHs>0?forecastStrategicPoints/forecastHs*100:0,
-    homeRatio:forecastHs>0?forecastHome/forecastHs*100:0,
-    plan115Count:forecastPlan115Count,plan115Ratio:forecastHs>0?forecastPlan115Count/forecastHs*100:0,
-    tailoredCount:forecastActual('tailoredCount'),bundledSecondCount:forecastActual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio:forecastHs>0?(forecastSubTvHousehold+forecastSmartHome)/forecastHs*100:null,
-    levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
-    complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
-    npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
-  });
-  const verifiedAt=snap?.verified_at?new Date(snap.verified_at).toLocaleString('ko-KR'):'미확인';
-  const setVerified=(key,val)=>setSnap(v=>({...v,verified_metrics:{...(v.verified_metrics||{}),[key]:Number(val||0)}}));
-  const setExt=(key,val)=>setSnap(v=>({...v,external_inputs:{...(v.external_inputs||{}),[key]:val}}));
-  const saveSnapshot=async()=>{setSaving(true);const payload={month,store_name:activeStore,verified_metrics:{...live,...(snap.verified_metrics||{})},external_inputs:{...(snap.external_inputs||{})},verified_by:authUserId,verified_at:new Date().toISOString()};const {error}=await supabase.from('manager_eval_monthly').upsert(payload,{onConflict:'month,store_name'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));setSnap(payload);};
-  const saveAa=async()=>{setSaving(true);const {error}=await supabase.from('aa_impact_monthly').upsert({month,metrics:aaConfig,updated_by:authUserId},{onConflict:'month'});setSaving(false);if(error)return showLegacyAlert(friendlyError(error));showLegacyAlert('AA임팩트 월 목표를 저장했어요.');};
-  return <div className="space-y-3">
-    {!payrollOnly&&<div className={`grid gap-2 ${canSwitchStores?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-violet-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
-    {canSwitchStores&&<select value={activeStore} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>}
-    {activeManagerMode==='dashboard'?<>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between gap-3"><div><div className="text-xs text-violet-600 font-semibold">{quarter.label} 관리자 평가 · {monthLabel(month)} 현재 기준</div><div className="text-lg font-bold mt-1">{displayStoreName(activeStore)}</div></div><div className="text-right"><div className="text-3xl font-black text-violet-700">{total.toFixed(1)}</div><div className="text-xs font-bold">{grade}등급</div></div></div><div className="grid grid-cols-2 gap-2 mt-4"><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">핵심성과 50%</div><div className="text-xl font-bold mt-1">{core50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">HS 30% · 홈 30% · 생산성 40%</div></div><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">AA임팩트 50%</div><div className="text-xl font-bold mt-1">{aa50.toFixed(1)} / 50</div><div className="text-[10px] text-gray-400 mt-1">AA 원점수 {aa100.toFixed(1)} / 100</div></div></div><div className="mt-3 text-[10px] text-gray-400">관리자 확인 실적 기준 · 마지막 최신화 {verifiedAt}</div></div>
-      <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">핵심 성과</div></div>{[['HS','hs',30],['홈','home',30],['생산성','productivity',40]].map(([l,k,w])=>{const t=coreTargets[k],a=actual(k),pct=cappedAchievement(a,t)*100;return <div key={k} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between text-xs"><b>{l}</b><span>{fmtNum(a,1)} / {fmtNum(t,1)} · {pct.toFixed(0)}%</span></div><div className="h-1.5 bg-gray-100 rounded-full mt-2"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}}/></div><div className="text-[9px] text-gray-400 mt-1">반영비중 {w}% · 100% 초과 미반영</div></div>})}</div>
-      <div className="bg-white rounded-2xl border overflow-hidden">
-        <div className="px-4 py-3 border-b">
-          <div className="text-sm font-bold">AA임팩트</div>
-          {hasCompanyGoalBasis
-            ? <div className="text-[10px] text-gray-400">회사 목표를 관리자 → 회사 목표의 HS 기준수량 비중({(share*100).toFixed(1)}%)으로 자동 배분 · 건수는 반올림</div>
-            : <div className="text-[10px] text-red-500 font-semibold">⚠ 회사 목표의 HS 기준수량을 확인할 수 없어 AA임팩트 목표를 배분할 수 없습니다.</div>}
-        </div>
-        {aaRows.map(x=><div key={x.key} className="px-4 py-3 border-b flex justify-between gap-3"><div><div className="text-xs font-semibold">{x.label}</div><div className="text-[10px] text-gray-400 mt-1">목표 {x.unit==='won'?won(x.storeTarget):`${x.storeTarget}건`} · 실적 {x.unit==='won'?won(x.actual):`${fmtCount(x.actual)}건`}</div></div><div className="text-right"><b className="text-sm text-violet-700">{x.score.toFixed(1)}점</b><div className="text-[9px] text-gray-400">환산비중 {x.normalizedWeight.toFixed(1)}%</div></div></div>)}
-        <div className="px-4 py-3 bg-gray-50 border-t">
-          <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold">AA임팩트 가감점</span><b className={`text-xs ${adj.total>=0?'text-emerald-600':'text-red-500'}`}>{adj.total>=0?'+':''}{adj.total.toFixed(1)}점</b></div>
-          <div className="space-y-1.5">
-            {[
-              ['NPS', ext.npsScore?`${fmtNum(Number(ext.npsScore),1)}점 · 95점 기준`:'미입력', adj.npsAdj],
-              ['불친절', `${fmtCount(Number(ext.unkindCount||0))}건`, adj.unkind],
-              ['대외민원', `${fmtCount(Number(ext.complaintCount||0))}건`, adj.complaints],
-              ['정보보호', ext.securityScore?`${fmtNum(Number(ext.securityScore),1)}점`:'미입력', adj.security],
-              ['개인정보보호위원회', ext.privacyViolation?'적발':'해당 없음', adj.privacy],
-              ['U+one 무체험', ext.noExperienceRate!==undefined&&ext.noExperienceRate!==''?`${fmtNum(Number(ext.noExperienceRate),1)}%`:'미입력', adj.noExp],
-              ['매장 레벨링', ext.leveling==='4'?'Lv4':ext.leveling?'Lv4 미만':'미입력', adj.leveling],
-              ['인터넷 비중', `${internetRatio.toFixed(1)}% · 홈 ${fmtCount(householdHome)} / HS ${fmtCount(hsActual)}`, adj.internet],
-              ['소노', `목표 ${daemyungTarget}건 / 실적 ${fmtCount(actual('daemyung'))}건`, adj.daemyung],
-              ['MNP 타사 가망', `목표 ${prospectTarget}건 / 실적 ${fmtCount(actual('prospectMnp'))}건`, adj.prospect],
-            ].map(([label,basis,point])=><div key={label} className="flex items-center justify-between gap-3 text-[10px]"><div className="min-w-0"><span className="font-semibold text-gray-600">{label}</span><span className="text-gray-400 ml-1.5">{basis}</span></div><b className={Number(point)>0?'text-emerald-600':Number(point)<0?'text-red-500':'text-gray-400'}>{Number(point)>0?'+':''}{Number(point).toFixed(1)}점</b></div>)}
-          </div>
-        </div>
-      </div>
-    </>:activeManagerMode==='incentive'&&canViewManagerIncentive?<>
-      {month!=='2026-09'?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">9월 관리자 정책이에요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월을 선택하면 정책과 예상액을 확인할 수 있어요.</div></div>:
-       !operator?.name?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">지정된 운영 관리자가 없어요</div><div className="text-xs text-gray-400 mt-1">{displayStoreName(activeStore)}은 9월 관리자 인센티브 지급 대상자가 없습니다.</div></div>:<>
-        <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-700 text-white p-4 shadow-sm">
-          <div><div className="text-[10px] text-violet-100">{SEPTEMBER_MANAGER_POLICY_VERSION} · 월중 예상</div><div className="text-lg font-black mt-1">{operator.name} {operator.position}</div><div className="text-xs text-violet-100 mt-0.5">{displayStoreName(activeStore)} 운영 관리자</div></div>
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 mt-4 rounded-xl bg-white/10 px-3 py-3"><div><div className="text-[10px] text-violet-100">현재 기준액</div><div className="text-xl font-black mt-1">{won(managerEstimate.finalAmount)}</div></div><div className="text-violet-200 text-xl">→</div><div className="text-right"><div className="text-[10px] text-violet-100">월말 예상액</div><div className="text-xl font-black mt-1">{won(forecastManagerEstimate.finalAmount)}</div></div></div>
-          <div className="mt-2 text-[10px] text-violet-100 text-right">현재 {Math.round(managerForecastFactor===1?100:100/managerForecastFactor)}% 경과 기준 예상</div>
-          <div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-relaxed">임팩트 평가 지급률은 월중 금액에 적용하지 않고 월 마감 시 최종 반영해요.</div>
-        </div>
-        <div className="grid grid-cols-2 gap-2"><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">전략P 비중 · 자동</div><div className="text-base font-black text-violet-700 mt-1">{fmtNum(strategicRatio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">전략P {fmtNum(strategicPoints,1)}P ÷ HS {fmtCount(hsActual)}건</div></div><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">115군 비중 · 자동</div><div className="text-base font-black text-violet-700 mt-1">{fmtNum(plan115Ratio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">115군 {fmtCount(plan115Count)}건 ÷ HS {fmtCount(hsActual)}건</div></div></div>
-        <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">성과 인센티브</div><div className="text-[10px] text-gray-400 mt-0.5">달성 구간의 건당 금액 × 실제 완료 건수 · 보라색은 월말 예상</div></div>{managerEstimate.metrics.map((m,index)=>{const forecast=forecastManagerEstimate.metrics[index];return <div key={m.key} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold">{{hs:'HS',home:'홈(소호 포함)',tvFree:'TV프리(부)',smartHome:'스마트홈'}[m.key]}</div><div className="text-[10px] text-gray-400 mt-1">현재 {fmtNum(m.actual,1)} / {fmtNum(m.target,1)}건 · {m.achievement.toFixed(0)}% · {m.tier}</div><div className="text-[10px] font-semibold text-violet-600 mt-1">예상 {fmtNum(forecast.actual,1)}건 · {forecast.achievement.toFixed(0)}% · {forecast.tier}</div></div><div className="text-right"><div className="text-sm font-black text-gray-800">{won(m.amount)}</div><div className="text-[10px] font-bold text-violet-700 mt-1">예상 {won(forecast.amount)}</div><div className="text-[9px] text-gray-400">{forecast.rate?`예상 건당 ${won(forecast.rate)}`:'예상도 지급 전'}</div></div></div>{m.key==='hs'&&<div className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] ${m.withheld?'bg-red-50 text-red-600':'bg-gray-50 text-gray-500'}`}>{m.homeBonus>0?`가정망 홈 12% 이상 · HS +20% ${won(m.homeBonus)}`:'가정망 홈 12% 추가 조건 미달'} · {m.strategicKnown?(m.withheld?'전략P 160% 미만으로 HS 미지급':`전략P ${fmtNum(Number(strategicRatio),1)}%`):'전략P 비중 확인 전'}</div>}</div>})}</div>
-        <div className="space-y-3">
-          <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b flex items-center justify-between gap-3"><div><div className="text-xs text-gray-400">추가 정책</div><div className="text-lg font-black text-gray-800 mt-0.5">현재 +{won(managerEstimate.bonusTotal)}</div></div><div className="text-right shrink-0"><div className="text-[10px] text-violet-500">월말 예상</div><div className="text-base font-black text-violet-700">+{won(forecastManagerEstimate.bonusTotal)}</div></div></div><div className="divide-y divide-gray-100">{managerEstimate.bonuses.map((x,index)=>{const forecast=forecastManagerEstimate.bonuses[index];return <div key={x.key} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-xs"><span className={x.achieved?'font-semibold text-gray-700':'text-gray-500'}>{x.label}</span><b className={`whitespace-nowrap ${x.amount?'text-gray-700':'text-gray-300'}`}>{x.amount?`+${won(x.amount)}`:'현재 —'}</b><b className={`min-w-[88px] text-right whitespace-nowrap ${forecast?.amount?'text-violet-700':'text-gray-300'}`}>{forecast?.amount?`예상 +${won(forecast.amount)}`:'예상 —'}</b></div>})}</div></div>
-          <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b flex items-center justify-between gap-3"><div className="text-xs text-gray-400">현재 확인된 차감</div><div className="text-lg font-black text-red-500 whitespace-nowrap">-{won(managerEstimate.deductionTotal)}</div></div><div className="divide-y divide-gray-100">{managerEstimate.deductions.length?managerEstimate.deductions.map(x=><div key={x.key} className="flex items-center justify-between gap-3 px-4 py-3 text-xs"><span className="text-gray-600">{x.label}</span><b className="text-red-500 whitespace-nowrap">-{won(x.amount)}</b></div>):<div className="px-4 py-4 text-xs text-gray-300">현재 확인된 차감 없음</div>}</div></div>
-        </div>
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[10px] text-amber-700 leading-relaxed">현재 입력·확인된 실적 기준 예상액이에요. 전략P·115군과 월말 임팩트 값이 확정되면 금액이 달라질 수 있습니다. · 2ND 기준 {septemberManagerStoreType(activeStore)==='consignment'?'위탁 20건':'자가 10건'}</div>
-      </>}
-    </>:<>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">실적 최신화</div><div className="text-[10px] text-gray-400 mt-1">직원 입력 누적과 관리자 확인값을 비교하고, 평가에는 관리자 확인값을 우선 사용합니다.</div></div><button onClick={saveSnapshot} disabled={saving} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold h-fit">{saving?'저장중':'최신화 완료'}</button></div><div className="mt-3 space-y-2">{[['HS','hs'],['홈','home'],['생산성','productivity'],['MNP','mnp'],['SIM MNP','simMnp'],['TV부셋탑(가정망)','subTvHousehold'],['TV프리(부)','tvFree'],['스마트홈','smartHome'],['타사 고객 등록','otherCustomer'],['맞춤제안 매출액','tailoredAmount'],['소노','daemyung'],['MNP 타사 가망 개통','prospectMnp']].map(([l,k])=><div key={k} className="grid grid-cols-[1fr_70px_90px] gap-2 items-center"><div className="text-xs text-gray-600">{l}</div><div className="text-[10px] text-gray-400 text-right">입력 {k==='tailoredAmount'?won(live[k]):fmtNum(live[k],1)}</div><input type="number" value={verified[k]??live[k]??0} onChange={e=>setVerified(k,e.target.value)} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
-      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">소노 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(35건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-[1fr_55px_90px] gap-2 items-center"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
-    </>}
-  </div>;
-}
-
-function SalesManagerPayrollPanel({month,rows=[]}){
-  const finalPerformances=useFinalStorePerformance(month);
-  const branches=[...new Set(rows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))];
-  const branchValue=(branch,key,input)=>finalStoreMetric(finalPerformances?.[branch],key,input);
-  const sumByBranch=(key,readInput)=>branches.reduce((total,branch)=>{
-    const members=rows.filter(row=>row.branch===branch);
-    return total+Number(branchValue(branch,key,members.reduce((sum,row)=>sum+Number(readInput(row)||0),0))||0);
-  },0);
-  const company={
-    hs:sumByBranch('hs',row=>hsCount(row.draft||{})),
-    simMnp:sumByBranch('simMnp',row=>(row.draft?.matrix?.[5]||[]).reduce((sum,value)=>sum+Number(value||0),0)),
-    second:sumByBranch('second',row=>(row.draft?.matrix?.[7]||[]).reduce((sum,value)=>sum+Number(value||0),0)+Object.values(row.draft?.bundle2nd||{}).reduce((sum,value)=>sum+Number(value||0),0)),
-    home:sumByBranch('home',row=>completedHomeCount(row.draft)),
-    upsell:sumByBranch('upsell',row=>Number(row.draft?.tailoredCount||0)),
-  };
-  const result=calculateSalesManagerPayroll(company);
-  const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
-  // 회사 정책의 기준 총량은 2ND만 0.2로 환산하고, 지급 대상 HS·홈·업셀은 정수 건으로 계산합니다.
-  const forecastCompany=Object.fromEntries(Object.entries(company).map(([key,value])=>[key,Math.round(Number(value||0)*forecastFactor)]));
-  const forecastResult=calculateSalesManagerPayroll(forecastCompany);
-  const activePolicy=month>='2026-09';
-  if(!activePolicy)return <div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">영업담당 정책은 2026년 9월부터 적용돼요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월 이후를 선택해 주세요.</div></div>;
-  return <div className="space-y-3">
-    <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-violet-800 text-white p-4 shadow-sm">
-      <div><div className="text-[11px] text-violet-100">{SALES_MANAGER_POLICY_VERSION} 정책 · 월중 예상</div><div className="text-lg font-black mt-1">영업담당 급여</div><div className="text-xs text-violet-100 mt-1">김진백 · 임성준 동일한 회사 전체 실적 적용</div></div>
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 mt-4 rounded-xl bg-white/10 px-3 py-3"><div><div className="text-[11px] text-violet-100">현재 기준액</div><div className="text-xl font-black mt-1">{won(result.finalPay)}</div></div><div className="text-violet-200 text-xl">→</div><div className="text-right"><div className="text-[11px] text-violet-100">월말 예상액</div><div className="text-xl font-black mt-1">{won(forecastResult.finalPay)}</div></div></div>
-      <div className="mt-2 text-[11px] text-violet-100 text-right">현재 {Math.round(forecastFactor===1?100:100/forecastFactor)}% 경과 기준 예상</div>
-      {result.guaranteeAdjustment>0&&<div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs">현재 최저 600만원 보장 차액 +{won(result.guaranteeAdjustment)} 반영</div>}
-    </div>
-    <div className="grid grid-cols-2 gap-2">
-      {[['기본급',2500000,2500000],['직책수당',800000,800000],['HS 인센티브',result.hsIncentive,forecastResult.hsIncentive],['홈 인센티브',result.homeIncentive,forecastResult.homeIncentive],['맞춤제안 업셀',result.upsellIncentive,forecastResult.upsellIncentive],['보장 차액',result.guaranteeAdjustment,forecastResult.guaranteeAdjustment]].map(([label,value,forecast])=><div key={label} className="bg-white rounded-xl border p-3"><div className="text-[11px] text-gray-400">{label}</div><div className="text-base font-black text-gray-800 mt-1">{won(value)}</div>{Number(value)!==Number(forecast)&&<div className="text-[11px] font-bold text-violet-600 mt-1">예상 {won(forecast)}</div>}</div>)}
-    </div>
-    <div className="bg-white rounded-2xl border overflow-hidden">
-      <div className="px-4 py-3 border-b"><div className="text-sm font-bold">회사 전체 적용 근거</div><div className="text-[11px] text-gray-400 mt-1">두 영업담당 모두 같은 회사 전체 실적과 구간 단가를 적용합니다.</div></div>
-      <div className="divide-y">
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">모바일 총량 {fmtNum(result.mobileVolume,1)}건</b><div className="text-[11px] text-gray-400 mt-1">HS {fmtCount(company.hs)} + SIM MNP {fmtCount(company.simMnp)} + 2ND {fmtNum(company.second,1)}×0.2</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastResult.mobileVolume,1)}건</div></div><div className="text-right"><b className="text-violet-700">HS 건당 {won(result.mobileTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.mobileTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 HS {fmtCount(forecastCompany.hs)}건 적용</div></div></div>
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">설치 완료 홈 {fmtCount(company.home)}건</b><div className="text-[11px] text-gray-400 mt-1">가정망·소호 모두 포함</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.home,1)}건</div></div><div className="text-right"><b className="text-violet-700">홈 건당 {won(result.homeTier.rate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.homeTier.rate)}</div><div className="text-[10px] text-gray-400 mt-1">예상 홈 전체 적용</div></div></div>
-        <div className="px-4 py-3 flex justify-between gap-3"><div><b className="text-sm">맞춤제안 업셀 {fmtCount(company.upsell)}건</b><div className="text-[11px] text-gray-400 mt-1">회사 전체 500건 이상부터 전 건 적용</div><div className="text-[11px] font-semibold text-violet-600 mt-1">월말 예상 {fmtNum(forecastCompany.upsell,1)}건</div></div><div className="text-right"><b className="text-violet-700">건당 {won(result.upsellRate)}</b><div className="text-[11px] font-semibold text-violet-600 mt-1">예상 건당 {won(forecastResult.upsellRate)}</div><div className="text-[10px] text-gray-400 mt-1">{forecastResult.upsellRate?'예상 지급 구간':'예상도 지급 전'}</div></div></div>
-      </div>
-    </div>
-    <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800 leading-relaxed"><b>분기별 별도 정산</b><br/>담당 매장 HS·홈 합산 달성률 평균 우수 100만원, AA임팩트 평균 우수 50만원은 분기 평가 후 별도로 정산되며 현재 월 급여 예상액에는 포함되지 않습니다.</div>
-  </div>;
-}
-
-function ManagerPayrollPanel({month,employees=[],rows=[],authUserId,canSwitchStores=false,loginBranch=''}){
-  const viewer=employees.find(employee=>employee.id===authUserId);
-  const canViewSales=COMPANY_SCOPE_VIEWERS.has(viewer?.id)||!!SALES_MANAGER_AREAS[viewer?.id];
-  const [mode,setMode]=useState('store');
-  return <div className="space-y-3">
-    <div><div className="text-xs text-violet-600 font-semibold">관리자 급여</div><div className="text-xl font-bold text-gray-900">월 급여 예상</div><div className="text-xs text-gray-400 mt-1">현재 입력·완료 실적 기준이며 월 마감 시 최종 금액이 달라질 수 있어요.</div></div>
-    {canViewSales&&<div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>매장 운영 관리자</button><button onClick={()=>setMode('sales')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='sales'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>영업담당</button></div>}
-    {mode==='sales'&&canViewSales?<SalesManagerPayrollPanel month={month} rows={rows}/>:<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} payrollOnly/>}
-  </div>;
-}
-
-
-function qualityPct(n,d){return d>0?Number((Number(n||0)/d*100).toFixed(1)):0}
-
-function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
-  const mobile=(sales||[]).filter(x=>x.source_type==='mobile');
-  const hs=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))).length;
-  const plan115=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))&&Number(x.source_meta?.ci)===0).length;
-  const mnpRi=MATRIX_ROWS.indexOf('일반모델 MNP');
-  const mnp=mobile.filter(x=>Number(x.source_meta?.ri)===mnpRi).length;
-  const second=mobile.reduce((sum,x)=>sum+(x.source_meta?.bundle2ndKeys||[]).length,0);
-  const strategicPlan=mobile.filter(x=>!!x.source_meta?.strategicPlan).length;
-
-  // 홈은 동일 고객/날짜의 인터넷을 1건으로 계산. 올인원 포함.
-  const internetKeys=new Set();
-  let free=0,smart=0;
-  (homeOrders||[]).forEach(o=>{
-    const d=homePerformanceDate(o);
-    const ck=o.customer_id||o.customer_name||o.id;
-    if(['internet1g','internet500','internet100','homeOnly','homeTv'].includes(o.product_type))internetKeys.add(`${d}|${ck}`);
-    if(o.product_type==='tvFree')free++;
-    if(o.product_type==='smartHome')smart++;
-  });
-
-  const {insurance,strategicVas,daemyungCount,strategicPointsWithoutDaemyung}=summarizeVasQuality(mobile);
-  const revenuePoints=Number(strategicPointsWithoutDaemyung||0)+Math.max(Number(daemyungCount||0),Number(sonoCount||0))*2;
-  return {hs,plan115,home:internetKeys.size,freeSmart:free+smart,mnp,second,strategicPlan,insurance,strategicVas,sono:Number(sonoCount||0),revenuePoints,
-    plan115Pct:qualityPct(plan115,hs),homePct:qualityPct(internetKeys.size,hs),freeSmartPct:qualityPct(free+smart,hs),mnpPct:qualityPct(mnp,hs),secondPct:qualityPct(second,hs),revenuePct:qualityPct(revenuePoints,hs)};
-}
-
-function QualityMetricCard({label,value,sub=''}){return <div className="bg-white border border-gray-100 rounded-xl p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="text-xl font-black text-gray-900 mt-1">{value}</div>{sub&&<div className="text-[9px] text-gray-400 mt-1">{sub}</div>}</div>}
-
-function SalesQualityPanel({month,employee=null,employees=[],isManager=false,loginBranch='',canSwitchStores=false}){
-  const [loading,setLoading]=useState(true),[data,setData]=useState({}),[storeFilter,setStoreFilter]=useState(loginBranch||'');
-  const scoped=(employees||[]).filter(e=>!NON_SALES_STORES.includes(e.branch)).filter(e=>canSwitchStores||!loginBranch?true:e.branch===loginBranch);
-  const ids=isManager?scoped.map(e=>e.id):[employee?.id].filter(Boolean);
-  useEffect(()=>{if(!ids.length){setData({});setLoading(false);return}
-    (async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-      const [sr,hr,dr]=await Promise.all([
-        supabase.from('customer_sales').select('user_id,source_type,source_meta').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to),
-        supabase.from('home_orders').select('id,user_id,customer_id,customer_name,product_type,sale_type,status,source_work_date,actual_install_date').in('user_id',ids).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`),
-        supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to)
-      ]);
-      const map={};ids.forEach(id=>map[id]={sales:[],home:[],sono:0});
-      (sr.data||[]).forEach(x=>map[x.user_id]?.sales.push(x));
-      (hr.data||[]).filter(x=>{const d=homePerformanceDate(x);return x.status==='completed'&&d>=`${month}-01`&&d<to}).forEach(x=>map[x.user_id]?.home.push(x));
-      (dr.data||[]).forEach(x=>{const g=x.data?.groups?.sono||{};if(map[x.user_id])map[x.user_id].sono+=Object.values(g).reduce((a,v)=>a+Number(v||0),0)});
-      const result={};ids.forEach(id=>result[id]=qualityFromSales(map[id]?.sales||[],map[id]?.home||[],map[id]?.sono||0));setData(result);setLoading(false);
-    })().catch(err=>{console.error('SALES QUALITY LOAD ERROR',err);const result={};ids.forEach(id=>result[id]=qualityFromSales([],[],0));setData(result);setLoading(false);});
-  },[month,ids.join('|')]);
-
-  if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">판매 퀄리티 계산 중...</div>;
-  const render=(q)=>{
-    const safe={
-      hs:Number(q?.hs||0),plan115:Number(q?.plan115||0),home:Number(q?.home||0),
-      freeSmart:Number(q?.freeSmart||0),mnp:Number(q?.mnp||0),second:Number(q?.second||0),
-      revenuePoints:Number(q?.revenuePoints||0),
-      plan115Pct:Number(q?.plan115Pct||0),homePct:Number(q?.homePct||0),
-      freeSmartPct:Number(q?.freeSmartPct||0),mnpPct:Number(q?.mnpPct||0),
-      secondPct:Number(q?.secondPct||0),revenuePct:Number(q?.revenuePct||0)
-    };
-    return <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      <QualityMetricCard label="115군 비중" value={`${safe.plan115Pct}%`} sub={`${safe.plan115}/${safe.hs}건`} />
-      <QualityMetricCard label="홈(인터넷) 비중" value={`${safe.homePct}%`} sub={`${safe.home}/${safe.hs}건 · 올인원 포함`} />
-      <QualityMetricCard label="프리+스홈 비중" value={`${safe.freeSmartPct}%`} sub={`${safe.freeSmart}/${safe.hs}건 · 상품수 기준`} />
-      <QualityMetricCard label="MNP 비중" value={`${safe.mnpPct}%`} sub={`${safe.mnp}/${safe.hs}건`} />
-      <QualityMetricCard label="2ND 번들 비중" value={`${safe.secondPct}%`} sub={`${safe.second}/${safe.hs}건 · 상품수 기준`} />
-      <QualityMetricCard label="매출지표" value={`${safe.revenuePct}%`} sub={`총 ${safe.revenuePoints.toFixed(1)}P / HS ${safe.hs}건`} />
-    </div>;
-  };
-
-  if(!isManager)return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">보조지표</div><div className="text-lg font-bold">판매 퀄리티 · {monthLabel(month)}</div><div className="text-[10px] text-gray-400 mt-1">평가점수에는 반영되지 않습니다.</div></div>{render(data[employee?.id])}</div>;
-
-  const stores=sortStoresByOpenOrder([...new Set(scoped.map(e=>e.branch))]);
-  const selectedStore=storeFilter||stores[0]||'';
-  const members=scoped.filter(e=>e.branch===selectedStore);
-  const emptyAgg={hs:0,plan115:0,home:0,freeSmart:0,mnp:0,second:0,strategicPlan:0,insurance:0,strategicVas:0,sono:0,revenuePoints:0};
-  const agg=members.reduce((a,e)=>{const q=data[e.id];if(!q)return a;Object.keys(emptyAgg).forEach(k=>a[k]=Number(a[k]||0)+Number(q[k]||0));return a},{...emptyAgg});
-  const storeQ={...agg,plan115Pct:qualityPct(agg.plan115,agg.hs),homePct:qualityPct(agg.home,agg.hs),freeSmartPct:qualityPct(agg.freeSmart,agg.hs),mnpPct:qualityPct(agg.mnp,agg.hs),secondPct:qualityPct(agg.second,agg.hs),revenuePct:qualityPct(agg.revenuePoints,agg.hs)};
-  if(!stores.length)return <div className="bg-white rounded-xl border p-5"><div className="text-sm font-bold text-gray-800">판매 퀄리티</div><div className="text-xs text-gray-400 mt-1">조회 가능한 매장이 없습니다.</div></div>;
-  return <div className="space-y-3"><div className="flex justify-between items-end gap-2"><div><div className="text-xs text-violet-600 font-semibold">판매 퀄리티</div><div className="text-lg font-bold">매장/직원 보조지표</div><div className="text-[10px] text-gray-400 mt-1">매장 수치는 직원 비율 평균이 아니라 매장 전체 HS 기준으로 재계산합니다.</div></div><select value={selectedStore} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(st=><option key={st} value={st}>{displayStoreName(st)}</option>)}</select></div>
-    <div className="bg-violet-50/50 border border-violet-100 rounded-xl p-3"><div className="text-sm font-bold mb-2">{displayStoreName(selectedStore)} 전체</div>{render(storeQ)}</div>
-    <div className="space-y-2">{members.length?members.map(e=><div key={e.id} className="bg-white border rounded-xl p-3"><div className="font-bold text-sm mb-2">{e.name}</div>{render(data[e.id])}</div>):<div className="bg-white border rounded-xl p-4 text-xs text-gray-400">이 매장에 조회 가능한 직원이 없습니다.</div>}</div>
-  </div>;
-}
-
-function EvaluationTab({ month, employee, config, isManagerView=false, canFinalApprove=false, employees=[], rows=[], authUserId, canSwitchStores=false, loginBranch='' }){
-  const [mode,setMode]=useState('career');
-  const managerEligible=isManagerView;
-  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">평가</div><div className="text-xl font-bold text-gray-900">{mode==='quality'?'판매 퀄리티':'커리어 등급'}</div></div><div className={`grid ${managerEligible?'grid-cols-3':'grid-cols-2'} bg-gray-100 rounded-xl p-1 gap-1`}><button onClick={()=>setMode('career')} className={`py-2 rounded-lg text-xs font-bold ${mode==='career'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 커리어 등급</button>{managerEligible&&<button onClick={()=>setMode('manager')} className={`py-2 rounded-lg text-xs font-bold ${mode==='manager'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>관리자 평가</button>}<button onClick={()=>setMode('quality')} className={`py-2 rounded-lg text-xs font-bold ${mode==='quality'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>판매 퀄리티</button></div>{mode==='career'?<CareerEvaluationPanel employee={employee} month={month} config={config} canManage={managerEligible} canFinalApprove={canFinalApprove} managerScopeEmployees={employees}/>:mode==='manager'?<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch}/>:<SalesQualityPanel month={month} employee={employee} employees={employees} isManager={managerEligible} loginBranch={loginBranch} canSwitchStores={canSwitchStores}/>}</div>;
-}
 
 
 /* ===================== 직원 화면 ===================== */
@@ -2187,7 +1698,7 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
       </div>
       <div className="flex gap-1.5 overflow-x-auto mt-3 pb-0.5">
         {MONTHLY_RANK_METRICS.map(m=><button key={m.key} type="button" onClick={()=>setMetricKey(m.key)}
-          className={`shrink-0 px-2.5 py-1.5 rounded-full border text-[10px] font-semibold ${metricKey===m.key?'bg-violet-600 border-violet-600 text-white':'bg-white border-gray-200 text-gray-500'}`}>
+          className={`shrink-0 px-2.5 py-1.5 rounded-full border text-[10px] font-semibold ${metricKey===m.key?'bg-brand-600 border-brand-600 text-white':'bg-white border-gray-200 text-gray-500'}`}>
           {m.label}
         </button>)}
       </div>
@@ -2197,11 +1708,11 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
       {displayRows.map((r)=>{
         const rr=rankOf(r);
         const isMe=String(r.id||'')===String(userId||'') || (userName&&String(r.name||'').trim()===String(userName||'').trim()&&(!userBranch||String(r.branch||'')===String(userBranch||'')));
-        return <div key={r.id} className={`flex items-center justify-between px-4 py-2.5 gap-3 ${showAll&&isMe?'bg-violet-50':''}`}>
+        return <div key={r.id} className={`flex items-center justify-between px-4 py-2.5 gap-3 ${showAll&&isMe?'bg-brand-50':''}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${rr===1?'bg-amber-100 text-amber-700':rr===2?'bg-gray-100 text-gray-600':'bg-orange-50 text-orange-600'}`}>{rr}</span>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-gray-800 truncate">{r.name}{showAll&&isMe&&<span className="ml-1 text-[9px] text-violet-600">나</span>}</div>
+            <div className="text-xs font-semibold text-gray-800 truncate">{r.name}{showAll&&isMe&&<span className="ml-1 text-[9px] text-brand-600">나</span>}</div>
             {!branchOnly&&<div className="text-[10px] text-gray-400 truncate">{displayStoreName(r.branch)}</div>}
           </div>
         </div>
@@ -2209,9 +1720,9 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
       </div>})}
     </div>
 
-    {!showAll&&me&&<div className="px-4 py-2.5 bg-violet-50 flex items-center justify-between">
-      <span className="text-xs font-semibold text-violet-700">나 · {myTied?'공동 ':''}{fmtCount(myRank)}위</span>
-      <span className="text-xs font-bold text-violet-700">{fmt(metric.value(me))}</span>
+    {!showAll&&me&&<div className="px-4 py-2.5 bg-brand-50 flex items-center justify-between">
+      <span className="text-xs font-semibold text-brand-700">나 · {myTied?'공동 ':''}{fmtCount(myRank)}위</span>
+      <span className="text-xs font-bold text-brand-700">{fmt(metric.value(me))}</span>
     </div>}
   </div>;
 }
@@ -2300,7 +1811,7 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
             {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
             <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}{Number(m.current)!==Number(m.inputCurrent)&&<span className="block text-[8px] font-normal text-gray-400">입력 {fmtValue(m,m.inputCurrent)}</span>}</span>
             <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
-            <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{fmtValue(m,forecast)}</span>
+            <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-brand-600'}`}>{fmtValue(m,forecast)}</span>
           </div>;
         })}
         </div>
@@ -2516,9 +2027,9 @@ function RisingRankingCard({ rows, dailyRecords, month, config, userId }) {
       </div>
 
       {me && myIndex >= 3 && (
-        <div className="px-4 py-3 bg-violet-50 flex items-center justify-between gap-3">
-          <div className="text-xs font-semibold text-violet-700">나는 현재 {myIndex + 1}위</div>
-          <div className="text-sm font-bold text-violet-700">
+        <div className="px-4 py-3 bg-brand-50 flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold text-brand-700">나는 현재 {myIndex + 1}위</div>
+          <div className="text-sm font-bold text-brand-700">
             +{formatCompetitionValue(me.recentValue, metric.unit)}
           </div>
         </div>
@@ -2568,7 +2079,7 @@ function MyRankingCard({ rows, userId, branch }) {
             <b>{formatCompetitionValue(metric.value(above), metric.unit)}</b>
           </div>
         )}
-        <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-violet-50 text-violet-800">
+        <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-brand-50 text-brand-800">
           <span className="font-bold">{idx + 1}위 · {mine.name}</span>
           <b>{formatCompetitionValue(metric.value(mine), metric.unit)}</b>
         </div>
@@ -2582,7 +2093,7 @@ function MyRankingCard({ rows, userId, branch }) {
 
       {above && (
         <div className="text-xs text-gray-500 mt-3">
-          {idx === 1 ? '1위' : `${idx}위`}까지 <b className="text-violet-700">
+          {idx === 1 ? '1위' : `${idx}위`}까지 <b className="text-brand-700">
             {formatCompetitionValue(gap, metric.unit)}
           </b> 차이예요 🔥
         </div>
@@ -2872,7 +2383,7 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-gray-800 truncate">{item.name}</div>
-              <div className="text-xs text-violet-600 font-medium mt-0.5">{item.title}</div>
+              <div className="text-xs text-brand-600 font-medium mt-0.5">{item.title}</div>
               {item.branch && <div className="text-[10px] text-gray-400 mt-0.5 truncate">{displayStoreName(item.branch)}</div>}
             </div>
           </div>
@@ -2892,24 +2403,24 @@ function HallOfFame({rows,month}){
   const rankSum=(r)=>['hs','home','productivity'].reduce((s,k)=>s+1+salesRows.filter(x=>Number(metric(k).value(x)||0)>Number(metric(k).value(r)||0)).length,0);
   const mvp=[...salesRows].sort((a,b)=>rankSum(a)-rankSum(b)||hsCount(b.draft)-hsCount(a.draft))[0];
   const title=(r)=>badgeDefOf(titles[r?.id]);
-  const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-violet-100 text-violet-700 flex items-center justify-center font-black shrink-0`}>{avatars[r?.id]?<img src={avatars[r.id]} alt="" className="w-full h-full object-cover"/>:String(r?.name||'?').slice(0,1)}</div>;
-  const profile=selected&&<div className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-violet-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-violet-50 px-4 py-3 text-sm text-violet-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',hsCount(selected.draft),'건'],['홈',metric('home').value(selected),'건'],['생산성',selected.pay?.kpiScore||0,'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
+  const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-brand-100 text-brand-700 flex items-center justify-center font-black shrink-0`}>{avatars[r?.id]?<img src={avatars[r.id]} alt="" className="w-full h-full object-cover"/>:String(r?.name||'?').slice(0,1)}</div>;
+  const profile=selected&&<div className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-brand-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',hsCount(selected.draft),'건'],['홈',metric('home').value(selected),'건'],['생산성',selected.pay?.kpiScore||0,'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
   const cards=[['HS KING',leader('hs')],['홈 KING',leader('home')],['생산성 KING',leader('productivity')]];
-  return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이번 달 주인공들을 만나보세요</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-violet-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-violet-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
+  return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이달의 우수 직원</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-brand-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-brand-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
 }
 
 function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
-  return <section className="rounded-3xl border border-violet-100 bg-gradient-to-b from-violet-50/80 to-white p-2.5 shadow-sm">
+  return <section className="rounded-3xl border border-brand-100 bg-gradient-to-b from-brand-50/80 to-white p-2.5 shadow-sm">
     <div className="px-2.5 pt-2 pb-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[10px] font-bold tracking-wide text-violet-600">성과 라운지</div>
+
           <div className="mt-0.5 text-base font-black text-gray-900">명예의 전당 · 월간 순위</div>
-          <div className="mt-1 text-[11px] leading-relaxed text-gray-500">이번 달 주인공과 내 순위를 한 번에 확인하세요.</div>
+
         </div>
         <div className="flex shrink-0 gap-1">
           <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">🏆 명예</span>
-          <span className="rounded-full bg-violet-100 px-2 py-1 text-[9px] font-bold text-violet-700">순위</span>
+          <span className="rounded-full bg-brand-100 px-2 py-1 text-[9px] font-bold text-brand-700">순위</span>
         </div>
       </div>
     </div>
@@ -2996,7 +2507,7 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     const next=events.find(x=>!localStorage.getItem(`miso-celebration-${userId}-${x.key}`));
     if(next){events.forEach(x=>localStorage.setItem(`miso-celebration-${userId}-${x.key}`,'1'));setCelebration(next)}
   },[userId,month,mergedDraft,pay?.grade,pay?.gradeEligible,competitionRows,loadingBadges,celebration]);
-  const saveTitle=async(key)=>{if(!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(!error)setTitleKey(key)};
+  const saveTitle=async(key)=>{if(!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)return showAppToast(friendlyError(error),{tone:'error',title:'배지 저장 실패'});setTitleKey(key)};
   const titleDef=badgeDefOf(titleKey);
   const visible=BADGE_DEFS.filter(b=>filter==='earned'?earnedKeys.has(b.key):filter==='locked'?!earnedKeys.has(b.key):filter==='legend'?b.rarity==='LEGEND':true);
   const earnedRow=storedBadges.find(r=>r.badge_key===titleKey);
@@ -3036,7 +2547,8 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   };
   const saveStatus=async()=>{
     const clean=String(statusMessage||'').trim().slice(0,40);setStatusBusy(true);
-    const {data:existing}=await supabase.from('employee_public_profiles').select('avatar_path').eq('user_id',userId).maybeSingle();
+    const {data:existing,error:readError}=await supabase.from('employee_public_profiles').select('avatar_path').eq('user_id',userId).maybeSingle();
+    if(readError){setStatusBusy(false);return showAppToast(friendlyError(readError),{tone:'error',title:'프로필 조회 실패'})}
     const {error}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:existing?.avatar_path||null,status_message:clean||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
     setStatusBusy(false);if(error)return showAppToast(friendlyError(error),{tone:'error'});setStatusMessage(clean);setStatusEditing(false);showAppToast('공개 한줄 상태를 저장했어요.');
   };
@@ -3044,13 +2556,13 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   return <>
     {celebration&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-center justify-center p-5" onClick={()=>setCelebration(null)}>
       <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={e=>e.stopPropagation()}>
-        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-violet-100 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-brand-100 to-transparent" />
         <div className="relative text-5xl">{celebration.icon}</div><div className="relative mt-3 text-xl font-black text-gray-900">{celebration.title}</div><div className="relative mt-2 text-sm text-gray-500">{celebration.message}</div>
-        <div className="relative mt-4 flex justify-center gap-2">{['●','◆','●','◆','●'].map((x,i)=><span key={i} className={`${i%2?'text-amber-400':'text-violet-400'} animate-bounce`} style={{animationDelay:`${i*80}ms`}}>{x}</span>)}</div>
-        <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-violet-600 py-3 text-sm font-bold text-white">좋아요!</button>
+        <div className="relative mt-4 flex justify-center gap-2">{['●','◆','●','◆','●'].map((x,i)=><span key={i} className={`${i%2?'text-amber-400':'text-brand-400'} animate-bounce`} style={{animationDelay:`${i*80}ms`}}>{x}</span>)}</div>
+        <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">좋아요!</button>
       </div>
     </div>}
-    <div className="w-full rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-3.5">
+    <div className="summary-hero w-full text-white">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
         <label className="relative w-12 h-12 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
@@ -3059,39 +2571,39 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
         </label>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold truncate">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-violet-100/75 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
-          <div className="text-[10px] text-violet-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
+          <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold truncate">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-brand-100/75 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
+          <div className="text-[10px] text-brand-100 mt-0.5 truncate">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
         </div>
         </div>
         <button type="button" onClick={()=>setShowCollection(true)} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/15 border border-white/20 text-[10px] font-bold">
-          <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'배지 선택'}</span><span className="text-violet-100">›</span>
+          <span>{titleDef?.icon||'🏅'}</span><span>{titleDef?.name||'배지 선택'}</span><span className="text-brand-100">›</span>
         </button>
       </div>
 
-      <div className="mt-4 pt-1 flex items-end justify-between gap-3">
-        <div className="min-w-0"><div className="text-[10px] text-violet-100/80">{monthLabel(month)} 현재 실적 금액</div><div className="text-2xl font-bold mt-2">{won(Math.max(0,currentAmount))}</div></div>
+      <div className="summary-hero-actions mt-5 pt-1 flex items-end justify-between gap-3">
+        <div className="min-w-0"><div className="text-[10px] text-brand-100/80">{monthLabel(month)} 현재 실적 금액</div><div className="metric-value text-3xl font-bold mt-2">{currentAmount===null?'—':won(currentAmount)}</div></div>
         <button type="button" onClick={onOpenPay} className="shrink-0 px-3 py-2.5 rounded-xl bg-white/12 border border-white/20 text-[10px] font-bold">급여 확인·비교 ›</button>
       </div>
 
       <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 mt-3 pt-3 border-t border-white/15 items-center">
-        <div><div className="text-[9px] text-violet-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay?.gradeEligible?pay.grade:'D(미달)'}</div></div>
-        <div><div className="text-[9px] text-violet-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.totalPoints||0,1)}P</div></div>
-        <div><div className="text-[9px] text-violet-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.kpiScore||0,1)}P</div></div>
-        <button type="button" onClick={onGoInput} className="px-3 py-2.5 rounded-xl bg-white text-violet-700 text-[10px] font-bold whitespace-nowrap">실적 입력 ›</button>
+        <div><div className="text-[9px] text-brand-100/75">등급</div><div className="text-[11px] font-bold mt-0.5">{pay?.gradeEligible?pay.grade:'D(미달)'}</div></div>
+        <div><div className="text-[9px] text-brand-100/75">성과등급P</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.totalPoints||0,1)}P</div></div>
+        <div><div className="text-[9px] text-brand-100/75">생산성</div><div className="text-[11px] font-bold mt-0.5">{fmtNum(pay?.kpiScore||0,1)}P</div></div>
+        <button type="button" onClick={onGoInput} className="px-3 py-2.5 rounded-xl bg-white text-brand-700 text-[10px] font-bold whitespace-nowrap">실적 입력 ›</button>
       </div>
     </div>
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
       <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
         <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / {BADGE_DEFS.length}</div><div className="text-[10px] text-gray-400">획득한 배지를 대표 배지로 선택할 수 있어요.</div></div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
-          <div className="flex gap-1.5 mt-3 overflow-x-auto">{[['all','전체'],['earned','획득'],['locked','미획득'],['legend','LEGEND']].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-100 text-gray-500'}`}>{l}</button>)}</div>
+          <div className="flex gap-1.5 mt-3 overflow-x-auto">{[['all','전체'],['earned','획득'],['locked','미획득'],['legend','LEGEND']].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${filter===k?'bg-brand-600 text-white':'bg-gray-100 text-gray-500'}`}>{l}</button>)}</div>
         </div>
         <div className="p-3 grid grid-cols-2 gap-2 overflow-y-auto max-h-[70vh]">
-          {visible.map(b=>{const got=earnedKeys.has(b.key);const row=storedBadges.find(r=>r.badge_key===b.key);const current=b.progressMetric==='tenure'?Number(pay?.months||0):Number(lifetimeTotals?.[b.progressMetric]||0);const showProgress=!got&&b.progressMetric&&b.threshold;return <button key={b.key} disabled={!got} onClick={()=>got&&saveTitle(b.key)} className={`rounded-2xl border p-3 text-left ${got?(titleKey===b.key?'border-violet-300 bg-violet-50 ring-1 ring-violet-100':'border-gray-100 bg-white'):'border-gray-100 bg-gray-50 opacity-55'}`}>
+          {visible.map(b=>{const got=earnedKeys.has(b.key);const row=storedBadges.find(r=>r.badge_key===b.key);const current=b.progressMetric==='tenure'?Number(pay?.months||0):Number(lifetimeTotals?.[b.progressMetric]||0);const showProgress=!got&&b.progressMetric&&b.threshold;return <button key={b.key} disabled={!got} onClick={()=>got&&saveTitle(b.key)} className={`rounded-2xl border p-3 text-left ${got?(titleKey===b.key?'border-brand-300 bg-brand-50 ring-1 ring-brand-100':'border-gray-100 bg-white'):'border-gray-100 bg-gray-50 opacity-55'}`}>
             <div className="flex justify-between"><span className="text-2xl">{got?b.icon:'🔒'}</span><span className="text-[8px] font-bold text-gray-400">{b.rarity}</span></div>
             <div className="text-xs font-bold text-gray-800 mt-2">{b.name}</div><div className="text-[10px] text-gray-500 mt-1 leading-tight">{b.desc}</div>
-            {showProgress&&<div className="mt-2"><div className="h-1.5 rounded-full bg-gray-200 overflow-hidden"><div className="h-full rounded-full bg-violet-500" style={{width:`${Math.min(100,current/Number(b.threshold)*100)}%`}}/></div><div className="text-[9px] text-violet-600 mt-1">{fmtCount(current)} / {fmtCount(b.threshold)} · {fmtCount(Math.max(0,b.threshold-current))}{b.progressMetric==='tenure'?'개월':'건'} 남음</div></div>}
-            {got&&<div className="text-[9px] text-violet-500 mt-2">{titleKey===b.key?'대표 배지 사용 중':row?.earned_at?`${fmtShortDate(row.earned_at)} 획득 · 대표로 설정`:'대표로 설정'}</div>}
+            {showProgress&&<div className="mt-2"><div className="h-1.5 rounded-full bg-gray-200 overflow-hidden"><div className="h-full rounded-full bg-brand-500" style={{width:`${Math.min(100,current/Number(b.threshold)*100)}%`}}/></div><div className="text-[9px] text-brand-600 mt-1">{fmtCount(current)} / {fmtCount(b.threshold)} · {fmtCount(Math.max(0,b.threshold-current))}{b.progressMetric==='tenure'?'개월':'건'} 남음</div></div>}
+            {got&&<div className="text-[9px] text-brand-500 mt-2">{titleKey===b.key?'대표 배지 사용 중':row?.earned_at?`${fmtShortDate(row.earned_at)} 획득 · 대표로 설정`:'대표로 설정'}</div>}
           </button>})}
         </div>
       </div>
@@ -3145,8 +2657,8 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
 
   return (
     <div className="space-y-3">
-      <div className="bg-white rounded-xl border border-violet-100 p-4">
-        <div className="text-xs text-violet-500">관리자가 직접 전하는 인정</div>
+      <div className="bg-white rounded-xl border border-brand-100 p-4">
+        <div className="text-xs text-brand-500">관리자가 직접 전하는 인정</div>
         <div className="text-base font-bold text-gray-900 mt-0.5">⭐ 특별 배지 수여</div>
         <div className="text-xs text-gray-400 mt-1">
           숫자로 다 담기 어려운 성장과 팀워크도 기록으로 남겨주세요.
@@ -3202,7 +2714,7 @@ function SpecialBadgeAwardPanel({ employees, authUserId }) {
         <button
           onClick={award}
           disabled={saving || !employeeId}
-          className="w-full mt-4 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50"
+          className="w-full mt-4 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold disabled:opacity-50"
         >
           {saving ? '수여 중...' : '특별 배지 수여'}
         </button>
@@ -3321,18 +2833,18 @@ function PushNotificationSettings({userId}){
   };
   const disable=async()=>{
     setBusy(true);setMessage('');
-    try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub){await supabase.from('push_subscriptions').delete().eq('endpoint',sub.endpoint).eq('user_id',userId);await sub.unsubscribe()}setEnabled(false);setMessage('이 기기의 알림을 껐어요.')}catch(error){setMessage(friendlyError(error))}finally{setBusy(false)}
+    try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub){const {error}=await supabase.from('push_subscriptions').delete().eq('endpoint',sub.endpoint).eq('user_id',userId);if(error)throw error;await sub.unsubscribe()}setEnabled(false);setMessage('이 기기의 알림을 껐어요.')}catch(error){setMessage(friendlyError(error))}finally{setBusy(false)}
   };
   const test=async()=>{
     setBusy(true);setMessage('테스트 알림을 보내는 중이에요.');
     const {error}=await supabase.from('notifications').insert({recipient_id:userId,actor_id:userId,type:'push_test',title:'미소페이 알림 테스트',message:'푸시 알림이 정상적으로 연결됐어요 🎉',payload:{screen:'notifications'}});
     setMessage(error?friendlyError(error):'잠시 후 휴대폰 알림을 확인해주세요.');setBusy(false);
   };
-  return <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+  return <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">휴대폰 푸시 알림</div><div className="text-[11px] text-gray-500 mt-1">앱을 닫아도 승인 결과와 오늘 고객 약속을 알려드려요.</div></div><span className={`text-[10px] font-bold px-2 py-1 rounded-full ${enabled?'bg-emerald-100 text-emerald-700':'bg-gray-200 text-gray-500'}`}>{enabled?'켜짐':'꺼짐'}</span></div>
     {!supported&&<div className="text-[11px] text-amber-700 mt-2">현재 브라우저에서는 지원되지 않아요. 설치한 미소페이 앱에서 다시 열어주세요.</div>}
-    {message&&<div className="text-[11px] text-violet-700 mt-2">{message}</div>}
-    <div className="flex gap-2 mt-3">{enabled?<><button disabled={busy} onClick={test} className="flex-1 rounded-xl bg-violet-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">테스트 알림</button><button disabled={busy} onClick={disable} className="rounded-xl bg-white border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-500 disabled:opacity-50">끄기</button></>:<button disabled={busy||!supported} onClick={enable} className="w-full rounded-xl bg-violet-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy?'확인 중...':'알림 받기'}</button>}</div>
+    {message&&<div className="text-[11px] text-brand-700 mt-2">{message}</div>}
+    <div className="flex gap-2 mt-3">{enabled?<><button disabled={busy} onClick={test} className="flex-1 rounded-xl bg-brand-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">테스트 알림</button><button disabled={busy} onClick={disable} className="rounded-xl bg-white border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-500 disabled:opacity-50">끄기</button></>:<button disabled={busy||!supported} onClick={enable} className="w-full rounded-xl bg-brand-600 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy?'확인 중...':'알림 받기'}</button>}</div>
   </div>;
 }
 
@@ -3360,16 +2872,17 @@ function NotificationCenter({ userId }) {
   }, [load]);
 
   const markRead = async (id) => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .update({
         read: true,
         read_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('recipient_id', userId);
+      .eq('recipient_id', userId).select('id').single();
 
-    if (!error) {
+    if(error)return showAppToast(friendlyError(error),{tone:'error',title:'읽음 처리 실패'});
+    if (data) {
       setItems((prev) =>
         prev.map((n) => (n.id === id ? { ...n, read: true } : n))
       );
@@ -3377,17 +2890,19 @@ function NotificationCenter({ userId }) {
   };
 
   const markAllRead = async () => {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .update({
         read: true,
         read_at: new Date().toISOString(),
       })
       .eq('recipient_id', userId)
-      .eq('read', false);
+      .eq('read', false).select('id');
 
-    if (!error) {
-      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    if(error)return showAppToast(friendlyError(error),{tone:'error',title:'읽음 처리 실패'});
+    if (data) {
+      const changed=new Set(data.map(n=>n.id));
+      setItems((prev) => prev.map((n) => changed.has(n.id)?{ ...n, read: true }:n));
     }
   };
 
@@ -3428,7 +2943,7 @@ function NotificationCenter({ userId }) {
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
-            className="text-xs font-semibold text-violet-600"
+            className="text-xs font-semibold text-brand-600"
           >
             모두 읽음
           </button>
@@ -3447,7 +2962,7 @@ function NotificationCenter({ userId }) {
                 key={n.id}
                 onClick={() => !n.read && markRead(n.id)}
                 className={`w-full text-left px-4 py-3 flex gap-3 ${
-                  n.read ? 'bg-white' : 'bg-violet-50/60'
+                  n.read ? 'bg-white' : 'bg-brand-50/60'
                 }`}
               >
                 <div className="w-9 h-9 rounded-xl bg-gray-50 flex items-center justify-center shrink-0 text-lg">
@@ -3460,7 +2975,7 @@ function NotificationCenter({ userId }) {
                       {n.title}
                     </div>
                     {!n.read && (
-                      <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0" />
+                      <span className="w-2 h-2 rounded-full bg-brand-500 shrink-0" />
                     )}
                   </div>
 
@@ -3493,36 +3008,9 @@ async function notifyEmployee({actorId,recipientId,type,title,message,payload={}
 
 /* ===================== v16: 매장 목표 / 영업비용 / 스팟 정책 ===================== */
 
-const COMPANY_STORE_GOAL_BASE = [
-  { match:['삼미시장2호','삼미2'], hs:63, home:6, productivity:78.8, tvFree:5, smartHome:3 },
-  { match:['삼미시장','삼미'], hs:102, home:10, productivity:127.5, tvFree:8, smartHome:5 },
-  { match:['상록수역','상록'], hs:100, home:10, productivity:123, tvFree:8, smartHome:5 },
-  { match:['롯데마트','대야'], hs:52, home:5, productivity:65, tvFree:4, smartHome:3 },
-  { match:['주민센터','주민'], hs:70, home:7, productivity:82, tvFree:6, smartHome:4 },
-  { match:['장곡역','장곡'], hs:54, home:6, productivity:67.5, tvFree:5, smartHome:3 },
-  { match:['도일시장','거모'], hs:100, home:10, productivity:123, tvFree:8, smartHome:5 },
-  { match:['월곶'], hs:64, home:7, productivity:80, tvFree:5, smartHome:3 },
-  { match:['성포역','성포'], hs:37, home:4, productivity:46.3, tvFree:3, smartHome:2 },
-  { match:['산본'], hs:129, home:13, productivity:161.3, tvFree:9, smartHome:5 },
-  { match:['법조타운','법조','범조'], hs:39, home:4, productivity:48.8, tvFree:3, smartHome:2 },
-  { match:['은계사거리','은계'], hs:41, home:4, productivity:51.3, tvFree:3, smartHome:2 },
-  { match:['본오중학교','본오'], hs:41, home:4, productivity:51.3, tvFree:3, smartHome:2 },
-];
 
-function companyGoalDefaults(storeName){
-  const raw=String(storeName||'');
-  const shown=displayStoreName(raw);
-  const hit=COMPANY_STORE_GOAL_BASE.find(x=>x.match.some(k=>raw.includes(k)||shown.includes(k)));
-  if(!hit)return {};
-  return {
-    hs:hit.hs,
-    home:hit.home,
-    productivity:hit.productivity,
-    tvFree:hit.tvFree,
-    smartHome:hit.smartHome,
-    tailoredCount:Math.ceil(Number(hit.hs||0)*0.5),
-  };
-}
+
+
 
 const STORE_GOAL_METRICS = [
   { key:'hs', label:'HS' },
@@ -3547,37 +3035,11 @@ function storeGoalCurrent(mergedDraft, pay, key) {
   return 0;
 }
 
-function isFinalStorePerformance(row, month) {
-  if (!row || row.month !== month || !row.as_of_date) return false;
-  const [year,monthNumber]=String(month).split('-').map(Number);
-  const lastDay=new Date(year,monthNumber,0).getDate();
-  return String(row.as_of_date) >= `${month}-${String(lastDay).padStart(2,'0')}` || row.metrics?.status==='final';
-}
 
-function finalStoreMetric(row, key, fallback=0) {
-  if (!row) return Number(fallback||0);
-  const metrics=row.metrics||{};
-  const aliases={free:'tv',tvFree:'tv',smart:'smartHome',upsell:'tailoredCount',upsellAmount:'tailoredAmount'};
-  const sourceKey=aliases[key]||key;
-  return metrics[sourceKey]===undefined ? Number(fallback||0) : Number(metrics[sourceKey]||0);
-}
 
-function useFinalStorePerformance(month, storeName='') {
-  const [data,setData]=useState(storeName?null:{});
-  useEffect(()=>{
-    let alive=true;
-    let query=supabase.from('head_office_store_performance').select('month,store_name,as_of_date,metrics,note').eq('month',month);
-    if(storeName)query=query.eq('store_name',storeName).maybeSingle();
-    query.then(({data:rows,error})=>{
-      if(!alive)return;
-      if(error){console.error('FINAL STORE PERFORMANCE LOAD ERROR',error);setData(storeName?null:{});return;}
-      if(storeName){setData(isFinalStorePerformance(rows,month)?rows:null);return;}
-      const map={};(rows||[]).forEach(row=>{if(isFinalStorePerformance(row,month))map[row.store_name]=row});setData(map);
-    });
-    return()=>{alive=false};
-  },[month,storeName]);
-  return data;
-}
+
+
+
 
 function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
   const [goal,setGoal]=useState(null);
@@ -3599,7 +3061,7 @@ function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex items-center justify-between text-left">
       <div><div className="text-xs text-gray-400">🏪 우리 매장 목표</div><div className="font-bold text-gray-900 mt-0.5">{displayStoreName(storeName)} · {monthLabel(month)}</div></div>
-      <span className="text-xs text-violet-600 font-semibold">{open?'접기':'진행률 보기'}</span>
+      <span className="text-xs text-brand-600 font-semibold">{open?'접기':'진행률 보기'}</span>
     </button>
     {open&&<div className="px-4 pb-4 space-y-3">
       {STORE_GOAL_METRICS.map(m=>{
@@ -3608,7 +3070,7 @@ function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
         const pct=ch?Math.min(100,cur/ch*100):0;
         return <div key={m.key}>
           <div className="flex justify-between text-xs"><span className="font-medium text-gray-700">{m.label}</span><span className="text-gray-500">{Number.isInteger(cur)?fmtCount(cur):fmtNum(cur,1)} / <b>{fmtNum(ch,1)}</b></span></div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-violet-500 rounded-full" style={{width:`${pct}%`}} /></div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full bg-brand-500 rounded-full" style={{width:`${pct}%`}} /></div>
           <div className="text-[10px] mt-1 text-gray-400">{c&&cur>=c?'✅ 회사 기준 달성':`회사 기준 ${c||'-'}`} · 도전 {ch||'-'}</div>
         </div>
       })}
@@ -3670,7 +3132,7 @@ function SpotClaimPanel({ userId, month, claimDate }) {
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between text-left">
       <div><div className="text-sm font-bold">🔥 스팟 추가 인센티브</div>
       <div className="text-xs text-gray-400 mt-0.5">정책 선택 또는 직접 입력 → 관리자 확인</div></div>
-      <span className="text-xs text-violet-600">{open?'접기':'보기'}</span>
+      <span className="text-xs text-brand-600">{open?'접기':'보기'}</span>
     </button>
     {open&&<div className="px-4 pb-4 space-y-3">
       {policies.length>0&&<>
@@ -3841,7 +3303,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
             </div>
             {finalPerformance&&<div className="text-[9px] text-emerald-600 mt-1">마감 확정 실적 기준</div>}
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1.5">
-              <div className="h-full bg-violet-500 rounded-full" style={{width:`${Math.min(100,challengePct)}%`}} />
+              <div className="h-full bg-brand-500 rounded-full" style={{width:`${Math.min(100,challengePct)}%`}} />
             </div>
             <div className="flex justify-between text-[10px] mt-1">
               <span className={companyPct>=100?'text-emerald-600 font-semibold':'text-gray-400'}>
@@ -3856,7 +3318,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
       </div>
     </div>
 
-    <button onClick={save} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-bold">
+    <button onClick={save} className="w-full py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold">
       매장 목표 저장
     </button>
   </div>;
@@ -3931,7 +3393,7 @@ function SpotAdmin({ authUserId, isFullAdmin, month }) {
   const pendingClaims=claims.filter(c=>c.status==='pending'); const doneClaims=claims.filter(c=>c.status!=='pending');
   const septemberLocked=isSeptemberPolicyActive(month);
   return <div className="space-y-3">
-    {septemberLocked&&<div className="rounded-xl border border-violet-100 bg-violet-50 p-4"><div className="text-sm font-bold text-violet-800">9월 정책은 회사 확정본으로 운영돼요</div><div className="mt-1 text-xs text-violet-600">직원·매장 관리자는 스팟이나 특가 정책을 직접 만들거나 수정할 수 없어요. 확정된 특가&지인정책만 판매 입력에서 선택합니다.</div><div className="mt-3 divide-y divide-violet-100 rounded-xl bg-white px-3">{SEPTEMBER_SPECIAL_SALES.map(p=><div key={p.key} className="flex items-center justify-between gap-2 py-2 text-[11px]"><span className="font-semibold text-gray-700">{p.model} · {p.saleType}</span><span className="text-violet-700">기존 정책 +{won(p.additionalAmount)}</span></div>)}</div></div>}
+    {septemberLocked&&<div className="rounded-xl border border-brand-100 bg-brand-50 p-4"><div className="text-sm font-bold text-brand-800">9월 정책은 회사 확정본으로 운영돼요</div><div className="mt-1 text-xs text-brand-600">직원·매장 관리자는 스팟이나 특가 정책을 직접 만들거나 수정할 수 없어요. 확정된 특가&지인정책만 판매 입력에서 선택합니다.</div><div className="mt-3 divide-y divide-brand-100 rounded-xl bg-white px-3">{SEPTEMBER_SPECIAL_SALES.map(p=><div key={p.key} className="flex items-center justify-between gap-2 py-2 text-[11px]"><span className="font-semibold text-gray-700">{p.model} · {p.saleType}</span><span className="text-brand-700">기존 정책 +{won(p.additionalAmount)}</span></div>)}</div></div>}
     {claimLoadError&&<div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-xs">스팟 승인 목록을 불러오지 못했어요: {claimLoadError}</div>}
     <div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">✅ 승인 대기 {pendingClaims.length}건</div><div className="text-xs text-gray-400">대시보드의 스팟 승인 건과 같은 목록이에요.</div></div><div className="divide-y">{pendingClaims.length===0?<div className="py-8 text-center text-xs text-gray-400">현재 승인 대기 스팟이 없어요.</div>:pendingClaims.map(c=>{const x=claimEdits[c.id]||{},direct=!c.policy_id;return <div key={c.id} className="p-4 text-xs"><div className="flex justify-between"><div><b>{c.profiles?.name||'직원'} · {c.profiles?.store_name||''}</b><div className="text-[10px] text-gray-400">{c.claim_date} · {c.customer_name||'고객 없음'} · {direct?'직접 입력':'등록 정책'}</div></div><span className="text-orange-500">확인대기</span></div><div className="space-y-2 mt-3"><input value={x.title||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,title:e.target.value}})} placeholder="정책명" className="w-full border rounded p-2"/><input value={x.amount||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,amount:e.target.value.replace(/\D/g,'')}})} placeholder="최종 승인 금액" className="w-full border rounded p-2"/><input value={x.memo||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,memo:e.target.value}})} placeholder="관리자 메모" className="w-full border rounded p-2"/></div><div className="grid grid-cols-2 gap-2 mt-3"><button onClick={()=>decide(c.id,'rejected')} className="py-2 bg-red-50 text-red-500 rounded">반려</button><button onClick={()=>decide(c.id,'approved')} className="py-2 bg-emerald-600 text-white rounded font-bold">승인</button></div></div>})}</div></div>
     {!septemberLocked&&<div className="bg-white border rounded-xl p-4">
@@ -3992,9 +3454,9 @@ function SpotAdmin({ authUserId, isFullAdmin, month }) {
             </select>
           </div>
           <label className="flex gap-2"><input type="checkbox" checked={editPolicy.active!==false} onChange={e=>setEditPolicy({...editPolicy,active:e.target.checked})}/> 활성</label>
-          <div className="grid grid-cols-2 gap-2"><button onClick={()=>setEditingPolicyId(null)} className="py-2 bg-gray-100 rounded">취소</button><button onClick={()=>savePolicy(p.id)} className="py-2 bg-violet-600 text-white rounded font-bold">저장</button></div>
+          <div className="grid grid-cols-2 gap-2"><button onClick={()=>setEditingPolicyId(null)} className="py-2 bg-gray-100 rounded">취소</button><button onClick={()=>savePolicy(p.id)} className="py-2 bg-brand-600 text-white rounded font-bold">저장</button></div>
         </div>:<div className="flex justify-between gap-2"><div><b>{p.title} · {won(p.amount)}</b><div className="text-[10px] text-gray-400">{p.start_date} ~ {p.end_date} · {p.active?'활성':'비활성'}</div></div>
-          <button onClick={()=>{setEditingPolicyId(p.id);setEditPolicy({...p,amount:String(p.amount||'')})}} className="text-violet-600">수정</button></div>}
+          <button onClick={()=>{setEditingPolicyId(p.id);setEditPolicy({...p,amount:String(p.amount||'')})}} className="text-brand-600">수정</button></div>}
       </div>)}</div>
     </div>}
 
@@ -4115,7 +3577,7 @@ function DailyOneLiner({ userId, month, pay, draft, config, competitionRows, bra
       {item.text}
     </button>
     {item.action&&(
-      <button type="button" onClick={item.onClick} className="text-[11px] font-bold text-violet-600 shrink-0">
+      <button type="button" onClick={item.onClick} className="text-[11px] font-bold text-brand-600 shrink-0">
         {item.action}
       </button>
     )}
@@ -4209,8 +3671,8 @@ function MyInputSummary({userId,month,config}){
         <ChevronDown size={16} className={`text-gray-400 transition ${open?'rotate-180':''}`}/>
       </div>
       <div className="mt-2 space-y-1.5">
-        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">HS {summary.totalHs}건</span><span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 상품 {summary.totalHome}건</span>{summary.totalHomePending>0&&<span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">홈 대기 {summary.totalHomePending}건</span>}</div>
-        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-bold">전략요금제 {summary.totalStrategicPlan}건</span><span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">전략 VAS {summary.totalStrategicVas}건</span><span className="px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">보험·케어 {summary.totalInsurance}건</span><span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span></div>
+        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-brand-50 text-brand-700 text-[10px] font-bold">HS {summary.totalHs}건</span><span className="px-2 py-1 rounded-full bg-orange-50 text-orange-700 text-[10px] font-bold">홈 상품 {summary.totalHome}건</span>{summary.totalHomePending>0&&<span className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold">홈 대기 {summary.totalHomePending}건</span>}</div>
+        <div className="flex flex-wrap gap-1.5"><span className="px-2 py-1 rounded-full bg-brand-50 text-brand-700 text-[10px] font-bold">전략요금제 {summary.totalStrategicPlan}건</span><span className="px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">전략 VAS {summary.totalStrategicVas}건</span><span className="px-2 py-1 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">보험·케어 {summary.totalInsurance}건</span><span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">2ND {summary.totalSecond}건</span></div>
       </div>
     </button>
     {open&&<div className="border-t border-gray-50 px-4 py-2 divide-y divide-gray-50">
@@ -4243,7 +3705,7 @@ function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
   return <div className="bg-white rounded-2xl border border-gray-100 p-4">
     <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">아직 등록된 개인 본사 데이터가 없어요. 등록 전에는 직원 입력 실적을 기준으로 보여드려요.</div>}
+    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">본사 데이터 등록 전 · 직원 입력 기준</div>}
   </div>;
 }
 
@@ -4291,6 +3753,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [historySpotTotal,setHistorySpotTotal]=useState(0);
   const [historySpotRows,setHistorySpotRows]=useState([]);
   const [historyExpenseRows,setHistoryExpenseRows]=useState([]);
+  const [ledgerReady,setLedgerReady]=useState(false);
+  const [ledgerError,setLedgerError]=useState(false);
+  const [approvalError,setApprovalError]=useState(false);
+  const displayPay=payDisplay(pay,historySpotTotal,expenseTotal);
   const [resetMonthOpen,setResetMonthOpen]=useState(false);
   const [resetPhrase,setResetPhrase]=useState('');
   const [resetBusy,setResetBusy]=useState(false);
@@ -4298,6 +3764,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
   useEffect(() => {
     if (!viewedUserId) return;
+    let alive=true;setLedgerReady(false);setLedgerError(false);
     (async () => {
       const [y, m] = month.split('-').map(Number);
       const next = new Date(y, m, 1);
@@ -4307,6 +3774,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').eq('user_id',viewedUserId).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
         supabase.from('spot_claims').select('claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date')
       ]);
+      if(!alive)return;
+      if(expenseRes.error||spotRes.error){setLedgerError(true);return;}
       if(!expenseRes.error){
         setHistoryExpenseRows(expenseRes.data||[]);
         setExpenseTotal((expenseRes.data||[]).reduce((sum,x)=>sum+Number(x.amount||0),0));
@@ -4316,8 +3785,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
         setHistorySpotRows(nonMobile);
         setHistorySpotTotal(nonMobile.reduce((sum,x)=>sum+Number(x.final_amount??x.direct_amount??x.spot_policies?.amount??0),0));
       }
-    })();
-  }, [viewedUserId, month]);
+      setLedgerReady(true);
+    })().catch(()=>{if(alive)setLedgerError(true)});
+    return()=>{alive=false};
+  }, [viewedUserId, month, dailyDays, tab]);
 
   // v21.28: '승인 대기'는 실제 승인 대상(스팟/특판 예외금액)이 있을 때만 표시
   useEffect(()=>{
@@ -4340,8 +3811,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             : Promise.resolve({data:[],error:null})
         ]);
 
+        if(spotRes.error||saleRes.error||todayRes.error)throw spotRes.error||saleRes.error||todayRes.error;
         const specialPending=(saleRes.data||[]).filter(x=>x.source_meta?.specialPolicy?.exceptionStatus==='pending').length;
         if(alive){
+          setApprovalError(false);
           setHomeApprovalPending((spotRes.data||[]).length+specialPending);
           setApprovalRows([
             ...(spotRes.data||[]).map(x=>({id:`spot-${x.id}`,kind:'spot',date:x.claim_date,customer:x.customer_name||'고객명 없음',title:x.direct_title||x.spot_policies?.title||'스팟 인센티브',amount:Number(x.direct_amount??x.spot_policies?.amount??0),statusLabel:'관리자 승인 대기'})),
@@ -4350,7 +3823,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           setHomeTodayInputCount((todayRes.data||[]).length);
         }
       }catch(e){
-        if(alive){setHomeApprovalPending(0);setApprovalRows([]);setHomeTodayInputCount(0);}
+        if(alive)setApprovalError(true);
       }
     })();
     return()=>{alive=false};
@@ -4410,44 +3883,45 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const todayHasInput=isCurrentHomeMonth && (homeTodayInputCount>0 || dayHasData(dailyDays?.[todayHomeKey]));
   const todayIsDayOff=isCurrentHomeMonth && !!normalizeDay(dailyDays?.[todayHomeKey]).dayOff;
   return (
-    <div className="max-w-5xl mx-auto px-4 py-5 pb-24">
+    <div className="app-content max-w-5xl mx-auto px-4 py-5 pb-24">
+      {ledgerError&&<p role="alert" className="mb-3 text-sm text-red-700">비용·스팟을 불러오지 못해 합계 표시를 보류했습니다. 화면을 다시 열어주세요.</p>}
       {!(tab==='daily'&&policyInputBlocked)&&<PolicyVersionNotice month={month} blocked={policyInputBlocked} />}
       {isManagingAnotherEmployee&&<div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"><div className="text-[10px] font-bold text-amber-600">직원 대리 관리 중</div><div className="mt-0.5 text-sm font-black text-amber-900">{currentEmp?.name} 직원의 실적·고객·약속·홈 설치를 보고 수정합니다.</div><div className="mt-1 text-[10px] text-amber-700">판매·홈 변경 이력에는 실제 처리한 관리자 계정이 기록됩니다.</div></div>}
       {tab === 'home' && (
         <div className="space-y-4">
           <div className="bg-gray-100 rounded-xl p-1 grid grid-cols-2 gap-1">
             <button type="button" onClick={()=>setEmployeeHomeMode('personal')}
-              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
+              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='personal'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>
               개인
             </button>
             <button type="button" onClick={()=>setEmployeeHomeMode('store')}
-              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>
+              className={`py-2 rounded-lg text-xs font-bold transition ${employeeHomeMode==='store'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>
               매장
             </button>
           </div>
 
           {employeeHomeMode==='personal' ? <>
             <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
-              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length}
-              onNavigate={goCustomerCare} onOpenApprovals={()=>homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
+              approvalPending={homeApprovalPending} approvalDone={historySpotRows.length} approvalError={approvalError}
+              onNavigate={goCustomerCare} onOpenApprovals={()=>approvalError?showAppToast('승인 현황을 불러오지 못했어요. 잠시 후 다시 확인해주세요.',{tone:'error'}):homeApprovalPending>0?setApprovalOpen(true):setTab('history')} onGoInput={()=>setTab('daily')} />
             <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} currentEmp={currentEmp}
-              currentAmount={Number(pay.currentPerformanceAmount||0)-Number(expenseTotal||0)}
+              currentAmount={ledgerReady?displayPay.current:null}
               onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
 
             {showClosingAmount&&<div className="fixed inset-0 z-[95] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowClosingAmount(false)}>
               <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
-                <div className="flex items-center justify-between"><div className="text-sm font-bold text-gray-900">급여 확인·비교</div><button type="button" onClick={()=>setShowClosingAmount(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div>
+                <div className="flex items-center justify-between"><div className="text-sm font-bold text-gray-900">급여 확인·비교</div><button aria-label="급여 창 닫기" type="button" onClick={()=>setShowClosingAmount(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div>
                 <div className="grid grid-cols-2 gap-1 mt-4 rounded-xl bg-gray-100 p-1">
-                  <button type="button" onClick={()=>setPayDialogTab('forecast')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='forecast'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>예상 마감</button>
-                  <button type="button" onClick={()=>setPayDialogTab('history')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='history'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>이전 급여</button>
+                  <button type="button" onClick={()=>setPayDialogTab('forecast')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='forecast'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>예상 마감</button>
+                  <button type="button" onClick={()=>setPayDialogTab('history')} className={`py-2.5 rounded-lg text-xs font-bold ${payDialogTab==='history'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>이전 급여</button>
                 </div>
                 {payDialogTab==='forecast'?<>
                   <div className="text-[11px] text-gray-400 mt-5">현재 실적 기준 예상 마감</div>
-                  <div className="text-3xl font-bold text-violet-700 mt-2">{won(Math.max(0,pay.closingAmount-expenseTotal))}</div>
+                  <div data-testid="closing-pay" className="text-3xl font-bold text-brand-700 mt-2">{ledgerReady?won(displayPay.closing):'—'}</div>
                   <div className="text-xs text-gray-500 mt-3 leading-relaxed">현재까지 등록된 실적을 기준으로 마감할 경우 적용되는 금액입니다.</div>
                 </>:<>
-                  <div className="mt-5 rounded-xl bg-violet-50 px-4 py-4"><div className="text-sm font-bold text-violet-900">원하는 월의 급여를 확인하세요</div><div className="text-xs text-violet-600 mt-1">내역 화면에서 월을 선택하면 수수료와 차감 내역까지 볼 수 있어요.</div></div>
-                  <button type="button" onClick={()=>{setShowClosingAmount(false);setTab('history')}} className="w-full mt-4 py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">이전 급여 내역 보기 ›</button>
+                  <div className="mt-5 rounded-xl bg-brand-50 px-4 py-4"><div className="text-sm font-bold text-brand-900">원하는 월의 급여를 확인하세요</div><div className="text-xs text-brand-600 mt-1">내역 화면에서 월을 선택하면 수수료와 차감 내역까지 볼 수 있어요.</div></div>
+                  <button type="button" onClick={()=>{setShowClosingAmount(false);setTab('history')}} className="w-full mt-4 py-3 rounded-xl bg-brand-600 text-white text-sm font-bold">이전 급여 내역 보기 ›</button>
                 </>}
               </div>
             </div>}
@@ -4456,7 +3930,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
                 <div className="p-5 border-b"><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold text-amber-600">승인 전 금액은 아직 미반영</div><div className="text-lg font-bold text-gray-900 mt-0.5">승인 대기 {approvalRows.length}건</div><div className="text-[10px] text-gray-400 mt-1">관리자가 확인하면 예상 수수료에 반영돼요.</div></div><button onClick={()=>setApprovalOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500">×</button></div></div>
                 <div className="overflow-y-auto max-h-[55vh] divide-y">{approvalRows.map(x=><div key={x.id} className="p-4"><div className="flex justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{x.title}</div><div className="text-[10px] text-gray-400 mt-1">{x.date} · {x.customer}</div><div className="text-[10px] text-amber-600 mt-1">{x.statusLabel}</div></div><b className="text-sm text-gray-900 shrink-0">{won(x.amount)}</b></div></div>)}</div>
-                <div className="p-4 bg-amber-50"><div className="text-center text-[11px] text-amber-800 font-semibold">아직 관리자가 확인 중이에요. 점장님께 살짝 콕 찔러볼까요? 😆</div><button onClick={()=>setApprovalOpen(false)} className="w-full mt-3 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold">확인했어요</button></div>
+                <div className="p-4 bg-amber-50"><div className="text-center text-[11px] text-amber-800 font-semibold">승인되면 수수료에 반영됩니다.</div><button onClick={()=>setApprovalOpen(false)} className="w-full mt-3 py-3 rounded-xl bg-gray-900 text-white text-sm font-bold">확인했어요</button></div>
               </div>
             </div>}
 
@@ -4563,13 +4037,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       )}
 
       {tab === 'evaluation' && (
-        <EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===viewedUserId)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} />
+        <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><EvaluationTab month={month} employee={(competitionRows||[]).find(e=>e.id===viewedUserId)||currentEmp} config={config} isManagerView={false} authUserId={authUser?.id} /></React.Suspense>
       )}
 
       {tab === 'history' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <div><div className="text-xs text-violet-600 font-semibold">수수료 내역</div><div className="text-lg font-bold">{monthLabel(month)}</div></div>
+            <div><div className="text-xs text-brand-600 font-semibold">수수료 내역</div><div className="text-lg font-bold">{monthLabel(month)}</div></div>
             <select value={month} onChange={(e) => setMonth(e.target.value)} className="text-sm font-medium bg-white border border-gray-200 rounded-lg px-3 py-2">
               {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
@@ -4632,16 +4106,16 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             </button>
             {historyOpen.expense&&historyExpenseRows.length>0&&<div className="bg-red-50/40 px-4 py-2 space-y-1">{historyExpenseRows.map((x,i)=><div key={i} className="flex justify-between text-[11px]"><span className="text-gray-500">{String(x.expense_date||'').slice(5)} · {x.customer_name||'이름 없음'} · {x.category}{x.memo?` · ${x.memo}`:''}</span><b className="text-red-500">-{won(x.amount)}</b></div>)}</div>}
 
-            <div className="px-4 py-4 bg-violet-50 flex justify-between items-center">
-              <span className="font-bold text-violet-800">예상 총 수수료</span>
-              <span className="text-xl font-black text-violet-700">{won(Number(pay.total||0)+historySpotTotal-expenseTotal)}</span>
+            <div className="px-4 py-4 bg-brand-50 flex justify-between items-center">
+              <span className="font-bold text-brand-800">예상 총 수수료</span>
+              <span data-testid="history-pay" className="text-xl font-black text-brand-700">{ledgerReady?won(displayPay.total):'—'}</span>
             </div>
           </div>
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
-        <div className="max-w-5xl mx-auto grid grid-cols-5">
+      <div className="app-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-20">
+        <div className="max-w-5xl mx-auto grid grid-cols-5 px-2 py-1">
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '실적입력', icon: Calendar },
@@ -4649,7 +4123,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             { key: 'evaluation', label: '평가', icon: ClipboardCheck },
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
-            <button key={n.key} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-violet-700' : 'text-gray-400'}`}>
+            <button key={n.key} aria-current={tab===n.key?'page':undefined} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-brand-700' : 'text-gray-400'}`}>
               <n.icon size={18} />{n.label}
             </button>
           ))}
@@ -4792,383 +4266,14 @@ function buildNextGoal(pay, draft, config) {
 }
 
 
-const PERSONAL_GOAL_DEFS = [
-  { key: 'hs', label: 'HS', unit: '건', defaultTarget: 20 },
-  { key: 'home', label: '홈 실적', unit: '건', defaultTarget: 5 },
-  { key: 'tvFree', label: 'TV프리(부)', unit: '건', defaultTarget: 5 },
-  { key: 'smartHome', label: '스마트홈', unit: '건', defaultTarget: 5 },
-  { key: 'tailoredAmount', label: '맞춤제안 업셀 금액', unit: '원', defaultTarget: 1000000 },
-  { key: 'tailored', label: '맞춤제안 업셀 건수', unit: '건', defaultTarget: 15 },
-  { key: 'points', label: '성과등급P', unit: 'P', defaultTarget: 35 },
-  { key: 'kpi', label: '생산성', unit: 'P', defaultTarget: 35 },
-  { key: 'incentive', label: '인센티브', unit: '원', defaultTarget: 1500000 },
-];
-
-function getPersonalGoalActuals(mergedDraft, pay) {
-  const matrix = mergedDraft?.matrix || [];
-
-  // HS = 신규 + MNP + 기변A/B/C 합산
-  const hs = [0, 1, 2, 3, 4].reduce((sum, ri) => {
-    const row = matrix[ri] || [];
-    return sum + row.reduce((s, v) => s + (Number(v) || 0), 0);
-  }, 0);
-
-  return {
-    hs,
-    home: completedHomeCount(mergedDraft),
-    tvFree: Number(mergedDraft?.homeFlat?.tvFree || 0),
-    smartHome: Number(mergedDraft?.homeFlat?.smartHome || 0),
-    tailoredAmount: Number(mergedDraft?.tailoredAmount || 0),
-    tailored: Number(mergedDraft?.tailoredCount || 0),
-    points: Number(pay?.totalPoints || 0),
-    kpi: Number(pay?.kpiScore || 0),
-    incentive: Number(pay?.total || 0),
-  };
-}
-
-function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
-  const [editing, setEditing] = useState(false);
-  const [selected, setSelected] = useState(() => new Set(Object.keys(goals || {})));
-  const [values, setValues] = useState(goals || {});
-
-  useEffect(() => {
-    setSelected(new Set(Object.keys(goals || {})));
-    setValues(goals || {});
-  }, [goals, month]);
-
-  const actuals = useMemo(() => getPersonalGoalActuals(mergedDraft, pay), [mergedDraft, pay]);
-  const hasGoals = Object.keys(goals || {}).length > 0;
-
-  const toggle = (key) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-        if (!(Number(values[key]) > 0)) {
-          const def = PERSONAL_GOAL_DEFS.find((d) => d.key === key);
-          setValues((v) => ({ ...v, [key]: def?.defaultTarget || 10 }));
-        }
-      }
-      return next;
-    });
-  };
-
-  const save = async () => {
-    const payload = {};
-    PERSONAL_GOAL_DEFS.forEach((def) => {
-      if (!selected.has(def.key)) return;
-      const n = Number(values[def.key]);
-      if (Number.isFinite(n) && n > 0) payload[def.key] = n;
-    });
-
-    if (!Object.keys(payload).length) return;
-    const ok = await onSave(payload);
-    if (ok) setEditing(false);
-  };
-
-  if (!hasGoals || editing) {
-    return (
-      <div className="bg-white rounded-xl border border-gray-100 p-4">
-        <div className="text-xs font-semibold text-violet-600">
-          나의 {parseInt(month.split('-')[1], 10)}월
-        </div>
-        <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
-        <div className="text-[11px] text-gray-400 mt-1">
-          원하는 실적 항목을 선택하고 이번 달 목표를 정해보세요.
-        </div>
-
-        <div className="mt-3 space-y-2">
-          {PERSONAL_GOAL_DEFS.map((def) => {
-            const checked = selected.has(def.key);
-            return (
-              <div key={def.key} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => toggle(def.key)}
-                  className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${
-                    checked
-                      ? 'bg-violet-600 border-violet-600 text-white'
-                      : 'bg-white border-gray-300 text-transparent'
-                  }`}
-                >
-                  <Check size={13} />
-                </button>
-
-                <div className="w-20 text-sm text-gray-700">{def.label}</div>
-
-                <input
-                  type="number"
-                  min="0"
-                  step={def.unit === '원' ? '10000' : (def.unit === 'P' ? '0.1' : '1')}
-                  disabled={!checked}
-                  value={values[def.key] ?? ''}
-                  onChange={(e) => setValues((v) => ({ ...v, [def.key]: e.target.value }))}
-                  className="min-w-0 flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-200 disabled:bg-gray-50 disabled:text-gray-300"
-                  placeholder="목표"
-                />
-
-                <div className="w-6 text-xs text-gray-400">{def.unit}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={save}
-            disabled={saving || selected.size === 0}
-            className="flex-1 px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50"
-          >
-            {saving ? '저장 중' : '목표 저장'}
-          </button>
-
-          {hasGoals && (
-            <button
-              onClick={() => setEditing(false)}
-              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-500 text-sm"
-            >
-              취소
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const activeDefs = PERSONAL_GOAL_DEFS.filter((def) => Number(goals?.[def.key]) > 0);
-  const completeCount = activeDefs.filter((def) => {
-    const target = Number(goals[def.key]);
-    const current = Number(actuals[def.key] || 0);
-    return current >= target;
-  }).length;
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-100 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-semibold text-violet-600">
-            나의 {parseInt(month.split('-')[1], 10)}월
-          </div>
-          <div className="text-sm font-bold text-gray-900 mt-1">이번 달 내 목표</div>
-        </div>
-
-        <button
-          onClick={() => setEditing(true)}
-          className="text-xs text-gray-400 hover:text-violet-600"
-        >
-          수정
-        </button>
-      </div>
-
-      <div className="mt-4 space-y-4">
-        {activeDefs.map((def) => {
-          const target = Number(goals[def.key]);
-          const current = Number(actuals[def.key] || 0);
-          const pct = target > 0 ? Math.max(0, Math.min(100, (current / target) * 100)) : 0;
-          const achieved = current >= target;
-
-          const currentLabel = def.unit === '원'
-            ? fmtNum(Math.round(current))
-            : def.unit === 'P'
-              ? current.toFixed(1)
-              : Math.round(current).toString();
-
-          const targetLabel = def.unit === '원'
-            ? fmtNum(Math.round(target))
-            : def.unit === 'P'
-              ? target.toFixed(1)
-              : Math.round(target).toString();
-
-          return (
-            <div key={def.key}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-gray-700">{def.label}</div>
-                <div className={`text-sm font-bold ${achieved ? 'text-emerald-600' : 'text-gray-800'}`}>
-                  {currentLabel} / {targetLabel}{def.unit}
-                </div>
-              </div>
-
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    achieved ? 'bg-emerald-500' : 'bg-violet-600'
-                  }`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-
-              <div className="text-[11px] mt-1.5">
-                {achieved ? (
-                  <span className="font-semibold text-emerald-600">목표 달성! 🎉</span>
-                ) : (
-                  <span className="text-gray-400">{Math.round(pct)}% 진행 중</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {activeDefs.length > 1 && (
-        <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
-          이번 달 목표 {completeCount} / {activeDefs.length}개 달성
-        </div>
-      )}
-    </div>
-  );
-}
 
 
-function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month, config, onSaveGoals, goalSaving }) {
-  const [goalEditing,setGoalEditing]=useState(false);
-  const [goalValues,setGoalValues]=useState(personalGoals||{});
-  useEffect(()=>setGoalValues(personalGoals||{}),[personalGoals,month]);
-  const simMnpTotal=(draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
-  const secondStandalone=(draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0);
-  const secondBundle=Object.values(draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
-  const metrics=[
-    {key:'hs',goalKey:'hs',label:'HS',unit:'count',value:hsCount(draft)},
-    {key:'simMnp',goalKey:'simMnp',label:'SIM MNP',unit:'count',value:simMnpTotal},
-    {key:'second',goalKey:'second',label:'2ND',unit:'count',value:secondStandalone+secondBundle},
-    {key:'productivity',goalKey:'kpi',label:'생산성',unit:'point',value:Number(pay?.kpiScore||0)},
-    {key:'home',goalKey:'home',label:'홈',unit:'count',value:completedHomeCount(draft)},
-    {key:'tvFree',goalKey:'tvFree',label:'프리',unit:'count',value:Number(draft?.homeFlat?.tvFree||0)},
-    {key:'smartHome',goalKey:'smartHome',label:'스홈',unit:'count',value:Number(draft?.homeFlat?.smartHome||0)},
-    {key:'sono',goalKey:'sono',label:'소노',unit:'count',value:Object.values(draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)},
-    {key:'tailoredAmount',goalKey:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',value:Number(draft?.tailoredAmount||0)},
-    {key:'tailoredCount',goalKey:'tailored',label:'업셀건',unit:'count',value:Number(draft?.tailoredCount||0)},
-  ];
-  const [detailMetric,setDetailMetric]=useState(null);
 
-  const goalFor=(m)=>Number(personalGoals?.[m.goalKey]||0);
 
-  const forecastFactor=useMemo(()=>{
-    const now=new Date(), current=monthKeyOf(now)===month;
-    if(!current)return 1;
-    const total=daysInMonth(month),today=Math.min(now.getDate(),total);
-    let elapsed=0,working=0;
-    for(let day=1;day<=total;day++){
-      const key=String(day).padStart(2,'0');
-      if(normalizeDay(dailyDays?.[key]).dayOff)continue;
-      working++;
-      if(day<=today)elapsed++;
-    }
-    return elapsed>0?working/elapsed:1;
-  },[dailyDays,month]);
 
-  const forecastFor=(m)=>{
-    const value=Number(m.value||0)*forecastFactor;
-    return m.unit==='count'?Math.round(value):value;
-  };
-  const missingGoalCount=metrics.filter(m=>goalFor(m)<=0).length;
 
-  const renderMetricValue=(m,value)=>{
-    if(m.unit==='won') return won(Math.round(value));
-    if(m.unit==='point') return `${fmtNum(Number(value||0),1)}P`;
-    return `${fmtNum(Number(value||0),Number(value||0)%1?1:0)}건`;
-  };
 
-  const detailRows=useMemo(()=>{
-    if(!detailMetric)return [];
-    const out=[];
-    const days=Object.entries(dailyDays||{}).sort(([a],[b])=>Number(a)-Number(b));
-    const add=(day,label,value,unit='count',sub='')=>{
-      const n=Number(value||0); if(!n)return;
-      out.push({day,label,value:n,unit,sub});
-    };
-    days.forEach(([dd,raw])=>{
-      const d=normalizeDay(raw);
-      if(detailMetric.key==='hs'){
-        [0,1,2,3,4].forEach(ri=>{
-          (d.matrix?.[ri]||[]).forEach((cnt,ci)=>{
-            if(!cnt)return;
-            const rd=MATRIX_ROW_DEFS[ri];
-            add(dd,rd?.dailyLabel||rd?.label||'모바일',cnt,'count',rd?.hasTiers?(MATRIX_COLS[ci]||''):'');
-          });
-        });
-      } else if(detailMetric.key==='simMnp'){
-        (d.matrix?.[5]||[]).forEach((cnt,ci)=>{ if(cnt)add(dd,'SIM MNP',cnt,'count',MATRIX_COLS[ci]||''); });
-      } else if(detailMetric.key==='second'){
-        const standalone=(d.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0); add(dd,'2ND단독',standalone);
-        Object.entries(d.groups?.bundle2nd||{}).forEach(([k,cnt])=>{
-          const item=(config?.bundle2nd||DEFAULT_BUNDLE2ND).find(x=>x.key===k); add(dd,item?.label||k,cnt);
-        });
-      } else if(detailMetric.key==='productivity'){
-        const one=applyDailyToDraft(emptyDraft(),{[dd]:d},month,config?.categoryMap,config?.gibyeonColumnMap);
-        (config?.kpiItems||DEFAULT_KPI_ITEMS).forEach(item=>{
-          const cnt=Number(one.kpi?.[item.key]||0); if(cnt)add(dd,item.label,cnt*Number(item.point||0),'point',`${fmtCount(cnt)}건 × ${fmtNum(Number(item.point||0),1)}P`);
-        });
-      } else if(detailMetric.key==='home'){
-        const hb=d.groups?.homeBase||{}; add(dd,'홈 단독',hb.homeOnly); add(dd,'홈+TV',hb.homeTv);
-      } else if(detailMetric.key==='tvFree') add(dd,'TV프리(부)',d.groups?.homeFlat?.tvFree);
-      else if(detailMetric.key==='smartHome') add(dd,'스마트홈',d.groups?.homeFlat?.smartHome);
-      else if(detailMetric.key==='sono'){
-        Object.entries(d.groups?.sono||{}).forEach(([k,cnt])=>{const item=(config?.sono||DEFAULT_SONO).find(x=>x.key===k);add(dd,item?.label||k,cnt);});
-      } else if(detailMetric.key==='tailoredAmount') add(dd,'맞춤제안 매출액',d.tailoredAmount,'won');
-      else if(detailMetric.key==='tailoredCount') add(dd,'맞춤제안 업셀',d.tailoredCount);
-    });
-    return out;
-  },[detailMetric,dailyDays,month,config]);
 
-  const detailTotal=detailRows.reduce((s,r)=>s+Number(r.value||0),0);
-  const detailValue=(r)=>r.unit==='won'?won(r.value):r.unit==='point'?`${fmtNum(Number(r.value),1)}P`:`${fmtCount(r.value)}건`;
-
-  return <>
-    <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-50">
-        <div className="flex items-start justify-between gap-2">
-          <div><div className="text-xs text-gray-400">📊 {monthLabel(month)}</div><div className="text-sm font-bold text-gray-900 mt-0.5">이번 달 목표 현황</div></div>
-          <button onClick={()=>setGoalEditing(v=>!v)} className="text-[10px] font-semibold text-violet-600">{goalEditing?'닫기':'목표 설정'}</button>
-        </div>
-        <div className="text-[10px] text-gray-400 mt-1">현재 누적 실적과 내 목표를 한 번에 확인해요. 숫자를 누르면 날짜별 내역이 열려요.</div>
-        {missingGoalCount>0&&!goalEditing&&<button type="button" onClick={()=>setGoalEditing(true)} className="w-full mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-left text-[9px] font-semibold text-red-600">목표 미설정 {missingGoalCount}개 · 입력하면 진척도와 예상 마감을 비교할 수 있어요 ›</button>}
-        {goalEditing&&<div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-2">
-          {metrics.map(m=><div key={m.key} className="flex items-center gap-2"><span className="text-[10px] text-gray-500 w-24 truncate">{m.label}</span><input type="number" value={goalValues[m.goalKey]??''} onChange={e=>setGoalValues(v=>({...v,[m.goalKey]:e.target.value}))} placeholder="미설정" className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-xs"/><span className="text-[9px] text-gray-400">{m.unit==='won'?'원':m.unit==='point'?'P':'건'}</span></div>)}
-          <button disabled={goalSaving} onClick={async()=>{const ok=await onSaveGoals?.(goalValues);if(ok)setGoalEditing(false)}} className="w-full mt-1 py-2 rounded-lg bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{goalSaving?'저장 중':'목표 저장'}</button>
-        </div>}
-      </div>
-      <div className="px-3 py-2">
-        <div className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 px-2 pb-2 text-[9px] text-gray-400 text-right">
-          <span className="text-left">항목</span><span>목표</span><span>실적</span><span>진척도</span><span>예상 마감</span>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {metrics.map(m=>{
-            const goal=goalFor(m), forecast=forecastFor(m);
-            const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
-            const forecastHit=goal>0&&forecast>=goal;
-            return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
-              <button type="button" onClick={()=>setDetailMetric(m)} className="text-left font-semibold text-gray-700 truncate">{m.label}</button>
-              {goal>0?<span className="text-gray-500 whitespace-nowrap">{renderMetricValue(m,goal)}</span>:<button type="button" onClick={()=>setGoalEditing(true)} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>}
-              <button type="button" onClick={()=>setDetailMetric(m)} className="font-bold text-gray-900 whitespace-nowrap">{renderMetricValue(m,m.value)}</button>
-              <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
-              <span className={`font-bold whitespace-nowrap ${goal>0?(forecastHit?'text-emerald-600':'text-red-500'):'text-violet-600'}`}>{renderMetricValue(m,forecast)}</span>
-            </div>
-          })}
-        </div>
-      </div>
-    </div>
-    {detailMetric&&<div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4" onClick={()=>setDetailMetric(null)}>
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
-        <div className="px-5 py-4 border-b flex justify-between gap-3 items-start">
-          <div><div className="text-xs font-semibold text-violet-600">{monthLabel(month)} 실적 상세</div><div className="text-lg font-bold text-gray-900 mt-0.5">{detailMetric.label} · {renderMetricValue(detailMetric,detailMetric.value)}</div></div>
-          <button onClick={()=>setDetailMetric(null)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 text-lg">×</button>
-        </div>
-        <div className="overflow-y-auto max-h-[62vh] divide-y divide-gray-50">
-          {detailRows.length===0?<div className="py-12 text-center text-sm text-gray-400">반영된 상세 내역이 없어요.</div>:detailRows.map((r,i)=><div key={`${r.day}-${r.label}-${i}`} className="px-5 py-3 flex justify-between gap-3">
-            <div className="min-w-0"><div className="text-sm font-semibold text-gray-800">{parseInt(r.day,10)}일 · {r.label}</div>{r.sub&&<div className="text-[11px] text-gray-400 mt-0.5">{r.sub}</div>}</div>
-            <div className="text-sm font-bold text-violet-700 shrink-0">{detailValue(r)}</div>
-          </div>)}
-        </div>
-        <div className="px-5 py-4 border-t bg-gray-50 flex justify-between items-center">
-          <span className="text-xs text-gray-500">상세 합계</span>
-          <span className="font-bold text-gray-900">{detailMetric.unit==='won'?won(detailTotal):detailMetric.unit==='point'?`${fmtNum(detailTotal,1)}P`:`${fmtCount(detailTotal)}건`}</span>
-        </div>
-      </div>
-    </div>}
-  </>;
-}
 
 function NextGoalCard({ pay, draft, config, onGoInput }) {
   const goal = useMemo(
@@ -5181,26 +4286,26 @@ function NextGoalCard({ pay, draft, config, onGoInput }) {
   return (
     <button
       onClick={onGoInput}
-      className="w-full text-left bg-white rounded-xl border border-violet-200 p-4 hover:border-violet-300 transition"
+      className="w-full text-left bg-white rounded-xl border border-brand-200 p-4 hover:border-brand-300 transition"
     >
       <div className="flex items-start gap-3">
-        <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-brand-100 text-brand-700 flex items-center justify-center shrink-0">
           <Target size={18} />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold text-violet-600 mb-1">추천 다음 행동</div>
+          <div className="text-xs font-semibold text-brand-600 mb-1">추천 다음 행동</div>
           <div className="text-sm font-bold text-gray-900">{goal.title}</div>
           <div className="text-sm text-gray-600 mt-0.5">{goal.description}</div>
-          <div className="text-[11px] text-violet-500 mt-1">{goal.recommendation}</div>
+          <div className="text-[11px] text-brand-500 mt-1">{goal.recommendation}</div>
 
           <div className="mt-3 flex items-baseline gap-1.5 flex-wrap">
             <span className="text-xs text-gray-400">달성 시 예상 인센티브</span>
-            <span className="text-lg font-bold text-violet-700">+{won(goal.delta)}</span>
+            <span className="text-lg font-bold text-brand-700">+{won(goal.delta)}</span>
           </div>
         </div>
 
-        <ChevronRight size={17} className="text-violet-300 shrink-0 mt-1" />
+        <ChevronRight size={17} className="text-brand-300 shrink-0 mt-1" />
       </div>
     </button>
   );
@@ -5210,7 +4315,7 @@ function GrowthBadge({ current, prev }) {
   if (!prev || prev <= 0) return null;
   const diff = current - prev;
   const pct = Math.round((diff / prev) * 100);
-  if (diff === 0) return <span className="text-xs text-violet-100">전월과 동일</span>;
+  if (diff === 0) return <span className="text-xs text-brand-100">전월과 동일</span>;
   const up = diff > 0;
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${up ? 'bg-emerald-400/20 text-emerald-100' : 'bg-red-400/20 text-red-100'}`}>
@@ -5255,7 +4360,7 @@ function GradeProgress({ pay, config, dailyDays, month }) {
         </div>
         <div className="text-right">
           <div className="text-xs text-gray-400">현재 등급</div>
-          <div className={`text-lg font-bold ${pay.gradeEligible && currentBonus > 0 ? 'text-violet-700' : 'text-gray-400'}`}>
+          <div className={`text-lg font-bold ${pay.gradeEligible && currentBonus > 0 ? 'text-brand-700' : 'text-gray-400'}`}>
             {pay.gradeEligible ? pay.grade : 'D'}
             <span className="text-xs font-medium ml-1 text-gray-500">{won(currentBonus)}</span>
           </div>
@@ -5263,7 +4368,7 @@ function GradeProgress({ pay, config, dailyDays, month }) {
       </div>
 
       <div className="relative h-2.5 rounded-full bg-gray-100 overflow-visible">
-        <div className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-violet-500 to-indigo-500 transition-all duration-500"
+        <div className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-brand-500 to-brand-500 transition-all duration-500"
           style={{ width: `${pct}%` }} />
         {ticks.map((g) => (
           <div key={g.grade} className="absolute -top-0.5 w-px h-3.5 bg-white/80" style={{ left: `${Math.min(100, (g.min / maxMin) * 100)}%` }} />
@@ -5281,9 +4386,9 @@ function GradeProgress({ pay, config, dailyDays, month }) {
       {next ? (
         <>
           <div className="mt-2 flex items-center gap-2 text-sm">
-            <Target size={14} className="text-violet-500 shrink-0" />
+            <Target size={14} className="text-brand-500 shrink-0" />
             <span className="text-gray-600">
-              <b className="text-violet-700">{next.grade}등급</b>까지 <b className="text-gray-900 tabular-nums">{remain.toFixed(1)}P</b>
+              <b className="text-brand-700">{next.grade}등급</b>까지 <b className="text-gray-900 tabular-nums">{remain.toFixed(1)}P</b>
               {jump > 0 && <span className="text-gray-400"> · 도달하면 +{won(jump)}</span>}
             </span>
           </div>
@@ -5352,9 +4457,9 @@ function HomeGateCard({ pay, config, onGoInput }) {
 
 function RowKV({ label, value, bold }) {
   return (
-    <div className={`flex items-center justify-between px-4 py-2.5 text-sm ${bold ? 'bg-violet-50' : ''}`}>
-      <span className={bold ? 'text-violet-700 font-semibold' : 'text-gray-600'}>{label}</span>
-      <span className={bold ? 'text-violet-800 font-bold' : 'text-gray-800 font-medium'}>{value}</span>
+    <div className={`flex items-center justify-between px-4 py-2.5 text-sm ${bold ? 'bg-brand-50' : ''}`}>
+      <span className={bold ? 'text-brand-700 font-semibold' : 'text-gray-600'}>{label}</span>
+      <span className={bold ? 'text-brand-800 font-bold' : 'text-gray-800 font-medium'}>{value}</span>
     </div>
   );
 }
@@ -5408,11 +4513,11 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
       <div className="bg-white border border-gray-100 rounded-xl p-3">
         <div className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex bg-gray-100 rounded-lg p-0.5">
-            <button onClick={() => setMode('employees')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'employees' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>직원 순위</button>
-            <button onClick={() => setMode('stores')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'stores' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>매장 순위</button>
+            <button onClick={() => setMode('employees')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'employees' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>직원 순위</button>
+            <button onClick={() => setMode('stores')} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${mode === 'stores' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>매장 순위</button>
           </div>
           <div className="flex bg-gray-100 rounded-lg p-0.5">
-            <button onClick={() => setPeriodMode('month')} className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${periodMode === 'month' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>월 누적</button>
+            <button onClick={() => setPeriodMode('month')} className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${periodMode === 'month' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>월 누적</button>
             <button onClick={() => setPeriodMode('recent7')} className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${periodMode === 'recent7' ? 'bg-white shadow text-orange-600' : 'text-gray-500'}`}>최근 7일</button>
           </div>
           <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)}
@@ -5424,8 +4529,8 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
         {mode === 'stores' && (
           <div className="mt-2 flex justify-end">
             <div className="flex bg-gray-100 rounded-lg p-0.5">
-              <button onClick={() => setStoreMode('total')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'total' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>총 실적</button>
-              <button onClick={() => setStoreMode('avg')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'avg' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>1인당</button>
+              <button onClick={() => setStoreMode('total')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'total' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>총 실적</button>
+              <button onClick={() => setStoreMode('avg')} className={`px-2.5 py-1 rounded-md text-[11px] ${storeMode === 'avg' ? 'bg-white shadow text-brand-700' : 'text-gray-500'}`}>1인당</button>
             </div>
           </div>
         )}
@@ -5453,7 +4558,7 @@ function RankingCenter({ rows, dailyRecords, month, config }) {
                   }`}>{i + 1}</div>
                   <div className="text-sm text-gray-800 truncate">{name}</div>
                 </div>
-                <div className="text-sm font-bold text-violet-700 shrink-0">
+                <div className="text-sm font-bold text-brand-700 shrink-0">
                   {formatCompetitionValue(value, metric.unit)}
                 </div>
               </div>
@@ -5533,8 +4638,8 @@ function AdminHomeCare({ employees, month }) {
     </div>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">🏠 우리 매장 홈 케어</div>
-        <div className="text-xs text-gray-400">상품 여러 개도 고객 1건으로 묶어 보여줘요.</div></div><button onClick={load} className="text-xs font-bold text-violet-600">↻ 새로고침</button></div>
-        <div className="flex gap-1.5 mt-3">{[['pending','진행중'],['completed','설치완료'],['cancelled','취소']].map(([k,l])=><button key={k} onClick={()=>setStatusFilter(k)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold ${statusFilter===k?'bg-violet-600 text-white':'bg-gray-100 text-gray-500'}`}>{l} {grouped.filter(x=>x.status===k).length}</button>)}</div>
+        <div className="text-xs text-gray-400">상품 여러 개도 고객 1건으로 묶어 보여줘요.</div></div><button onClick={load} className="text-xs font-bold text-brand-600">↻ 새로고침</button></div>
+        <div className="flex gap-1.5 mt-3">{[['pending','진행중'],['completed','설치완료'],['cancelled','취소']].map(([k,l])=><button key={k} onClick={()=>setStatusFilter(k)} className={`px-3 py-1.5 rounded-full text-[11px] font-bold ${statusFilter===k?'bg-brand-600 text-white':'bg-gray-100 text-gray-500'}`}>{l} {grouped.filter(x=>x.status===k).length}</button>)}</div>
         {lastLoadedAt&&<div className="text-[9px] text-gray-300 mt-2">마지막 갱신 {lastLoadedAt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</div>}</div>
       {visible.length===0?<div className="py-10 text-center text-sm text-gray-400">해당 홈 청약이 없어요.</div>:
         <div className="divide-y">{[...visible].sort((a,b)=>String(a.planned_install_date||'9999').localeCompare(String(b.planned_install_date||'9999'))).map(o=>{
@@ -5553,11 +4658,11 @@ function AdminHomeCare({ employees, month }) {
                 <div className="text-sm font-bold">{o.customer_name||'고객명 미입력'}</div>
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                   o.network_type==='soho'?'bg-blue-50 text-blue-600':
-                  o.network_type==='household'?'bg-violet-50 text-violet-600':'bg-gray-100 text-gray-400'
+                  o.network_type==='household'?'bg-brand-50 text-brand-600':'bg-gray-100 text-gray-400'
                 }`}>{homeNetworkLabel(o.network_type)}</span>
               </div>
               <div className="text-xs text-gray-500 mt-1">{emp?.name||'직원'} · {emp?.branch||''}</div></div>
-              <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'}`}>
+              <span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${over?'bg-red-50 text-red-600':isToday?'bg-orange-50 text-orange-600':'bg-brand-50 text-brand-600'}`}>
                 {o.status==='completed'?'설치완료':o.status==='cancelled'?'취소':over?'확인 필요':isToday?'오늘 설치':p?'설치 예정':'일정 미정'}</span></div>
             <div className="flex flex-wrap gap-1 mt-2">{products.map(x=><span key={x} className="px-2 py-1 rounded-md bg-gray-50 text-[10px] text-gray-600">{x}</span>)}{duplicateLabel&&<span className="px-2 py-1 rounded-md bg-red-50 text-[10px] font-bold text-red-600">{duplicateLabel}</span>}</div>
             <div className="text-[11px] text-gray-400 mt-2">접수 {o.source_work_date||String(o.applied_at).slice(0,10)} · 설치예정 {p||'미정'}</div>
@@ -5658,7 +4763,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
         <div className="text-sm font-bold text-gray-900">기준 목표 종합 달성</div>
         <div className="text-[10px] text-gray-400 mt-0.5">HS · 홈 · 생산성 · 프리 · 스마트홈 · 업셀 기준</div>
       </div>
-      <button onClick={onOpenGoals} className="text-xs font-semibold text-violet-600">목표 보기 ›</button>
+      <button onClick={onOpenGoals} className="text-xs font-semibold text-brand-600">목표 보기 ›</button>
     </div>
     {loading?<div className="py-7 text-center text-xs text-gray-400">순위 계산 중...</div>:
     ranked.length===0?<div className="py-7 text-center text-xs text-gray-400">비교할 매장 데이터가 없어요.</div>:
@@ -5679,7 +4784,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
           </div>
         ))}
       </div>
-      {myIndex>=3&&<div className="px-4 py-3 bg-violet-50 flex justify-between text-xs text-violet-700">
+      {myIndex>=3&&<div className="px-4 py-3 bg-brand-50 flex justify-between text-xs text-brand-700">
         <b>우리 매장 {myIndex+1}위</b>
         <span>{ranked[myIndex].score.toFixed(1)}점 · {ranked[myIndex].total}가지 중 {ranked[myIndex].achieved}가지 달성</span>
       </div>}
@@ -5715,14 +4820,14 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
       <div>
         <div className="text-xs text-gray-400">🎯 매장 목표 달성</div>
         <div className="text-sm font-bold text-gray-900 mt-1">
-          기준 목표 {companyAch.total}가지 중 <span className="text-violet-700">{companyAch.achieved}가지</span> 달성
+          기준 목표 {companyAch.total}가지 중 <span className="text-brand-700">{companyAch.achieved}가지</span> 달성
         </div>
         <div className="text-xs text-gray-500 mt-1">
           도전 목표 {challengeAch.total}가지 중 {challengeAch.achieved}가지 달성 · 종합 {companyAch.score.toFixed(1)}점
         </div>
         {finalPerformance&&<div className="text-[9px] font-semibold text-emerald-600 mt-1">마감 확정 실적 기준</div>}
       </div>
-      <span className="text-xs font-semibold text-violet-600">상세 ›</span>
+      <span className="text-xs font-semibold text-brand-600">상세 ›</span>
     </div>
   </button>;
 }
@@ -5763,7 +4868,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
   const onTime=matured.filter(t=>t.status==='completed'&&String(t.completed_at||'').slice(0,10)<=t.due_date);
   const rate=matured.length?Math.round(onTime.length/matured.length*100):0;
   const stores=[...new Set((employees||[]).map(e=>e.branch).filter(Boolean))].sort();
-  const categoryTone={'제휴카드':'bg-blue-50 text-blue-700','수납지원':'bg-violet-50 text-violet-700','변경':'bg-amber-50 text-amber-700','케이스 및 기타':'bg-gray-100 text-gray-600'};
+  const categoryTone={'제휴카드':'bg-blue-50 text-blue-700','수납지원':'bg-brand-50 text-brand-700','변경':'bg-amber-50 text-amber-700','케이스 및 기타':'bg-gray-100 text-gray-600'};
   const cardProgress=(task)=>{const meta=task.task_meta||{};const stage=meta.card_stage==='received_not_visited'?'수령 완료':meta.card_stage==='applied_unreceived'?'신청 완료 · 미수령':'신청 전';const approval=meta.approval_required?(meta.approval_completed?'승인 완료':'승인 확인 필요'):'별도 승인 없음';const autopay=meta.autopay_registered?'자동이체 등록':'자동이체 미등록';return [meta.card_name,stage,approval,autopay].filter(Boolean).join(' · ')};
   const baseFiltered=scoped.filter(t=>{
     const emp=employeeMap[t.user_id], customer=customerMap[t.customer_id];
@@ -5804,13 +4909,13 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
       {[['오늘',todayTasks.length],['7일 내',next7.length],['기한초과',overdue.length],['기한 내 완료',`${rate}%`],['고객 거절',selectedMonthTasks.filter(t=>t.status==='cancelled').length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center"><div className={`text-lg font-bold ${l==='기한초과'&&Number(v)>0?'text-red-600':'text-gray-900'}`}>{v}</div><div className="text-[10px] text-gray-400">{l}</div></div>)}
     </div>
-    {compact?<button onClick={onOpen} className="w-full bg-white rounded-xl border border-gray-100 p-4 flex justify-between text-left"><div><div className="text-sm font-bold">고객 약속 관리</div><div className="text-xs text-gray-400 mt-1">직원별 진행단계와 기한초과 내역을 확인해요.</div></div><span className="text-xs font-semibold text-violet-600">상세 ›</span></button>:<>
+    {compact?<button onClick={onOpen} className="w-full bg-white rounded-xl border border-gray-100 p-4 flex justify-between text-left"><div><div className="text-sm font-bold">고객 약속 관리</div><div className="text-xs text-gray-400 mt-1">직원별 진행단계와 기한초과 내역을 확인해요.</div></div><span className="text-xs font-semibold text-brand-600">상세 ›</span></button>:<>
     <div className="bg-white rounded-xl border border-gray-100 p-3 space-y-2">
       <div><div className="text-xs font-bold text-gray-800">고객 통합검색</div><div className="mt-0.5 text-[10px] text-gray-400">판매 이력과 약속을 한 번에 찾아요.</div></div>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명·직원명·판매 항목·약속·카드사 검색" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"/>
-      {searchNeedle&&<div className="rounded-xl border border-violet-100 bg-violet-50/50 overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-violet-100"><span className="text-[10px] font-bold text-violet-700">통합 고객 검색 결과</span><span className="text-[10px] text-violet-500">{unifiedCustomerRows.length}명</span></div>
-        <div className="max-h-56 overflow-y-auto divide-y divide-violet-100">{unifiedCustomerRows.map(({customer,emp,tasks:customerTasks,sales:customerSales,lastSale})=><button key={customer.id} type="button" onClick={()=>{setQuery(customer.customer_name);setBranch(emp.branch||'all');setEmployeeId(emp.id)}} className="w-full bg-white/80 px-3 py-2.5 text-left hover:bg-white"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{customer.customer_name} · {emp.name}</div><div className="mt-0.5 text-[10px] text-gray-400 truncate">{displayStoreName(emp.branch)}{lastSale?` · 최근 ${lastSale.sale_date} ${lastSale.metric_label||'판매'}`:''}</div></div><div className="shrink-0 text-[10px] font-semibold text-violet-600">판매 {customerSales.length} · 약속 {customerTasks.length}</div></div></button>)}{unifiedCustomerRows.length===0&&<div className="px-3 py-5 text-center text-xs text-gray-400">판매 이력과 약속에서 일치하는 고객이 없어요.</div>}</div>
+      {searchNeedle&&<div className="rounded-xl border border-brand-100 bg-brand-50/50 overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-brand-100"><span className="text-[10px] font-bold text-brand-700">통합 고객 검색 결과</span><span className="text-[10px] text-brand-500">{unifiedCustomerRows.length}명</span></div>
+        <div className="max-h-56 overflow-y-auto divide-y divide-brand-100">{unifiedCustomerRows.map(({customer,emp,tasks:customerTasks,sales:customerSales,lastSale})=><button key={customer.id} type="button" onClick={()=>{setQuery(customer.customer_name);setBranch(emp.branch||'all');setEmployeeId(emp.id)}} className="w-full bg-white/80 px-3 py-2.5 text-left hover:bg-white"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-xs font-bold text-gray-900 truncate">{customer.customer_name} · {emp.name}</div><div className="mt-0.5 text-[10px] text-gray-400 truncate">{displayStoreName(emp.branch)}{lastSale?` · 최근 ${lastSale.sale_date} ${lastSale.metric_label||'판매'}`:''}</div></div><div className="shrink-0 text-[10px] font-semibold text-brand-600">판매 {customerSales.length} · 약속 {customerTasks.length}</div></div></button>)}{unifiedCustomerRows.length===0&&<div className="px-3 py-5 text-center text-xs text-gray-400">판매 이력과 약속에서 일치하는 고객이 없어요.</div>}</div>
       </div>}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <select value={branch} onChange={e=>{setBranch(e.target.value);setEmployeeId('all')}} className="border rounded-lg px-2.5 py-2 text-xs"><option value="all">전체 매장</option>{stores.map(x=><option key={x} value={x}>{displayStoreName(x)}</option>)}</select>
@@ -5818,11 +4923,11 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
         <select value={category} onChange={e=>setCategory(e.target.value)} className="border rounded-lg px-2.5 py-2 text-xs"><option value="all">전체 카테고리</option>{['제휴카드','수납지원','변경','케이스 및 기타'].map(x=><option key={x} value={x}>{x}</option>)}</select>
         <button onClick={()=>{setQuery('');setBranch('all');setEmployeeId('all');setCategory('all');setFilter('todo')}} className="rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">필터 초기화</button>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">{[['todo','할 일'],['today','오늘'],['overdue','경과'],['upcoming','전체 예정'],['done','완료'],['cancelled','고객 거절']].map(([key,label])=><button key={key} onClick={()=>setFilter(key)} className={`py-2 rounded-lg text-[10px] font-semibold ${filter===key?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{label}</button>)}</div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">{[['todo','할 일'],['today','오늘'],['overdue','경과'],['upcoming','전체 예정'],['done','완료'],['cancelled','고객 거절']].map(([key,label])=><button key={key} onClick={()=>setFilter(key)} className={`py-2 rounded-lg text-[10px] font-semibold ${filter===key?'bg-brand-600 text-white':'bg-gray-50 text-gray-500'}`}>{label}</button>)}</div>
       <div className="text-[10px] text-gray-400">완료·고객 거절은 {monthLabel(selectedMonth)} 기준이며, 진행 중 약속은 월과 관계없이 놓치지 않도록 표시해요.</div>
     </div>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b flex justify-between gap-3"><div><div className="text-sm font-bold">고객 약속 상세</div><div className="text-xs text-gray-400">관리 범위의 직원과 고객 진행상태를 함께 확인해요.</div></div><div className="text-xs font-bold text-violet-600">{displayRows.length}건</div></div>
+      <div className="px-4 py-3 border-b flex justify-between gap-3"><div><div className="text-sm font-bold">고객 약속 상세</div><div className="text-xs text-gray-400">관리 범위의 직원과 고객 진행상태를 함께 확인해요.</div></div><div className="text-xs font-bold text-brand-600">{displayRows.length}건</div></div>
       <div className="divide-y">
         {displayRows.map(({task:t,tasks:groupTasks,payment})=>{
           const emp=employeeMap[t.user_id], customer=customerMap[t.customer_id];
@@ -5833,12 +4938,12 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
               <div className="flex items-center gap-1.5 flex-wrap"><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${categoryTone[taskCategory]}`}>{taskCategory}</span><b className="text-gray-800">{emp?.name||'직원'} · {customer?.customer_name||'고객'}</b></div>
               <div className="text-[10px] text-gray-400 mt-1">{displayStoreName(emp?.branch)}</div>
               <div className="text-gray-600 mt-1">{payment?`${groupTasks.length}개월 요금 수납지원 · ${completedCount}/${groupTasks.length}회 완료`:t.title}</div>
-              {payment&&<div className="text-violet-700 mt-1">다음 수납 · {t.due_date}</div>}
+              {payment&&<div className="text-brand-700 mt-1">다음 수납 · {t.due_date}</div>}
               {t.task_type==='affiliateCard'&&<div className="text-blue-700 mt-1 leading-relaxed">{cardProgress(t)}</div>}
-              {t.target_plan&&<div className="text-violet-700 mt-1">변경 예정 · {t.target_plan}</div>}
+              {t.target_plan&&<div className="text-brand-700 mt-1">변경 예정 · {t.target_plan}</div>}
               {t.note&&!payment&&<div className="text-gray-400 mt-1">{t.note}</div>}
             </div>
-            <div className="shrink-0 text-right"><div className={`font-semibold ${t.status==='cancelled'?'text-gray-500':t.status==='completed'?'text-emerald-600':t.due_date<today?'text-red-500':t.due_date===today?'text-orange-500':'text-violet-600'}`}>{statusLabel}</div><div className="text-[10px] text-gray-400 mt-1">{t.due_date}</div></div>
+            <div className="shrink-0 text-right"><div className={`font-semibold ${t.status==='cancelled'?'text-gray-500':t.status==='completed'?'text-emerald-600':t.due_date<today?'text-red-500':t.due_date===today?'text-orange-500':'text-brand-600'}`}>{statusLabel}</div><div className="text-[10px] text-gray-400 mt-1">{t.due_date}</div></div>
           </div></div>
         })}
         {displayRows.length===0&&<div className="py-8 text-center text-xs text-gray-400">조건에 해당하는 고객 약속이 없어요.</div>}
@@ -5886,14 +4991,14 @@ function AdminManagementAlerts({ pendingCount, employees, onGo, month, rows, dai
   const now=new Date(),todayKey=String(now.getDate()).padStart(2,'0');
   const missing=monthKeyOf(now)===month?(employees||[]).filter(e=>{const d=normalizeDay(dailyRecords?.[e.id]?.[todayKey]);return !d.dayOff&&!dayHasData(d)}).length:0;
   const total=['customer','home','spot','profile','settlement','hqDiff','goalRisk','pushMissing','pushFailed'].reduce((sum,key)=>sum+Number(counts[key]||0),0)+missing+Number(pendingCount||0);
-  return <div className="bg-white rounded-xl border border-violet-100 p-3">
-    <div className="flex justify-between items-center"><div><div className="text-xs text-violet-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${fmtCount(total)}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
+  return <div className="bg-white rounded-xl border border-brand-100 p-3">
+    <div className="flex justify-between items-center"><div><div className="text-xs text-brand-500">🔔 관리 알림</div><div className="text-sm font-bold text-gray-900 mt-0.5">{total?`${fmtCount(total)}건 확인 필요`:'확인할 관리 알림이 없어요'}</div></div></div>
     {total>0&&<div className="grid grid-cols-2 gap-2 mt-3 text-xs">
-      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">오늘 입력 누락 <b className="float-right">{missing}</b></button>
+      <button onClick={()=>onGo('performanceApproval')} className="bg-brand-50 text-brand-700 rounded-lg p-2 text-left">오늘 입력 누락 <b className="float-right">{missing}</b></button>
       <button onClick={()=>onGo('customerCareAdmin')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">고객약속 경과 <b className="float-right">{counts.customer}</b></button>
       <button onClick={()=>onGo('homeCare')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">홈 설치 확인 <b className="float-right">{counts.home}</b></button>
       {canViewSpotAdmin&&<button onClick={()=>onGo('spot')} className="bg-orange-50 text-orange-600 rounded-lg p-2 text-left">스팟 승인 <b className="float-right">{counts.spot}</b></button>}
-      <button onClick={()=>onGo('performanceApproval')} className="bg-violet-50 text-violet-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount}</b></button>
+      <button onClick={()=>onGo('performanceApproval')} className="bg-brand-50 text-brand-700 rounded-lg p-2 text-left">실적 승인 대기 <b className="float-right">{pendingCount}</b></button>
       <button onClick={()=>onGo('storeGoals')} className="bg-red-50 text-red-600 rounded-lg p-2 text-left">HS 목표 위험 매장 <b className="float-right">{counts.goalRisk}</b></button>
       {isFullAdmin&&<button onClick={()=>onGo('headOfficeData')} className="bg-blue-50 text-blue-700 rounded-lg p-2 text-left">본사 데이터 차이 <b className="float-right">{counts.hqDiff}</b></button>}
       {isFullAdmin&&<button onClick={()=>onGo('settlement')} className="bg-emerald-50 text-emerald-700 rounded-lg p-2 text-left">정산 미검토 <b className="float-right">{counts.settlement}</b></button>}
@@ -6061,11 +5166,11 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
         const inputHs=hsCount(r.draft),inputSecond=matrixRowCount(r.draft,7)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
         return <div key={r.id} className="p-4">
           <button onClick={()=>loadDetail(r)} className="w-full text-left">
-            <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div><div className="text-[10px] text-violet-500 mt-1">상세 산출내역 보기 ›</div></div><div className="text-right"><div className="font-bold text-violet-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
+            <div className="flex justify-between gap-3"><div><div className="font-bold text-sm">{r.name} · {displayStoreName(r.branch)}</div><div className="text-xs text-gray-400 mt-1">기본 {won(r.pay.total)} · 스팟 +{won(spot)} · 비용 -{won(expense)}</div><div className="text-[10px] text-brand-500 mt-1">상세 산출내역 보기 ›</div></div><div className="text-right"><div className="font-bold text-brand-700">{won(net)}</div><div className="text-[10px] text-gray-400">비용 차감 후</div></div></div>
           </button>
           {hqScore?<div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-800"><div className="font-semibold">본사 데이터 {hq.as_of_date} 기준</div><div className="mt-1">HS 직원 {fmtCount(inputHs)} / 본사 {fmtCount(hqScore.hs)} <b>({hqScore.hs-inputHs>0?'+':''}{fmtCount(hqScore.hs-inputHs)})</b> · 2ND 직원 {fmtCount(inputSecond)} / 본사 {fmtCount(hqScore.second)} <b>({hqScore.second-inputSecond>0?'+':''}{fmtCount(hqScore.second-inputSecond)})</b></div><div className="mt-0.5">성과P 직원 {fmtNum(r.pay?.totalPoints,1)}P / 본사 {fmtNum(hqScore.gradePoints,1)}P · 생산성 직원 {fmtNum(r.pay?.kpiScore,1)}P / 본사 {fmtNum(hqScore.kpiScore,1)}P</div></div>:<div className="mt-2 text-[10px] text-gray-300">본사 데이터 미등록 · 직원 입력 기준으로 검토</div>}
           <div className="grid grid-cols-4 gap-1 mt-3">
-            {[['unreviewed','미검토'],['reviewing','검토중'],['checked','확인완료'],['final','정산확정']].map(([k,l])=><button key={k} onClick={()=>setStatus(r.id,k)} className={`py-1.5 rounded text-[10px] font-semibold ${status===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
+            {[['unreviewed','미검토'],['reviewing','검토중'],['checked','확인완료'],['final','정산확정']].map(([k,l])=><button key={k} onClick={()=>setStatus(r.id,k)} className={`py-1.5 rounded text-[10px] font-semibold ${status===k?'bg-brand-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
           </div>
         </div>
       })}
@@ -6074,10 +5179,10 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
       <div className="bg-white w-full md:max-w-5xl max-h-[92vh] rounded-t-2xl md:rounded-2xl overflow-hidden flex flex-col" onClick={e=>e.stopPropagation()}>
         <div className="p-4 border-b flex justify-between items-start"><div><div className="font-bold">{detailUser.name} · {monthLabel(month)} 상세 정산 원장</div><div className="text-xs text-gray-400 mt-1">날짜 / 고객명 / 가입구분 / 돈이 발생한 항목 / 적용금액</div></div><button onClick={()=>setDetailUser(null)} className="text-gray-400 text-xl">×</button></div>
         <div className="overflow-auto">
-          <div className="p-4 bg-violet-50 border-b">
-            <div className="text-xs font-bold text-violet-700 mb-2">최종 지급 구성</div>
+          <div className="p-4 bg-brand-50 border-b">
+            <div className="text-xs font-bold text-brand-700 mb-2">최종 지급 구성</div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{detailSummary.map(([l,v])=><div key={l} className="bg-white rounded-lg border p-2 flex justify-between gap-2 text-xs"><span>{l}</span><b>{v>=0?'+':''}{won(v)}</b></div>)}</div>
-            <div className="mt-3 flex justify-between font-bold text-sm"><span>최종 검토금액</span><span className="text-violet-700">{won(detailUser.pay.total+(spotMap[detailUser.id]||0)-(expenseMap[detailUser.id]||0))}</span></div>
+            <div className="mt-3 flex justify-between font-bold text-sm"><span>최종 검토금액</span><span className="text-brand-700">{won(detailUser.pay.total+(spotMap[detailUser.id]||0)-(expenseMap[detailUser.id]||0))}</span></div>
           </div>
           {detailLoading?<div className="p-10 text-center text-sm text-gray-400">상세 내역을 불러오는 중...</div>:detailRows.length===0?<div className="p-10 text-center text-sm text-gray-400">고객별 판매 기록이 없어요. 구버전 집계 실적은 위 최종 지급 구성에서 확인할 수 있어요.</div>:<div className="divide-y">
             {detailRows.map((x,i)=><div key={`${x.date}-${i}`} className="p-3 grid grid-cols-[72px_1fr_auto] md:grid-cols-[90px_140px_150px_1fr_120px] gap-2 items-center text-xs">
@@ -6085,7 +5190,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
               <div className="font-semibold truncate">{x.customer}</div>
               <div className="hidden md:block text-gray-500">{x.type}</div>
               <div><div className="font-medium">{x.item}</div>{x.note&&<div className="text-[10px] text-gray-400 mt-0.5">{x.note}</div>}</div>
-              <div className={`text-right font-bold ${Number(x.amount)<0?'text-red-500':Number(x.amount)>0?'text-violet-700':'text-gray-400'}`}>{x.amount===null?'금액은 월 합산 반영':`${Number(x.amount)>0?'+':''}${won(x.amount)}`}</div>
+              <div className={`text-right font-bold ${Number(x.amount)<0?'text-red-500':Number(x.amount)>0?'text-brand-700':'text-gray-400'}`}>{x.amount===null?'금액은 월 합산 반영':`${Number(x.amount)>0?'+':''}${won(x.amount)}`}</div>
             </div>)}
           </div>}
           <div className="p-4 text-[10px] text-gray-400 bg-gray-50">※ 고객별 원장은 현재 고객별 판매로 저장된 건을 기준으로 보여줍니다. 영업활동지원·최저보장·홈 그레이드처럼 월 누적 조건으로 결정되는 금액은 상단 ‘최종 지급 구성’에서 별도로 대조합니다.</div>
@@ -6244,10 +5349,10 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   };
 
   return <div className="space-y-3">
-    <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-4 text-white">
-      <div><div className="text-xs text-violet-200">대표 전용</div><div className="text-lg font-black mt-0.5">{dateLabel} 일일 브리핑</div><div className="text-[10px] text-violet-200 mt-1">오전 {DAILY_BRIEFING_SEND_TIME} 기준 · 카카오 전달과 미입력 알림을 바로 보낼 수 있어요.</div></div>
-      <div className="grid grid-cols-4 gap-1.5 mt-4">{[['입력',count('input')],['0건 확인',count('zero')],['미입력',count('missing')],['휴무',count('off')]].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-2 py-2 text-center"><div className="text-[9px] text-violet-100">{label}</div><div className="text-base font-black mt-0.5">{value}명</div></div>)}</div>
-      <div className="grid grid-cols-2 gap-2 mt-3"><button type="button" onClick={()=>shareBriefing(buildAllBriefingText({dateLabel,stores:visibleStores}),`${dateLabel} 일일 브리핑`)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-xs font-bold text-violet-700"><Share2 size={14}/>카카오로 전달</button><button type="button" disabled={reminderSending} onClick={()=>sendInputReminders()} className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-500 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-50"><Send size={14}/>{reminderSending?'보내는 중':'미입력 알림'}</button></div>
+    <div className="bg-gradient-to-br from-brand-600 to-brand-600 rounded-2xl p-4 text-white">
+      <div><div className="text-xs text-brand-200">대표 전용</div><div className="text-lg font-black mt-0.5">{dateLabel} 일일 브리핑</div><div className="text-[10px] text-brand-200 mt-1">오전 {DAILY_BRIEFING_SEND_TIME} 기준 · 카카오 전달과 미입력 알림을 바로 보낼 수 있어요.</div></div>
+      <div className="grid grid-cols-4 gap-1.5 mt-4">{[['입력',count('input')],['0건 확인',count('zero')],['미입력',count('missing')],['휴무',count('off')]].map(([label,value])=><div key={label} className="rounded-xl bg-white/10 px-2 py-2 text-center"><div className="text-[9px] text-brand-100">{label}</div><div className="text-base font-black mt-0.5">{value}명</div></div>)}</div>
+      <div className="grid grid-cols-2 gap-2 mt-3"><button type="button" onClick={()=>shareBriefing(buildAllBriefingText({dateLabel,stores:visibleStores}),`${dateLabel} 일일 브리핑`)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-xs font-bold text-brand-700"><Share2 size={14}/>카카오로 전달</button><button type="button" disabled={reminderSending} onClick={()=>sendInputReminders()} className="flex items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-50"><Send size={14}/>{reminderSending?'보내는 중':'미입력 알림'}</button></div>
     </div>
 
     <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2">
@@ -6265,13 +5370,13 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
       return <div key={store.branch} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-50 flex items-start justify-between gap-3">
           <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">예상 달성 {good.length}/{setMetrics.length}개 · 미입력 {missing.length}명 · 0건 확인 {zero.length}명</div></div>
-          <div className="flex gap-1.5"><button type="button" onClick={()=>shareBriefing(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 브리핑`)} className="flex items-center gap-1 rounded-lg bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-700"><Share2 size={12}/>카카오 전달</button>{missing.length>0&&<button type="button" disabled={reminderSending} onClick={()=>sendInputReminders([store])} className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-2 text-[10px] font-bold text-red-600 disabled:opacity-50"><Send size={12}/>입력 알림</button>}</div>
+          <div className="flex gap-1.5"><button type="button" onClick={()=>shareBriefing(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 브리핑`)} className="flex items-center gap-1 rounded-lg bg-brand-50 px-2.5 py-2 text-[10px] font-bold text-brand-700"><Share2 size={12}/>카카오 전달</button>{missing.length>0&&<button type="button" disabled={reminderSending} onClick={()=>sendInputReminders([store])} className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-2 text-[10px] font-bold text-red-600 disabled:opacity-50"><Send size={12}/>입력 알림</button>}</div>
         </div>
-        {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-violet-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
+        {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-brand-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
         <div className="border-b border-gray-50 px-4 py-3">
-          <div className="text-[10px] font-bold text-violet-700">오늘 할 일 · 일정</div>
+          <div className="text-[10px] font-bold text-brand-700">오늘 할 일 · 일정</div>
           <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
-            {[['고객 약속',store.todayTasks.length,'text-violet-700'],['홈 설치',store.todayInstalls.length,'text-blue-700'],['설치 지연',store.overdueInstalls.length,store.overdueInstalls.length?'text-red-600':'text-gray-400']].map(([label,value,tone])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2"><div className={`text-base font-black ${tone}`}>{value}건</div><div className="text-[9px] text-gray-500">{label}</div></div>)}
+            {[['고객 약속',store.todayTasks.length,'text-brand-700'],['홈 설치',store.todayInstalls.length,'text-blue-700'],['설치 지연',store.overdueInstalls.length,store.overdueInstalls.length?'text-red-600':'text-gray-400']].map(([label,value,tone])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2"><div className={`text-base font-black ${tone}`}>{value}건</div><div className="text-[9px] text-gray-500">{label}</div></div>)}
           </div>
           {(store.todayTasks.length>0||store.todayInstalls.length>0||store.overdueInstalls.length>0)&&<div className="mt-2 space-y-1 text-[10px] leading-relaxed text-gray-600">
             {store.todayTasks.length>0&&<div><b>약속</b> · {store.todayTasks.map(row=>`${row.customerName}(${row.title}${row.employeeName?` · ${row.employeeName}`:''})`).join(', ')}</div>}
@@ -6342,7 +5447,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
           {availableStores.map(b=><option key={b} value={b}>{displayStoreName(b)}</option>)}
         </select>
       ) : (
-        <div className="text-xs font-semibold text-violet-700 bg-violet-50 rounded-lg px-2.5 py-2">{displayStoreName(storeKey)}</div>
+        <div className="text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg px-2.5 py-2">{displayStoreName(storeKey)}</div>
       )}
     </div>
 
@@ -6359,7 +5464,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
           const sel=key===selectedDay;
           const dow=new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,d).getDay();
           return <button key={d} type="button" onClick={()=>setSelectedDay(key)}
-            className={`min-w-0 h-[58px] sm:h-[64px] rounded-lg flex flex-col items-center justify-start pt-2.5 px-0.5 overflow-hidden ${sel?'bg-violet-600 text-white':active?'bg-violet-50 text-violet-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
+            className={`min-w-0 h-[58px] sm:h-[64px] rounded-lg flex flex-col items-center justify-start pt-2.5 px-0.5 overflow-hidden ${sel?'bg-brand-600 text-white':active?'bg-brand-50 text-brand-700':dow===0?'bg-red-50/50 text-red-400':dow===6?'bg-blue-50/50 text-blue-400':'bg-gray-50 text-gray-500'}`}>
             <div className="text-[10px] font-semibold leading-none shrink-0">{d}</div>
             <div className={`h-[32px] mt-1.5 text-[6.5px] sm:text-[7px] leading-[9px] font-semibold text-center whitespace-nowrap shrink-0 ${sel?'text-white/90':'text-gray-600'}`}>
               <div className={x.hs>0?'':'invisible'}>HS {fmtCount(x.hs)}</div>
@@ -6420,12 +5525,12 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
 
   return <div className="space-y-3">
     <div className="bg-white rounded-xl border p-4">
-      <div className="flex justify-between gap-3 items-end"><div><div className="text-xs text-violet-500">실적 정확성 점검</div><div className="text-base font-bold mt-0.5">{monthLabel(month)} 실적 점검</div><div className="text-[10px] text-gray-400 mt-1">승인 대기 대신 미입력·관리자 최신화 차이·중복 가능성을 확인합니다.</div></div><select value={selectedDay} onChange={e=>setSelectedDay(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{Array.from({length:daysInMonth(month)},(_,i)=>String(i+1).padStart(2,'0')).map(d=><option key={d} value={d}>{Number(d)}일</option>)}</select></div>
+      <div className="flex justify-between gap-3 items-end"><div><div className="text-xs text-brand-500">실적 정확성 점검</div><div className="text-base font-bold mt-0.5">{monthLabel(month)} 실적 점검</div><div className="text-[10px] text-gray-400 mt-1">승인 대기 대신 미입력·관리자 최신화 차이·중복 가능성을 확인합니다.</div></div><select value={selectedDay} onChange={e=>setSelectedDay(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{Array.from({length:daysInMonth(month)},(_,i)=>String(i+1).padStart(2,'0')).map(d=><option key={d} value={d}>{Number(d)}일</option>)}</select></div>
     </div>
     <div className="grid grid-cols-3 gap-2">
       <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">미입력 직원</div><div className="text-xl font-bold text-red-500 mt-1">{missing.length}명</div></div>
       <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">중복 확인 필요</div><div className="text-xl font-bold text-amber-600 mt-1">{duplicateRows.length}건</div></div>
-      <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">관리자 최신화 매장</div><div className="text-xl font-bold text-violet-700 mt-1">{Object.keys(verifiedMap).length}개</div></div>
+      <div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">관리자 최신화 매장</div><div className="text-xl font-bold text-brand-700 mt-1">{Object.keys(verifiedMap).length}개</div></div>
     </div>
     {missing.length>0&&<div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b font-bold text-sm">{Number(selectedDay)}일 미입력</div>{missing.map(r=><div key={r.id} className="px-4 py-2.5 border-b last:border-0 flex justify-between text-xs"><span><b>{r.name}</b> · {displayStoreName(r.branch)}</span><span className="text-red-500">입력 없음</span></div>)}</div>}
     <div className="bg-white rounded-xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">직원 입력 vs 관리자 확인</div><div className="text-[10px] text-gray-400 mt-1">평가의 ‘실적 최신화’에서 저장한 관리자 확인값과 현재 직원 입력 누적을 비교합니다.</div></div>{workRows.map(r=>{const v=verifiedMap[r.branch]?.verified_metrics; if(!v)return null; const hs=hsCount(r.draft),home=completedHomeCount(r.draft);return <div key={r.id} className="px-4 py-2.5 border-b last:border-0 text-xs"><div className="font-semibold">{r.name} · {displayStoreName(r.branch)}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 HS {fmtCount(hs)} / 홈 {fmtCount(home)} · 매장 관리자확인 HS {fmtCount(v.hs||0)} / 홈 {fmtCount(v.home||0)}</div></div>})}</div>
@@ -6450,7 +5555,7 @@ function AdminExpenseOverview({month,employees=[],loginBranch='',canSwitchStores
     })();
   },[month,scoped.map(e=>e.id).join('|')]);
   const total=rows.reduce((a,x)=>a+Number(x.amount||0),0);
-  return <div className="space-y-3"><div><div className="text-xs text-violet-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:loadError?<div className="p-4"><div className="text-sm font-bold text-red-500">영업비용을 불러오지 못했어요.</div><div className="text-[11px] text-red-400 mt-1">{loadError}</div><div className="text-[10px] text-gray-400 mt-2">Supabase의 sales_expenses 조회 정책(RLS)을 확인해주세요.</div></div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
+  return <div className="space-y-3"><div><div className="text-xs text-brand-600 font-semibold">영업비용 / 오퍼</div><div className="text-xl font-bold">{monthLabel(month)} · {won(total)}</div><div className="text-[10px] text-gray-400 mt-1">관리범위 직원이 입력한 영업비용을 확인합니다.</div></div><div className="bg-white rounded-xl border overflow-hidden">{loading?<div className="p-4 text-sm text-gray-400">불러오는 중...</div>:loadError?<div className="p-4"><div className="text-sm font-bold text-red-500">영업비용을 불러오지 못했어요.</div><div className="text-[11px] text-red-400 mt-1">{loadError}</div><div className="text-[10px] text-gray-400 mt-2">Supabase의 sales_expenses 조회 정책(RLS)을 확인해주세요.</div></div>:rows.length===0?<div className="p-4 text-sm text-gray-400">등록된 영업비용이 없어요.</div>:rows.map(x=>{const e=scoped.find(v=>v.id===x.user_id);return <div key={x.id} className="p-3 border-b last:border-0"><div className="flex justify-between gap-2"><div><div className="text-sm font-bold">{e?.name||'직원'} <span className="font-normal text-gray-400">· {displayStoreName(e?.branch)}</span></div><div className="text-[11px] text-gray-500 mt-1">{x.expense_date} · {x.customer_name||'이름 없음'} · {x.category||'기타'}{x.memo?` · ${x.memo}`:''}</div></div><b className="text-red-500 shrink-0">-{won(x.amount)}</b></div></div>})}</div></div>
 }
 
 const HEAD_OFFICE_EXTRA_FIELDS = [
@@ -6513,13 +5618,13 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   const updateMatrix=(ri,ci,value)=>setMetrics(v=>{const matrix=v.matrix.map(r=>[...r]);matrix[ri][ci]=Math.max(0,Number(value||0));return {...v,matrix}});
   const save=async()=>{const isStore=mode==='store';if((isStore&&!selectedStore)||(!isStore&&!selected))return;setSaving(true);const common={month,store_name:isStore?selectedStore:selected.branch,as_of_date:asOfDate,metrics,vas_review:vasReview,note:note.trim()||null,updated_by:authUserId,updated_at:new Date().toISOString()};const payload=isStore?common:{...common,user_id:selected.id};const table=isStore?'head_office_store_performance':'head_office_performance',conflict=isStore?'month,store_name':'month,user_id';const {error}=await supabase.from(table).upsert(payload,{onConflict:conflict});setSaving(false);if(error)return showLegacyAlert(`본사 데이터 저장 실패: ${friendlyError(error)}`);await load();showLegacyAlert(`${isStore?'매장':'개인'} 본사 데이터를 저장했어요. 개인 실적과 급여 계산은 변경하지 않았습니다.`)};
   return <div className="space-y-3">
-    <div><div className="text-xs text-violet-600 font-semibold">본사 데이터 기준</div><div className="text-xl font-bold">{mode==='store'?'매장별':'개인별'} 누적 실적 대조</div><div className="text-[10px] text-gray-400 mt-1">매장 기준이 기본입니다. 개인 기준은 개인별 본사 자료가 있을 때만 선택하세요. 급여와 직원 입력 원본은 변경하지 않습니다.</div></div>
-    <div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>매장 기준</button><button onClick={()=>setMode('personal')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='personal'?'bg-white text-violet-700 shadow-sm':'text-gray-500'}`}>개인 기준</button></div>
+    <div><div className="text-xs text-brand-600 font-semibold">본사 데이터 기준</div><div className="text-xl font-bold">{mode==='store'?'매장별':'개인별'} 누적 실적 대조</div><div className="text-[10px] text-gray-400 mt-1">매장 기준이 기본입니다. 개인 기준은 개인별 본사 자료가 있을 때만 선택하세요. 급여와 직원 입력 원본은 변경하지 않습니다.</div></div>
+    <div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>매장 기준</button><button onClick={()=>setMode('personal')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='personal'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>개인 기준</button></div>
     <div className="bg-white border rounded-xl p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
       <select value={selectedStore} onChange={e=>setSelectedStore(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>
       {mode==='personal'?<select value={selectedId} onChange={e=>setSelectedId(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{visible.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>:<div className="border rounded-lg px-2 py-2 text-xs text-gray-500 bg-gray-50">직원 입력 합계 {targetRows.length}명</div>}
       <input type="date" value={asOfDate} onChange={e=>setAsOfDate(e.target.value)} className="border rounded-lg px-2 py-2 text-xs"/>
-      <button onClick={save} disabled={saving||loading||(mode==='store'?!selectedStore:!selected)} className="rounded-lg bg-violet-600 text-white text-xs font-bold px-3 py-2 disabled:opacity-40">{saving?'저장 중':`${mode==='store'?'매장':'개인'} 본사 데이터 저장`}</button>
+      <button onClick={save} disabled={saving||loading||(mode==='store'?!selectedStore:!selected)} className="rounded-lg bg-brand-600 text-white text-xs font-bold px-3 py-2 disabled:opacity-40">{saving?'저장 중':`${mode==='store'?'매장':'개인'} 본사 데이터 저장`}</button>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {[['HS',employee.hs,official.hs,'건'],['2ND',employee.second,official.second,'건'],['성과등급P',employee.gradePoints,official.gradePoints,'P'],['생산성P',employee.kpiScore,official.kpiScore,'P']].map(([label,input,head,unit])=><div key={label} className="bg-white border rounded-xl p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="text-sm font-bold mt-1">본사 {fmtNum(head,1)}{unit}</div><div className="text-[10px] text-gray-500 mt-1">직원입력 {fmtNum(input,1)}{unit} · 차이 {Number(head-input)>=0?'+':''}{fmtNum(head-input,1)}{unit}</div></div>)}
@@ -6624,13 +5729,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       <div className="mb-4 space-y-3">
         <div className="bg-white border border-gray-200 rounded-2xl p-2 space-y-2">
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex min-h-11 flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-violet-600 text-white shadow-sm ring-1 ring-violet-500':'bg-gray-50 text-gray-500 hover:bg-violet-50'}`}><section.icon size={14}/>{section.label}</button>)}
+            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex min-h-11 flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-brand-600 text-white shadow-sm ring-1 ring-brand-500':'bg-gray-50 text-gray-500 hover:bg-brand-50'}`}><section.icon size={14}/>{section.label}</button>)}
           </div>
-          {favoriteTabs.length>0&&<div className="rounded-xl border border-amber-100 bg-amber-50/60 p-1.5"><div className="flex items-center gap-1 px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-amber-700"><Star size={10} fill="currentColor"/>내 바로가기</div><div className="flex gap-1.5 overflow-x-auto">{favoriteTabs.map(tab=><button key={tab.key} type="button" onClick={()=>setAdminTab(tab.key)} className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ${adminTab===tab.key?'border-violet-300 bg-white text-violet-700 shadow-sm':'border-amber-100 bg-white/80 text-gray-600'}`}><tab.icon size={13}/>{tab.label}</button>)}</div></div>}
+          {favoriteTabs.length>0&&<div className="rounded-xl border border-amber-100 bg-amber-50/60 p-1.5"><div className="flex items-center gap-1 px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-amber-700"><Star size={10} fill="currentColor"/>내 바로가기</div><div className="flex gap-1.5 overflow-x-auto">{favoriteTabs.map(tab=><button key={tab.key} type="button" onClick={()=>setAdminTab(tab.key)} className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ${adminTab===tab.key?'border-brand-300 bg-white text-brand-700 shadow-sm':'border-amber-100 bg-white/80 text-gray-600'}`}><tab.icon size={13}/>{tab.label}</button>)}</div></div>}
           {activeSectionTabs.length>1&&<div className="rounded-xl border border-gray-100 bg-gray-50 p-1.5">
-            <div className="px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-gray-400">{ADMIN_SECTIONS.find(section=>section.key===activeAdminSection)?.label} 세부 메뉴</div>
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            {activeSectionTabs.map(n=>{const selected=adminTab===n.key,favorite=favoriteTabKeys.includes(n.key);return <div key={n.key} className={`flex shrink-0 items-stretch overflow-hidden rounded-lg border transition ${selected?'border-violet-300 bg-white text-violet-700 shadow-sm ring-1 ring-violet-100':'border-transparent bg-transparent text-gray-500 hover:border-gray-200 hover:bg-white'}`}><button type="button" onClick={()=>setAdminTab(n.key)} className="group flex min-h-11 items-center gap-1.5 px-3 text-xs font-bold"><span className={`flex h-5 w-5 items-center justify-center rounded-md ${selected?'bg-violet-600 text-white':'bg-white text-gray-400 group-hover:text-violet-500'}`}><n.icon size={12}/></span>{n.label}{selected&&<span className="h-1.5 w-1.5 rounded-full bg-violet-500"/>}</button><button type="button" onClick={()=>toggleFavoriteTab(n.key)} aria-label={`${n.label} ${favorite?'즐겨찾기 해제':'즐겨찾기 추가'}`} className={`flex min-h-11 w-9 items-center justify-center border-l ${favorite?'border-amber-100 bg-amber-50 text-amber-500':'border-gray-100 text-gray-300 hover:text-amber-500'}`}><Star size={13} fill={favorite?'currentColor':'none'}/></button></div>})}
+
+            <div className="flex flex-wrap gap-1.5 pb-0.5">
+            {activeSectionTabs.map(n=>{const selected=adminTab===n.key,favorite=favoriteTabKeys.includes(n.key);return <div key={n.key} className={`flex shrink-0 items-stretch overflow-hidden rounded-lg border transition ${selected?'border-brand-300 bg-white text-brand-700 shadow-sm ring-1 ring-brand-100':'border-transparent bg-transparent text-gray-500 hover:border-gray-200 hover:bg-white'}`}><button type="button" onClick={()=>setAdminTab(n.key)} className="group flex min-h-11 items-center gap-1.5 px-3 text-xs font-bold"><span className={`flex h-5 w-5 items-center justify-center rounded-md ${selected?'bg-brand-600 text-white':'bg-white text-gray-400 group-hover:text-brand-500'}`}><n.icon size={12}/></span>{n.label}{selected&&<span className="h-1.5 w-1.5 rounded-full bg-brand-500"/>}</button><button type="button" onClick={()=>toggleFavoriteTab(n.key)} aria-label={`${n.label} ${favorite?'즐겨찾기 해제':'즐겨찾기 추가'}`} className={`flex min-h-11 w-9 items-center justify-center border-l ${favorite?'border-amber-100 bg-amber-50 text-amber-500':'border-gray-100 text-gray-300 hover:text-amber-500'}`}><Star size={13} fill={favorite?'currentColor':'none'}/></button></div>})}
             </div>
           </div>}
         </div>
@@ -6694,12 +5799,12 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
                 ADMIN_MAIN_METRICS.slice(4,8),
                 ADMIN_MAIN_METRICS.slice(8,10),
               ].map((metricRow,rowIndex)=>(
-                <div key={rowIndex} className={`grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
+                <div key={rowIndex} className={`admin-metric-grid grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
                   {metricRow.map(([key,label,unit])=>{
                     const value=adminHomeMetricValue(key);
                     return <div key={key} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
                       <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
-                      <div className="text-[15px] font-bold text-gray-900 mt-1 whitespace-nowrap">
+                      <div className="metric-value text-lg font-bold text-gray-900 mt-1">
                         {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${fmtCount(value)}건`}
                       </div>
                     </div>
@@ -6758,8 +5863,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       )}
 
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
-      {adminTab === 'evaluation' && <EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
-      {adminTab === 'managerPayroll' && <ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} />}
+      {adminTab === 'evaluation' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
+      {adminTab === 'managerPayroll' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
@@ -6793,9 +5898,9 @@ function CalculationAuditPanel({month,rows=[]}){
   const covered=rows.filter(r=>r.calculationAudit?.comparable).length;
   const different=rows.filter(r=>r.calculationAudit?.comparable&&Number(r.calculationAudit?.difference||0)!==0).length;
   return <div className="space-y-4">
-    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
-      <div className="text-sm font-bold text-violet-900">계산 엔진 그림자 검증</div>
-      <div className="mt-1 text-xs leading-relaxed text-violet-700">직원에게 표시되는 급여는 변경하지 않고, 판매 당시 정책 스냅샷으로 다시 계산한 모바일 인센티브를 비교합니다.</div>
+    <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4">
+      <div className="text-sm font-bold text-brand-900">수수료 계산 대조</div>
+      <div className="mt-1 text-xs leading-relaxed text-brand-700">직원에게 표시되는 급여는 변경하지 않고, 판매 당시 정책 스냅샷으로 다시 계산한 모바일 인센티브를 비교합니다.</div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">대상</div><b className="text-sm">{rows.length}명</b></div><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">비교 가능</div><b className="text-sm text-emerald-600">{covered}명</b></div><div className="rounded-xl bg-white p-2"><div className="text-[10px] text-gray-400">차이 발견</div><b className="text-sm text-red-500">{different}명</b></div></div>
     </div>
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white">
@@ -6804,8 +5909,8 @@ function CalculationAuditPanel({month,rows=[]}){
         {rows.map(r=>{const a=r.calculationAudit||{};const complete=a.comparable;const open=expanded===r.id;return <div key={r.id} className="px-4 py-3">
           <button type="button" onClick={()=>setExpanded(open?'':r.id)} className="w-full text-left"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold">{r.name} <span className="text-[10px] font-normal text-gray-400">{displayStoreName(r.branch)}</span></div><div className="mt-1 text-[11px] text-gray-500">판매 {a.totalSales||0}건 · 스냅샷 {a.snapshotSales||0}건 · 이전방식 {a.missingSnapshots||0}건</div></div>
           {complete?<span className={`rounded-full px-2 py-1 text-[10px] font-bold ${Number(a.difference||0)===0?'bg-emerald-50 text-emerald-600':'bg-red-50 text-red-600'}`}>{Number(a.difference||0)===0?'일치':`차이 ${won(a.difference)}`}</span>:<span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">이전정책 포함</span>}</div>
-          {complete&&<div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><div className="rounded-lg bg-gray-50 px-3 py-2">기존 모바일 <b className="float-right">{won(a.existingMobilePay)}</b></div><div className="rounded-lg bg-gray-50 px-3 py-2">새 원장 <b className="float-right">{won(a.shadowMobilePay)}</b></div></div>}</button>
-          {open&&<div className="mt-3 space-y-2 border-t pt-3">{(a.details||[]).length===0?<div className="rounded-lg bg-gray-50 p-3 text-[11px] text-gray-400">상세 계산이 가능한 신규 판매가 아직 없어요.</div>:(a.details||[]).map(d=><div key={d.id} className="rounded-xl border border-gray-100 p-3 text-[11px]"><div className="flex justify-between gap-2"><b>{d.date} · {d.customer}</b><span className="text-violet-600">{d.policyVersion}</span></div><div className="mt-0.5 text-gray-400">{d.label}{d.freePhone?' · 무료폰 특가':''}</div><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-gray-600"><span>요금제 <b className="float-right">{won(d.paid?.plan)}</b></span><span>VAS·보험 <b className="float-right">{won(Number(d.paid?.vas||0)+Number(d.paid?.insurance||0))}</b></span><span>2ND <b className="float-right">{won(d.paid?.second)} · {Number(d.performancePoints||0).toFixed(1)}P</b></span><span>전략P <b className="float-right">{Number(d.insurancePoints||0).toFixed(1)}P</b></span></div>{d.freePhone&&<div className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-amber-700">무료폰 제외: 요금제 {won(d.excluded?.plan)} · VAS {won(d.excluded?.vas)} · 보험 {won(d.excluded?.insurance)}</div>}</div>)}</div>}
+          {complete&&<div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><div className="rounded-lg bg-gray-50 px-3 py-2">기존 모바일 <b className="float-right">{won(a.existingMobilePay)}</b></div><div className="rounded-lg bg-gray-50 px-3 py-2">판매별 합계 <b className="float-right">{won(a.shadowMobilePay)}</b></div></div>}</button>
+          {open&&<div className="mt-3 space-y-2 border-t pt-3">{(a.details||[]).length===0?<div className="rounded-lg bg-gray-50 p-3 text-[11px] text-gray-400">상세 계산이 가능한 신규 판매가 아직 없어요.</div>:(a.details||[]).map(d=><div key={d.id} className="rounded-xl border border-gray-100 p-3 text-[11px]"><div className="flex justify-between gap-2"><b>{d.date} · {d.customer}</b><span className="text-brand-600">{d.policyVersion}</span></div><div className="mt-0.5 text-gray-400">{d.label}{d.freePhone?' · 무료폰 특가':''}</div><div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-gray-600"><span>요금제 <b className="float-right">{won(d.paid?.plan)}</b></span><span>VAS·보험 <b className="float-right">{won(Number(d.paid?.vas||0)+Number(d.paid?.insurance||0))}</b></span><span>2ND <b className="float-right">{won(d.paid?.second)} · {Number(d.performancePoints||0).toFixed(1)}P</b></span><span>전략P <b className="float-right">{Number(d.insurancePoints||0).toFixed(1)}P</b></span></div>{d.freePhone&&<div className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-amber-700">무료폰 제외: 요금제 {won(d.excluded?.plan)} · VAS {won(d.excluded?.vas)} · 보험 {won(d.excluded?.insurance)}</div>}</div>)}</div>}
         </div>})}
       </div>
     </div>
@@ -7004,7 +6109,7 @@ function HistoryTab({ employees, month, config }) {
                       <div className="text-[11px] text-gray-500 mt-0.5 break-words">
                         {l.action==='update'&&beforeLabel!==afterLabel?`${beforeLabel||'-'} → ${afterLabel||'-'}`:(afterLabel||beforeLabel||'원본 데이터')}
                       </div>
-                      {versionBefore!==versionAfter&&<div className="text-[10px] text-violet-600 mt-1">데이터 형식 v{versionBefore} → v{versionAfter}</div>}
+                      {versionBefore!==versionAfter&&<div className="text-[10px] text-brand-600 mt-1">데이터 형식 v{versionBefore} → v{versionAfter}</div>}
                     </div>
                     <div className="text-[10px] text-gray-400 shrink-0">{formatDateTime(l.changed_at)}</div>
                   </div>
@@ -7049,8 +6154,8 @@ function ComparisonView({ rows }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex bg-white border border-gray-200 rounded-lg p-0.5">
-          <button onClick={() => setGroupBy('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${groupBy === 'employee' ? 'bg-violet-600 text-white' : 'text-gray-500'}`}>직원별</button>
-          <button onClick={() => setGroupBy('branch')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${groupBy === 'branch' ? 'bg-violet-600 text-white' : 'text-gray-500'}`}>매장별</button>
+          <button onClick={() => setGroupBy('employee')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${groupBy === 'employee' ? 'bg-brand-600 text-white' : 'text-gray-500'}`}>직원별</button>
+          <button onClick={() => setGroupBy('branch')} className={`px-3 py-1.5 rounded-md text-sm font-medium ${groupBy === 'branch' ? 'bg-brand-600 text-white' : 'text-gray-500'}`}>매장별</button>
         </div>
         <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
           {COMPARE_METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
@@ -7072,7 +6177,7 @@ function ComparisonView({ rows }) {
               <span className="font-semibold text-gray-800 whitespace-nowrap">{fmt(d.value)}</span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.max(2, (d.value / max) * 100)}%` }} />
+              <div className="h-full bg-brand-500 rounded-full" style={{ width: `${Math.max(2, (d.value / max) * 100)}%` }} />
             </div>
             {d.parts && (
               <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-gray-400">
@@ -7099,9 +6204,9 @@ function EmployeeGoalSummary({ month, entry }) {
   const rows = Object.entries(goals).filter(([, value]) => Number(value) > 0);
   if (!rows.length) return <div className="mt-2 text-[10px] font-medium text-red-400">{monthLabel(month)} 개인 목표 미설정</div>;
   return <div className="mt-2">
-    <div className="text-[10px] font-semibold text-violet-600">{monthLabel(month)} 개인 목표</div>
+    <div className="text-[10px] font-semibold text-brand-600">{monthLabel(month)} 개인 목표</div>
     <div className="mt-1 flex flex-wrap gap-1">
-      {rows.map(([key,value])=><span key={key} className="rounded-md bg-violet-50 px-1.5 py-1 text-[9px] font-medium text-violet-700">
+      {rows.map(([key,value])=><span key={key} className="rounded-md bg-brand-50 px-1.5 py-1 text-[9px] font-medium text-brand-700">
         {EMPLOYEE_GOAL_LABELS[key]||key} {key==='tailoredAmount'||key==='incentive'?won(value):`${fmtNum(value,1)}${['points','kpi','productivity'].includes(key)?'P':'건'}`}
       </span>)}
     </div>
@@ -7175,7 +6280,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
       <Section title="매장 관리" sub={`${stores.length}개 매장`} defaultOpen>
         <div className="p-3 flex gap-2">
           <input placeholder="새 매장명 (예: 동명_매장명)" value={newStore} onChange={(e) => setNewStore(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-          <button onClick={() => { addStore(newStore); setNewStore(''); }} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold whitespace-nowrap">매장 추가</button>
+          <button onClick={() => { addStore(newStore); setNewStore(''); }} className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold whitespace-nowrap">매장 추가</button>
         </div>
         <div className="px-3 pb-3 flex flex-wrap gap-1.5">
           {stores.map((s) => (
@@ -7196,7 +6301,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
           {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <input type="month" value={form.hireDate} onChange={(e) => setForm({ ...form, hireDate: e.target.value })} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-        <button onClick={submit} className="col-span-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold"><UserPlus size={14} /> 직원 추가</button>
+        <button onClick={submit} className="col-span-2 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold"><UserPlus size={14} /> 직원 추가</button>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <input placeholder="이름 검색" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white w-28" />
@@ -7211,7 +6316,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
           <option value="branch">매장순</option>
         </select>
         <span className="text-xs text-gray-400">{visibleEmployees.length}명</span>
-        <button type="button" onClick={()=>refreshEmployeeGoals?.()} disabled={employeeGoalsLoading} className="ml-auto text-xs font-medium text-violet-600 disabled:text-gray-300">
+        <button type="button" onClick={()=>refreshEmployeeGoals?.()} disabled={employeeGoalsLoading} className="ml-auto text-xs font-medium text-brand-600 disabled:text-gray-300">
           {employeeGoalsLoading ? '목표 확인 중' : '목표 새로고침'}
         </button>
       </div>
@@ -7228,7 +6333,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                   {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
                 <input type="month" value={editForm.hireDate} onChange={(ev) => setEditForm({ ...editForm, hireDate: ev.target.value })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
-                <button onClick={saveEdit} className="text-xs font-medium px-2.5 py-1 rounded-md bg-violet-600 text-white">저장</button>
+                <button onClick={saveEdit} className="text-xs font-medium px-2.5 py-1 rounded-md bg-brand-600 text-white">저장</button>
                 <button onClick={() => setEditingId(null)} className="text-xs text-gray-400">취소</button>
               </div>
             ) : (
@@ -7286,7 +6391,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
                   <div className="text-sm font-medium text-gray-500">{p.name} · {p.position}</div>
                   <div className="text-[11px] text-gray-400">{p.store_name}</div>
                 </div>
-                <button onClick={() => reactivate(p.id)} className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white">다시 활성화</button>
+                <button onClick={() => reactivate(p.id)} className="text-xs font-medium px-2.5 py-1.5 rounded-md bg-brand-600 text-white">다시 활성화</button>
               </div>
             ))
           )}

@@ -26,3 +26,18 @@ for(const width of [320,390])test(`${width}px 모바일에서 정책·업무·�
  await expect(page.getByLabel('적용 지급기준')).toContainText('2026-09 지급기준');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+test('영업비용 저장 중 연속 클릭은 중복 등록되지 않고 실패 후 입력을 유지한다',async({page})=>{
+ let writes=0;
+ await routes(page);
+ await page.route('**/rest/v1/sales_expenses*',async(route)=>{
+  if(route.request().method()!=='POST')return route.fallback();
+  writes++;await new Promise(resolve=>setTimeout(resolve,250));
+  return route.fulfill({status:403,json:{code:'42501',message:'permission denied'}});
+ });
+ await page.goto('/tests/ui/panels.html');await page.getByRole('button',{name:/영업비용/}).click();
+ await page.getByPlaceholder('금액',{exact:true}).fill('10000');await page.getByLabel('비용 날짜').fill('2026-09-16');
+ await page.getByRole('button',{name:'비용 등록',exact:true}).dblclick();
+ await expect(page.getByRole('button',{name:'비용 등록',exact:true})).toBeEnabled();
+ await expect(page.getByPlaceholder('금액',{exact:true})).toHaveValue('10000');expect(writes).toBe(1);
+ await expect(page.getByRole('status')).toContainText('권한');
+});

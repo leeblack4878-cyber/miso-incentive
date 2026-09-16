@@ -858,17 +858,17 @@ function CareTemplatePicker({
       {CARE_TEMPLATES.map(t=>{
         const on=selected.includes(t.key);
         return <button key={t.key} type="button" onClick={()=>toggle(t.key)}
-          className={`text-left px-3 py-2 rounded-xl border text-xs ${on?'bg-violet-50 border-violet-200 text-violet-700':'bg-white border-gray-100 text-gray-600'}`}>
+          className={`text-left px-3 py-2 rounded-xl border text-xs ${on?'bg-brand-50 border-brand-200 text-brand-700':'bg-white border-gray-100 text-gray-600'}`}>
           <div className="flex items-center gap-1.5"><span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{t.category}</span><span className="font-semibold">{on?'✓ ':''}{t.label}</span></div>
           {on&&t.retentionDays&&<div className="text-[10px] mt-0.5 opacity-70">변경 가능일 {addDaysDate(saleDate,t.retentionDays)} · {t.retentionDays===93?'94일째':'184일째'}</div>}
         </button>
       })}
     </div>
-    {selected.includes('payment3')&&<div className="rounded-xl border border-violet-100 bg-violet-50/50 p-3">
-      <div className="flex items-center justify-between"><div className="text-[11px] font-semibold text-gray-600">첫 수납 예정일</div><b className="text-[11px] text-violet-700">총 {paymentCount}개월</b></div>
+    {selected.includes('payment3')&&<div className="rounded-xl border border-brand-100 bg-brand-50/50 p-3">
+      <div className="flex items-center justify-between"><div className="text-[11px] font-semibold text-gray-600">첫 수납 예정일</div><b className="text-[11px] text-brand-700">총 {paymentCount}개월</b></div>
       <input type="date" value={paymentFirstDate} onChange={e=>setPaymentFirstDate(e.target.value)} className="mt-1.5 w-full border rounded-lg px-2.5 py-2 text-xs bg-white"/>
-      {paymentFirstDate&&<div className="mt-2 text-[10px] leading-relaxed text-violet-700">{Array.from({length:paymentCount},(_,i)=>`${i+1}회 ${addMonthsDate(paymentFirstDate,i)}`).join(' · ')}</div>}
-      <div className="grid grid-cols-2 gap-2 mt-2"><button type="button" disabled={paymentCount<=1} onClick={()=>setPaymentCount(Math.max(1,paymentCount-1))} className="py-2 rounded-lg bg-white border text-[11px] font-semibold text-gray-500 disabled:opacity-40">− 마지막 회차 삭제</button><button type="button" onClick={()=>setPaymentCount(paymentCount+1)} className="py-2 rounded-lg bg-violet-600 text-white text-[11px] font-bold">+ 다음 회차 추가</button></div>
+      {paymentFirstDate&&<div className="mt-2 text-[10px] leading-relaxed text-brand-700">{Array.from({length:paymentCount},(_,i)=>`${i+1}회 ${addMonthsDate(paymentFirstDate,i)}`).join(' · ')}</div>}
+      <div className="grid grid-cols-2 gap-2 mt-2"><button type="button" disabled={paymentCount<=1} onClick={()=>setPaymentCount(Math.max(1,paymentCount-1))} className="py-2 rounded-lg bg-white border text-[11px] font-semibold text-gray-500 disabled:opacity-40">− 마지막 회차 삭제</button><button type="button" onClick={()=>setPaymentCount(paymentCount+1)} className="py-2 rounded-lg bg-brand-600 text-white text-[11px] font-bold">+ 다음 회차 추가</button></div>
       <div className="mt-1.5 text-[10px] leading-relaxed text-gray-500">한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요.</div>
     </div>}
     {selected.includes('affiliateCard')&&<div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 space-y-2">
@@ -955,15 +955,15 @@ function StandalonePromiseModal({userId,month,selectedDay,onClose}){
   const matches=customers.filter(c=>!query.trim()||String(c.customer_name||'').includes(query.trim()));
 
   return <div className="fixed inset-0 z-[120] bg-black/45 flex items-end sm:items-center justify-center" onClick={onClose}><div className="w-full max-w-sm max-h-[92vh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
-    <div className="text-xs font-semibold text-violet-500">판매 없이도 등록 가능</div><div className="text-lg font-bold text-gray-900 mt-1">고객 약속 등록</div><div className="text-xs text-gray-400 mt-1">미완료 약속 고객과 {month} 판매 고객을 검색할 수 있어요.</div>
+    <div className="text-xs font-semibold text-brand-500">판매 없이도 등록 가능</div><div className="text-lg font-bold text-gray-900 mt-1">고객 약속 등록</div><div className="text-xs text-gray-400 mt-1">미완료 약속 고객과 {month} 판매 고객을 검색할 수 있어요.</div>
     <div className="mt-4 text-xs font-semibold text-gray-600">기존 고객 검색</div>
     <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="고객명 검색" className="mt-1.5 w-full border rounded-xl px-3 py-2.5 text-sm"/>
-    {query.trim()&&<div className="mt-2 max-h-36 overflow-y-auto rounded-xl border divide-y">{matches.length?matches.map(c=><button key={c.id} type="button" onClick={()=>{setSelectedCustomer(c);setNewCustomer('')}} className={`w-full px-3 py-2.5 text-left text-xs ${selectedCustomer?.id===c.id?'bg-violet-50 text-violet-700 font-bold':'bg-white text-gray-600'}`}>{selectedCustomer?.id===c.id?'✓ ':''}{c.customer_name}</button>):<div className="px-3 py-3 text-xs text-gray-400">검색되는 기존 고객이 없어요.</div>}</div>}
-    {selectedCustomer&&<div className="mt-2 rounded-xl bg-violet-50 border border-violet-100 px-3 py-2 text-xs text-violet-700">선택 고객 · <b>{selectedCustomer.customer_name}</b></div>}
+    {query.trim()&&<div className="mt-2 max-h-36 overflow-y-auto rounded-xl border divide-y">{matches.length?matches.map(c=><button key={c.id} type="button" onClick={()=>{setSelectedCustomer(c);setNewCustomer('')}} className={`w-full px-3 py-2.5 text-left text-xs ${selectedCustomer?.id===c.id?'bg-brand-50 text-brand-700 font-bold':'bg-white text-gray-600'}`}>{selectedCustomer?.id===c.id?'✓ ':''}{c.customer_name}</button>):<div className="px-3 py-3 text-xs text-gray-400">검색되는 기존 고객이 없어요.</div>}</div>}
+    {selectedCustomer&&<div className="mt-2 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2 text-xs text-brand-700">선택 고객 · <b>{selectedCustomer.customer_name}</b></div>}
     <div className="my-3 flex items-center gap-2 text-[10px] text-gray-400"><div className="h-px bg-gray-100 flex-1"/>또는 신규 고객<div className="h-px bg-gray-100 flex-1"/></div>
     <input value={newCustomer} onChange={e=>{setNewCustomer(e.target.value);setSelectedCustomer(null)}} placeholder="신규 고객명 입력" className="w-full border rounded-xl px-3 py-2.5 text-sm"/>
     <div className="mt-5"><CareTemplatePicker selected={careKeys} setSelected={setCareKeys} customTitle={customTitle} setCustomTitle={setCustomTitle} customDueDate={customDueDate} setCustomDueDate={setCustomDueDate} saleDate={baseDate} targetPlan={targetPlan} setTargetPlan={setTargetPlan} paymentFirstDate={paymentFirstDate} setPaymentFirstDate={setPaymentFirstDate} paymentCount={paymentCount} setPaymentCount={setPaymentCount} affiliateCard={affiliateCard} setAffiliateCard={setAffiliateCard}/></div>
-    <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={onClose} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button type="button" disabled={saving} onClick={save} className="py-3 rounded-xl bg-violet-600 text-white text-sm font-bold disabled:opacity-50">{saving?'등록 중...':'약속 등록'}</button></div>
+    <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={onClose} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button type="button" disabled={saving} onClick={save} className="py-3 rounded-xl bg-brand-600 text-white text-sm font-bold disabled:opacity-50">{saving?'등록 중...':'약속 등록'}</button></div>
   </div></div>;
 }
 

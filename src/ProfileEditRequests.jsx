@@ -151,7 +151,7 @@ export function ProfileEditRequestForm({ authUser, profile }) {
         <button
           onClick={submit}
           disabled={submitting}
-          className="flex-1 flex items-center justify-center gap-1 text-sm font-medium py-2 rounded-lg bg-violet-600 text-white disabled:opacity-50"
+          className="flex-1 flex items-center justify-center gap-1 text-sm font-medium py-2 rounded-lg bg-brand-600 text-white disabled:opacity-50"
         >
           {submitting ? (
             <Loader2 size={14} className="animate-spin" />
@@ -294,7 +294,7 @@ export default function ProfileEditRequests() {
                 <button
                   disabled={busyId === req.id}
                   onClick={() => decide(req, true)}
-                  className="shrink-0 flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white disabled:opacity-50"
+                  className="shrink-0 flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-brand-600 text-white disabled:opacity-50"
                 >
                   {busyId === req.id ? (
                     <Loader2 size={13} className="animate-spin" />

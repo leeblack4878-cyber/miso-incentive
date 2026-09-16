@@ -137,7 +137,7 @@ export default function PendingApprovals() {
               <button
                 disabled={busyId === p.id}
                 onClick={() => decide(p.id, true)}
-                className="shrink-0 flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-violet-600 text-white disabled:opacity-50"
+                className="shrink-0 flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-md bg-brand-600 text-white disabled:opacity-50"
               >
                 {busyId === p.id ? (
                   <Loader2 size={13} className="animate-spin" />

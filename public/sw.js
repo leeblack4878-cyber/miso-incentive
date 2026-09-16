@@ -1,4 +1,4 @@
-const CACHE_NAME = 'miso-shell-v3';
+const CACHE_NAME = 'miso-shell-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {

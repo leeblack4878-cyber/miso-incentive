@@ -141,15 +141,15 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
       <div className="grid grid-cols-5 gap-1 mt-2">
         {[['todo','할 일'],['today','오늘'],['overdue','경과'],['all','전체 예정'],['done','완료·취소']].map(([k,l])=>
           <button key={k} onClick={()=>setFilter(k)}
-            className={`py-2 rounded-lg text-[11px] font-semibold ${filter===k?'bg-violet-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
+            className={`py-2 rounded-lg text-[11px] font-semibold ${filter===k?'bg-brand-600 text-white':'bg-gray-50 text-gray-500'}`}>{l}</button>)}
       </div>
       {filter==='todo'&&<div className="text-[10px] text-gray-400 mt-2">할 일에는 오늘부터 7일 이내와 기한이 지난 약속만 보여요.</div>}
     </div>
 
     <div id="employee-home-care" className="bg-white rounded-xl border border-gray-100 overflow-hidden scroll-mt-28">
       <div className="px-4 py-3 border-b border-gray-50">
-        <div className="font-bold text-sm">📌 고객 약속 관리</div>
-        <div className="text-xs text-gray-400 mt-0.5">가까운 일정부터 보여주고, 먼 일정은 전체 예정에서 확인해요.</div>
+        <div className="font-bold text-sm">고객 약속</div>
+
       </div>
       {loading?<div className="py-8 text-center text-xs text-gray-400">불러오는 중...</div>:
        visible.length===0?<div className="py-8 text-center text-xs text-gray-400">해당하는 고객 약속이 없어요.</div>:
@@ -160,11 +160,11 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
            return <div key={t.id} className="p-4">
              <div className="flex justify-between gap-3">
                <div className="min-w-0">
-                 <div className="flex items-center gap-1.5 flex-wrap"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600">{category}</span><span className="text-sm font-bold text-gray-900">{c?.customer_name||'고객'} · {t.title}</span></div>
+                 <div className="flex items-center gap-1.5 flex-wrap"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-600">{category}</span><span className="text-sm font-bold text-gray-900">{c?.customer_name||'고객'} · {t.title}</span></div>
                  <div className="text-[11px] text-gray-400 mt-1">
                    {t.retention_days?`${t.retention_days}일 유지 → ${t.retention_days===93?'94':'184'}일째 변경 가능 · `:''}{t.due_date}
                  </div>
-                 {t.target_plan&&<div className="text-xs text-violet-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
+                 {t.target_plan&&<div className="text-xs text-brand-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
                  {card&&<div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
                    <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-blue-800">{card.card_name||'카드명 미입력'}</span><span className="text-[10px] font-bold text-blue-600">{t.status==='completed'?'최종 완료':AFFILIATE_CARD_STAGES[card.card_stage]||'신청 전'}</span></div>
                    <div className="mt-2 grid grid-cols-2 gap-1.5 text-[10px]">
@@ -175,12 +175,12 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
                <div className="shrink-0 flex items-center gap-1.5">{card&&t.status!=='completed'&&t.status!=='cancelled'&&<button onClick={()=>cancelAffiliateCard(t)} className="text-[10px] font-semibold text-red-400 px-1.5 py-1">약속 취소</button>}<span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
-                 t.status==='completed'?'bg-emerald-50 text-emerald-600':t.status==='cancelled'?'bg-gray-100 text-gray-500':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-violet-50 text-violet-600'
+                 t.status==='completed'?'bg-emerald-50 text-emerald-600':t.status==='cancelled'?'bg-gray-100 text-gray-500':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-brand-50 text-brand-600'
                }`}>{t.status==='completed'?'완료':t.status==='cancelled'?'고객 거절':dLabel(t.due_date)}</span></div>
              </div>
 
              {t.status==='cancelled'?(
-               <button onClick={()=>resumeCancelledCard(t)} className="mt-3 w-full py-2 rounded-lg bg-violet-50 text-violet-700 text-xs font-semibold">다시 진행</button>
+               <button onClick={()=>resumeCancelledCard(t)} className="mt-3 w-full py-2 rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold">다시 진행</button>
              ):t.status==='completed'?(
                <button onClick={()=>undoComplete(t)} className="mt-3 w-full py-2 rounded-lg bg-gray-50 text-gray-600 text-xs font-semibold">
                  완료 취소
@@ -191,7 +191,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                    <div className="grid grid-cols-2 gap-1.5">
                      <button disabled={applied} onClick={()=>updateAffiliateCard(t,{card_stage:'applied_unreceived'})} className={`py-2.5 rounded-lg text-xs font-bold ${applied?'bg-emerald-100 text-emerald-700':'bg-blue-600 text-white'}`}>{applied?'✓ 신청 완료':'신청 완료'}</button>
                      <button disabled={!applied||received} onClick={()=>updateAffiliateCard(t,{card_stage:'received_not_visited'})} className={`py-2.5 rounded-lg text-xs font-bold ${received?'bg-emerald-100 text-emerald-700':applied?'bg-blue-600 text-white':'bg-gray-100 text-gray-300'}`}>{received?'✓ 수령 완료':'수령 완료'}</button>
-                     <button disabled={!card.approval_required||!received||card.approval_completed} onClick={()=>updateAffiliateCard(t,{approval_completed:true})} className={`py-2.5 rounded-lg text-xs font-bold ${!card.approval_required?'bg-gray-100 text-gray-400':card.approval_completed?'bg-emerald-100 text-emerald-700':received?'bg-violet-600 text-white':'bg-gray-100 text-gray-300'}`}>{!card.approval_required?'승인 해당 없음':card.approval_completed?'✓ 승인 확인':'승인 확인'}</button>
+                     <button disabled={!card.approval_required||!received||card.approval_completed} onClick={()=>updateAffiliateCard(t,{approval_completed:true})} className={`py-2.5 rounded-lg text-xs font-bold ${!card.approval_required?'bg-gray-100 text-gray-400':card.approval_completed?'bg-emerald-100 text-emerald-700':received?'bg-brand-600 text-white':'bg-gray-100 text-gray-300'}`}>{!card.approval_required?'승인 해당 없음':card.approval_completed?'✓ 승인 확인':'승인 확인'}</button>
                      <button disabled={!received||card.autopay_registered} onClick={()=>updateAffiliateCard(t,{autopay_registered:true})} className={`py-2.5 rounded-lg text-xs font-bold ${card.autopay_registered?'bg-emerald-100 text-emerald-700':received?'bg-sky-600 text-white':'bg-gray-100 text-gray-300'}`}>{card.autopay_registered?'✓ 자동이체 등록':'자동이체 등록'}</button>
                    </div>
                    <button disabled={!ready} onClick={()=>finishAffiliateCard(t)} className={`w-full py-2.5 rounded-lg text-xs font-bold ${ready?'bg-emerald-600 text-white':'bg-gray-100 text-gray-300'}`}>최종 약속 완료</button>
@@ -216,11 +216,11 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
 
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50">
-        <div className="text-sm font-semibold text-gray-800">🏠 홈 설치·개통 진행관리</div>
-        <div className="text-[11px] text-gray-400 mt-0.5">설치 예정과 진행 상태를 항상 표시해요.</div>
+        <div className="text-sm font-semibold text-gray-800">홈 설치·개통</div>
+
       </div>
       <div><HomeOrderManager {...homeProps}/></div>
     </div>
-    {rescheduleTask&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setRescheduleTask(null)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className="text-lg font-bold text-gray-900">약속 날짜를 변경할까요?</div><div className="text-xs text-gray-500 mt-1">고객에게 다시 연락할 날짜를 선택해주세요.</div><input type="date" value={rescheduleDate} onChange={e=>setRescheduleDate(e.target.value)} className="mt-4 w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setRescheduleTask(null)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button onClick={async()=>{if(!rescheduleDate)return showAppToast('변경할 날짜를 선택해주세요.',{tone:'error'});await updateTask(rescheduleTask,{status:'pending',due_date:rescheduleDate});setRescheduleTask(null)}} className="py-3 rounded-xl bg-violet-600 text-white text-sm font-bold">날짜 변경</button></div></div></div>}
+    {rescheduleTask&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setRescheduleTask(null)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className="text-lg font-bold text-gray-900">약속 날짜를 변경할까요?</div><div className="text-xs text-gray-500 mt-1">고객에게 다시 연락할 날짜를 선택해주세요.</div><input type="date" value={rescheduleDate} onChange={e=>setRescheduleDate(e.target.value)} className="mt-4 w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setRescheduleTask(null)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button onClick={async()=>{if(!rescheduleDate)return showAppToast('변경할 날짜를 선택해주세요.',{tone:'error'});await updateTask(rescheduleTask,{status:'pending',due_date:rescheduleDate});setRescheduleTask(null)}} className="py-3 rounded-xl bg-brand-600 text-white text-sm font-bold">날짜 변경</button></div></div></div>}
   </div>;
 }
