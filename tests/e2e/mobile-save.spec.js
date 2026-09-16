@@ -16,8 +16,8 @@ test('home edit preserves completed and cancelled promise identities through rep
  }
  await page.getByRole('button',{name:'고객관리',exact:true}).click();
  await page.getByRole('button',{name:'완료·취소',exact:true}).click();
- await expect(page.getByText('E2E_completed',{exact:true})).toBeVisible();
- await expect(page.getByText('E2E_cancelled',{exact:true})).toBeVisible();
+ await expect(page.getByText(`${customer.name} · E2E_completed`,{exact:true})).toBeVisible();
+ await expect(page.getByText(`${customer.name} · E2E_cancelled`,{exact:true})).toBeVisible();
 });
 
 test('mobile create, actual child failure rollback, edit and undo use one transaction and refresh totals',async({page,world})=>{

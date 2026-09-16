@@ -1238,7 +1238,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const next=activeTeamSupport?null:commitMobileOne(mobileSaleDraft.ri,mobileSaleDraft.ci,{...feedbackMeta,prepareOnly:true});
       const spot=editingSale?null:mobileSpotPolicyId?{policy_id:mobileSpotPolicyId}:!isSeptemberPolicyActive(month)&&mobileSpotDirectOpen&&mobileSpotDirectTitle.trim()&&Number(mobileSpotDirectAmount)>0?{direct_title:mobileSpotDirectTitle.trim(),direct_amount:Number(mobileSpotDirectAmount),direct_memo:mobileSpotDirectMemo.trim()||null}:null;
       const credit=activeTeamSupport?{credited_store:teamSupportStore,metrics:mobileTeamCreditMetrics({ri:meta.ri,ci:meta.ci,...feedbackMeta}),note:`${loginEmp?.name||'담당'} 지원 판매`}:null;
-      const result=await saveSaleAtomic(supabase,{userId:currentEmp.id,saleId,customerName:customer,saleDate,sourceType:'mobile',metricLabel:mobileSaleDraft.label,meta,tasks,expenses,spot,credit,expectedDay:daily?.data??null,nextDay:next,editingSale});
+      const result=await saveSaleAtomic(supabase,{userId:currentEmp.id,saleId,customerName:customer,saleDate,sourceType:editingSale?.source_type||'mobile',metricLabel:mobileSaleDraft.label,meta,tasks,expenses,spot,credit,expectedDay:daily?.data??null,nextDay:next,editingSale});
       if(result.daily_data)setDay(normalizeDay(result.daily_data));
       setSaveState('saved');
       if(editingSale){showAppToast('판매건과 고객 약속을 수정했어요.');}

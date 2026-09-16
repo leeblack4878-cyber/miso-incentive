@@ -48,6 +48,12 @@ begin
   perform public.save_sale_atomic(actor,sid,'SAVE_customer','2026-09-16','mobile','stale',meta,'[]','[]',null,null,d0,d1,true,meta,children);
   raise exception 'expected stale rejection';
  exception when others then if sqlerrm<>'SALE_STALE_DATA' then raise; end if; end;
+ -- Old daily-tagged mobile sales remain editable without rewriting their origin.
+ update public.customer_sales set source_type='daily' where id=sid;
+ select jsonb_build_object('tasks',(select jsonb_agg(to_jsonb(t) order by id) from public.customer_tasks t where source_sale_id=sid),'expenses','[]'::jsonb) into children;
+ result:=public.save_sale_atomic(actor,sid,'SAVE_customer','2026-09-16','daily','legacy edit',meta,'[]','[]',null,null,d1,d1,true,meta,children);
+ if not exists(select 1 from public.customer_sales where id=sid and source_type='daily' and metric_label='legacy edit') then raise exception 'legacy edit failed'; end if;
+ update public.customer_sales set source_type='mobile' where id=sid;
  -- Another employee cannot invoke writes for the first employee.
  perform set_config('request.jwt.claims',jsonb_build_object('sub',other_actor,'role','authenticated')::text,true);
  begin

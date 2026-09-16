@@ -12,7 +12,7 @@ declare
  v_children jsonb; v_closed_types text[]; v_team boolean:=coalesce((p_meta->>'teamOnly')::boolean,false);
 begin
  if auth.uid() is null or not(p_user_id=auth.uid() or public.can_write_target(p_user_id)) then raise exception 'SALE_WRITE_FORBIDDEN' using errcode='42501'; end if;
- if p_sale_id is null or p_sale_date is null or nullif(trim(p_customer_name),'') is null or p_source_type not in ('mobile','extra') or jsonb_typeof(p_meta)<>'object' then raise exception 'SALE_INVALID_PAYLOAD'; end if;
+ if p_sale_id is null or p_sale_date is null or nullif(trim(p_customer_name),'') is null or (p_source_type not in ('mobile','extra') and not(p_edit and p_source_type='daily')) or jsonb_typeof(p_meta)<>'object' then raise exception 'SALE_INVALID_PAYLOAD'; end if;
  -- Serialize new records for the same seller/day as well as existing records.
  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text||p_sale_date::text,0));
  if p_edit then
