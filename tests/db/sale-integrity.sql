@@ -1,11 +1,15 @@
 -- Dedicated staging only. Real authenticated-role/RLS tests, NOT browser/Auth coverage.
 begin;
 do $$ begin
- if to_regclass('e2e_legacy.profiles') is null or exists(select 1 from public.profiles) then
-   raise exception 'Requires empty isolated staging';
+ if to_regclass('e2e_legacy.profiles') is null or exists(
+  select 1 from public.profiles p left join auth.users u on u.id=p.id
+  where p.store_name<>'E2E_HOME_REGRESSION' or u.raw_app_meta_data->>'e2e_fixture' is distinct from 'home-bundle-v1'
+ ) or exists(select 1 from auth.users where id='f0329992-ced4-4407-b71d-ed58c5d74aaf') then
+   raise exception 'Requires dedicated staging with only known E2E accounts';
  end if;
 end $$;
-create temp table integrity_users as select gen_random_uuid() employee,gen_random_uuid() other_employee,gen_random_uuid() admin;
+-- Named scopes now bind to this existing principal ID, not the display name.
+create temp table integrity_users as select gen_random_uuid() employee,gen_random_uuid() other_employee,'f0329992-ced4-4407-b71d-ed58c5d74aaf'::uuid admin;
 grant select on integrity_users to authenticated;
 insert into auth.users(id,email,raw_user_meta_data)
 select employee,'integrity.owner@example.test','{}'::jsonb from integrity_users union all
