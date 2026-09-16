@@ -1,5 +1,7 @@
 // Real App/calendar rendering with mocked configuration API; not authenticated E2E.
 import {test,expect} from '@playwright/test';
+test.beforeEach(async({page})=>{page.on('pageerror',error=>console.log('CALENDAR_RUNTIME_ERROR',error.message));});
+test.afterEach(async({page},info)=>{if(info.status!==info.expectedStatus)console.log('CALENDAR_FAILURE_VIEW',(await page.locator('body').innerText()).slice(0,1200));});
 async function openCalendar(page,{ready=[],failed=false}={}){
  const writes=[];
  await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
