@@ -1,3 +1,4 @@
+import { resolveDashboardStore, performanceForecastFactor } from './dashboardScope';
 import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
 import { payDisplay } from './payDisplay';
 import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, useFinalStorePerformance, finalStoreMetric } from './viewShared';
@@ -3691,21 +3692,24 @@ function MyInputSummary({userId,month,config}){
 }
 
 
-function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config}){
+function EmployeeHeadOfficeComparison({userId,month,mergedDraft,pay,config,compact=false,onOpen}){
   const [hq,setHq]=useState(undefined);
+  const [hqError,setHqError]=useState(false);
   useEffect(()=>{
-    if(!userId)return;
+    setHq(undefined);setHqError(false);
+    if(!userId){setHq(null);return;}
     let alive=true;
-    (async()=>{const {data,error}=await supabase.from('head_office_performance').select('metrics,as_of_date').eq('user_id',userId).eq('month',month).maybeSingle();if(alive)setHq(error?null:(data||null));})();
+    (async()=>{const {data,error}=await supabase.from('head_office_performance').select('metrics,as_of_date').eq('user_id',userId).eq('month',month).maybeSingle();if(alive){setHq(error?null:(data||null));setHqError(!!error);}})();
     return()=>{alive=false};
   },[userId,month]);
   const input={hs:hsCount(mergedDraft),second:matrixRowCount(mergedDraft,7)+Object.values(mergedDraft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0),gradePoints:Number(pay?.totalPoints||0)};
   const metrics=hq?.metrics?normalizeHeadOfficeMetrics(hq.metrics):null;
   const official=metrics?headOfficeScores(metrics,config,month):null;
   const rows=official?[['HS',input.hs,official.hs],['2ND',input.second,official.second],['성과P',input.gradePoints,official.gradePoints]]:[];
-  return <div className="bg-white rounded-2xl border border-gray-100 p-4">
-    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">직원 입력 · 본사 데이터</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
-    {hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">본사 데이터 등록 전 · 직원 입력 기준</div>}
+  if(compact)return rows.some(([,personal,head])=>Math.abs(Number(head)-Number(personal))>0.05)?<button type="button" onClick={onOpen} className="w-full rounded-xl bg-brand-50 px-4 py-3 text-left text-sm font-medium text-brand-700">확인할 실적 차이가 있어요 <span aria-hidden="true">›</span></button>:null;
+  return <div className="bg-white rounded-2xl border border-gray-100 p-4" aria-label="본사 실적 비교">
+    <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-bold text-gray-900">본사 실적 비교</div><div className="text-[10px] text-gray-400 mt-0.5">급여는 직원 입력 기준이며 본사 값은 정산 대조용이에요.</div></div><span className={`shrink-0 px-2 py-1 rounded-full text-[9px] font-bold ${official?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-400'}`}>{official?`${hq.as_of_date} 확인`:'본사 미확인'}</span></div>
+    {hqError?<p role="alert" className="mt-3 text-sm text-red-600">본사 데이터를 불러오지 못했어요. 잠시 후 다시 확인해주세요.</p>:hq===undefined?<div className="py-4 text-center text-xs text-gray-300">본사 데이터를 확인하는 중...</div>:official?<div className="mt-3 space-y-2">{rows.map(([label,personal,head])=>{const diff=Number(head)-Number(personal);return <div key={label} className="grid grid-cols-[55px_1fr_1fr_55px] gap-2 items-center text-[11px]"><b className="text-gray-600">{label}</b><span className="text-gray-400">입력 <b className="text-gray-700">{fmtNum(personal,1)}</b></span><span className="text-blue-500">본사 <b className="text-blue-700">{fmtNum(head,1)}</b></span><b className={`text-right ${diff===0?'text-gray-300':diff>0?'text-blue-600':'text-red-500'}`}>{diff>0?'+':''}{fmtNum(diff,1)}</b></div>})}</div>:<div className="mt-3 rounded-xl bg-gray-50 px-3 py-3 text-[10px] text-gray-400">본사 데이터 등록 전 · 직원 입력 기준</div>}
   </div>;
 }
 
@@ -3934,7 +3938,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               </div>
             </div>}
 
-            <EmployeeHeadOfficeComparison userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
+            <EmployeeHeadOfficeComparison compact onOpen={()=>setTab('history')} userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
             <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <RecognitionRankingHub
@@ -4048,6 +4052,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           </div>
+
+          <EmployeeHeadOfficeComparison userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
           <MyInputSummary userId={currentEmp?.id||authUser?.id} month={month} config={config} />
 
@@ -4792,10 +4798,10 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
   </div>;
 }
 
-function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) {
+function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen, branchOverride }) {
   const [goal,setGoal]=useState(null);
   const me=(employees||[]).find(e=>e.id===authUserId);
-  const branch=me?.branch || rows?.[0]?.branch;
+  const branch=branchOverride || me?.branch || rows?.[0]?.branch;
   const finalPerformance=useFinalStorePerformance(month,branch||'');
 
   useEffect(()=>{
@@ -4811,14 +4817,15 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen }) 
   },[month,branch]);
 
   if(!branch||NON_SALES_STORES.includes(branch)||!goal)return null;
-  const companyAch=storeGoalAchievement(goal.company_goals,rows,finalPerformance);
+  const branchRows=(rows||[]).filter(row=>row.branch===branch);
+  const companyAch=storeGoalAchievement(goal.company_goals,branchRows,finalPerformance);
   const challengeBase={...goal.company_goals,...goal.challenge_goals};
-  const challengeAch=storeGoalAchievement(challengeBase,rows,finalPerformance);
+  const challengeAch=storeGoalAchievement(challengeBase,branchRows,finalPerformance);
 
   return <button onClick={onOpen} className="w-full text-left bg-white rounded-xl border border-gray-100 p-4">
     <div className="flex items-center justify-between gap-3">
       <div>
-        <div className="text-xs text-gray-400">🎯 매장 목표 달성</div>
+        <div className="text-xs text-gray-400">🎯 {displayStoreName(branch)} 목표 달성</div>
         <div className="text-sm font-bold text-gray-900 mt-1">
           기준 목표 {companyAch.total}가지 중 <span className="text-brand-700">{companyAch.achieved}가지</span> 달성
         </div>
@@ -5394,22 +5401,12 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   </div>;
 }
 
-function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch='', canSwitchStores=false }) {
+function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchStores=false, storeKey, onStoreChange }) {
   const availableStores=useMemo(()=>sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b))),[employees]);
-  const defaultStore=canSwitchStores?'all':(loginBranch||availableStores[0]||'all');
-  const [storeKey,setStoreKey]=useState(defaultStore);
   const [selectedDay,setSelectedDay]=useState(()=>{
     const now=new Date();
     return monthKeyOf(now)===month?String(now.getDate()).padStart(2,'0'):'01';
   });
-
-  useEffect(()=>{
-    if(canSwitchStores){
-      if(storeKey!=='all'&&!availableStores.includes(storeKey))setStoreKey('all');
-    }else{
-      setStoreKey(loginBranch||availableStores[0]||'all');
-    }
-  },[canSwitchStores,loginBranch,availableStores.join('|')]);
 
   useEffect(()=>{
     const now=new Date();
@@ -5442,7 +5439,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, loginBranch=
         <div className="text-[10px] text-gray-400 mt-1">달력에는 HS · SIM MNP · 홈만 간단히 표시해요.</div>
       </div>
       {canSwitchStores ? (
-        <select value={storeKey} onChange={e=>setStoreKey(e.target.value)} className="max-w-[150px] text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-2">
+        <select value={storeKey} aria-label="운영 현황 매장" onChange={e=>onStoreChange(e.target.value)} className="max-w-[150px] text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-2">
           <option value="all">전체 매장</option>
           {availableStores.map(b=><option key={b} value={b}>{displayStoreName(b)}</option>)}
         </select>
@@ -5640,6 +5637,14 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 }
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
+  const [dashboardStore,setDashboardStore]=useState('all');
+  const dashboardStores=sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)));
+  const dashboardStoreKey=resolveDashboardStore(dashboardStore,dashboardStores,canSwitchStores,loginBranch);
+  const dashboardRows=(rows||[]).filter(r=>dashboardStoreKey==='all'||r.branch===dashboardStoreKey);
+  const dashboardEmployees=(employees||[]).filter(e=>dashboardStoreKey==='all'||e.branch===dashboardStoreKey);
+  const dashboardLabel=dashboardStoreKey==='all'?(isFullAdmin?'전체 운영 현황':'담당 매장 전체'):displayStoreName(dashboardStoreKey);
+  const dashboardForecastFactor=performanceForecastFactor(month);
+
   const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
   const TABS = [
@@ -5715,12 +5720,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-  const adminHomeMetricValue=(key)=>{
-    const branches=[...new Set((rows||[]).map(r=>r.branch).filter(Boolean))];
+  const adminHomeMetricValue=(key,forecast=false)=>{
+    const branches=[...new Set(dashboardRows.map(r=>r.branch).filter(Boolean))];
     return branches.reduce((total,branch)=>{
-      const branchRows=(rows||[]).filter(r=>r.branch===branch);
-      const input=branchRows.reduce((sum,row)=>sum+adminMetricValue(row,key),0);
-      return total+(finalPerformances[branch]?finalStoreMetric(finalPerformances[branch],key,input):input);
+      const input=dashboardRows.filter(r=>r.branch===branch).reduce((sum,row)=>sum+adminMetricValue(row,key),0);
+      const final=finalPerformances[branch]?.month===month?finalPerformances[branch]:null;
+      const value=final?finalStoreMetric(final,key,input):input;
+      return total+value*(forecast&&!final?dashboardForecastFactor:1);
     },0);
   };
 
@@ -5782,16 +5788,18 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             dailyRecords={dailyRecords}
             loginBranch={loginBranch}
             canSwitchStores={canSwitchStores}
+            storeKey={dashboardStoreKey} onStoreChange={setDashboardStore}
           />
 
           <div className="bg-white rounded-xl border border-gray-100 p-4">
             <div className="flex justify-between items-end gap-3 mb-3">
               <div>
-                <div className="text-xs text-gray-400">{isFullAdmin?'전체 운영 현황':'우리 매장 현황'}</div>
+                <div className="text-xs text-gray-400">{dashboardLabel}</div>
                 <div className="text-base font-bold text-gray-900">{monthLabel(month)} 핵심 성과</div>
-                {Object.keys(finalPerformances).length>0&&<div className="text-[9px] font-semibold text-emerald-600 mt-0.5">마감된 매장은 확정 실적 기준</div>}
+                <div className="mt-1 text-xs text-gray-500">예상 마감은 현재 실적의 월말 환산값입니다.</div>
+                {dashboardRows.some(r=>finalPerformances[r.branch]?.month===month)&&<div className="text-[9px] font-semibold text-emerald-600 mt-0.5">마감된 매장은 확정 실적 기준</div>}
               </div>
-              <div className="text-xs text-gray-400">{rows.length}명</div>
+              <div className="text-xs text-gray-400">{dashboardEmployees.length}명</div>
             </div>
             <div className="space-y-2">
               {[
@@ -5802,11 +5810,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
                 <div key={rowIndex} className={`admin-metric-grid grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
                   {metricRow.map(([key,label,unit])=>{
                     const value=adminHomeMetricValue(key);
-                    return <div key={key} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
+                    const projected=adminHomeMetricValue(key,true);
+                    return <div key={key} data-testid={`admin-metric-${key}`} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
                       <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
                       <div className="metric-value text-lg font-bold text-gray-900 mt-1">
                         {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${fmtCount(value)}건`}
                       </div>
+                      <div className="mt-2 text-xs text-gray-500">예상 마감 <span className="font-semibold text-brand-700">{unit==='won'?won(Math.round(projected)):unit==='point'?`${projected.toFixed(1)}P`:`${fmtCount(Math.round(projected))}건`}</span></div>
                     </div>
                   })}
                 </div>
@@ -5814,9 +5824,9 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             </div>
           </div>
 
-          <StoreGoalDashboardCard
-            rows={rows}
-            employees={employees}
+          <StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
+            rows={dashboardRows}
+            employees={dashboardEmployees}
             authUserId={authUserId}
             month={month}
             onOpen={()=>setAdminTab('storeGoals')}
@@ -5831,11 +5841,11 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-50">
-              <div className="text-sm font-bold text-gray-800">우리 매장 직원 현황</div>
+              <div className="text-sm font-bold text-gray-800">{dashboardLabel} · 직원 현황</div>
               <div className="text-xs text-gray-400 mt-0.5">핵심 실적만 빠르게 확인해요.</div>
             </div>
             <div className="divide-y divide-gray-50">
-              {[...rows].sort((a,b)=>hsCount(b.draft)-hsCount(a.draft)).map(r=>(
+              {[...dashboardRows].filter(r=>!r.teamOnly).sort((a,b)=>hsCount(b.draft)-hsCount(a.draft)).map(r=>(
                 <div key={r.id} className="px-4 py-3">
                   <div className="flex justify-between gap-3 items-center">
                     <div><div className="text-sm font-bold text-gray-900">{r.name}</div><div className="text-[10px] text-gray-400">{displayStoreName(r.branch)}</div></div>
@@ -5858,7 +5868,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             </div>
           </div>
 
-          <AdminCustomerCareOverview employees={employees} month={month} compact onOpen={()=>{setCustomerCareFilter('todo');setAdminTab('customerCareAdmin')}} />
+          <AdminCustomerCareOverview key={dashboardStoreKey} employees={dashboardEmployees} month={month} compact onOpen={()=>{setCustomerCareFilter('todo');setAdminTab('customerCareAdmin')}} />
         </div>
       )}
 
