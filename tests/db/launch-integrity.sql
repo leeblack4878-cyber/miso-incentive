@@ -44,6 +44,14 @@ begin
  insert into public.sales_expenses(user_id,source_sale_id,expense_date,amount,category) values(actor,sid2,'2026-09-16',12000,'오퍼');
  perform public.cancel_home_orders_atomic(actor,array[oid2],'keep');
  if (select coalesce(sum(amount),0) from public.sales_expenses where user_id=actor and voided_at is null)<>12000 then raise exception 'incurred cost removed';end if;
+
+ -- Replacing the restored order must keep excluded costs and closed task IDs.
+ saved:=public.save_home_bundle_atomic(actor,
+ jsonb_build_array(jsonb_build_object('user_id',actor,'customer_id',cid,'customer_name','E2E cancellation','product_type','internet500','network_type','household','sale_type','normal','status','pending','applied_at','2026-09-16T03:00:00Z','source_work_date','2026-09-16','schema_version',3)),
+ jsonb_build_array(jsonb_build_object('id',gen_random_uuid(),'user_id',actor,'customer_id',cid,'sale_date','2026-09-16','metric_label','E2E updated','source_type','home_order','schema_version',3,'source_meta','{}'::jsonb)),
+ '[]','[]',null,null,array[sid],array[oid],null,null);
+ if not exists(select 1 from public.sales_expenses where id=expense_id and voided_at is not null and source_sale_id=(saved->>'primary_sale_id')::uuid and amount=33000) then raise exception 'excluded expense lost or revived by edit';end if;
+ if not exists(select 1 from public.customer_tasks where id=closed_id and status='completed' and source_sale_id=(saved->>'primary_sale_id')::uuid) then raise exception 'closed history lost on edit';end if;
  begin insert into public.user_achievements(user_id,badge_key,awarded_by) values(actor,'hs_m100',null);raise exception 'unverified award allowed';exception when insufficient_privilege then null;end;
  begin perform public.badge_source_snapshot(actor,'2026-09');raise exception 'snapshot exposed';exception when insufficient_privilege then null;end;
  begin perform public.commit_verified_badges(actor,'2026-09','fake',array['hs_m100']);raise exception 'award RPC exposed';exception when insufficient_privilege then null;end;

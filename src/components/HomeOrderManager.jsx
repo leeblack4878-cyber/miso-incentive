@@ -261,7 +261,7 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
     const isCompleted=order.status==='completed';
     const msg=isCompleted
       ? '완료 처리를 취소하고 다시 진행중으로 돌릴까요?\n완료일에 반영된 확정 실적도 함께 원복됩니다.'
-      : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?';
+      : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?\n취소된 약속과 정산 제외 비용은 자동 복원되지 않습니다.';
     if(!await showAppConfirm({title:isCompleted?'완료 처리를 되돌릴까요?':'취소 처리를 되돌릴까요?',message:msg,confirmLabel:'진행중으로 변경'}))return;
 
     setHomeCareActionSaving(true);
