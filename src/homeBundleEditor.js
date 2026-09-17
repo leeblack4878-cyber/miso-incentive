@@ -6,7 +6,7 @@ export async function loadHomeBundleChildren(client, userId, sales) {
   const [tasks,expenses]=await Promise.all([
     client.from('customer_tasks').select('*').eq('user_id',userId)
       .in('source_sale_id',ids).not('status','in','(completed,cancelled)').order('created_at').order('id'),
-    client.from('sales_expenses').select('*').eq('user_id',userId)
+    client.from('sales_expenses').select('*').is('voided_at',null).eq('user_id',userId)
       .in('source_sale_id',ids).order('created_at').order('id'),
   ]);
   if(tasks.error) throw tasks.error;

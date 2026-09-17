@@ -1,3 +1,6 @@
+import { DEFAULT_BASE_PAY, DEFAULT_BASE_PENALTY, DEFAULT_POSITION_ALLOWANCE, DEFAULT_TENURE, DEFAULT_TENURE_CAP, DEFAULT_GRADES, DEFAULT_HOME_TIERS, DEFAULT_MATRIX, DEFAULT_CATEGORY_MAP, DEFAULT_CUSTREG_TIERS, DEFAULT_TAILORED_TIERS, mergeDefaultVas, defaultConfig } from './policyDefaults';
+import { BADGE_DEFS, MONTHLY_RANK_METRICS, evaluateAutomaticBadges } from './badgeRules';
+import { createPortal } from 'react-dom';
 import PerformanceCard from './components/PerformanceCard';
 import { resolveDashboardStore, performanceForecastFactor } from './dashboardScope';
 import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
@@ -139,9 +142,9 @@ const isFreePhoneSpecial=isIncentiveUnpaidSpecial;
 
 /* ===================== 기본 정책 상수 (관리자가 수정 가능) ===================== */
 
-const DEFAULT_BASE_PAY = { 점장: 2800000, 부점장: 2600000, 매니저: 2500000, 사원: 2300000, 기타: 0 };
-const DEFAULT_BASE_PENALTY = 200000; // 활동시간 미충족시 차감
-const DEFAULT_POSITION_ALLOWANCE = { 점장: 500000, 부점장: 200000, 매니저: 200000, 사원: 0, 기타: 0 }; // 직책수당 — 영업활동 지원금과 분리하여 최종 가산
+
+ // 활동시간 미충족시 차감
+ // 직책수당 — 영업활동 지원금과 분리하여 최종 가산
 
 
 // 실제 영업을 하지 않는 조직 — 실적표/실적비교/지급 총액 집계에서 제외
@@ -152,21 +155,10 @@ const SALES_AREA_STORES = Object.freeze({
 });
 const SALES_AREA_LABELS = Object.freeze({ ansan: '안산 상권', siheung: '시흥 상권' });
 
-const DEFAULT_TENURE = [
-  { key: 'under6', label: '6개월 미만 (실적무관)', rate: 0 },
-  { key: 'under12', label: '12개월 미만', rate: 200000 },
-  { key: 'over12', label: '12개월 이상', rate: 150000 },
-  { key: 'over24', label: '24개월 이상', rate: 100000 },
-];
-const DEFAULT_TENURE_CAP = 2300000;
 
-const DEFAULT_GRADES = [
-  { grade: 'S', min: 55, bonus: 1000000 },
-  { grade: 'A', min: 45, bonus: 700000 },
-  { grade: 'B', min: 35, bonus: 500000 },
-  { grade: 'C', min: 25, bonus: 300000 },
-  { grade: 'D', min: 0, bonus: 0 },
-];
+
+
+
  // 홈 최소조건(성과 인정 게이트)
    // 모바일 P가 이 값 초과일 때만 홈 가점 반영
 // 홈 최소조건(3점) 전용 배점 — 성과등급P 안내표와는 별개 기준 (인터넷:1점, 프리:0.3점, 스홈:0.2점)
@@ -181,96 +173,34 @@ const HOME_SALE_TYPES = [
 ];
 
 
-const DEFAULT_HOME_TIERS = [
-  { min: 1, rate: 500000 },
-  { min: 2, rate: 600000 },
-  { min: 3, rate: 700000 },
-  { min: 5, rate: 800000 },
-  { min: 7, rate: 900000 },
-  { min: 10, rate: 1000000 },
-];
 
 
 
 
 
 
-const DEFAULT_MATRIX = [
-  [5, 3, 2, 1, 1, 0],       // 일반모델 신규
-  [9, 6, 5, 4, 4, 2],       // 일반모델 MNP
-  [5, 3, 2, 1, 1, 0],       // 일반모델 기변A
-  [5, 3, 2, 1, 1, 0],       // 일반모델 기변B (A와 동일)
-  [2.5, 1.5, 1, 0.5, 0.5, 0], // 일반모델 기변C (A/B의 50%)
-  [10, 10, 10, 7, 5, 5],    // SIM MNP
-  [0, 0, 0, 0, 0, 0],       // 중고 신규(66군↑) — 인센티브 무관, 항상 0
-  [5, 0, 0, 0, 0, 0],       // 2ND — 단일 단가 (건당 5만원)
-].map((row) => row.map((v) => v * 10000));
+
+
 
 // 가입구분(매트릭스 행) → 성과등급P 항목 / KPI 항목 기본 매핑. 관리자 화면에서 수정 가능.
 // 기변A/B/C(isGibyeon) 행은 성과등급P만은 타겟(A/B/C) 상관없이 요금제군(열) 기준으로 통일 적용 — gibyeonColumnMap 참고. KPI는 타겟별로 그대로 유지.
-const DEFAULT_CATEGORY_MAP = [
-  { mobilePointKey: 'new010', kpiKey: 'kpiNew010' },        // 일반모델 신규
-  { mobilePointKey: 'mnp', kpiKey: 'kpiMnp' },               // 일반모델 MNP
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonA' },             // 일반모델 기변A (성과등급P는 열 기준)
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonB' },             // 일반모델 기변B (성과등급P는 열 기준)
-  { mobilePointKey: '', kpiKey: 'kpiGibyeonC' },             // 일반모델 기변C (성과등급P는 열 기준)
-  { mobilePointKey: 'usedMnp', kpiKey: 'kpiSimMnp' },        // SIM MNP = 중고 MNP(선약가입건)
-  { mobilePointKey: '', kpiKey: 'kpiUsedNew010' },           // 중고 신규(66군↑) — 인센티브 무관, KPI만 반영
-  { mobilePointKey: 'secondOnly', kpiKey: 'kpiSecond' },     // 2ND
-];
+
 
 // 기변 행(A/B/C 공통) 요금제군별 성과등급P — 115군↑ 1P / 95~105군·청소년85군 0.7P / 85군 0.7P / 약자 0.5P / 61군이상·그외 0.3P
 
 
 // 운영 DB에 저장된 이전 VAS 설정에도 새 기본 항목을 보강하되,
 // 관리자가 수정한 명칭·금액과 별도 추가 항목은 그대로 유지한다.
-const mergeDefaultVas = (saved=[]) => [
-  ...DEFAULT_VAS.map(def => ({ ...def, ...(saved||[]).find(item => item.key===def.key) })),
-  ...(saved||[]).filter(item => !DEFAULT_VAS.some(def => def.key===item.key)),
-];
-
-
-const DEFAULT_CUSTREG_TIERS = [
-  { min: 20, bonus: 100000 },
-  { min: 30, bonus: 150000 },
-  { min: 40, bonus: 200000 },
-];
-const DEFAULT_TAILORED_TIERS = [
-  { min: 10, bonus: 70000 },
-  { min: 15, bonus: 150000 },
-  { min: 20, bonus: 200000 },
-  { min: 25, bonus: 300000 },
-  { min: 30, bonus: 400000 },
-];
 
 
 
 
-function defaultConfig() {
-  return {
-    basePay: { ...DEFAULT_BASE_PAY },
-    positionAllowance: { ...DEFAULT_POSITION_ALLOWANCE },
-    mobilePointItems: DEFAULT_MOBILE_POINT_ITEMS.map((i) => ({ ...i })),
-    kpiItems: DEFAULT_KPI_ITEMS.map((i) => ({ ...i })),
-    categoryMap: DEFAULT_CATEGORY_MAP.map((i) => ({ ...i })),
-    gibyeonColumnMap: [...DEFAULT_GIBYEON_COLUMN_MAP],
-    basePenalty: DEFAULT_BASE_PENALTY,
-    tenure: DEFAULT_TENURE.map((t) => ({ ...t })),
-    tenureCap: DEFAULT_TENURE_CAP,
-    grades: DEFAULT_GRADES.map((g) => ({ ...g })),
-    homeTiers: DEFAULT_HOME_TIERS.map((t) => ({ ...t })),
-    homeFlat: DEFAULT_HOME_FLAT.map((t) => ({ ...t })),
-    homeAddon: DEFAULT_HOME_ADDON.map((t) => ({ ...t })),
-    renew: DEFAULT_RENEW.map((t) => ({ ...t })),
-    matrix: DEFAULT_MATRIX.map((row) => [...row]),
-    vas: DEFAULT_VAS.map((t) => ({ ...t })),
-    bundle2nd: DEFAULT_BUNDLE2ND.map((t) => ({ ...t })),
-    sono: DEFAULT_SONO.map((t) => ({ ...t })),
-    mnpBundle: DEFAULT_MNP_BUNDLE.map((t) => ({ ...t })),
-    custRegTiers: DEFAULT_CUSTREG_TIERS.map((t) => ({ ...t })),
-    tailoredTiers: DEFAULT_TAILORED_TIERS.map((t) => ({ ...t })),
-  };
-}
+
+
+
+
+
+
 
 
 
@@ -1592,7 +1522,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           stores={stores}
           onTeamCreditSaved={()=>loadTeamSalesCredits(month)}
           onSalesChanged={()=>Promise.all([loadDaily(month,employees),loadShadowLedgers(month,employees)])}
-          onHomeOrdersChanged={()=>loadHomePolicies(month,employees)}
+          onHomeOrdersChanged={()=>Promise.all([loadHomePolicies(month,employees),loadDaily(month,employees)])}
           personalGoals={personalGoals}
           savePersonalGoals={savePersonalGoals}
           goalSaving={goalSaving}
@@ -1638,14 +1568,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
 /* v21.27 직원 홈 재구성: 홈-개인 / 홈-매장, 월 누적 성과 랭킹 */
 
-const MONTHLY_RANK_METRICS = [
-  { key:'hs', label:'HS', unit:'건', value:(r)=>hsCount(r.draft) },
-  { key:'home', label:'홈', unit:'건', value:(r)=>completedHomeCount(r.draft) },
-  { key:'free', label:'프리', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.tvFree||0) },
-  { key:'smart', label:'스홈', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.smartHome||0) },
-  { key:'productivity', label:'생산성', unit:'P', value:(r)=>Number(r.pay?.kpiScore||0) },
-  { key:'upsell', label:'맞춤제안 업셀건', unit:'건', value:(r)=>Number(r.draft?.tailoredCount||0) },
-];
+
 
 function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='', branchOnly=null, title='월 누적 순위', showAll=false }) {
   const [metricKey,setMetricKey]=useState('hs');
@@ -2070,133 +1993,7 @@ function MyRankingCard({ rows, userId, branch }) {
 
 /* ===================== 게임화 2차: 배지 · 퀘스트 · 칭호 · 인정 ===================== */
 
-const BADGE_DEFS = [
-  { key: 'first_step', icon: '🌱', name: '첫 발자국', rarity: 'COMMON', hidden: false, desc: '첫 HS 판매', auto: true },
-  { key: 'hs_y10', icon: '🔟', name: '스타트 텐', rarity: 'COMMON', hidden: false, desc: '올해 HS 10건', auto: true },
-  { key: 'hs_y30', icon: '🏃', name: '페이스 업', rarity: 'COMMON', hidden: false, desc: '올해 HS 30건', auto: true },
-  { key: 'hs_y50', icon: '🎯', name: '하프 센추리', rarity: 'RARE', hidden: false, desc: '올해 HS 50건', auto: true },
-  { key: 'hs_y100', icon: '💯', name: '백전백승', rarity: 'RARE', hidden: false, desc: '올해 HS 100건', auto: true },
-  { key: 'hs_y150', icon: '🚀', name: '150 클럽', rarity: 'RARE', hidden: false, desc: '올해 HS 150건', auto: true },
-  { key: 'hs_y200', icon: '🔥', name: '200 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 200건', auto: true },
-  { key: 'hs_y250', icon: '⚡', name: '250 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 250건', auto: true },
-  { key: 'hs_y300', icon: '💎', name: '300 클럽', rarity: 'EPIC', hidden: false, desc: '올해 HS 300건', auto: true },
-  { key: 'hs_y500', icon: '👑', name: '500 클럽', rarity: 'LEGEND', hidden: false, desc: '올해 HS 500건', auto: true },
-  { key: 'hs_m20', icon: '📦', name: '월간 20', rarity: 'COMMON', hidden: false, desc: '한 달 HS 20건', auto: true },
-  { key: 'hs_m30', icon: '📈', name: '월간 30', rarity: 'RARE', hidden: false, desc: '한 달 HS 30건', auto: true },
-  { key: 'hs_m40', icon: '🔥', name: '월간 40', rarity: 'RARE', hidden: false, desc: '한 달 HS 40건', auto: true },
-  { key: 'hs_m50', icon: '🦁', name: '50의 벽', rarity: 'EPIC', hidden: false, desc: '한 달 HS 50건', auto: true },
-  { key: 'hs_m60', icon: '🚀', name: '월간 폭주', rarity: 'EPIC', hidden: false, desc: '한 달 HS 60건', auto: true },
-  { key: 'hs_m70', icon: '💥', name: '브레이크 아웃', rarity: 'EPIC', hidden: false, desc: '한 달 HS 70건', auto: true },
-  { key: 'hs_m80', icon: '🏆', name: '80 클럽', rarity: 'LEGEND', hidden: false, desc: '한 달 HS 80건', auto: true },
-  { key: 'hs_m100', icon: '💯', name: '월간 센추리', rarity: 'LEGEND', hidden: false, desc: '한 달 HS 100건', auto: true },
-  { key: 'hs_personal_record', icon: '🌋', name: '한계 돌파', rarity: 'RARE', hidden: false, desc: '자신의 월 HS 최고기록 경신', auto: true },
-  { key: 'hs_guinness', icon: '🐐', name: '미소 기네스 · HS', rarity: 'LEGEND', hidden: false, desc: '회사 역대 월 HS 최고기록 경신', auto: true },
-  { key: 'hs_rank3', icon: '🥉', name: '포디움', rarity: 'RARE', hidden: false, desc: '월 HS 전체 3위', auto: true },
-  { key: 'hs_rank2', icon: '🥈', name: '실버 러시', rarity: 'EPIC', hidden: false, desc: '월 HS 전체 2위', auto: true },
-  { key: 'hs_rank1', icon: '🥇', name: '이번 달 주인공', rarity: 'EPIC', hidden: false, desc: '월 HS 전체 1위', auto: true },
-  { key: 'hs_year1', icon: '👑', name: '올해의 HS KING', rarity: 'LEGEND', hidden: false, desc: '올해 누적 HS 전체 1위', auto: true },
-  { key: 'hs_store1', icon: '🏠', name: '우리 매장 ACE', rarity: 'RARE', hidden: false, desc: '월 HS 매장 1위', auto: true },
-  { key: 'hs_back2back', icon: '🔥', name: '백투백', rarity: 'LEGEND', hidden: false, desc: '월 HS 1위 2개월 연속', auto: true },
-  { key: 'hs_triple', icon: '🏆', name: '트리플 크라운', rarity: 'LEGEND', hidden: false, desc: '월 HS 1위 3회', auto: true },
-  { key: 'hs_top10', icon: '🎖', name: 'TOP10', rarity: 'COMMON', hidden: false, desc: '월 HS 전체 10위 이내', auto: true },
-  { key: 'hs_top5', icon: '⭐', name: 'TOP5', rarity: 'RARE', hidden: false, desc: '월 HS 전체 5위 이내', auto: true },
-  { key: 'hs_top10_3m', icon: '🧱', name: '자리 지킴이', rarity: 'EPIC', hidden: false, desc: '3개월 연속 HS TOP10', auto: true },
-  { key: 'home_first', icon: '🏠', name: '첫 홈', rarity: 'COMMON', hidden: false, desc: '첫 홈 판매', auto: true },
-  { key: 'home_m5', icon: '🏡', name: '홈 스타터', rarity: 'COMMON', hidden: false, desc: '월 홈 5건', auto: true },
-  { key: 'home_m10', icon: '🏘', name: '홈 러너', rarity: 'RARE', hidden: false, desc: '월 홈 10건', auto: true },
-  { key: 'home_m15', icon: '🏢', name: '홈 프로', rarity: 'RARE', hidden: false, desc: '월 홈 15건', auto: true },
-  { key: 'home_m20', icon: '🏰', name: '홈 마스터', rarity: 'EPIC', hidden: false, desc: '월 홈 20건', auto: true },
-  { key: 'home_y100', icon: '💯', name: '홈 센추리', rarity: 'EPIC', hidden: false, desc: '올해 홈 100건', auto: true },
-  { key: 'home_rank1', icon: '👑', name: '홈 KING', rarity: 'EPIC', hidden: false, desc: '월 홈 전체 1위', auto: true },
-  { key: 'home_year1', icon: '🏆', name: '올해의 홈 KING', rarity: 'LEGEND', hidden: false, desc: '올해 홈 누적 1위', auto: true },
-  { key: 'home_day3', icon: '🔥', name: '홈 올인', rarity: 'RARE', hidden: false, desc: '하루 홈 3건 이상', auto: true },
-  { key: 'internet_y50', icon: '📡', name: '인터넷 전문가', rarity: 'RARE', hidden: false, desc: '인터넷 연간 50건', auto: true },
-  { key: 'hometv_m10', icon: '📺', name: 'TV 콤보', rarity: 'RARE', hidden: false, desc: '홈+TV 월 10건', auto: true },
-  { key: 'home_guinness', icon: '🐐', name: '미소 기네스 · 홈', rarity: 'LEGEND', hidden: false, desc: '회사 역대 월 홈 최고기록', auto: true },
-  { key: 'free_first', icon: '📺', name: '프리 스타트', rarity: 'COMMON', hidden: false, desc: '첫 TV프리', auto: true },
-  { key: 'free_m5', icon: '🪽', name: '프리 러너', rarity: 'COMMON', hidden: false, desc: '월 프리 5건', auto: true },
-  { key: 'free_m10', icon: '📺', name: '프리 마스터', rarity: 'RARE', hidden: false, desc: '월 프리 10건', auto: true },
-  { key: 'free_rank1', icon: '👑', name: '프리 KING', rarity: 'EPIC', hidden: false, desc: '월 프리 전체 1위', auto: true },
-  { key: 'free_y100', icon: '💯', name: '프리 센추리', rarity: 'EPIC', hidden: false, desc: '올해 프리 100건', auto: true },
-  { key: 'smart_first', icon: '💡', name: '스마트 스타트', rarity: 'COMMON', hidden: false, desc: '첫 스마트홈', auto: true },
-  { key: 'smart_m5', icon: '🏡', name: '스마트 라이프', rarity: 'COMMON', hidden: false, desc: '월 스마트홈 5건', auto: true },
-  { key: 'smart_m10', icon: '💡', name: '스마트 마스터', rarity: 'RARE', hidden: false, desc: '월 스마트홈 10건', auto: true },
-  { key: 'smart_rank1', icon: '👑', name: '스홈 KING', rarity: 'EPIC', hidden: false, desc: '월 스마트홈 전체 1위', auto: true },
-  { key: 'smart_y50', icon: '🧠', name: '스마트 컬렉터', rarity: 'EPIC', hidden: false, desc: '올해 스마트홈 50건', auto: true },
-  { key: 'upsell_first', icon: '🎯', name: '첫 적중', rarity: 'COMMON', hidden: false, desc: '첫 맞춤제안 업셀', auto: true },
-  { key: 'upsell_m5', icon: '🎯', name: '취향저격', rarity: 'COMMON', hidden: false, desc: '월 맞춤제안 업셀 5건', auto: true },
-  { key: 'upsell_m10', icon: '📈', name: '업셀러', rarity: 'RARE', hidden: false, desc: '월 맞춤제안 업셀 10건', auto: true },
-  { key: 'upsell_m20', icon: '🚀', name: '업셀 마스터', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 업셀 20건', auto: true },
-  { key: 'upsell_rank1', icon: '👑', name: '업셀 KING', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 업셀 전체 1위', auto: true },
-  { key: 'upsell_y100', icon: '💯', name: '업셀 센추리', rarity: 'EPIC', hidden: false, desc: '올해 맞춤제안 업셀 100건', auto: true },
-  { key: 'upsell_day3', icon: '🦅', name: '기회 포착', rarity: 'RARE', hidden: false, desc: '하루 맞춤제안 업셀 3건', auto: true },
-  { key: 'upsell_day5', icon: '🔥', name: '업셀 폭주', rarity: 'EPIC', hidden: false, desc: '하루 맞춤제안 업셀 5건', auto: true },
-  { key: 'upsell_year1', icon: '🏆', name: '올해의 업셀 KING', rarity: 'LEGEND', hidden: false, desc: '올해 누적 업셀 1위', auto: true },
-  { key: 'upsell_guinness', icon: '🐐', name: '미소 기네스 · 업셀', rarity: 'LEGEND', hidden: false, desc: '역대 월 업셀 최고기록', auto: true },
-  { key: 'upsell_goal100', icon: '🎯', name: '정조준', rarity: 'RARE', hidden: false, desc: '월 맞춤제안 목표 100%', auto: true },
-  { key: 'upsell_goal150', icon: '💥', name: '오버클럭', rarity: 'EPIC', hidden: false, desc: '월 맞춤제안 목표 150%', auto: true },
-  { key: 'second_first', icon: '📱', name: '하나 더', rarity: 'COMMON', hidden: false, desc: '첫 2ND 번들', auto: true },
-  { key: 'second_m5', icon: '✌️', name: '투게더', rarity: 'COMMON', hidden: false, desc: '월 2ND 5건', auto: true },
-  { key: 'second_m10', icon: '📦', name: '번들러', rarity: 'RARE', hidden: false, desc: '월 2ND 10건', auto: true },
-  { key: 'second_m20', icon: '🚀', name: '번들 마스터', rarity: 'EPIC', hidden: false, desc: '월 2ND 20건', auto: true },
-  { key: 'second_rank1', icon: '👑', name: '2ND KING', rarity: 'EPIC', hidden: false, desc: '월 2ND 전체 1위', auto: true },
-  { key: 'second_y100', icon: '💯', name: '2ND 센추리', rarity: 'EPIC', hidden: false, desc: '올해 2ND 100건', auto: true },
-  { key: 'second_day3', icon: '🛒', name: '장바구니 가득', rarity: 'RARE', hidden: false, desc: '하루 2ND 번들 3건', auto: true },
-  { key: 'second_guinness', icon: '🐐', name: '미소 기네스 · 2ND', rarity: 'LEGEND', hidden: false, desc: '역대 월 2ND 최고기록', auto: true },
-  { key: 'prod_base', icon: '⚙️', name: '시동 완료', rarity: 'COMMON', hidden: false, desc: '월 생산성 기준 달성', auto: true },
-  { key: 'prod_100', icon: '📈', name: '생산성 100', rarity: 'RARE', hidden: false, desc: '월 생산성 100P', auto: true },
-  { key: 'prod_120', icon: '⚡', name: '생산성 120', rarity: 'RARE', hidden: false, desc: '월 생산성 120P', auto: true },
-  { key: 'prod_150', icon: '🔥', name: '생산성 150', rarity: 'EPIC', hidden: false, desc: '월 생산성 150P', auto: true },
-  { key: 'prod_200', icon: '🚀', name: '생산성 200', rarity: 'LEGEND', hidden: false, desc: '월 생산성 200P', auto: true },
-  { key: 'prod_rank1', icon: '👑', name: '생산성 KING', rarity: 'EPIC', hidden: false, desc: '월 생산성 전체 1위', auto: true },
-  { key: 'prod_year1', icon: '🏆', name: '올해의 생산성 KING', rarity: 'LEGEND', hidden: false, desc: '연간 평균 생산성 1위', auto: true },
-  { key: 'grade_s', icon: '💎', name: 'S CLASS', rarity: 'EPIC', hidden: false, desc: '성과등급 S 달성', auto: true },
-  { key: 'grade_s3', icon: '🔥', name: 'S STREAK', rarity: 'LEGEND', hidden: false, desc: 'S등급 3개월 연속', auto: true },
-  { key: 'all_top3', icon: '🐐', name: '완전체', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 모두 월 TOP3', auto: true },
-  { key: 'day_hs5', icon: '🔥', name: '불타는 하루', rarity: 'RARE', hidden: false, desc: '하루 HS 5건', auto: true },
-  { key: 'day_hs8', icon: '💥', name: '미친 하루', rarity: 'EPIC', hidden: false, desc: '하루 HS 8건', auto: true },
-  { key: 'day_hs10', icon: '☄️', name: '레코드 데이', rarity: 'LEGEND', hidden: false, desc: '하루 HS 10건', auto: true },
-  { key: 'full_set', icon: '🛍', name: '풀세트', rarity: 'RARE', hidden: false, desc: '하루 HS+홈+2ND 모두 판매', auto: true },
-  { key: 'allrounder', icon: '🎯', name: '올라운더', rarity: 'RARE', hidden: false, desc: '한 달 핵심 5개 카테고리 모두 실적', auto: true },
-  { key: 'balance_master', icon: '🌈', name: '밸런스 마스터', rarity: 'EPIC', hidden: false, desc: '핵심 5개 카테고리 모두 월 목표 달성', auto: true },
-  { key: 'sweep_day', icon: '🧹', name: '싹쓸이', rarity: 'EPIC', hidden: false, desc: '하루 5개 이상 판매 카테고리 실적', auto: true },
-  { key: 'perfect_month', icon: '💎', name: '퍼펙트 먼스', rarity: 'LEGEND', hidden: false, desc: '해당 월 핵심 KPI 전부 목표 달성', auto: true },
-  { key: 'grand_slam', icon: '👑', name: '그랜드슬램', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 월간 1위 동시 달성', auto: true },
-  { key: 'goat', icon: '🐐', name: 'GOAT', rarity: 'LEGEND', hidden: false, desc: '연간 HS·홈·생산성 모두 전체 TOP3', auto: true },
-  { key: 'tenure3', icon: '🌱', name: '미소 새싹', rarity: 'COMMON', hidden: false, desc: '입사 3개월', auto: true },
-  { key: 'tenure12', icon: '🎂', name: '첫 돌', rarity: 'COMMON', hidden: false, desc: '근속 12개월', auto: true },
-  { key: 'tenure24', icon: '🌳', name: '뿌리내림', rarity: 'RARE', hidden: false, desc: '근속 24개월', auto: true },
-  { key: 'tenure36', icon: '🌲', name: '뿌리 깊은 미소', rarity: 'EPIC', hidden: false, desc: '근속 36개월', auto: true },
-  { key: 'tenure60', icon: '🏛', name: '미소 베테랑', rarity: 'LEGEND', hidden: false, desc: '근속 60개월', auto: true },
-  { key: 'special_pick', icon: '📈', name: '성장왕', rarity: 'RARE', hidden: false, desc: '월 후반 HS 페이스가 전반보다 크게 상승', auto: true },
-  { key: 'special_team', icon: '🎯', name: '올라운드 세일즈', rarity: 'EPIC', hidden: false, desc: 'HS·홈·프리·스홈·2ND를 모두 판매', auto: true },
-  { key: 'special_mvp', icon: '🏆', name: '미소 MVP', rarity: 'LEGEND', hidden: false, desc: 'HS·홈·생산성 종합 순위 월 1위', auto: true }
-  ,{ key:'tenure1', icon:'👋', name:'미소 첫 달', rarity:'COMMON', hidden:false, desc:'근속 1개월', auto:true, progressMetric:'tenure', threshold:1 }
-  ,{ key:'tenure6', icon:'🌿', name:'반년의 발자국', rarity:'COMMON', hidden:false, desc:'근속 6개월', auto:true, progressMetric:'tenure', threshold:6 }
-  ,{ key:'tenure18', icon:'🌱', name:'단단한 뿌리', rarity:'RARE', hidden:false, desc:'근속 18개월', auto:true, progressMetric:'tenure', threshold:18 }
-  ,{ key:'tenure48', icon:'🤝', name:'믿음의 동료', rarity:'EPIC', hidden:false, desc:'근속 48개월', auto:true, progressMetric:'tenure', threshold:48 }
-  ,{ key:'tenure72', icon:'🏛️', name:'미소의 기둥', rarity:'EPIC', hidden:false, desc:'근속 72개월', auto:true, progressMetric:'tenure', threshold:72 }
-  ,{ key:'tenure84', icon:'✨', name:'오래된 신뢰', rarity:'EPIC', hidden:false, desc:'근속 84개월', auto:true, progressMetric:'tenure', threshold:84 }
-  ,{ key:'tenure96', icon:'📜', name:'미소 히스토리', rarity:'LEGEND', hidden:false, desc:'근속 96개월', auto:true, progressMetric:'tenure', threshold:96 }
-  ,{ key:'tenure108', icon:'🌟', name:'미소 레전드', rarity:'LEGEND', hidden:false, desc:'근속 108개월', auto:true, progressMetric:'tenure', threshold:108 }
-  ,{ key:'tenure120', icon:'🎖️', name:'미소 명예직원', rarity:'LEGEND', hidden:false, desc:'근속 120개월', auto:true, progressMetric:'tenure', threshold:120 }
-  ,{ key:'tenure180', icon:'🏛️', name:'미소의 역사', rarity:'LEGEND', hidden:false, desc:'근속 180개월', auto:true, progressMetric:'tenure', threshold:180 }
-  ,...[
-    [25,'🏡','우리집 안내자','COMMON'],[50,'🧭','홈 네비게이터','RARE'],[100,'💯','홈 백부장','RARE'],[200,'🏗️','홈 아키텍트','EPIC'],[300,'🌉','홈 커넥터','EPIC'],[500,'🏰','홈 그랜드마스터','LEGEND'],[750,'🏙️','홈 타운 빌더','LEGEND'],[1000,'🏆','천 개의 연결','LEGEND']
-  ].map(([threshold,icon,name,rarity])=>({key:`career_home_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 홈 ${threshold}건`,auto:true,progressMetric:'home',threshold}))
-  ,...[
-    [25,'🪄','프리 캐처','COMMON'],[50,'📺','프리 스페셜리스트','RARE'],[100,'💯','프리 백부장','RARE'],[200,'🎬','프리 디렉터','EPIC'],[300,'⭐','프리 아이콘','EPIC'],[500,'👑','프리 레전드','LEGEND'],[1000,'🌌','프리 신화','LEGEND']
-  ].map(([threshold,icon,name,rarity])=>({key:`career_free_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 TV프리 ${threshold}건`,auto:true,progressMetric:'free',threshold}))
-  ,...[
-    [10,'🛠️','스마트 메이커','COMMON'],[25,'💡','스마트 가이드','COMMON'],[50,'🎨','라이프 디자이너','RARE'],[100,'💯','스마트 백부장','RARE'],[200,'🏗️','스마트 아키텍트','EPIC'],[300,'🧠','미래생활 전문가','EPIC'],[500,'👑','스마트홈 레전드','LEGEND']
-  ].map(([threshold,icon,name,rarity])=>({key:`career_smart_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 스마트홈 ${threshold}건`,auto:true,progressMetric:'smart',threshold}))
-  ,...[
-    [25,'🔎','니즈 탐험가','COMMON'],[50,'💡','제안의 기술','RARE'],[100,'🎯','백 번의 적중','RARE'],[200,'📈','업셀 스페셜리스트','EPIC'],[300,'💎','가치 설계자','EPIC'],[500,'🧙','제안의 달인','LEGEND'],[750,'🧭','세일즈 디렉터','LEGEND'],[1000,'🏆','천 번의 선택','LEGEND']
-  ].map(([threshold,icon,name,rarity])=>({key:`career_upsell_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 맞춤제안 업셀 ${threshold}건`,auto:true,progressMetric:'upsell',threshold}))
-  ,...[
-    [1,'🌱','소노 첫 만남','COMMON'],[5,'🌅','라이프 스타터','COMMON'],[10,'🔟','소노 텐','COMMON'],[25,'🏖️','휴식 설계자','RARE'],[50,'🧭','라이프 플래너','RARE'],[100,'💯','소노 백부장','RARE'],[200,'🎟️','소노 스페셜리스트','EPIC'],[300,'✨','라이프 큐레이터','EPIC'],[500,'👑','소노 마스터','LEGEND'],[1000,'🌌','라이프케어 레전드','LEGEND']
-  ].map(([threshold,icon,name,rarity])=>({key:`career_sono_${threshold}`,icon,name,rarity,hidden:false,desc:`통산 소노 ${threshold}건`,auto:true,progressMetric:'sono',threshold}))
-];
+
 
 const SPECIAL_BADGE_KEYS = [];
 
@@ -2204,88 +2001,7 @@ function badgeDefOf(key) {
   return BADGE_DEFS.find((b) => b.key === key) || null;
 }
 
-function evaluateAutomaticBadges({
-  dailyDays, month, personalGoals, mergedDraft, pay, competitionRows, userId, lifetimeTotals,
-}) {
-  const earned=new Set();
-  const hs=hsCount(mergedDraft);
-  const home=completedHomeCount(mergedDraft);
-  const free=Number(mergedDraft?.homeFlat?.tvFree||0);
-  const smart=Number(mergedDraft?.homeFlat?.smartHome||0);
-  const upsell=Number(mergedDraft?.tailoredCount||0);
-  const second=(mergedDraft?.matrix?.[7]||[]).reduce((a,v)=>a+Number(v||0),0)+Object.values(mergedDraft?.bundle2nd||{}).reduce((a,v)=>a+Number(v||0),0);
-  const prod=Number(pay?.kpiScore||0);
-  const tenureMonths=Number(pay?.months||0);
-  [[1,'tenure1'],[3,'tenure3'],[6,'tenure6'],[12,'tenure12'],[18,'tenure18'],[24,'tenure24'],[36,'tenure36'],[48,'tenure48'],[60,'tenure60'],[72,'tenure72'],[84,'tenure84'],[96,'tenure96'],[108,'tenure108'],[120,'tenure120'],[180,'tenure180']].forEach(([months,key])=>{
-    if(tenureMonths>=months)earned.add(key);
-  });
-  BADGE_DEFS.filter(b=>b.progressMetric&&b.progressMetric!=='tenure').forEach(b=>{
-    if(Number(lifetimeTotals?.[b.progressMetric]||0)>=Number(b.threshold||0))earned.add(b.key);
-  });
-  if(hs>0)earned.add('first_step');
-  [[20,'hs_m20'],[30,'hs_m30'],[40,'hs_m40'],[50,'hs_m50'],[60,'hs_m60'],[70,'hs_m70'],[80,'hs_m80'],[100,'hs_m100']].forEach(([v,k])=>{if(hs>=v)earned.add(k)});
-  [[1,'home_first'],[5,'home_m5'],[10,'home_m10'],[15,'home_m15'],[20,'home_m20']].forEach(([v,k])=>{if(home>=v)earned.add(k)});
-  [[1,'free_first'],[5,'free_m5'],[10,'free_m10']].forEach(([v,k])=>{if(free>=v)earned.add(k)});
-  [[1,'smart_first'],[5,'smart_m5'],[10,'smart_m10']].forEach(([v,k])=>{if(smart>=v)earned.add(k)});
-  [[1,'upsell_first'],[5,'upsell_m5'],[10,'upsell_m10'],[20,'upsell_m20']].forEach(([v,k])=>{if(upsell>=v)earned.add(k)});
-  [[1,'second_first'],[5,'second_m5'],[10,'second_m10'],[20,'second_m20']].forEach(([v,k])=>{if(second>=v)earned.add(k)});
-  [[100,'prod_100'],[120,'prod_120'],[150,'prod_150'],[200,'prod_200']].forEach(([v,k])=>{if(prod>=v)earned.add(k)});
-  if(pay?.grade==='S'&&pay?.gradeEligible)earned.add('grade_s');
 
-  const rank=(key)=>{
-    const m=MONTHLY_RANK_METRICS.find(x=>x.key===key); if(!m)return null;
-    const rows=[...(competitionRows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch));
-    const me=rows.find(r=>r.id===userId); if(!me||Number(m.value(me)||0)<=0)return null;
-    return 1+rows.filter(r=>Number(m.value(r)||0)>Number(m.value(me)||0)).length;
-  };
-  const hr=rank('hs'), homer=rank('home'), freer=rank('free'), smartr=rank('smart'), pr=rank('productivity'), ur=rank('upsell');
-  if(hr&&hr<=10)earned.add('hs_top10'); if(hr&&hr<=5)earned.add('hs_top5');
-  if(hr===3)earned.add('hs_rank3'); if(hr===2)earned.add('hs_rank2'); if(hr===1)earned.add('hs_rank1');
-  if(homer===1)earned.add('home_rank1'); if(freer===1)earned.add('free_rank1'); if(smartr===1)earned.add('smart_rank1');
-  if(pr===1)earned.add('prod_rank1'); if(ur===1)earned.add('upsell_rank1');
-  if(hr&&hr<=3&&homer&&homer<=3&&pr&&pr<=3)earned.add('all_top3');
-  if(hr===1&&homer===1&&pr===1)earned.add('grand_slam');
-
-  // v21.75 자동 배지
-  // 올라운드 세일즈: 앱에서 객관적으로 확인 가능한 핵심 판매 카테고리를 모두 경험
-  if(hs>0&&home>0&&free>0&&smart>0&&second>0)earned.add('special_team');
-
-  // 미소 MVP: HS/홈/생산성 순위 합이 가장 낮은 직원 1명 (동률은 HS→홈→생산성 순)
-  {
-    const active=[...(competitionRows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch));
-    const rankOf=(metric,row)=>{
-      const vals=active.map(x=>Number(metric.value(x)||0));
-      const mine=Number(metric.value(row)||0);
-      return mine>0 ? 1+vals.filter(v=>v>mine).length : active.length+1;
-    };
-    const hm=MONTHLY_RANK_METRICS.find(x=>x.key==='hs');
-    const hom=MONTHLY_RANK_METRICS.find(x=>x.key==='home');
-    const pm=MONTHLY_RANK_METRICS.find(x=>x.key==='productivity');
-    if(hm&&hom&&pm&&active.length){
-      const ranked=active.map(r=>({r,score:rankOf(hm,r)+rankOf(hom,r)+rankOf(pm,r),hs:Number(hm.value(r)||0),home:Number(hom.value(r)||0),prod:Number(pm.value(r)||0)}))
-        .filter(x=>x.hs>0)
-        .sort((a,b)=>a.score-b.score||b.hs-a.hs||b.home-a.home||b.prod-a.prod);
-      if(ranked[0]?.r?.id===userId)earned.add('special_mvp');
-    }
-  }
-
-  let firstHalfHs=0,secondHalfHs=0,firstHalfDays=0,secondHalfDays=0;
-  Object.entries(dailyDays||{}).forEach(([dayKey,raw])=>{
-    const d=normalizeDay(raw);
-    const dhs=[0,1,2,3,4].reduce((z,ri)=>z+(d.matrix?.[ri]||[]).reduce((a,v)=>a+Number(v||0),0),0);
-    if(dhs>=5)earned.add('day_hs5'); if(dhs>=8)earned.add('day_hs8'); if(dhs>=10)earned.add('day_hs10');
-    const dayNum=Number(String(dayKey).slice(-2))||Number(dayKey)||0;
-    if(dayNum>=1&&dayNum<=15){firstHalfHs+=dhs;firstHalfDays++;}
-    else if(dayNum>=16){secondHalfHs+=dhs;secondHalfDays++;}
-  });
-  const firstPace=firstHalfDays?firstHalfHs/firstHalfDays:0, secondPace=secondHalfDays?secondHalfHs/secondHalfDays:0;
-  if(firstHalfHs>0&&secondHalfHs>0&&secondPace>=firstPace*1.3)earned.add('special_pick');
-  const actuals=getPersonalGoalActuals(mergedDraft,pay);
-  const tg=Number(personalGoals?.tailored||0);
-  if(tg>0&&actuals.tailored>=tg)earned.add('upsell_goal100');
-  if(tg>0&&actuals.tailored>=tg*1.5)earned.add('upsell_goal150');
-  return earned;
-}
 
 function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }) {
   const highlights = useMemo(() => {
@@ -2402,7 +2118,7 @@ function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
   </section>;
 }
 
-function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,currentEmp,currentAmount=0,onOpenPay,onGoInput}) {
+function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,authUserId,currentEmp,currentAmount=0,onOpenPay,onGoInput}) {
   const [storedBadges,setStoredBadges]=useState([]);
   const [titleKey,setTitleKey]=useState('');
   const [loadingBadges,setLoadingBadges]=useState(true);
@@ -2414,6 +2130,13 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const [statusEditing,setStatusEditing]=useState(false);
   const [statusBusy,setStatusBusy]=useState(false);
   const [celebration,setCelebration]=useState(null);
+  const [otherDialogOpen,setOtherDialogOpen]=useState(false);
+  useEffect(()=>{
+    const scan=()=>setOtherDialogOpen(!!document.querySelector('dialog[open]'));
+    const observer=new MutationObserver(scan);scan();
+    observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});
+    return()=>observer.disconnect();
+  },[]);
   const [lifetimeTotals,setLifetimeTotals]=useState({home:0,free:0,smart:0,upsell:0,sono:0});
   const [lifetimeLoaded,setLifetimeLoaded]=useState(false);
   useEffect(()=>{let alive=true;(async()=>{
@@ -2442,26 +2165,39 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     });
     setLifetimeTotals(totals);setLifetimeLoaded(true);
   })();return()=>{alive=false}},[userId]);
-  const autoEarned=useMemo(()=>evaluateAutomaticBadges({dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,lifetimeTotals}),[dailyDays,month,personalGoals,mergedDraft,pay,competitionRows,userId,lifetimeTotals]);
-  const earnedKeys=useMemo(()=>{const x=new Set(storedBadges.map(r=>r.badge_key));autoEarned.forEach(k=>x.add(k));return x},[storedBadges,autoEarned]);
-  const loadBadges=useCallback(async()=>{
-    if(!userId)return; setLoadingBadges(true);
-    const [{data:rows},{data:title}]=await Promise.all([
-      supabase.from('user_achievements').select('badge_key,earned_at,awarded_by,note').eq('user_id',userId).order('earned_at'),
-      supabase.from('user_titles').select('badge_key').eq('user_id',userId).maybeSingle()
-    ]);
-    setStoredBadges(rows||[]); setTitleKey(title?.badge_key||''); setLoadingBadges(false);
-  },[userId]);
-  useEffect(()=>{loadBadges()},[loadBadges]);
+  const [badgeError,setBadgeError]=useState('');
+  const [badgeRetry,setBadgeRetry]=useState(0);
+  const confirmedBadges=useMemo(()=>storedBadges.filter(r=>r.verified_at||r.awarded_by),[storedBadges]);
+  const earnedKeys=useMemo(()=>new Set(confirmedBadges.map(r=>r.badge_key)),[confirmedBadges]);
   useEffect(()=>{
-    if(!userId||loadingBadges||!lifetimeLoaded)return;
-    const have=new Set(storedBadges.map(r=>r.badge_key)); const missing=[...autoEarned].filter(k=>!have.has(k));
-    if(!missing.length)return;
-    const first=badgeDefOf(missing[0]);
-    const onceKey=`miso-celebration-badge-${userId}-${missing[0]}`;
-    if(first&&!localStorage.getItem(onceKey)){localStorage.setItem(onceKey,'1');setCelebration({icon:first.icon,title:'새로운 배지 획득!',message:first.name})}
-    (async()=>{for(const key of missing)await supabase.from('user_achievements').insert({user_id:userId,badge_key:key,awarded_by:null});await loadBadges()})();
-  },[autoEarned,storedBadges,loadingBadges,lifetimeLoaded,userId,loadBadges]);
+    let alive=true;
+    if(!userId)return;
+    setLoadingBadges(true);setBadgeError('');
+    const timer=setTimeout(async()=>{
+      try{
+        const [rows,title]=await Promise.all([
+          supabase.from('user_achievements').select('badge_key,earned_at,awarded_by,verified_at,note').eq('user_id',userId).order('earned_at'),
+          supabase.from('user_titles').select('badge_key').eq('user_id',userId).maybeSingle()
+        ]);
+        if(rows.error||title.error)throw rows.error||title.error;
+        if(!alive)return;
+        setStoredBadges(rows.data||[]);setTitleKey(title.data?.badge_key||'');
+        if(userId===authUserId){
+          const sync=await supabase.functions.invoke('sync-badges',{body:{month}});
+          if(sync.error||!Array.isArray(sync.data?.badges))throw sync.error||new Error('BADGE_SYNC_FAILED');
+          if(!alive)return;
+          setStoredBadges(sync.data.badges);
+          const have=new Set((rows.data||[]).filter(r=>r.verified_at||r.awarded_by).map(r=>r.badge_key));
+          const fresh=sync.data.badges.find(r=>r.verified_at&&!have.has(r.badge_key));
+          const badge=fresh&&badgeDefOf(fresh.badge_key);
+          const onceKey=fresh&&`miso-celebration-badge-${userId}-${fresh.badge_key}`;
+          if(badge&&!localStorage.getItem(onceKey)){localStorage.setItem(onceKey,'1');setCelebration({icon:badge.icon,title:'새로운 배지 획득!',message:badge.name});}
+        }
+      }catch{if(alive)setBadgeError('배지 확인을 완료하지 못했어요. 잠시 후 다시 확인해주세요.');}
+      finally{if(alive)setLoadingBadges(false);}
+    },300);
+    return()=>{alive=false;clearTimeout(timer)};
+  },[userId,authUserId,month,dailyDays,badgeRetry]);
   useEffect(()=>{
     if(!userId||loadingBadges||celebration)return;
     const hs=hsCount(mergedDraft||{}),rank=[...(competitionRows||[])].sort((a,b)=>Number(b.pay?.totalPoints||0)-Number(a.pay?.totalPoints||0)).findIndex(x=>x.id===userId)+1;
@@ -2472,8 +2208,8 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     const next=events.find(x=>!localStorage.getItem(`miso-celebration-${userId}-${x.key}`));
     if(next){events.forEach(x=>localStorage.setItem(`miso-celebration-${userId}-${x.key}`,'1'));setCelebration(next)}
   },[userId,month,mergedDraft,pay?.grade,pay?.gradeEligible,competitionRows,loadingBadges,celebration]);
-  const saveTitle=async(key)=>{if(!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)return showAppToast(friendlyError(error),{tone:'error',title:'배지 저장 실패'});setTitleKey(key)};
-  const titleDef=badgeDefOf(titleKey);
+  const saveTitle=async(key)=>{if(userId!==authUserId||!earnedKeys.has(key))return;const {error}=await supabase.from('user_titles').upsert({user_id:userId,badge_key:key,updated_at:new Date().toISOString()},{onConflict:'user_id'});if(error)return showAppToast(friendlyError(error),{tone:'error',title:'배지 저장 실패'});setTitleKey(key)};
+  const titleDef=earnedKeys.has(titleKey)?badgeDefOf(titleKey):null;
   const visible=BADGE_DEFS.filter(b=>filter==='earned'?earnedKeys.has(b.key):filter==='locked'?!earnedKeys.has(b.key):filter==='legend'?b.rarity==='LEGEND':true);
   const earnedRow=storedBadges.find(r=>r.badge_key===titleKey);
 
@@ -2519,14 +2255,14 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   };
 
   return <>
-    {celebration&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-center justify-center p-5" onClick={()=>setCelebration(null)}>
+    {celebration&&!otherDialogOpen&&createPortal(<div className="fixed inset-0 z-[118] bg-black/45 flex items-center justify-center p-5" onClick={()=>setCelebration(null)}>
       <div className="relative w-full max-w-sm overflow-hidden rounded-3xl bg-white p-6 text-center shadow-2xl" onClick={e=>e.stopPropagation()}>
         <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-brand-100 to-transparent" />
         <div className="relative text-5xl">{celebration.icon}</div><div className="relative mt-3 text-xl font-black text-gray-900">{celebration.title}</div><div className="relative mt-2 text-sm text-gray-500">{celebration.message}</div>
         <div className="relative mt-4 flex justify-center gap-2">{['●','◆','●','◆','●'].map((x,i)=><span key={i} className={`${i%2?'text-amber-400':'text-brand-400'} animate-bounce`} style={{animationDelay:`${i*80}ms`}}>{x}</span>)}</div>
         <button onClick={()=>setCelebration(null)} className="relative mt-5 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">좋아요!</button>
       </div>
-    </div>}
+    </div>,document.body)}
     <div className="summary-hero w-full">
       <div className="summary-profile flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -2560,7 +2296,7 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
 
     {showCollection&&<div className="fixed inset-0 z-[90] bg-black/40 flex items-end sm:items-center justify-center" onClick={()=>setShowCollection(false)}>
       <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[88vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
-        <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / {BADGE_DEFS.length}</div><div className="text-[10px] text-gray-400">획득한 배지를 대표 배지로 선택할 수 있어요.</div></div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
+        <div className="p-4 border-b"><div className="flex justify-between items-center"><div><div className="text-lg font-bold">내 배지 {fmtCount(earnedKeys.size)} / {BADGE_DEFS.length}</div><div className="text-[10px] text-gray-400">확인된 배지를 대표 배지로 선택할 수 있어요.</div>{storedBadges.length>confirmedBadges.length&&<p className="text-[11px] text-amber-700 mt-2">과거 배지 {storedBadges.length-confirmedBadges.length}개는 확인 대기 중입니다. 해당 실적 월을 열면 다시 확인합니다.</p>}{badgeError&&<p role="status" className="text-[11px] text-red-600 mt-2">{badgeError} <button onClick={()=>setBadgeRetry(v=>v+1)} className="underline">다시 확인</button></p>}</div><button onClick={()=>setShowCollection(false)} className="text-gray-400">✕</button></div>
           <div className="flex gap-1.5 mt-3 overflow-x-auto">{[['all','전체'],['earned','획득'],['locked','미획득'],['legend','LEGEND']].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} className={`px-3 py-1.5 rounded-full text-[10px] font-semibold ${filter===k?'bg-brand-600 text-white':'bg-gray-100 text-gray-500'}`}>{l}</button>)}</div>
         </div>
         <div className="p-3 grid grid-cols-2 gap-2 overflow-y-auto max-h-[70vh]">
@@ -3728,6 +3464,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [resetMonthOpen,setResetMonthOpen]=useState(false);
   const [resetPhrase,setResetPhrase]=useState('');
   const [resetBusy,setResetBusy]=useState(false);
+  const [ledgerRevision,setLedgerRevision]=useState(0);
+  useEffect(()=>{const refresh=()=>setLedgerRevision(v=>v+1);window.addEventListener('sales-data-changed',refresh);return()=>window.removeEventListener('sales-data-changed',refresh)},[]);
   const [careNavIntent,setCareNavIntent]=useState(null);
   const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
   useEffect(() => {
@@ -3739,7 +3477,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       const to = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
 
       const [expenseRes,spotRes]=await Promise.all([
-        supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').eq('user_id',viewedUserId).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
+        supabase.from('sales_expenses').select('expense_date,customer_name,category,amount,memo').is('voided_at',null).eq('user_id',viewedUserId).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
         supabase.from('spot_claims').select('claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',viewedUserId).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date')
       ]);
       if(!alive)return;
@@ -3756,7 +3494,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
       setLedgerReady(true);
     })().catch(()=>{if(alive)setLedgerError(true)});
     return()=>{alive=false};
-  }, [viewedUserId, month, dailyDays, tab]);
+  }, [viewedUserId, month, dailyDays, tab, ledgerRevision]);
 
   // v21.28: '승인 대기'는 실제 승인 대상(스팟/특판 예외금액)이 있을 때만 표시
   useEffect(()=>{
@@ -3869,7 +3607,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           </div>
 
           {employeeHomeMode==='personal' ? <>
-            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} currentEmp={currentEmp}
+            <GamificationHub dailyDays={dailyDays} month={month} personalGoals={personalGoals} mergedDraft={mergedDraft} pay={pay} competitionRows={competitionRows} userId={viewedUserId} authUserId={authUser?.id} currentEmp={currentEmp}
               currentAmount={ledgerReady?displayPay.current:null}
               onOpenPay={()=>{setPayDialogTab('forecast');setShowClosingAmount(true)}} onGoInput={()=>setTab('daily')} />
             <TodayWorkCard userId={viewedUserId} todayInputDone={todayHasInput||todayIsDayOff}
@@ -4877,7 +4615,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
   if(loadError)return <div className="bg-white rounded-xl border border-red-100 p-4"><div className="text-sm font-bold text-red-500">고객 약속을 불러오지 못했어요.</div><div className="text-xs text-red-400 mt-1">{loadError}</div></div>;
   return <div className="space-y-3">
     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-      {[['오늘',todayTasks.length],['7일 내',next7.length],['기한초과',overdue.length],['기한 내 완료',`${rate}%`],['고객 거절',selectedMonthTasks.filter(t=>t.status==='cancelled').length]].map(([l,v])=>
+      {[['오늘',todayTasks.length],['7일 내',next7.length],['기한초과',overdue.length],['기한 내 완료',`${rate}%`],['취소',selectedMonthTasks.filter(t=>t.status==='cancelled').length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center"><div className={`text-lg font-bold ${l==='기한초과'&&Number(v)>0?'text-red-600':'text-gray-900'}`}>{v}</div><div className="text-[10px] text-gray-400">{l}</div></div>)}
     </div>
     {compact?<button onClick={onOpen} className="w-full bg-white rounded-xl border border-gray-100 p-4 flex justify-between text-left"><div><div className="text-sm font-bold">고객 약속 관리</div><div className="text-xs text-gray-400 mt-1">직원별 진행단계와 기한초과 내역을 확인해요.</div></div><span className="text-xs font-semibold text-brand-600">상세 ›</span></button>:<>
@@ -4894,8 +4632,8 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
         <select value={category} onChange={e=>setCategory(e.target.value)} className="border rounded-lg px-2.5 py-2 text-xs"><option value="all">전체 카테고리</option>{['제휴카드','수납지원','변경','케이스 및 기타'].map(x=><option key={x} value={x}>{x}</option>)}</select>
         <button onClick={()=>{setQuery('');setBranch('all');setEmployeeId('all');setCategory('all');setFilter('todo')}} className="rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">필터 초기화</button>
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">{[['todo','할 일'],['today','오늘'],['overdue','경과'],['upcoming','전체 예정'],['done','완료'],['cancelled','고객 거절']].map(([key,label])=><button key={key} onClick={()=>setFilter(key)} className={`py-2 rounded-lg text-[10px] font-semibold ${filter===key?'bg-brand-600 text-white':'bg-gray-50 text-gray-500'}`}>{label}</button>)}</div>
-      <div className="text-[10px] text-gray-400">완료·고객 거절은 {monthLabel(selectedMonth)} 기준이며, 진행 중 약속은 월과 관계없이 놓치지 않도록 표시해요.</div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">{[['todo','할 일'],['today','오늘'],['overdue','경과'],['upcoming','전체 예정'],['done','완료'],['cancelled','취소']].map(([key,label])=><button key={key} onClick={()=>setFilter(key)} className={`py-2 rounded-lg text-[10px] font-semibold ${filter===key?'bg-brand-600 text-white':'bg-gray-50 text-gray-500'}`}>{label}</button>)}</div>
+      <div className="text-[10px] text-gray-400">완료·취소는 {monthLabel(selectedMonth)} 기준이며, 진행 중 약속은 월과 관계없이 놓치지 않도록 표시해요.</div>
     </div>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b flex justify-between gap-3"><div><div className="text-sm font-bold">고객 약속 상세</div><div className="text-xs text-gray-400">관리 범위의 직원과 고객 진행상태를 함께 확인해요.</div></div><div className="text-xs font-bold text-brand-600">{displayRows.length}건</div></div>
@@ -4903,7 +4641,7 @@ function AdminCustomerCareOverview({ employees, month, initialFilter='todo', com
         {displayRows.map(({task:t,tasks:groupTasks,payment})=>{
           const emp=employeeMap[t.user_id], customer=customerMap[t.customer_id];
           const taskCategory=careTaskCategory(t),completedCount=groupTasks.filter(x=>x.status==='completed').length;
-          const statusLabel=t.status==='completed'?'완료':t.status==='cancelled'?'고객 거절':t.due_date<today?`${Math.round((new Date(`${today}T00:00:00`)-new Date(`${t.due_date}T00:00:00`))/86400000)}일 초과`:t.due_date===today?'오늘':`D-${Math.round((new Date(`${t.due_date}T00:00:00`)-new Date(`${today}T00:00:00`))/86400000)}`;
+          const statusLabel=t.status==='completed'?'완료':t.status==='cancelled'?(t.task_meta?.cancel_reason==='home_cancelled'?'청약 취소':'고객 거절'):t.due_date<today?`${Math.round((new Date(`${today}T00:00:00`)-new Date(`${t.due_date}T00:00:00`))/86400000)}일 초과`:t.due_date===today?'오늘':`D-${Math.round((new Date(`${t.due_date}T00:00:00`)-new Date(`${today}T00:00:00`))/86400000)}`;
           return <div key={payment?`${t.user_id}-${t.customer_id}-${t.source_sale_id||t.base_date}`:t.id} className="px-4 py-3 text-xs"><div className="flex justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap"><span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${categoryTone[taskCategory]}`}>{taskCategory}</span><b className="text-gray-800">{emp?.name||'직원'} · {customer?.customer_name||'고객'}</b></div>
@@ -4990,7 +4728,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
       const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
       const [{data:s},{data:e},{data:r},{data:h}]=await Promise.all([
         supabase.from('spot_claims').select('user_id,final_amount,direct_amount,source_context,spot_policies(amount)').in('user_id',ids).eq('status','approved').gte('claim_date',`${month}-01`).lt('claim_date',to),
-        supabase.from('sales_expenses').select('user_id,amount').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
+        supabase.from('sales_expenses').select('user_id,amount').is('voided_at',null).in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
         supabase.from('settlement_reviews').select('*').eq('month',month).in('user_id',ids),
         supabase.from('head_office_performance').select('user_id,as_of_date,metrics,vas_review,note').eq('month',month).in('user_id',ids)
       ]);
@@ -5016,7 +4754,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
       const [salesRes,spotsRes,expensesRes,homeRes]=await Promise.all([
         supabase.from('customer_sales').select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)').eq('user_id',r.id).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
         supabase.from('spot_claims').select('id,claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',r.id).gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date'),
-        supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
+        supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').is('voided_at',null).eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
         supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,sale_type,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
       ]);
       const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
@@ -5066,7 +4804,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
       const results=await Promise.all([
         supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to).order('work_date'),
         supabase.from('spot_claims').select('*, spot_policies(title,amount)').in('user_id',ids).gte('claim_date',`${month}-01`).lt('claim_date',to),
-        supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
+        supabase.from('sales_expenses').select('*').is('voided_at',null).in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to),
         supabase.from('profiles').select('id,name,store_name').in('id',ids)
       ]);
       const firstError=results.find(x=>x.error)?.error;if(firstError)throw firstError;
@@ -5509,7 +5247,7 @@ function AdminExpenseOverview({month,employees=[],loginBranch='',canSwitchStores
     (async()=>{
       setLoading(true);setLoadError('');
       const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
-      const {data,error}=await supabase.from('sales_expenses').select('*').in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date',{ascending:false});
+      const {data,error}=await supabase.from('sales_expenses').select('*').is('voided_at',null).in('user_id',ids).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date',{ascending:false});
       if(error){console.error('ADMIN EXPENSE LOAD ERROR',error);setRows([]);setLoadError(friendlyError(error));}
       else setRows(data||[]);
       setLoading(false);

@@ -13,9 +13,9 @@ export default function SalesExpensePanel({ userId, month, onTotal, won, fmtInpu
     if(!userId)return;
     const {data,error}=await supabase.from('sales_expenses').select('*').eq('user_id',userId).gte('expense_date',`${month}-01`).lt('expense_date',(()=>{const [y,m]=month.split('-').map(Number);const d=new Date(y,m,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`})()).order('expense_date',{ascending:false});
     if(error){showAppToast(friendlyError(error),{tone:'error',title:'비용 조회 실패'});return;}
-    const rows=data||[];setItems(rows);onTotal?.(rows.reduce((s,x)=>s+Number(x.amount||0),0));
+    const rows=data||[];setItems(rows);onTotal?.(rows.reduce((s,x)=>s+(x.voided_at?0:Number(x.amount||0)),0));
   },[userId,month,onTotal]);
-  useEffect(()=>{load()},[load]);
+  useEffect(()=>{load();window.addEventListener('sales-data-changed',load);return()=>window.removeEventListener('sales-data-changed',load)},[load]);
   useEffect(()=>setForm(f=>({...f,expense_date:`${month}-${String(Math.min(new Date().getDate(),new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate())).padStart(2,'0')}`})),[month]);
   const add=async()=>{
     if(writing.current)return;
@@ -29,7 +29,7 @@ export default function SalesExpensePanel({ userId, month, onTotal, won, fmtInpu
     }catch(error){showAppToast(friendlyError(error),{tone:'error',title:'비용 등록 실패'});}finally{writing.current=false;setBusy(false);}
   };
   const remove=async(id)=>{if(!await showAppConfirm({title:'영업비용을 삭제할까요?',message:'삭제하면 이번 달 비용 합계에서도 즉시 빠집니다.',confirmLabel:'비용 삭제',tone:'danger'}))return;try{await deleteExpense(supabase,id,userId);showAppToast('영업비용을 삭제했어요.');await load();}catch(error){showAppToast(friendlyError(error),{tone:'error',title:'비용 삭제 실패'});}};
-  const total=items.reduce((s,x)=>s+Number(x.amount||0),0);
+  const total=items.reduce((s,x)=>s+(x.voided_at?0:Number(x.amount||0)),0);
   return <div className="surface-card overflow-hidden">
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex justify-between items-center text-left">
       <div><div className="text-sm font-bold text-gray-800">영업비용</div><div className="text-xs text-gray-400 mt-0.5">이번 달 {won(total)}</div></div>
@@ -45,7 +45,7 @@ export default function SalesExpensePanel({ userId, month, onTotal, won, fmtInpu
       <input placeholder="메모 (선택)" value={form.memo} onChange={e=>setForm({...form,memo:e.target.value})} className="w-full border rounded-lg px-2 py-2 text-xs"/>
       <button disabled={busy} onClick={add} className="w-full py-2 rounded-lg bg-brand-600 text-white text-xs font-bold">{busy?'저장 중…':'비용 등록'}</button>
       <div className="divide-y">
-        {items.slice(0,20).map(x=><div key={x.id} className="py-3 flex flex-wrap justify-between gap-2 text-xs"><div><b>{x.category}</b> · {x.customer_name||'일반'}<div className="text-[10px] text-gray-400">{x.expense_date}{x.memo?` · ${x.memo}`:''}</div></div><div className="flex items-center gap-2"><b>{won(x.amount)}</b><button onClick={()=>remove(x.id)} className="text-gray-300">삭제</button></div></div>)}
+        {items.slice(0,20).map(x=><div key={x.id} className="py-3 flex flex-wrap justify-between gap-2 text-xs"><div><b>{x.category}</b> · {x.customer_name||'일반'}<div className="text-[10px] text-gray-400">{x.expense_date}{x.memo?` · ${x.memo}`:''}</div></div><div className="flex items-center gap-2"><b className={x.voided_at?'text-gray-400':''}>{x.voided_at?'정산 제외 · ':''}{won(x.amount)}</b><button onClick={()=>remove(x.id)} className="text-gray-300">삭제</button></div></div>)}
       </div>
     </div>}
   </div>;

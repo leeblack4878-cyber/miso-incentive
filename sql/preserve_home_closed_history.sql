@@ -25,6 +25,7 @@ declare
   v_order_id bigint;
   v_order_ids jsonb := '[]'::jsonb;
   v_history_ids uuid[];
+  v_voided_ids uuid[];
   v_history_count integer;
 begin
   if auth.uid() is null or not (p_user_id = auth.uid() or public.can_write_target(p_user_id)) then
@@ -42,6 +43,9 @@ begin
     get diagnostics v_history_count=row_count;
     if v_history_count<>coalesce(cardinality(v_history_ids),0) then raise exception 'HOME_HISTORY_MISMATCH'; end if;
     delete from public.customer_tasks where user_id = p_user_id and source_sale_id = any(p_replace_sale_ids);
+    perform 1 from public.sales_expenses where user_id=p_user_id and source_sale_id=any(p_replace_sale_ids) order by id for update;
+    select array_agg(id) into v_voided_ids from public.sales_expenses where user_id=p_user_id and source_sale_id=any(p_replace_sale_ids) and voided_at is not null;
+    update public.sales_expenses set source_sale_id=null where user_id=p_user_id and id=any(v_voided_ids);
     delete from public.sales_expenses where user_id = p_user_id and source_sale_id = any(p_replace_sale_ids);
     delete from public.customer_sales where user_id = p_user_id and id = any(p_replace_sale_ids);
     get diagnostics v_sale_count = row_count;
@@ -70,6 +74,8 @@ begin
   update public.customer_tasks set source_sale_id=(p_sales->0->>'id')::uuid,customer_id=(p_sales->0->>'customer_id')::uuid where user_id=p_user_id and id=any(v_history_ids);
   get diagnostics v_history_count=row_count;
   if v_history_count<>coalesce(cardinality(v_history_ids),0) then raise exception 'HOME_HISTORY_MISMATCH'; end if;
+
+  update public.sales_expenses set source_sale_id=(p_sales->0->>'id')::uuid where user_id=p_user_id and id=any(v_voided_ids);
 
   if jsonb_array_length(coalesce(p_tasks, '[]'::jsonb)) > 0 then
     insert into public.customer_tasks(user_id,customer_id,source_sale_id,task_type,title,base_date,due_date,status,task_meta)

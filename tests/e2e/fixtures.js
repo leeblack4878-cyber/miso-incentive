@@ -53,7 +53,9 @@ export const test = base.extend({
       const existing=await snapshot(admin,id);
       for(const rows of Object.values(existing)) expect(rows,'Dedicated account must have no existing business data').toHaveLength(0);
       for(const table of ['customers','monthly_status']) expect(await result(admin.from(table).select('id').eq('user_id',id))).toHaveLength(0);
-      actors.push({id,client,credentials,profile});
+      const achievements=await result(admin.from('user_achievements').select('*').eq('user_id',id));
+      const titles=await result(admin.from('user_titles').select('*').eq('user_id',id));
+      actors.push({id,client,credentials,profile,achievements,titles});
     }
     expect(actors[0].id).not.toBe(actors[1].id);
     for (const actor of actors) {
@@ -78,6 +80,10 @@ export const test = base.extend({
       for(const actor of actors) {
         for(const table of ['customer_tasks','sales_expenses','customer_sales','home_orders','daily_records','monthly_status','customers'])
           await result(admin.from(table).delete().eq('user_id',actor.id));
+        await result(admin.from('user_titles').delete().eq('user_id',actor.id));
+        await result(admin.from('user_achievements').delete().eq('user_id',actor.id));
+        if(actor.achievements.length)await result(admin.from('user_achievements').insert(actor.achievements));
+        if(actor.titles.length)await result(admin.from('user_titles').insert(actor.titles));
         const after=await snapshot(admin,actor.id);
         for(const rows of Object.values(after)) expect(rows,'Fixture cleanup must succeed').toHaveLength(0);
         const profile=await result(admin.from('profiles').select('id,name,role,position,active,status,store_name,store_scope').eq('id',actor.id).single());
