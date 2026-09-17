@@ -92,6 +92,12 @@ export const test = base.extend({
 
 export async function openEmployee(page, world) {
   await page.clock.setFixedTime(new Date(`${date}T03:00:00Z`));
+  await page.goto('/');
+  await page.locator('input[type=email]').fill(world.employee.credentials.email);
+  await page.locator('input[type=password]').fill(world.employee.credentials.password);
+  await page.getByRole('button',{name:'로그인',exact:true}).last().click();
+  await page.getByRole('button',{name:'확인하고 시작하기',exact:true}).click();
+  // The onboarding overlay is above badges; dismiss it before enabling badge handling.
   await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),async locator=>{
     try { await locator.click({timeout:2000}); }
     catch(error) {
@@ -100,11 +106,6 @@ export async function openEmployee(page, world) {
       if(await locator.isVisible())throw error;
     }
   });
-  await page.goto('/');
-  await page.locator('input[type=email]').fill(world.employee.credentials.email);
-  await page.locator('input[type=password]').fill(world.employee.credentials.password);
-  await page.getByRole('button',{name:'로그인',exact:true}).last().click();
-  await page.getByRole('button',{name:'확인하고 시작하기',exact:true}).click();
   await page.getByRole('button',{name:'실적입력',exact:true}).click();
   await page.getByTestId('sale-day-16').click();
 }
