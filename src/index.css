@@ -93,3 +93,17 @@ input, select, textarea { accent-color: var(--app-accent); }
 .today-work-row:hover { background: #f2f4f6; border-radius: 12px; }
 .today-work-row .work-label { flex: 1; color: #4e5968; font-size: 14px; }
 .today-work-row .work-count { font-size: 17px; font-weight: 650; color: #191f28; }
+
+/* Shared personal/store cards: slightly tighter padding, unchanged value size. */
+.performance-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.performance-tile { min-width: 0; text-align: center; border-radius: 16px; background: #f2f4f6; padding: 10px 8px; }
+.performance-tile > :first-child { min-height: 20px; display: flex; align-items: center; justify-content: center; }
+.performance-dialog { width: calc(100% - 24px); max-width: 520px; max-height: 86dvh; padding: 0; border: 0; border-radius: 22px; color: #191f28; overflow-y: auto; overscroll-behavior: contain; }
+.performance-dialog::backdrop { background: rgb(25 31 40 / .4); }
+.performance-dialog-header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: white; padding: 16px; border-bottom: 1px solid #f2f4f6; }
+.performance-dialog-header > button { flex-shrink: 0; }
+.performance-detail { padding: 16px; border-radius: 16px; background: #f8f9fb; }
+.performance-detail-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px 12px; margin-top: 14px; }
+.performance-detail-grid > div { min-width: 0; overflow-wrap: anywhere; }
+.performance-detail-grid dt { color: #6b7684; font-size: 12px; }
+.performance-detail-grid dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }

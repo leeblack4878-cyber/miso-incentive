@@ -1,3 +1,4 @@
+import PerformanceCard from './PerformanceCard';
 import React from 'react';
 import {emptyDraft} from '../viewShared';
 import {DEFAULT_KPI_ITEMS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, fmtCount, monthKeyOf, monthLabel, daysInMonth, normalizeDay, applyDailyToDraft, hsCount} from '../appShared';
@@ -233,7 +234,7 @@ function MonthlyGoalCard({ month, mergedDraft, pay, goals, onSave, saving }) {
   );
 }
 
-function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month, config, onSaveGoals, goalSaving }) {
+function MyMonthlyPerformanceCard({ scopeRows=[], draft, pay, personalGoals, dailyDays, month, config, onSaveGoals, goalSaving }) {
   const [goalEditing,setGoalEditing]=useState(false);
   const [goalValues,setGoalValues]=useState(personalGoals||{});
   useEffect(()=>setGoalValues(personalGoals||{}),[personalGoals,month]);
@@ -274,7 +275,6 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
     const value=Number(m.value||0)*forecastFactor;
     return m.unit==='count'?Math.round(value):value;
   };
-  const missingGoalCount=metrics.filter(m=>goalFor(m)<=0).length;
 
   const renderMetricValue=(m,value)=>{
     if(m.unit==='won') return won(Math.round(value));
@@ -328,39 +328,15 @@ function MyMonthlyPerformanceCard({ draft, pay, personalGoals, dailyDays, month,
   const detailValue=(r)=>r.unit==='won'?won(r.value):r.unit==='point'?`${fmtNum(Number(r.value),1)}P`:`${fmtCount(r.value)}건`;
 
   return <>
-    <div className="surface-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-50">
-        <div className="flex items-start justify-between gap-2">
-          <div><div className="text-xs text-gray-400">{monthLabel(month)}</div><div className="text-sm font-bold text-gray-900 mt-0.5">이번 달 목표 현황</div></div>
-          <button onClick={()=>setGoalEditing(v=>!v)} className="text-[10px] font-semibold text-brand-600">{goalEditing?'닫기':'목표 설정'}</button>
-        </div>
-        <div className="text-[10px] text-gray-400 mt-1">실적을 누르면 날짜별 내역을 확인할 수 있어요.</div>
-        {missingGoalCount>0&&!goalEditing&&<button type="button" onClick={()=>setGoalEditing(true)} className="w-full mt-2 rounded-lg bg-gray-50 px-2.5 py-2 text-left text-xs font-medium text-gray-600">미설정 목표 {missingGoalCount}개 · 목표 설정 ›</button>}
+    <PerformanceCard month={month} title="이번 달 실적" scopeLabel="개인" metrics={metrics.map(m=>({...m,target:goalFor(m),forecast:forecastFor(m)}))}
+      scopeRows={scopeRows} config={config} testPrefix="personal" onMetricClick={setDetailMetric}
+      goalEditor={<div><button type="button" onClick={()=>setGoalEditing(v=>!v)} className="text-sm font-semibold text-brand-700">{goalEditing?'목표 설정 닫기':'목표 설정'}</button>
         {goalEditing&&<div className="mt-3 p-3 bg-gray-50 rounded-xl space-y-2">
           {metrics.map(m=><div key={m.key} className="flex items-center gap-2"><span className="text-[10px] text-gray-500 w-24">{m.label}</span><input type="number" value={goalValues[m.goalKey]??''} onChange={e=>setGoalValues(v=>({...v,[m.goalKey]:e.target.value}))} placeholder="미설정" className="min-w-0 flex-1 px-2 py-1.5 rounded-lg border border-gray-200 text-xs"/><span className="text-[9px] text-gray-400">{m.unit==='won'?'원':m.unit==='point'?'P':'건'}</span></div>)}
           <button disabled={goalSaving} onClick={async()=>{const ok=await onSaveGoals?.(goalValues);if(ok)setGoalEditing(false)}} className="w-full mt-1 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold disabled:opacity-50">{goalSaving?'저장 중':'목표 저장'}</button>
         </div>}
-      </div>
-      <div className="px-3 py-2">
-        <div className="monthly-metric-header grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 px-2 pb-2 text-[9px] text-gray-400 text-right">
-          <span className="text-left">항목</span><span>목표</span><span>실적</span><span>진척도</span><span>예상 마감</span>
-        </div>
-        <div className="divide-y divide-gray-100">
-          {metrics.map(m=>{
-            const goal=goalFor(m), forecast=forecastFor(m);
-            const pct=goal>0?Math.min(999,Math.round(Number(m.value||0)/goal*100)):null;
-            const forecastHit=goal>0&&forecast>=goal;
-            return <div key={m.key} data-money={m.unit==='won'} className="monthly-metric-row grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
-              <button type="button" onClick={()=>setDetailMetric(m)} className="text-left font-semibold text-gray-700 break-words">{m.label}</button>
-              {goal>0?<span className="text-gray-500 whitespace-nowrap">{renderMetricValue(m,goal)}</span>:<button type="button" onClick={()=>setGoalEditing(true)} aria-label={`${m.label} 목표 설정`} className="justify-self-end text-gray-400 px-2">—</button>}
-              <button type="button" onClick={()=>setDetailMetric(m)} className="font-bold text-gray-900 whitespace-nowrap">{renderMetricValue(m,m.value)}</button>
-              <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
-              <span className={`font-bold whitespace-nowrap ${goal>0?(forecastHit?'text-emerald-600':'text-red-500'):'text-brand-600'}`}>{renderMetricValue(m,forecast)}</span>
-            </div>
-          })}
-        </div>
-      </div>
-    </div>
+      </div>}
+    />
     {detailMetric&&<div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4" onClick={()=>setDetailMetric(null)}>
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl max-h-[82vh] overflow-hidden" onClick={e=>e.stopPropagation()}>
         <div className="px-5 py-4 border-b flex justify-between gap-3 items-start">

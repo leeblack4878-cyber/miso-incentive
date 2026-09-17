@@ -25,7 +25,7 @@ for(const width of [320,390,768])test(`${width}px 직원 홈·고객관리·평�
   if(tab==='평가')await expect(page.getByRole('button',{name:'개인 커리어 등급',exact:true})).toBeVisible();
   if(tab==='고객관리')await expect(page.getByRole('button',{name:'완료·취소',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tab} horizontal overflow`).toBe(true);
-  if(tab==='홈')expect(await page.locator('.monthly-metric-row').evaluateAll(rows=>rows.every(row=>row.scrollWidth<=row.clientWidth))).toBe(true);
+  if(tab==='홈'){await expect(page.locator('.performance-tile')).toHaveCount(10);expect(await page.locator('.performance-tile').evaluateAll(rows=>rows.every(row=>row.scrollWidth<=row.clientWidth))).toBe(true);}
   if(width===390)await page.screenshot({path:info.outputPath(`${tab}.png`),fullPage:true});
  }
  expect(errors).toEqual([]);

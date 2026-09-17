@@ -295,11 +295,13 @@ test('취소된 고객 약속은 직원 홈의 오늘·기한경과 건수에서
   assert.match(source, /window\.addEventListener\('customer-tasks-changed',refresh\)/);
 });
 
-test('월 목표 현황은 기존 핵심지표의 목표 실적 진척도 예상마감을 한 줄로 표시한다', async () => {
+test('월 실적은 공통 카드와 진척도 상세에서 기존 핵심지표를 유지한다', async () => {
   const source = await readAppSource();
-  assert.match(source, /<span>목표<\/span><span>실적<\/span><span>진척도<\/span><span>예상 마감<\/span>/);
+  const card=await readFile(new URL('../src/components/PerformanceCard.jsx',import.meta.url),'utf8');
+  for(const label of ['목표','실적','달성률','예상 마감','전월 대비'])assert.ok(card.includes(`<dt>${label}</dt>`));
+  assert.match(source, /<PerformanceCard/);
   for (const label of ['HS','SIM MNP','2ND','생산성','홈','프리','스홈','소노','맞춤제안 매출액','업셀건']) assert.match(source, new RegExp(`label:'${label}'`));
-  assert.match(source, />입력 필요<\/button>/);
+  assert.match(card, /진척도 상세보기/);
 });
 
 test('관리자 홈은 처리할 업무를 실제 관리 메뉴에 연결한다', async () => {
@@ -618,7 +620,7 @@ test('특가 판매 미리보기는 선택한 날짜를 정책 계산에 전달�
 test('월말 예상에서 건당 지급 수량은 정수 반올림하고 포인트와 금액은 소수를 유지한다', async () => {
   const source = await readAppSource();
   assert.match(source, /m\.unit==='count'\?Math\.round\(value\):value/);
-  assert.match(source, /m\.unit==='count'\?Math\.round\(rawForecast\):rawForecast/);
+  assert.match(source, /m\.unit==='count'\?Math\.round\(forecast\):forecast/);
   assert.match(source, /forecastCompany=Object\.fromEntries[\s\S]*Math\.round\(Number\(value\|\|0\)\*forecastFactor\)/);
   assert.match(source, /forecastPlan115Count=Math\.round/);
   assert.match(source, /key==='productivity'\|\|key==='tailoredAmount'\?value:Math\.round\(value\)/);

@@ -1,3 +1,4 @@
+import PerformanceCard from './components/PerformanceCard';
 import { resolveDashboardStore, performanceForecastFactor } from './dashboardScope';
 import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
 import { payDisplay } from './payDisplay';
@@ -1728,42 +1729,29 @@ function MonthlyPerformanceRankingCard({ rows, userId, userName='', userBranch='
   </div>;
 }
 
-function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, userName='', canEditGoals=false, onOpenGoals, showRanking=true }) {
+function StoreHomeOverview({ config, rows, branches=[], scopeLabel='', month, userId, userName='', canEditGoals=false, onOpenGoals, showRanking=true }) {
   const scopedBranches=[...new Set((branches||[]).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))];
   const members=(rows||[]).filter(r=>scopedBranches.includes(r.branch));
   const finalPerformances=useFinalStorePerformance(month);
-  const [savedGoals,setSavedGoals]=useState({});
-  const branchKey=scopedBranches.join('|');
-  useEffect(()=>{
-    let alive=true;
-    if(!scopedBranches.length){setSavedGoals({});return()=>{alive=false};}
-    supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',scopedBranches)
-      .then(({data})=>{if(alive)setSavedGoals(Object.fromEntries((data||[]).map(goal=>[goal.store_name,{...(goal.company_goals||{}),...(goal.challenge_goals||{})}])))});
-    return()=>{alive=false};
-  },[branchKey,month]); // eslint-disable-line react-hooks/exhaustive-deps
   if(!scopedBranches.length || !members.length)return <div className="bg-white rounded-2xl border border-gray-100 p-4 text-sm text-gray-400">현재 선택 범위의 매장 실적을 불러올 수 없어요.</div>;
 
   const sum=(fn)=>members.reduce((a,r)=>a+Number(fn(r)||0),0);
-  const goal=scopedBranches.reduce((total,branch)=>{
-    const branchGoal={...companyGoalDefaults(branch),...(savedGoals[branch]||{})};
-    Object.entries(branchGoal).forEach(([key,value])=>{total[key]=Number(total[key]||0)+Number(value||0)});
-    return total;
-  },{});
-  const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/Math.max(1,new Date().getDate()):1;
+  const forecastFactor=performanceForecastFactor(month);
 
   const inputMetrics=[
-    {key:'hs',label:'HS',unit:'count',current:sum(r=>hsCount(r.draft)),target:Number(goal.hs||0)},
-    {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.simMnp||0)},
-    {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.second||0)},
-    {key:'productivity',label:'생산성',unit:'point',current:sum(r=>r.pay?.kpiScore||0),target:Number(goal.productivity||goal.kpi||0)},
-    {key:'home',label:'홈',unit:'count',current:sum(r=>completedHomeCount(r.draft)),target:Number(goal.home||0)},
-    {key:'free',label:'프리',unit:'count',current:sum(r=>r.draft?.homeFlat?.tvFree||0),target:Number(goal.tvFree||goal.free||0)},
-    {key:'smart',label:'스홈',unit:'count',current:sum(r=>r.draft?.homeFlat?.smartHome||0),target:Number(goal.smartHome||goal.smart||0)},
-    {key:'sono',label:'소노',unit:'count',current:sum(r=>Object.values(r.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0)),target:Number(goal.sono||0)},
-    {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',current:sum(r=>r.draft?.tailoredAmount||0),target:Number(goal.tailoredAmount||0)},
-    {key:'tailored',label:'업셀건',unit:'count',current:sum(r=>r.draft?.tailoredCount||0),target:Number(goal.tailoredCount||goal.tailored||0)},
+    {key:'hs',label:'HS',unit:'count',current:sum(r=>hsCount(r.draft))},
+    {key:'simMnp',label:'SIM MNP',unit:'count',current:sum(r=>(r.draft?.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0))},
+    {key:'second',label:'2ND',unit:'count',current:sum(r=>(r.draft?.matrix?.[7]||[]).reduce((s,v)=>s+Number(v||0),0)+Object.values(r.draft?.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0))},
+    {key:'productivity',label:'생산성',unit:'point',current:sum(r=>r.pay?.kpiScore||0)},
+    {key:'home',label:'홈',unit:'count',current:sum(r=>completedHomeCount(r.draft))},
+    {key:'free',label:'프리',unit:'count',current:sum(r=>r.draft?.homeFlat?.tvFree||0)},
+    {key:'smart',label:'스홈',unit:'count',current:sum(r=>r.draft?.homeFlat?.smartHome||0)},
+    {key:'sono',label:'소노',unit:'count',current:sum(r=>Object.values(r.draft?.sono||{}).reduce((s,v)=>s+Number(v||0),0))},
+    {key:'tailoredAmount',label:'맞춤제안 매출액',unit:'won',current:sum(r=>r.draft?.tailoredAmount||0)},
+    {key:'tailored',label:'업셀건',unit:'count',current:sum(r=>r.draft?.tailoredCount||0)},
   ];
   const metrics=inputMetrics.map(m=>{
+    let forecast=0;
     const current=scopedBranches.reduce((total,branch)=>{
       const branchMembers=members.filter(row=>row.branch===branch);
       const branchMetric=inputMetrics.find(metric=>metric.key===m.key);
@@ -1780,44 +1768,20 @@ function StoreHomeOverview({ rows, branches=[], scopeLabel='', month, userId, us
         if(m.key==='tailored')return sumValue+Number(row.draft?.tailoredCount||0);
         return sumValue+Number(branchMetric?.current||0);
       },0);
-      return total+finalStoreMetric(finalPerformances?.[branch],m.key,inputValue);
+      const final=finalPerformances?.[branch]?.month===month?finalPerformances[branch]:null;
+      const value=finalStoreMetric(final,m.key,inputValue);
+      forecast+=final?value:value*forecastFactor;
+      return total+value;
     },0);
-    return {...m,inputCurrent:m.current,current};
+    return {...m,value:current,forecast:m.unit==='count'?Math.round(forecast):forecast};
   });
 
-  const fmtValue=(m,v)=>{
-    if(m.unit==='won')return won(Math.round(v));
-    if(m.unit==='point')return `${fmtNum(Number(v||0),1)}P`;
-    return `${fmtNum(Number(v||0),Number(v||0)%1?1:0)}건`;
-  };
-
   return <div className="space-y-4">
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-50">
-        <div className="text-xs text-gray-400">📊 {monthLabel(month)}</div>
-        <div className="text-sm font-bold text-gray-900 mt-0.5">{scopeLabel||displayStoreName(scopedBranches[0])} 목표 현황</div>
-        <div className="text-[10px] text-gray-400 mt-1">{scopedBranches.length>1?`${scopedBranches.length}개 매장 누적 실적과 합산 목표입니다.`:'매장 누적 실적과 목표 달성률을 한 번에 확인해요.'}</div>
-      </div>
-
-      <div className="px-3 py-2">
-        <div className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 px-2 pb-2 text-[9px] text-gray-400 text-right"><span className="text-left">항목</span><span>목표</span><span>실적</span><span>진척도</span><span>예상 마감</span></div>
-        <div className="divide-y divide-gray-100">
-        {metrics.map(m=>{
-          const hasGoal=Number(m.target||0)>0;
-          const pct=hasGoal?Math.max(0,Math.round(Number(m.current||0)/Number(m.target||1)*100)):null;
-          const rawForecast=Number(m.current||0)*forecastFactor;
-          const forecast=m.unit==='count'?Math.round(rawForecast):rawForecast,forecastHit=hasGoal&&forecast>=m.target;
-          return <div key={m.key} className="grid grid-cols-[minmax(72px,1.25fr)_minmax(58px,1fr)_minmax(55px,.9fr)_minmax(48px,.8fr)_minmax(66px,1fr)] gap-1 items-center px-2 py-2.5 text-right text-[10px]">
-            <span className="text-left font-semibold text-gray-700 truncate">{m.label}</span>
-            {hasGoal?<span className="text-gray-500 whitespace-nowrap">{fmtValue(m,m.target)}</span>:canEditGoals?<button type="button" onClick={onOpenGoals} className="justify-self-end rounded-md bg-red-50 px-1.5 py-1 text-[8px] font-bold leading-tight text-red-600">입력 필요</button>:<span className="justify-self-end rounded-md bg-gray-100 px-1.5 py-1 text-[8px] font-bold leading-tight text-gray-500">관리자 입력 필요</span>}
-            <span className="font-bold text-gray-900 whitespace-nowrap">{fmtValue(m,m.current)}{Number(m.current)!==Number(m.inputCurrent)&&<span className="block text-[8px] font-normal text-gray-400">입력 {fmtValue(m,m.inputCurrent)}</span>}</span>
-            <span className={`font-bold ${pct===null?'text-gray-300':pct>=100?'text-emerald-600':pct>=80?'text-amber-600':'text-gray-500'}`}>{pct===null?'—':`${pct}%`}</span>
-            <span className={`font-bold whitespace-nowrap ${hasGoal?(forecastHit?'text-emerald-600':'text-red-500'):'text-brand-600'}`}>{fmtValue(m,forecast)}</span>
-          </div>;
-        })}
-        </div>
-      </div>
-    </div>
+    <PerformanceCard month={month} title="이번 달 실적" scopeLabel={`매장 · ${scopeLabel||displayStoreName(scopedBranches[0])}`}
+      metrics={metrics}
+      scopeRows={members} branches={scopedBranches} config={config} mode="store" testPrefix="store" loadStoreGoals
+      onEditGoals={canEditGoals?onOpenGoals:undefined}
+    />
 
     {showRanking&&<MonthlyPerformanceRankingCard
       rows={members}
@@ -3940,7 +3904,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <EmployeeHeadOfficeComparison compact onOpen={()=>setTab('history')} userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
-            <MyMonthlyPerformanceCard draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
+            <MyMonthlyPerformanceCard scopeRows={currentEmp?[currentEmp]:[]} draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <RecognitionRankingHub
               rows={competitionRows}
               month={month}
@@ -3958,10 +3922,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {isSalesManager&&String(selectedStoreScope?.key||'').startsWith('area:')?<>
               <div className="px-1"><div className="text-sm font-bold text-gray-900">상권별 목표 비교</div><div className="text-[11px] text-gray-400 mt-1">상대 상권은 합산 현황만 비교하며 직원·고객 상세는 표시하지 않습니다.</div></div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
-                <StoreHomeOverview rows={storeOverviewRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+                <StoreHomeOverview config={config} rows={storeOverviewRows} branches={SALES_AREA_STORES.ansan} scopeLabel={SALES_AREA_LABELS.ansan} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
+                <StoreHomeOverview config={config} rows={storeOverviewRows} branches={SALES_AREA_STORES.siheung} scopeLabel={SALES_AREA_LABELS.siheung} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''} showRanking={false}/>
               </div>
-            </>:<StoreHomeOverview rows={storeOverviewRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
+            </>:<StoreHomeOverview config={config} rows={storeOverviewRows} branches={selectedStoreScope?.branches||[]} scopeLabel={selectedStoreScope?.label||''} month={month} userId={currentEmp?.id||authUser?.id} userName={currentEmp?.name||authProfile?.name||''}
               showRanking={canViewStoreRanking} canEditGoals={['점장','부점장'].includes(currentEmp?.position)||['admin','super_admin'].includes(authProfile?.role)} onOpenGoals={onOpenStoreGoals} />}
           </>}
         </div>
@@ -5791,38 +5755,11 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             storeKey={dashboardStoreKey} onStoreChange={setDashboardStore}
           />
 
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <div className="flex justify-between items-end gap-3 mb-3">
-              <div>
-                <div className="text-xs text-gray-400">{dashboardLabel}</div>
-                <div className="text-base font-bold text-gray-900">{monthLabel(month)} 핵심 성과</div>
-                <div className="mt-1 text-xs text-gray-500">예상 마감은 현재 실적의 월말 환산값입니다.</div>
-                {dashboardRows.some(r=>finalPerformances[r.branch]?.month===month)&&<div className="text-[9px] font-semibold text-emerald-600 mt-0.5">마감된 매장은 확정 실적 기준</div>}
-              </div>
-              <div className="text-xs text-gray-400">{dashboardEmployees.length}명</div>
-            </div>
-            <div className="space-y-2">
-              {[
-                ADMIN_MAIN_METRICS.slice(0,4),
-                ADMIN_MAIN_METRICS.slice(4,8),
-                ADMIN_MAIN_METRICS.slice(8,10),
-              ].map((metricRow,rowIndex)=>(
-                <div key={rowIndex} className={`admin-metric-grid grid gap-2 ${rowIndex<2?'grid-cols-4':'grid-cols-2'}`}>
-                  {metricRow.map(([key,label,unit])=>{
-                    const value=adminHomeMetricValue(key);
-                    const projected=adminHomeMetricValue(key,true);
-                    return <div key={key} data-testid={`admin-metric-${key}`} className="rounded-xl bg-gray-50 px-3 py-3 min-w-0 text-center">
-                      <div className="text-[11px] text-gray-400 leading-tight min-h-[18px] flex items-center justify-center">{label}</div>
-                      <div className="metric-value text-lg font-bold text-gray-900 mt-1">
-                        {unit==='won' ? won(value) : unit==='point' ? `${Number(value||0).toFixed(1)}P` : `${fmtCount(value)}건`}
-                      </div>
-                      <div className="mt-2 text-xs text-gray-500">예상 마감 <span className="font-semibold text-brand-700">{unit==='won'?won(Math.round(projected)):unit==='point'?`${projected.toFixed(1)}P`:`${fmtCount(Math.round(projected))}건`}</span></div>
-                    </div>
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
+          <PerformanceCard month={month} title={`${monthLabel(month)} 핵심 성과`} scopeLabel={`매장 · ${dashboardLabel}`}
+            metrics={ADMIN_MAIN_METRICS.map(([key,label,unit])=>({key,label,unit,value:adminHomeMetricValue(key),forecast:unit==='count'?Math.round(adminHomeMetricValue(key,true)):adminHomeMetricValue(key,true)}))}
+            scopeRows={dashboardRows} branches={[...new Set(dashboardRows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))]}
+            config={config} mode="admin" testPrefix="admin" loadStoreGoals onEditGoals={()=>setAdminTab('storeGoals')}
+          ><span className="text-xs text-gray-500 shrink-0">{dashboardEmployees.length}명</span></PerformanceCard>
 
           <StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
             rows={dashboardRows}
