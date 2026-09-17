@@ -69,7 +69,7 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
     const completionWorkDate=`${completionMonth}-${completionDay}`;
     let completionDailyRecord=null;
 
-    const {data:supportCredit,error:supportError}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',[String(order.id)]).maybeSingle();
+    const {data:supportCredit,error:supportError}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',JSON.stringify([String(order.id)])).maybeSingle();
     if(supportError)return showLegacyAlert(`지원 판매 조회 실패: ${friendlyError(supportError)}`);
     if (!supportCredit&&order.source_group && order.source_key) {
       if (completionMonth === month) {
@@ -156,7 +156,7 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
     try{
       const supportById={};
       for(const order of selected){
-        const {data,error}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',[String(order.id)]).maybeSingle();
+        const {data,error}=await supabase.from('team_sales_credits').select('id,credited_store').eq('source_type','home').contains('source_refs',JSON.stringify([String(order.id)])).maybeSingle();
         if(error)throw error;
         supportById[String(order.id)]=data||null;
       }
