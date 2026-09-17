@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 import { supabase } from '../supabase';
 import { friendlyError } from '../errorMessages';
@@ -8,6 +8,9 @@ import { showAppConfirm, showLegacyAlert } from '../feedback';
 import { HOME_ORDER_PRODUCTS, notifyStoreManagers, homeNetworkLabel, normalizeDay, fmtCount, fmtShortDate } from "../appShared";
 
 export default function HomeOrderManager({ userId, month, locked, dailyDays, saveDailyDay, onTeamCreditSaved, onHomeOrdersChanged }) {
+  const [cancelTarget,setCancelTarget]=useState(null);
+  const [expenseAction,setExpenseAction]=useState('');
+  const cancelBusy=useRef(false);
   const [orders, setOrders] = useState([]);
   const [product, setProduct] = useState('homeOnly');
   const [customerName, setCustomerName] = useState('');
@@ -47,17 +50,24 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
       setHomeActualCompleteDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
       return;
     }
-    if (!await showAppConfirm({title:'홈 청약을 취소할까요?',message:'취소 건은 실적 요약과 정산 대상에서 제외됩니다.',confirmLabel:'취소 처리',tone:'danger'})) return;
-    const { data:result, error } = await supabase.rpc('set_home_orders_status_atomic',{
-      p_user_id:userId,p_order_ids:[order.id],p_expected_status:order.status,p_new_status:'cancelled'
-    });
-    if (error) return showLegacyAlert(`상태 변경 실패: ${friendlyError(error)}`);
-    if(Number(result?.updated_count)!==1)return showLegacyAlert('상태 변경 결과를 확인하지 못했어요.');
-    const productLabel=HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type;
-    notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
-      message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${productLabel}`,
-      payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}});
-    await load(); await onHomeOrdersChanged?.();
+    setExpenseAction('');setCancelTarget([order]);
+  };
+
+  const confirmCancellation=async()=>{
+    if(locked||cancelBusy.current||!cancelTarget?.length||!expenseAction)return;
+    cancelBusy.current=true;setHomeCareActionSaving(true);
+    try{
+      const {data,error}=await supabase.rpc('cancel_home_orders_atomic',{
+        p_user_id:userId,p_order_ids:cancelTarget.map(o=>o.id),p_expense_action:expenseAction
+      });
+      if(error)throw error;
+      if(Number(data?.updated_count)!==cancelTarget.length)throw new Error('취소 처리 결과를 확인하지 못했어요.');
+      setCancelTarget(null);setHomeBatchTarget(null);setHomeBatchSelected([]);
+      window.dispatchEvent(new Event('customer-tasks-changed'));
+      window.dispatchEvent(new Event('sales-data-changed'));
+      await load();await onHomeOrdersChanged?.();await onTeamCreditSaved?.();
+    }catch(error){showLegacyAlert(`취소 처리 실패: ${friendlyError(error)}`);}
+    finally{cancelBusy.current=false;setHomeCareActionSaving(false);}
   };
 
   const confirmCompletion = async () => {
@@ -135,21 +145,7 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
     const selected=(homeBatchTarget?.items||[]).filter(o=>homeBatchSelected.includes(String(o.id)));
     if(!selected.length || locked) return;
     if(homeBatchTarget.action==='cancelled'){
-      if(!await showAppConfirm({title:`선택한 ${selected.length}개 상품을 취소할까요?`,message:'선택하지 않은 상품은 진행중 상태로 유지됩니다.',confirmLabel:'선택 상품 취소',tone:'danger'}))return;
-      setHomeCareActionSaving(true);
-      try{
-        const {data:result,error}=await supabase.rpc('set_home_orders_status_atomic',{
-          p_user_id:userId,p_order_ids:selected.map(o=>o.id),p_expected_status:'pending',p_new_status:'cancelled'
-        });
-        if(error)throw error;
-        if(Number(result?.updated_count)!==selected.length)throw new Error('묶음 취소 결과가 요청 수와 다릅니다.');
-        selected.forEach(order=>notifyStoreManagers({actorId:userId,type:'home_cancelled',title:'홈 청약 취소',
-          message:`${order.customer_name ? `${order.customer_name} · ` : ''}${homeNetworkLabel(order.network_type)} · ${HOME_ORDER_PRODUCTS.find(p=>p.key===order.product_type)?.label||order.product_type}`,
-          payload:{order_id:order.id,product_type:order.product_type,network_type:order.network_type,status:'cancelled'}}));
-        setHomeBatchTarget(null); setHomeBatchSelected([]); await load(); await onHomeOrdersChanged?.();
-      }catch(e){showLegacyAlert(`묶음 취소 실패: ${friendlyError(e)}`);}
-      finally{setHomeCareActionSaving(false);}
-      return;
+      setExpenseAction('');setCancelTarget(selected);return;
     }
     if(!homeActualCompleteDate)return;
     setHomeCareActionSaving(true);
@@ -265,7 +261,7 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
     const isCompleted=order.status==='completed';
     const msg=isCompleted
       ? '완료 처리를 취소하고 다시 진행중으로 돌릴까요?\n완료일에 반영된 확정 실적도 함께 원복됩니다.'
-      : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?';
+      : '취소 처리를 되돌리고 다시 진행중으로 돌릴까요?\n취소된 약속과 정산 제외 비용은 자동 복원되지 않습니다.';
     if(!await showAppConfirm({title:isCompleted?'완료 처리를 되돌릴까요?':'취소 처리를 되돌릴까요?',message:msg,confirmLabel:'진행중으로 변경'}))return;
 
     setHomeCareActionSaving(true);
@@ -403,6 +399,18 @@ export default function HomeOrderManager({ userId, month, locked, dailyDays, sav
       <div className="text-[11px] text-gray-400 px-1">
         확정 실적은 실제 설치/개통 완료일 기준으로 반영돼요.
       </div>
+      {cancelTarget&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-label="홈 청약 취소" className="w-full max-w-sm rounded-3xl bg-white p-5 max-h-[90vh] overflow-y-auto">
+          <h2 className="text-lg font-bold">홈 청약 {cancelTarget.length}개 취소</h2>
+          <p className="mt-2 text-xs leading-relaxed text-gray-500">선택한 상품의 미완료 약속도 함께 취소됩니다. 완료된 약속은 이력에 남습니다.</p>
+          <fieldset className="mt-4 space-y-2"><legend className="text-sm font-bold mb-2">연결된 비용 처리</legend>
+            <label className="flex items-start gap-2 rounded-xl border p-3 text-xs"><input type="radio" name="expense-action" value="exclude" checked={expenseAction==='exclude'} onChange={()=>setExpenseAction('exclude')}/><span><b>정산에서 제외</b><span className="block mt-1 text-gray-500">지출하지 않았거나 돌려받은 비용. 금액과 취소 이력은 보관합니다.</span></span></label>
+            <label className="flex items-start gap-2 rounded-xl border p-3 text-xs"><input type="radio" name="expense-action" value="keep" checked={expenseAction==='keep'} onChange={()=>setExpenseAction('keep')}/><span><b>실제 지출 비용 유지</b><span className="block mt-1 text-gray-500">이미 지출한 비용은 이번 달 비용 합계에 남습니다.</span></span></label>
+          </fieldset>
+          <p className="mt-3 text-[11px] text-gray-400">청약을 복원해도 취소된 약속과 제외한 비용은 자동 복원되지 않습니다. 필요한 약속·비용은 다시 등록해주세요.</p>
+          <div className="mt-5 grid grid-cols-2 gap-2"><button disabled={homeCareActionSaving} onClick={()=>setCancelTarget(null)} className="rounded-xl bg-gray-100 py-3 text-sm">돌아가기</button><button disabled={!expenseAction||homeCareActionSaving} onClick={confirmCancellation} className="rounded-xl bg-red-500 py-3 text-sm font-bold text-white disabled:opacity-40">{homeCareActionSaving?'처리 중…':'취소 확정'}</button></div>
+        </div>
+      </div>}
       {homeScheduleTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">

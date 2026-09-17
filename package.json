@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:badges && vite build",
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
     "test:e2e": "playwright test",
-    "test:ui": "playwright test --config playwright.ui.config.js"
+    "test:ui": "playwright test --config playwright.ui.config.js",
+    "build:badges": "node scripts/build-badge-calculator.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.55.0",

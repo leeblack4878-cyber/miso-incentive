@@ -176,7 +176,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                </div>
                <div className="shrink-0 flex items-center gap-1.5">{card&&t.status!=='completed'&&t.status!=='cancelled'&&<button onClick={()=>cancelAffiliateCard(t)} className="text-[10px] font-semibold text-red-400 px-1.5 py-1">약속 취소</button>}<span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
                  t.status==='completed'?'bg-emerald-50 text-emerald-600':t.status==='cancelled'?'bg-gray-100 text-gray-500':isOver?'bg-red-50 text-red-600':t.due_date===today?'bg-orange-50 text-orange-600':'bg-brand-50 text-brand-600'
-               }`}>{t.status==='completed'?'완료':t.status==='cancelled'?'고객 거절':dLabel(t.due_date)}</span></div>
+               }`}>{t.status==='completed'?'완료':t.status==='cancelled'?(t.task_meta?.cancel_reason==='home_cancelled'?'청약 취소':'고객 거절'):dLabel(t.due_date)}</span></div>
              </div>
 
              {t.status==='cancelled'?(

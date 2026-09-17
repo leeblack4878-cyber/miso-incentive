@@ -1,0 +1,2 @@
+import { build } from 'esbuild';
+await build({entryPoints:['src/serverBadgeCalculator.js'],outfile:'supabase/functions/sync-badges/calculator.js',bundle:true,format:'esm',platform:'neutral',mainFields:['module','main'],define:{'process.env.NODE_ENV':'"production"'},target:'es2022',minify:true,legalComments:'none',plugins:[{name:'no-browser-client',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'supabase',namespace:'server-stub'}));b.onLoad({filter:/.*/,namespace:'server-stub'},()=>({contents:'export const supabase = null;'}));}}]});

@@ -679,11 +679,11 @@ test('홈 판매는 저장 직후 묶음 취소와 작성 중 이탈 방지를 �
 test('홈 상태 변경 직후 급여의 홈 수수료를 다시 계산한다', async () => {
   const source = await readAppSource();
   const manager = await readFile(new URL('../src/components/HomeOrderManager.jsx',import.meta.url),'utf8');
-  assert.match(source, /onHomeOrdersChanged=\{\(\)=>loadHomePolicies\(month,employees\)\}/);
-  assert.match(manager, /status:'cancelled'[\s\S]*?await load\(\); await onHomeOrdersChanged\?\.\(\)/);
+  assert.match(source, /onHomeOrdersChanged=\{\(\)=>Promise.all\(\[loadHomePolicies\(month,employees\),loadDaily\(month,employees\)\]/);
+  assert.match(manager, /cancel_home_orders_atomic[\s\S]*?await load\(\);await onHomeOrdersChanged\?\.\(\)/);
   assert.match(manager, /status:'completed'[\s\S]*?await load\(\); await onHomeOrdersChanged\?\.\(\)/);
   assert.match(manager, /상태 되돌리기 실패/);
-  assert.ok((manager.match(/onHomeOrdersChanged\?\.\(\)/g)||[]).length>=5);
+  assert.ok((manager.match(/onHomeOrdersChanged\?\.\(\)/g)||[]).length>=4);
 });
 
 test('홈 등록·수정·상태변경·삭제는 원자적 RPC와 변경 건수 검증을 사용한다', async () => {

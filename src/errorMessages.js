@@ -4,6 +4,8 @@ export function friendlyError(err) {
   const msg = (typeof err === 'string' ? err : err?.message || '') || '';
   const lower = msg.toLowerCase();
 
+  if(lower.includes('home_cancel_expense_choice_required'))return '앱을 새로고침한 뒤 취소할 비용의 처리 방법을 선택해주세요.';
+  if(lower.includes('home_cancel_pending_required'))return '완료된 청약은 먼저 완료 처리를 되돌린 뒤 취소해주세요.';
   if (/home_.*(mismatch|not_found)|sale_stale_data/.test(lower)) return '다른 화면에서 내역이 변경됐거나 수정 권한을 확인하지 못했어요. 새로고침 후 다시 확인해주세요.';
   if (/sale_not_found|expense_delete_mismatch|sale_delete_mismatch/.test(lower)) return '이미 삭제됐거나 처리 권한이 없는 내역이에요. 새로고침 후 확인해주세요.';
   if (/sale_daily_not_found|sale_unsupported_source/.test(lower)) return '연결된 실적을 확인하지 못해 삭제하지 않았어요. 관리자에게 문의해주세요.';
