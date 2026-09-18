@@ -6,7 +6,7 @@ const active=(date)=>SEPTEMBER_SPECIAL_SALES.filter(p=>p.startDate<=date&&p.endD
 const extra=(policy,date='2026-09-18',overrides={})=>calculateSeptemberSpecialSale({policyKey:policy.key,saleDate:date,saleType:policy.saleType,planGroup:policy.planRule==='junior'?'junior':policy.planRule==='33plus'?'33plus':'115',strategicPoints:2,...overrides});
 
 test('9/18 공지의 모든 모델·가입구분 추가지급액과 9/17 과거 금액을 검증한다',()=>{
- const expected=[['S26-256/512','MNP',100000],['S26-256/512','기기변경',100000],['S26+ 256/512','MNP',80000],['S26+ 256/512','기기변경',80000],['S26울트라 256/512','MNP',50000],['S26울트라 256/512','기기변경',80000],['S937','MNP',100000],['S937','010 신규',50000],['S937','기기변경',100000],['F776-256/512','MNP',50000],['F776-256/512','기기변경',50000],['F971-256','MNP',100000],['F971-256','기기변경',100000],['F976-256/512','MNP',50000],['F976-256/512','기기변경',50000],['A175-M2','010 신규',50000],['A176','MNP',0]];
+ const expected=[['S26-256/512','MNP',100000],['S26-256/512','기기변경',100000],['S26+ 256/512','MNP',80000],['S26+ 256/512','기기변경',80000],['S26울트라 256/512','MNP',80000],['S26울트라 256/512','기기변경',80000],['S937','MNP',100000],['S937','010 신규',50000],['S937','기기변경',100000],['F776-256/512','MNP',50000],['F776-256/512','기기변경',50000],['F971-256','MNP',100000],['F971-256','기기변경',100000],['F976-256/512','MNP',50000],['F976-256/512','기기변경',50000],['A175-M2','010 신규',50000],['A176','MNP',0]];
  for(const [model,type,amount] of expected){
   const matches=active('2026-09-18').filter(p=>p.model===model&&p.saleType===type);
   assert.equal(matches.length,1,`${model} ${type}`);
@@ -59,10 +59,10 @@ test('홈 주말 1건 10만원, 3건 전체 45만원, 소호 포함 등급과 �
  assert.deepEqual(payouts.map(p=>[p.customer,p.amount]),[['a',250000],['b',150000]]);
  assert.equal(mixed.details.filter(x=>x.item==='9월 18~21일 주말 홈 활성화').reduce((sum,x)=>sum+x.amount,0),400000);
 });
-test('9월 말 설치·청약일·인터넷요금제·TV·상태 조건과 구성품 설치일을 확인한다',()=>{
+test('9월 말 설치·청약일·TV·상태 조건을 확인하며 인터넷 요금제는 선택 없이 인정한다',()=>{
  for(const changes of [{source_work_date:'2026-09-17'},{source_work_date:'2026-09-22'},{actual_install_date:'2026-10-01'},{actual_install_date:'2026-09-17'},{actual_install_date:null},{status:'pending'},{status:'cancelled'},{sale_type:'allinone'},{speed:'internet100'},{tvPlan:'premium'},{tvPlan:'belowPremium'},{network_type:'soho',tvPlan:'belowPremium'}])assert.equal(result(home('x',changes)).weekendPolicy.september18.total,0,JSON.stringify(changes));
- assert.equal(result(home('a'),'other').limitedPolicyPay,0);
- assert.equal(result(home('a'),null).limitedPolicyPay,0);
+ assert.equal(result(home('a'),'other').limitedPolicyPay,100000);
+ assert.equal(result(home('a'),null).limitedPolicyPay,100000);
  const mixedDates=home('a');mixedDates[1].actual_install_date='2026-10-01';
  assert.equal(result(mixedDates).limitedPolicyPay,0);
  assert.equal(result(home('a',{source_work_date:'2026-09-21'})).limitedPolicyPay,100000);
@@ -78,7 +78,7 @@ test('저장된 홈 원본 메타를 참조번호로 복원하고 원본을 변�
  const enriched=enrichHomeOrdersForPolicy(orders,JSON.parse(JSON.stringify(sales)));
  assert.equal(calculateHomePolicyFromOrders(enriched).limitedPolicyPay,100000);
  assert.deepEqual(orders,original);
- assert.equal(calculateHomePolicyFromOrders(enrichHomeOrdersForPolicy(orders,[])).limitedPolicyPay,0);
+ assert.equal(calculateHomePolicyFromOrders(enrichHomeOrdersForPolicy(orders,[])).limitedPolicyPay,100000);
 });
 
 test('정산 상세도 추가지급은 기본 수수료를 유지하며 아이폰/일반 미지급은 요금제·VAS만 제외한다',()=>{
@@ -89,4 +89,20 @@ test('정산 상세도 추가지급은 기본 수수료를 유지하며 아이�
   const rows=specialPolicyLedgerRows({policyId,policyType:'incentive_unpaid',normalVasFee:30000,customerDiscount:300000,replacementAmount:0},90000);
   assert.equal(base+rows.reduce((sum,r)=>sum+r.amount,0),0);
  }
+});
+
+test('S26 울트라 MNP는 9/18부터 8만원이며 기변과 같고 9/17은 5만원이다',()=>{
+ const current=active('2026-09-18').filter(p=>p.model==='S26울트라 256/512');
+ assert.deepEqual(current.map(p=>[p.saleType,extra(p).additionalAmount]),[['MNP',80000],['기기변경',80000]]);
+ const previous=active('2026-09-17').find(p=>p.key==='s26_ultra_mnp');
+ assert.equal(extra(previous,'2026-09-17').additionalAmount,50000);
+ assert.equal(extra(previous,'2026-09-18').eligible,false);
+});
+test('기등록 9/18 1G·방송패스·MNP 홈은 인터넷 요금제 메타 없이도 추가 20만원이다',()=>{
+ const orders=home('existing',{speed:'internet1g',mnp:true,actual_install_date:'2026-09-18'});
+ const pay=calculateHomePolicyFromOrders(orders);
+ assert.equal(pay.weekendPolicy.september18.baseBonus,100000);
+ assert.equal(pay.weekendPolicy.september18.mnpBonus,100000);
+ assert.equal(pay.limitedPolicyPay,200000);
+ assert.equal(pay.details.find(x=>x.item==='9월 18~21일 주말 홈 활성화').amount,200000);
 });

@@ -8,7 +8,7 @@ import { loadHomeBundleChildren } from '../homeBundleEditor';
 import { teamSupportEligibleFor } from '../permissionScopes';
 import PolicyInputNotice from '../components/PolicyInputNotice';
 import { MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName, fmtNum, fmtInputNumber, won } from '../uiDefinitions';
-import { allowedSecondVas, enrichHomeOrdersForPolicy, mergeSaleMetaPreservingLegacy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from '../policyRules';
+import { allowedSecondVas, mergeSaleMetaPreservingLegacy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from '../policyRules';
 import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale, septemberMobileSaleType, september18HomeApplication, calculateSeptemberBundleSale } from '../septemberPolicy';
 
 import { isSeptemberPolicyActive } from '../policyCalendar';
@@ -31,7 +31,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeNetworkType, setHomeNetworkType] = useState('');
   const [homeInternet,setHomeInternet]=useState(false);
-  const [homeInternetPlan,setHomeInternetPlan]=useState('');
   const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
   const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
   const [homeMainTv,setHomeMainTv]=useState(false);
@@ -372,7 +371,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const saleDate=`${month}-${selectedDay}`;
     const [yy,mm]=month.split('-').map(Number),next=new Date(yy,mm,1);
     const monthTo=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-    const [saleRes,homeRes,homeSaleRes]=await Promise.all([
+    const [saleRes,homeRes]=await Promise.all([
       supabase.from('customer_sales')
         .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
         .eq('user_id',currentEmp.id)
@@ -382,18 +381,17 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
         .eq('user_id',currentEmp.id)
         .gte('source_work_date',`${month}-01`)
-        .lt('source_work_date',monthTo),
-      supabase.from('customer_sales').select('source_ref,source_meta').eq('user_id',currentEmp.id).eq('source_type','home_order').gte('sale_date',`${month}-01`).lt('sale_date',monthTo)
+        .lt('source_work_date',monthTo)
     ]);
     if(!saleRes.error)setDaySales(saleRes.data||[]);
-    if(!homeRes.error&&!homeSaleRes.error){
+    if(!homeRes.error){
       setDayHomeOrders((homeRes.data||[]).filter(o=>String(o.source_work_date||'').slice(0,10)===saleDate));
       // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
       // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
-      const previewOrders=enrichHomeOrdersForPolicy(homeRes.data||[],homeSaleRes.data||[]).map(o=>({...o,status:'completed'}));
+      const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
       setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
     }else{
-      console.error('HOME PREVIEW LOAD ERROR',homeRes.error||homeSaleRes.error);
+      console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
       setDayHomeOrders([]);
       setHomePreviewPolicy(null);
     }
@@ -440,7 +438,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setHomeOrderDraft({ unified:true, label:'홈 실적 입력' });
     setHomeCustomerName('');
     setHomeNetworkType('');
-    setHomeInternet(false); setHomeInternetSpeed('');setHomeInternetPlan(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
     setHomeDirectComplete(false);
     setHomeActualCompleteDate('');
     setHomePlannedDate('');
@@ -455,7 +453,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const hasInput=!!(homeOrderDraft?.editing||homeCustomerName.trim()||homeNetworkType||homeInternet||homeMainTv||homeSubTv||homeSmartHome||homeMobileSimul!=='none'||homePlannedDate||homeCustomTitle.trim()||homeExtraPromises.length||homeExpenseOpen);
     if(hasInput&&!await showAppConfirm({title:'홈 입력을 닫을까요?',message:'아직 등록하지 않은 작성 내용은 사라집니다.',confirmLabel:'작성 내용 버리기',tone:'warning'}))return;
     setHomeOrderDraft(null);setEditingHomeSales([]);setLegacyConversion(null);
-    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeInternetPlan('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
+    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
   };
 
   const submitHomeOrder = async () => {
@@ -474,7 +472,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if (homeDirectComplete && !homeActualCompleteDate) return showAppToast('설치완료일을 입력해주세요.',{tone:'error'});
 
     const sourceWorkDate=`${month}-${selectedDay}`;
-    if(september18HomeApplication(sourceWorkDate)&&homeInternet&&homeMainTv&&['500','1g'].includes(homeInternetSpeed)&&!homeInternetPlan)return showAppToast('주말 정책 확인을 위해 인터넷 요금제를 선택해주세요.',{tone:'error'});
     // 실제 판매 구성을 기존 정산 그룹으로 자동 변환
     const products=[];
     if(homeInternet){
@@ -577,7 +574,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           metric_label:product.label,source_type:'home_order',source_ref:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
-            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,internetPlan:homeInternet?homeInternetPlan||null:null,
+            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,internetPlan:homeInternet&&september18HomeApplication(sourceWorkDate)?'premiumSafe':null,
             mainTvPlan:homeMainTv&&isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
             mainTvPlanLevel:homeMainTv?homeMainTvPlan:null,
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
@@ -621,7 +618,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setToast({id:resultId,source:'home',kind:'normal',customerName:customer,label:products.map(p=>p.label).join(' + '),title:activeTeamSupport?'지원 홈 판매 등록 완료':'홈 판매 등록 완료',sub:activeTeamSupport?`${displayStoreName(teamSupportStore)} 팀 실적 전용${homeDirectComplete?'으로 반영했어요':' · 설치완료 후 반영돼요'}`:(homeDirectComplete?'설치완료 실적으로 반영했어요':'설치대기로 등록했어요'),promiseCount:homePromiseRows.length,customerSaleId:primarySaleId,pointDelta:0,teamOnly:activeTeamSupport});
       if(activeTeamSupport)resetTeamSupportSelection();
       setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
-      setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed('');setHomeInternetPlan(''); setHomeMobileSimul('none');
+      setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
       await onHomeOrdersChanged?.();
       setTimeout(loadDaySales,150);
     }catch(e){ showAppToast(friendlyError(e),{tone:'error',title:'홈 상품 등록 실패'}); }
@@ -1029,7 +1026,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setHomeInternet(compatOrders.some(o=>['homeOnly','homeTv','internet100','internet500','internet1g'].includes(o.product_type)));
       const speedFromOrders=compatOrders.some(o=>o.product_type==='internet1g')?'1g':compatOrders.some(o=>o.product_type==='internet500')?'500':compatOrders.some(o=>o.product_type==='internet100')?'100':'';
       setHomeInternetSpeed(meta0.internetSpeed||speedFromOrders||'');
-      setHomeInternetPlan(meta0.internetPlan||'');
       const simulFromOrders=compatOrders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':compatOrders.some(o=>o.product_type==='simulMnp')?'mnp':compatOrders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
       setHomeMobileSimul(meta0.mobileSimul||simulFromOrders||'none');
       setHomeMainTv(compatOrders.some(o=>o.product_type==='homeTv'));
@@ -2231,12 +2227,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="text-xs font-semibold text-gray-600 mb-2">3. 판매 상품 <span className="font-normal text-gray-400">· 상품을 누른 뒤 바로 세부 선택</span></div>
               <div className="space-y-2">
                 <div className={`rounded-xl border p-2.5 ${homeInternet?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
-                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeInternetPlan('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
+                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
                   {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">{l}</button>)}</div>}
-                  {homeInternet&&september18HomeApplication(`${month}-${selectedDay}`)&&<label className="mt-3 block text-xs font-semibold text-gray-700">인터넷 요금제
-                    <select value={homeInternetPlan} onChange={e=>setHomeInternetPlan(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs"><option value="">요금제 선택</option><option value="premiumSafe">프리미엄 안심 보상</option><option value="other">기타 요금제</option></select>
-                    <span className="mt-2 block text-[10px] font-normal leading-relaxed text-gray-500">9/18~9/21 청약·9월 설치 완료: 프리미엄 안심 보상 500MB 이상 + 방송패스(첫 달 유지). 소호는 프리미엄 이상 TV. 조건 충족 1~2건은 가정망 건당 10만원, 3건 이상은 전체 건당 15만원. 소호는 건수만 인정하며 MNP 동시판매 시 가정망 건당 10만원 추가.</span>
-                  </label>}
+                  {homeInternet&&september18HomeApplication(`${month}-${selectedDay}`)&&<div className="mt-2 text-[10px] leading-relaxed text-gray-500">9/18~9/21 청약·9월 설치 완료: 500MB 이상 + 방송패스(첫 달 유지). 소호는 프리미엄 이상 TV. 조건 충족 1~2건은 가정망 건당 10만원, 3건 이상은 전체 건당 15만원. 소호는 건수만 인정하며 MNP 동시판매 시 가정망 건당 10만원 추가.</div>}
                   {homeInternet&&homeInternetSpeed&&<button type="button" onClick={()=>setHomeInternetSpeed('')} className="mt-1 text-[10px] font-semibold text-gray-400">속도 변경</button>}
                 </div>
                 <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
