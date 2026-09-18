@@ -33,7 +33,7 @@ const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
-import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
+import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, specialPolicyLedgerRows, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
 
 
 import { SEPTEMBER_SPECIAL_SALES } from './septemberPolicy';
@@ -980,10 +980,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
       supabase.from('home_orders')
         .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
         .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`),
-      supabase.from('customer_sales').select('source_ref').eq('source_type','home_order').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to),
+      supabase.from('customer_sales').select('source_ref,source_meta').eq('source_type','home_order').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to),
     ]);
     const {data,error}=orderRes;
-    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
+    if(error||saleRes.error){console.error('HOME POLICY LOAD ERROR',error||saleRes.error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
     const linkedRefs=new Set((saleRes.data||[]).map(s=>String(s.source_ref||'')).filter(Boolean));
     const cancelledMap={};
     (data||[]).filter(o=>o.status==='cancelled'&&!linkedRefs.has(String(o.id))&&String(o.source_work_date||'').startsWith(m)).forEach(o=>{
@@ -995,7 +995,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     });
     setCancelledLegacyHomeMap(cancelledMap);
     ids.forEach(id=>{
-      const userOrders=homeOrdersForMonth((data||[]).filter(o=>o.user_id===id),m,'completed');
+      const userOrders=homeOrdersForMonth(enrichHomeOrdersForPolicy((data||[]).filter(o=>o.user_id===id),saleRes.data||[]),m,'completed');
       const completed=userOrders.filter(o=>o.status==='completed');
       mapped[id]=completed.length?calculateHomePolicyEngine(userOrders,config):null;
     });
@@ -3093,8 +3093,10 @@ function SpotAdmin({ authUserId, isFullAdmin, month }) {
 
   const pendingClaims=claims.filter(c=>c.status==='pending'); const doneClaims=claims.filter(c=>c.status!=='pending');
   const septemberLocked=isSeptemberPolicyActive(month);
+  const policyDate=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
+  const activeSpecials=SEPTEMBER_SPECIAL_SALES.filter(p=>p.startDate<=policyDate&&p.endDate>=policyDate);
   return <div className="space-y-3">
-    {septemberLocked&&<div className="rounded-xl border border-brand-100 bg-brand-50 p-4"><div className="text-sm font-bold text-brand-800">9월 정책은 회사 확정본으로 운영돼요</div><div className="mt-1 text-xs text-brand-600">직원·매장 관리자는 스팟이나 특가 정책을 직접 만들거나 수정할 수 없어요. 확정된 특가&지인정책만 판매 입력에서 선택합니다.</div><div className="mt-3 divide-y divide-brand-100 rounded-xl bg-white px-3">{SEPTEMBER_SPECIAL_SALES.map(p=><div key={p.key} className="flex items-center justify-between gap-2 py-2 text-[11px]"><span className="font-semibold text-gray-700">{p.model} · {p.saleType}</span><span className="text-brand-700">기존 정책 +{won(p.additionalAmount)}</span></div>)}</div></div>}
+    {septemberLocked&&<div className="rounded-xl border border-brand-100 bg-brand-50 p-4"><div className="text-sm font-bold text-brand-800">9월 정책은 회사 확정본으로 운영돼요</div><div className="mt-1 text-xs text-brand-600">직원·매장 관리자는 스팟이나 특가 정책을 직접 만들거나 수정할 수 없어요. 확정된 특가&지인정책만 판매 입력에서 선택합니다.</div><div className="mt-3 divide-y divide-brand-100 rounded-xl bg-white px-3">{activeSpecials.map(p=><div key={p.key} className="flex items-center justify-between gap-2 py-2 text-[11px]"><span className="font-semibold text-gray-700">{p.model} · {p.saleType}</span><span className="text-brand-700">{p.policyType==='incentive_unpaid'?`인센미지급 · 고객 할인 ${won(p.customerDiscount)}`:`기존 정책 +${won(p.additionalAmount)}`}</span></div>)}</div></div>}
     {claimLoadError&&<div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-xs">스팟 승인 목록을 불러오지 못했어요: {claimLoadError}</div>}
     <div className="bg-white border rounded-xl overflow-hidden"><div className="px-4 py-3 border-b"><div className="font-bold text-sm">✅ 승인 대기 {pendingClaims.length}건</div><div className="text-xs text-gray-400">대시보드의 스팟 승인 건과 같은 목록이에요.</div></div><div className="divide-y">{pendingClaims.length===0?<div className="py-8 text-center text-xs text-gray-400">현재 승인 대기 스팟이 없어요.</div>:pendingClaims.map(c=>{const x=claimEdits[c.id]||{},direct=!c.policy_id;return <div key={c.id} className="p-4 text-xs"><div className="flex justify-between"><div><b>{c.profiles?.name||'직원'} · {c.profiles?.store_name||''}</b><div className="text-[10px] text-gray-400">{c.claim_date} · {c.customer_name||'고객 없음'} · {direct?'직접 입력':'등록 정책'}</div></div><span className="text-orange-500">확인대기</span></div><div className="space-y-2 mt-3"><input value={x.title||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,title:e.target.value}})} placeholder="정책명" className="w-full border rounded p-2"/><input value={x.amount||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,amount:e.target.value.replace(/\D/g,'')}})} placeholder="최종 승인 금액" className="w-full border rounded p-2"/><input value={x.memo||''} onChange={e=>setClaimEdits({...claimEdits,[c.id]:{...x,memo:e.target.value}})} placeholder="관리자 메모" className="w-full border rounded p-2"/></div><div className="grid grid-cols-2 gap-2 mt-3"><button onClick={()=>decide(c.id,'rejected')} className="py-2 bg-red-50 text-red-500 rounded">반려</button><button onClick={()=>decide(c.id,'approved')} className="py-2 bg-emerald-600 text-white rounded font-bold">승인</button></div></div>})}</div></div>
     {!septemberLocked&&<div className="bg-white border rounded-xl p-4">
@@ -4755,10 +4757,10 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
         supabase.from('customer_sales').select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,customers(customer_name)').eq('user_id',r.id).gte('sale_date',`${month}-01`).lt('sale_date',to).order('sale_date'),
         supabase.from('spot_claims').select('id,claim_date,customer_name,status,source_context,reviewed_title,direct_title,final_amount,direct_amount,spot_policies(title,amount)').eq('user_id',r.id).gte('claim_date',`${month}-01`).lt('claim_date',to).order('claim_date'),
         supabase.from('sales_expenses').select('id,expense_date,customer_name,category,amount,memo').is('voided_at',null).eq('user_id',r.id).gte('expense_date',`${month}-01`).lt('expense_date',to).order('expense_date'),
-        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,sale_type,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
+        supabase.from('home_orders').select('id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,source_group,source_key,status,source_work_date,actual_install_date').eq('user_id',r.id).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`)
       ]);
       const err=salesRes.error||spotsRes.error||expensesRes.error||homeRes.error;if(err)throw err;
-      const recognizedHomes=homeOrdersForMonth(homeRes.data||[],month,'completed');
+      const recognizedHomes=homeOrdersForMonth(enrichHomeOrdersForPolicy(homeRes.data||[],salesRes.data||[]),month,'completed');
       const homeMap=Object.fromEntries(recognizedHomes.map(o=>[String(o.id),o]));
       const detailHomePolicy=calculateHomePolicyEngine(recognizedHomes,config);
       const ledger=[];
@@ -4774,12 +4776,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
           (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'2ND 번들 유치 수수료',amount:Number(it.rate),note:it.label||k});});
           if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고 MNP 결합 수수료',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
           const sp=meta.specialPolicy||{};
-          if(sp.policyId){
-            const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
-            if(matrixRate)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 요금제 수수료 제외',amount:-matrixRate,note:sp.policyTitle||'특판·지인판매'});
-            const vasFee=Number(sp.normalVasFee||0);if(vasFee)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 VAS 수수료 제외',amount:-vasFee,note:sp.policyTitle||'특판·지인판매'});
-            if(repl)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 대체 인센티브',amount:repl,note:sp.policyTitle||'특판·지인판매'});
-          }
+          specialPolicyLedgerRows(sp,matrixRate).forEach(item=>ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',...item}));
         } else if(x.source_type==='home_order'){
           // 홈은 아래에서 고객 묶음 단위 새 정책 계산 결과를 한 번만 표시합니다.
         }
