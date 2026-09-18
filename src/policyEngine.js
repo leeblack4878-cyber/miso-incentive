@@ -173,6 +173,20 @@ function isIncentiveUnpaidPolicy(policy = {}) {
     || policy?.policyTitle === '무료폰 특가' || policy?.title === '무료폰 특가';
 }
 
+// Settlement detail must match the additive/unpaid calculation used for payroll.
+export function specialPolicyLedgerRows(special={},matrixRate=0){
+  if(!special.policyId&&!special.policyType&&!special.policy_type)return [];
+  const additive=(special.policyType||special.policy_type)==='additive',unpaid=isIncentiveUnpaidPolicy(special),rows=[];
+  const note=special.policyTitle||'특가·지인판매';
+  if(!additive){
+    if(matrixRate)rows.push({item:'특가 요금제 수수료 제외',amount:-Number(matrixRate),note});
+    if(Number(special.normalVasFee||0))rows.push({item:'특가 VAS·보험 수수료 제외',amount:-Number(special.normalVasFee),note});
+  }
+  const amount=unpaid?0:Number(special.exceptionStatus==='approved'?special.exceptionApprovedAmount:special.replacementAmount||0);
+  if(amount)rows.push({item:additive?'모델별 추가 인센티브':'특가 대체 인센티브',amount,note});
+  return rows;
+}
+
 export function latestActiveSales(rows = []) {
   const latest = new Map();
   (rows || []).forEach((row, index) => {
@@ -468,7 +482,7 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const homeFlatPay = soloPay + tvFreePay + smartHomePay;
   if (weekendPolicy.homeBonus) details.push({ date: '2026-09-11~14', customer: '개인 누적', type: '한시정책', item: '9월 주말 홈 활성화', amount: weekendPolicy.homeBonus, note: `그레이드 ${weekendPolicy.homeGradeCount}건 · 가정망 지급 ${weekendPolicy.homePaidCount}건 × ${weekendPolicy.homeRate.toLocaleString()}원${weekendPolicy.homeOneGigCount ? ` · 1G ${weekendPolicy.homeOneGigCount}건 × 50,000원` : ''}` });
   if (weekendPolicy.tvFreeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 TV프리 활성화', amount: weekendPolicy.tvFreeBonus, note: `${weekendPolicy.tvFreeCount}건 × ${weekendPolicy.tvFreeRate.toLocaleString()}원` });
-  if(weekendPolicy.september18.total)details.push({date:'2026-09-18~21',customer:'개인 누적',type:'한시정책',item:'9월 18~21일 주말 홈 활성화',amount:weekendPolicy.september18.total,note:`그레이드 ${weekendPolicy.september18.gradeCount}건 · 가정망 ${weekendPolicy.september18.paidCount}건 × ${weekendPolicy.september18.rate.toLocaleString()}원 · MNP 동시판매 ${weekendPolicy.september18.mnpCount}건 × 100,000원`});
+  weekendPolicy.september18.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'9월 18~21일 주말 홈 활성화',note:`그레이드 ${weekendPolicy.september18.gradeCount}건 · 가정망 건당 ${weekendPolicy.september18.rate.toLocaleString()}원${p.amount>weekendPolicy.september18.rate?' · MNP 동시판매 +100,000원':''}`}));
   const limitedPolicyPay = weekendPolicy.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {

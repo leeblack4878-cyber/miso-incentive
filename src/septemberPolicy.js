@@ -137,7 +137,8 @@ export function calculateSeptember18WeekendHomeBonus(bundles=[]){
     &&(!b.orders||b.orders.filter(o=>['internet500','internet1g','homeTv'].includes(o.product_type)).every(o=>o.actual_install_date>=b.date&&o.actual_install_date<='2026-09-30')));
   const paid=eligible.filter(b=>b.networkType==='household'),rate=eligible.length>=3?150000:eligible.length?100000:0;
   const mnpCount=paid.filter(b=>['mnp','usedMnp'].includes(b.simul)).length;
-  return {gradeCount:eligible.length,paidCount:paid.length,rate,baseBonus:paid.length*rate,mnpCount,mnpBonus:mnpCount*100000,total:paid.length*rate+mnpCount*100000};
+  const payouts=paid.map(b=>({date:b.date,customer:b.customer,amount:rate+(['mnp','usedMnp'].includes(b.simul)?100000:0)}));
+  return {gradeCount:eligible.length,paidCount:paid.length,rate,baseBonus:paid.length*rate,mnpCount,mnpBonus:mnpCount*100000,total:paid.length*rate+mnpCount*100000,payouts};
 }
 
 export function calculateSeptemberSono(count, baseRate, achievedRate) {

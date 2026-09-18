@@ -33,7 +33,7 @@ const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
-import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
+import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, specialPolicyLedgerRows, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
 
 
 import { SEPTEMBER_SPECIAL_SALES } from './septemberPolicy';
@@ -4776,12 +4776,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
           (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'2ND 번들 유치 수수료',amount:Number(it.rate),note:it.label||k});});
           if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'중고 MNP 결합 수수료',amount:Number(it.rate),note:it.label||'중고MNP 결합'});}
           const sp=meta.specialPolicy||{};
-          if(sp.policyId){
-            const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
-            if(matrixRate)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 요금제 수수료 제외',amount:-matrixRate,note:sp.policyTitle||'특판·지인판매'});
-            const vasFee=Number(sp.normalVasFee||0);if(vasFee)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 VAS 수수료 제외',amount:-vasFee,note:sp.policyTitle||'특판·지인판매'});
-            if(repl)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'특판 대체 인센티브',amount:repl,note:sp.policyTitle||'특판·지인판매'});
-          }
+          specialPolicyLedgerRows(sp,matrixRate).forEach(item=>ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',...item}));
         } else if(x.source_type==='home_order'){
           // 홈은 아래에서 고객 묶음 단위 새 정책 계산 결과를 한 번만 표시합니다.
         }

@@ -7,7 +7,7 @@ export {
   countSeptemberWeekendSimMnp,
   calculatePayrollSettlement,
   CURRENT_POLICY_VERSION, createPolicySnapshot, resolveSalePolicySnapshot,
-  calculateMobileSale, latestActiveSales, calculateMonthlySaleLedger,
+  calculateMobileSale, specialPolicyLedgerRows, latestActiveSales, calculateMonthlySaleLedger,
   buildHomeBundlesFromOrders, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders, completedHomeCount,
 } from './policyEngine.js';
 

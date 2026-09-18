@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SEPTEMBER_SPECIAL_SALES, SEPTEMBER_MATRIX, SEPTEMBER_VAS, calculateSeptemberSpecialSale, septemberMobileSaleType} from '../src/septemberPolicy.js';
-import {enrichHomeOrdersForPolicy,calculateHomePolicyFromOrders,createPolicySnapshot,calculateMobileSale} from '../src/policyEngine.js';
+import {enrichHomeOrdersForPolicy,calculateHomePolicyFromOrders,createPolicySnapshot,calculateMobileSale,specialPolicyLedgerRows} from '../src/policyEngine.js';
 const active=(date)=>SEPTEMBER_SPECIAL_SALES.filter(p=>p.startDate<=date&&p.endDate>=date);
 const extra=(policy,date='2026-09-18',overrides={})=>calculateSeptemberSpecialSale({policyKey:policy.key,saleDate:date,saleType:policy.saleType,planGroup:policy.planRule==='junior'?'junior':policy.planRule==='33plus'?'33plus':'115',strategicPoints:2,...overrides});
 
@@ -52,10 +52,12 @@ test('홈 주말 1건 10만원, 3건 전체 45만원, 소호 포함 등급과 �
  assert.equal(result([...home('a'),...home('b')]).limitedPolicyPay,200000);
  assert.equal(result([...home('a'),...home('b'),...home('c')]).limitedPolicyPay,450000);
  const mixed=result([...home('a',{mnp:true}),...home('b',{speed:'internet1g'}),...home('c',{network_type:'soho',mnp:true})]);
- assert.deepEqual(mixed.weekendPolicy.september18,{gradeCount:3,paidCount:2,rate:150000,baseBonus:300000,mnpCount:1,mnpBonus:100000,total:400000});
+ const {payouts,...summary}=mixed.weekendPolicy.september18;
+ assert.deepEqual(summary,{gradeCount:3,paidCount:2,rate:150000,baseBonus:300000,mnpCount:1,mnpBonus:100000,total:400000});
  assert.equal(result(home('g',{speed:'internet1g'})).limitedPolicyPay,100000);
  assert.equal(result(home('soho',{network_type:'soho',mnp:true})).limitedPolicyPay,0);
- assert.equal(mixed.details.filter(x=>x.item==='9월 18~21일 주말 홈 활성화')[0].amount,400000);
+ assert.deepEqual(payouts.map(p=>[p.customer,p.amount]),[['a',250000],['b',150000]]);
+ assert.equal(mixed.details.filter(x=>x.item==='9월 18~21일 주말 홈 활성화').reduce((sum,x)=>sum+x.amount,0),400000);
 });
 test('9월 말 설치·청약일·인터넷요금제·TV·상태 조건과 구성품 설치일을 확인한다',()=>{
  for(const changes of [{source_work_date:'2026-09-17'},{source_work_date:'2026-09-22'},{actual_install_date:'2026-10-01'},{actual_install_date:'2026-09-17'},{actual_install_date:null},{status:'pending'},{status:'cancelled'},{sale_type:'allinone'},{speed:'internet100'},{tvPlan:'premium'},{tvPlan:'belowPremium'},{network_type:'soho',tvPlan:'belowPremium'}])assert.equal(result(home('x',changes)).weekendPolicy.september18.total,0,JSON.stringify(changes));
@@ -77,4 +79,14 @@ test('저장된 홈 원본 메타를 참조번호로 복원하고 원본을 변�
  assert.equal(calculateHomePolicyFromOrders(enriched).limitedPolicyPay,100000);
  assert.deepEqual(orders,original);
  assert.equal(calculateHomePolicyFromOrders(enrichHomeOrdersForPolicy(orders,[])).limitedPolicyPay,0);
+});
+
+test('정산 상세도 추가지급은 기본 수수료를 유지하며 아이폰/일반 미지급은 요금제·VAS만 제외한다',()=>{
+ const base=90000+30000;
+ const additive=specialPolicyLedgerRows({policyId:'s26_256_512_mnp_0918',policyType:'additive',replacementAmount:100000,normalVasFee:30000},90000);
+ assert.equal(base+additive.reduce((sum,r)=>sum+r.amount,0),220000);
+ for(const policyId of [null,'iphone18_preorder_mnp_0918']){
+  const rows=specialPolicyLedgerRows({policyId,policyType:'incentive_unpaid',normalVasFee:30000,customerDiscount:300000,replacementAmount:0},90000);
+  assert.equal(base+rows.reduce((sum,r)=>sum+r.amount,0),0);
+ }
 });

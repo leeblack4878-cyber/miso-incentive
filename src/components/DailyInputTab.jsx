@@ -362,9 +362,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
         setSpecialPolicies(sp||[]);
       }
-      if(!editingSale)setMobileSpecialPolicyId('');
     })();
-  }, [mobileSaleDraft, month, selectedDay, editingSale]);
+  }, [Boolean(mobileSaleDraft), month, selectedDay, editingSale]);
 
 
   const loadDaySales=useCallback(async()=>{
@@ -1817,7 +1816,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   {mobileSaleKind==='normal'?'✓ ':''}일반 판매
                 </button>
                 <button type="button"
-                  onClick={()=>setMobileSaleKind('special')}
+                  onClick={()=>{setMobileSaleKind('special');setMobileSpecialPolicyId('');setMobileSpecialExceptionAmount('')}}
                   className={`py-3 rounded-xl border text-xs font-bold ${mobileSaleKind==='special'?'bg-amber-50 border-amber-300 text-amber-700':'bg-white border-gray-200 text-gray-500'}`}>
                   {mobileSaleKind==='special'?'✓ ':''}특가&지인정책
                 </button>

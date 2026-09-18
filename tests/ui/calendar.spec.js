@@ -63,6 +63,9 @@ test('9/18 아이폰18은 인센미지급 정책에서 선택하고 일반 추�
  await page.getByRole('button',{name:'인센미지급 특가',exact:true}).click();
  const iphone=page.getByRole('button',{name:/아이폰18 사전예약 특가 · MNP/});
  await expect(iphone).toContainText('300,000');await iphone.click();await expect(iphone).toContainText('✓');
+ await page.getByRole('combobox',{name:'가입구분',exact:true}).selectOption('1');
+ await page.getByRole('combobox',{name:'요금제군',exact:true}).selectOption('0');
+ await expect(iphone).toContainText('✓');
  await expect(page.getByText(/선택 시 사전예약 판매로 기록됩니다/)).toBeVisible();
  await page.getByRole('button',{name:'특가&지인정책',exact:true}).click();
  await expect(iphone).toHaveCount(0);
