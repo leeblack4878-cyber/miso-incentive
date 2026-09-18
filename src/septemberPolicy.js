@@ -88,7 +88,7 @@ const SEPTEMBER_SPECIAL_SALES_BASE = [
 const SEPTEMBER_18_AMOUNTS = {
   s26_256_512_mnp:100000,s26_256_512_change:100000,
   s26_plus_256_512_mnp:80000,s26_plus_256_512_change:80000,
-  s26_ultra_change:80000,f971_256_mnp_0915:100000,f971_256_change_0915:100000,
+  s26_ultra_mnp:80000,s26_ultra_change:80000,f971_256_mnp_0915:100000,f971_256_change_0915:100000,
   f976_mnp:50000,f976_change:50000,
 };
 export const SEPTEMBER_IPHONE18_SALES = [
@@ -131,7 +131,7 @@ export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicP
 export function september18HomeApplication(date){return date>='2026-09-18'&&date<='2026-09-21';}
 export function calculateSeptember18WeekendHomeBonus(bundles=[]){
   const eligible=bundles.filter(b=>september18HomeApplication(b.date)
-    &&b.hasInternet&&['500','1g'].includes(b.speed)&&b.internetPlan==='premiumSafe'&&b.hasTv
+    &&b.hasInternet&&['500','1g'].includes(b.speed)&&b.hasTv
     &&((b.networkType==='household'&&b.mainTvPlan==='broadcastPass')||(b.networkType==='soho'&&b.mainTvPlan==='premium'))
     &&b.actualInstallDate>=b.date&&b.actualInstallDate<='2026-09-30'&&b.saleType!=='allinone'
     &&(!b.orders||b.orders.filter(o=>['internet500','internet1g','homeTv'].includes(o.product_type)).every(o=>o.actual_install_date>=b.date&&o.actual_install_date<='2026-09-30')));

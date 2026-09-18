@@ -47,14 +47,13 @@ for(const width of [320,390])test(`${width}px 분리된 실적입력 화면이 �
 });
 
 
-test('9/18 홈 입력은 요금제를 명시적으로 선택하고 3건 전체 단가를 안내한다',async({page})=>{
+test('9/18 홈 입력은 인터넷 요금제 선택 없이 3건 전체 단가를 안내한다',async({page})=>{
  await page.setViewportSize({width:320,height:844});await openCalendar(page,{date:'2026-09-18'});
  await page.getByRole('button',{name:/홈 실적 입력/}).click();
  const dialog=page.getByRole('dialog',{name:'홈 실적 입력'});
  await dialog.getByRole('button',{name:'인터넷',exact:true}).click();
  const plan=dialog.getByRole('combobox',{name:/인터넷 요금제/});
- await expect(plan).toHaveValue('');await plan.selectOption('premiumSafe');
- await expect(plan).toHaveValue('premiumSafe');await expect(dialog).toContainText('3건 이상은 전체 건당 15만원');
+ await expect(plan).toHaveCount(0);await expect(dialog).toContainText('3건 이상은 전체 건당 15만원');
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
 test('9/18 아이폰18은 인센미지급 정책에서 선택하고 일반 추가지급 목록과 구분한다',async({page})=>{
@@ -70,4 +69,5 @@ test('9/18 아이폰18은 인센미지급 정책에서 선택하고 일반 추�
  await page.getByRole('button',{name:'특가&지인정책',exact:true}).click();
  await expect(iphone).toHaveCount(0);
  await expect(page.getByRole('button',{name:/S26-256\/512 · MNP/})).toContainText('100,000');
+ await expect(page.getByRole('button',{name:/S26울트라 256\/512 · MNP/})).toContainText('80,000');
 });
