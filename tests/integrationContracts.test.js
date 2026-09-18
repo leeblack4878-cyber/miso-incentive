@@ -614,7 +614,7 @@ test('일일 브리핑은 카카오 공유와 미입력 직원 푸시 알림을 
 
 test('특가 판매 미리보기는 선택한 날짜를 정책 계산에 전달한다', async () => {
   const source = await readAppSource();
-  assert.match(source, /const mobilePreview=\(\(\)=>\{[\s\S]*?const saleDate=`\$\{month\}-\$\{selectedDay\}`;[\s\S]*?calculateSeptemberSpecialSale\(\{policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup\(mobileSaleDraft\.ci\),strategicPoints,saleDate\}\)/);
+  assert.match(source, /const mobilePreview=\(\(\)=>\{[\s\S]*?const saleDate=`\$\{month\}-\$\{selectedDay\}`;[\s\S]*?calculateSeptemberSpecialSale\(\{policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup\(mobileSaleDraft\.ci\),strategicPoints,saleDate,saleType:septemberMobileSaleType\(mobileSaleDraft\.ri\)\}\)/);
 });
 
 test('월말 예상에서 건당 지급 수량은 정수 반올림하고 포인트와 금액은 소수를 유지한다', async () => {

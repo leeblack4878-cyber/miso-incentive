@@ -1,4 +1,5 @@
 import { summarizeStrategicProducts } from './strategicPoints.js';
+import { calculateSeptember18WeekendHomeBonus } from './septemberPolicy.js';
 
 export const SECOND_PERFORMANCE_POINT = 0.2;
 export const INSURANCE_QUALITY_POINT = 0.8;
@@ -305,6 +306,11 @@ function homeSimulType(types) {
   return 'none';
 }
 
+export function enrichHomeOrdersForPolicy(orders=[],sales=[]){
+  const metadata=new Map(sales.filter(s=>s.source_ref).map(s=>[String(s.source_ref),s.source_meta||{}]));
+  return orders.map(o=>({...o,internet_plan:metadata.get(String(o.id))?.internetPlan??o.internet_plan??null}));
+}
+
 export function buildHomeBundlesFromOrders(orders = []) {
   const bundles = new Map();
   (orders || []).filter(order => order?.status === 'completed').forEach(order => {
@@ -328,6 +334,7 @@ export function buildHomeBundlesFromOrders(orders = []) {
         : bundle.types.has('internet100') ? '100' : '';
     return {
       ...bundle, speed, hasInternet: Boolean(speed), hasTv: bundle.types.has('homeTv'),
+      internetPlan: bundle.orders.find(order=>['internet500','internet1g','internet100'].includes(order.product_type))?.internet_plan||null,
       mainTvPlan: bundle.orders.find(order => order.product_type === 'homeTv')?.main_tv_plan || null,
       actualInstallDate: bundle.orders.find(order => order.actual_install_date)?.actual_install_date?.slice?.(0, 10) || '',
       simul: homeSimulType(bundle.types),
@@ -336,6 +343,7 @@ export function buildHomeBundlesFromOrders(orders = []) {
 }
 
 export function calculateSeptemberWeekendHomeBonus(bundles = []) {
+  const september18=calculateSeptember18WeekendHomeBonus(bundles);
   const inHomeApplicationPeriod = bundle => bundle.date >= '2026-09-11' && bundle.date <= '2026-09-14';
   const inTvFreeApplicationPeriod = bundle => bundle.date >= '2026-09-04' && bundle.date <= '2026-09-07';
   const installedBy = (bundle, deadline) => Boolean(bundle.actualInstallDate) && bundle.actualInstallDate <= deadline;
@@ -374,7 +382,8 @@ export function calculateSeptemberWeekendHomeBonus(bundles = []) {
     tvFreeCount: eligibleTvFree.length,
     tvFreeRate,
     tvFreeBonus: eligibleTvFree.length * tvFreeRate,
-    total: homeBaseBonus + homeOneGigBonus + eligibleTvFree.length * tvFreeRate,
+    september18,
+    total: homeBaseBonus + homeOneGigBonus + eligibleTvFree.length * tvFreeRate + september18.total,
   };
 }
 
@@ -459,6 +468,7 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const homeFlatPay = soloPay + tvFreePay + smartHomePay;
   if (weekendPolicy.homeBonus) details.push({ date: '2026-09-11~14', customer: '개인 누적', type: '한시정책', item: '9월 주말 홈 활성화', amount: weekendPolicy.homeBonus, note: `그레이드 ${weekendPolicy.homeGradeCount}건 · 가정망 지급 ${weekendPolicy.homePaidCount}건 × ${weekendPolicy.homeRate.toLocaleString()}원${weekendPolicy.homeOneGigCount ? ` · 1G ${weekendPolicy.homeOneGigCount}건 × 50,000원` : ''}` });
   if (weekendPolicy.tvFreeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 TV프리 활성화', amount: weekendPolicy.tvFreeBonus, note: `${weekendPolicy.tvFreeCount}건 × ${weekendPolicy.tvFreeRate.toLocaleString()}원` });
+  if(weekendPolicy.september18.total)details.push({date:'2026-09-18~21',customer:'개인 누적',type:'한시정책',item:'9월 18~21일 주말 홈 활성화',amount:weekendPolicy.september18.total,note:`그레이드 ${weekendPolicy.september18.gradeCount}건 · 가정망 ${weekendPolicy.september18.paidCount}건 × ${weekendPolicy.september18.rate.toLocaleString()}원 · MNP 동시판매 ${weekendPolicy.september18.mnpCount}건 × 100,000원`});
   const limitedPolicyPay = weekendPolicy.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {

@@ -2,9 +2,9 @@
 import {test,expect} from '@playwright/test';
 test.beforeEach(async({page})=>{page.on('pageerror',error=>console.log('CALENDAR_RUNTIME_ERROR',error.message));});
 test.afterEach(async({page},info)=>{if(info.status!==info.expectedStatus)console.log('CALENDAR_FAILURE_VIEW',(await page.locator('body').innerText()).slice(0,1200));});
-async function openCalendar(page,{ready=[],failed=false}={}){
+async function openCalendar(page,{ready=[],failed=false,date='2026-10-01'}={}){
  const writes=[];
- await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
+ await page.clock.setFixedTime(new Date(`${date}T03:00:00Z`));
  await page.route('https://placeholder.supabase.co/**',async route=>{
   const req=route.request(),url=new URL(req.url());
   if(req.method()!=='GET'&&/daily_records|monthly_status|customer_sales|home_orders|save_home_bundle_atomic/.test(url.pathname))writes.push(url.pathname);
@@ -44,4 +44,27 @@ for(const width of [320,390])test(`${width}px 분리된 실적입력 화면이 �
  await page.setViewportSize({width,height:844});await openCalendar(page,{ready:['2026-10']});
  await expect(page.getByRole('button',{name:/모바일 실적 입력/})).toBeEnabled();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+
+test('9/18 홈 입력은 요금제를 명시적으로 선택하고 3건 전체 단가를 안내한다',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await openCalendar(page,{date:'2026-09-18'});
+ await page.getByRole('button',{name:/홈 실적 입력/}).click();
+ const dialog=page.getByRole('dialog',{name:'홈 실적 입력'});
+ await dialog.getByRole('button',{name:'인터넷',exact:true}).click();
+ const plan=dialog.getByRole('combobox',{name:/인터넷 요금제/});
+ await expect(plan).toHaveValue('');await plan.selectOption('premiumSafe');
+ await expect(plan).toHaveValue('premiumSafe');await expect(dialog).toContainText('3건 이상은 전체 건당 15만원');
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+test('9/18 아이폰18은 인센미지급 정책에서 선택하고 일반 추가지급 목록과 구분한다',async({page})=>{
+ await openCalendar(page,{date:'2026-09-18'});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ await page.getByRole('button',{name:'인센미지급 특가',exact:true}).click();
+ const iphone=page.getByRole('button',{name:/아이폰18 사전예약 특가 · MNP/});
+ await expect(iphone).toContainText('300,000');await iphone.click();await expect(iphone).toContainText('✓');
+ await expect(page.getByText(/선택 시 사전예약 판매로 기록됩니다/)).toBeVisible();
+ await page.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await expect(iphone).toHaveCount(0);
+ await expect(page.getByRole('button',{name:/S26-256\/512 · MNP/})).toContainText('100,000');
 });

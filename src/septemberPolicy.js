@@ -58,7 +58,7 @@ export const SEPTEMBER_RENEW = [
   { key: 'renewTvUpsell', label: 'TV 업셀 수수료', rate: 20000 },
 ];
 
-export const SEPTEMBER_SPECIAL_SALES = [
+const SEPTEMBER_SPECIAL_SALES_BASE = [
   ['s26_256_512_mnp', 'S26-256/512', 'MNP', 50000, 'high', 2],
   ['s26_256_512_change', 'S26-256/512', '기기변경', 50000, 'high', 2],
   ['s26_plus_256_512_mnp', 'S26+ 256/512', 'MNP', 50000, 'high', 2, '2026-09-05'],
@@ -84,7 +84,27 @@ export const SEPTEMBER_SPECIAL_SALES = [
   key, model, saleType, additionalAmount, planRule, requiredStrategicPoints, startDate, endDate, policyVersion,
 }));
 
-export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '' } = {}) {
+// Each revision has its own key so a saved earlier sale keeps its agreed amount.
+const SEPTEMBER_18_AMOUNTS = {
+  s26_256_512_mnp:100000,s26_256_512_change:100000,
+  s26_plus_256_512_mnp:80000,s26_plus_256_512_change:80000,
+  s26_ultra_change:80000,f971_256_mnp_0915:100000,f971_256_change_0915:100000,
+  f976_mnp:50000,f976_change:50000,
+};
+export const SEPTEMBER_IPHONE18_SALES = [
+  {key:'iphone18_preorder_mnp_0918',saleType:'MNP',customerDiscount:300000},
+  {key:'iphone18_preorder_change_0918',saleType:'기기변경',customerDiscount:150000},
+].map(p=>({...p,model:'아이폰18 사전예약 특가',additionalAmount:0,policyType:'incentive_unpaid',planRule:'high',requiredStrategicPoints:2,startDate:'2026-09-18',endDate:'2026-09-21',policyVersion:'2026-09-18-iphone18'}));
+export const SEPTEMBER_SPECIAL_SALES = [
+  ...SEPTEMBER_SPECIAL_SALES_BASE.map(p=>Object.hasOwn(SEPTEMBER_18_AMOUNTS,p.key)?{...p,endDate:'2026-09-17'}:p),
+  ...SEPTEMBER_SPECIAL_SALES_BASE.filter(p=>Object.hasOwn(SEPTEMBER_18_AMOUNTS,p.key)).map(p=>({...p,key:`${p.key}_0918`,additionalAmount:SEPTEMBER_18_AMOUNTS[p.key],startDate:'2026-09-18',endDate:'2099-12-31',policyVersion:'2026-09-v3'})),
+  ...SEPTEMBER_IPHONE18_SALES,
+];
+export function septemberMobileSaleType(row){
+  return Number(row)===0?'010 신규':Number(row)===1?'MNP':[2,3,4].includes(Number(row))?'기기변경':null;
+}
+
+export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '', saleType } = {}) {
   const policy = SEPTEMBER_SPECIAL_SALES.find(item => item.key === policyKey);
   if (!policy) return { eligible: false, additionalAmount: 0, reason: '정책 미선택' };
   const normalizedSaleDate = String(saleDate || '').slice(0, 10);
@@ -96,14 +116,28 @@ export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicP
       ? planGroup === 'junior'
       : policy.planRule === '33plus' && ['115', 'youth85', '85', '33plus', 'weak47'].includes(planGroup);
   const pointEligible = Number(strategicPoints || 0) >= policy.requiredStrategicPoints;
+  const typeEligible = saleType===undefined || saleType===policy.saleType;
   return {
     policy,
     dateEligible,
     planEligible,
     pointEligible,
-    eligible: dateEligible && planEligible && pointEligible,
-    additionalAmount: dateEligible && planEligible && pointEligible ? policy.additionalAmount : 0,
+    typeEligible,
+    eligible: dateEligible && planEligible && pointEligible && typeEligible,
+    additionalAmount: dateEligible && planEligible && pointEligible && typeEligible ? policy.additionalAmount : 0,
   };
+}
+
+export function september18HomeApplication(date){return date>='2026-09-18'&&date<='2026-09-21';}
+export function calculateSeptember18WeekendHomeBonus(bundles=[]){
+  const eligible=bundles.filter(b=>september18HomeApplication(b.date)
+    &&b.hasInternet&&['500','1g'].includes(b.speed)&&b.internetPlan==='premiumSafe'&&b.hasTv
+    &&((b.networkType==='household'&&b.mainTvPlan==='broadcastPass')||(b.networkType==='soho'&&b.mainTvPlan==='premium'))
+    &&b.actualInstallDate>=b.date&&b.actualInstallDate<='2026-09-30'&&b.saleType!=='allinone'
+    &&(!b.orders||b.orders.filter(o=>['internet500','internet1g','homeTv'].includes(o.product_type)).every(o=>o.actual_install_date>=b.date&&o.actual_install_date<='2026-09-30')));
+  const paid=eligible.filter(b=>b.networkType==='household'),rate=eligible.length>=3?150000:eligible.length?100000:0;
+  const mnpCount=paid.filter(b=>['mnp','usedMnp'].includes(b.simul)).length;
+  return {gradeCount:eligible.length,paidCount:paid.length,rate,baseBonus:paid.length*rate,mnpCount,mnpBonus:mnpCount*100000,total:paid.length*rate+mnpCount*100000};
 }
 
 export function calculateSeptemberSono(count, baseRate, achievedRate) {

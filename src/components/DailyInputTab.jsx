@@ -8,8 +8,8 @@ import { loadHomeBundleChildren } from '../homeBundleEditor';
 import { teamSupportEligibleFor } from '../permissionScopes';
 import PolicyInputNotice from '../components/PolicyInputNotice';
 import { MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName, fmtNum, fmtInputNumber, won } from '../uiDefinitions';
-import { allowedSecondVas, mergeSaleMetaPreservingLegacy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from '../policyRules';
-import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale, calculateSeptemberBundleSale } from '../septemberPolicy';
+import { allowedSecondVas, enrichHomeOrdersForPolicy, mergeSaleMetaPreservingLegacy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from '../policyRules';
+import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale, septemberMobileSaleType, september18HomeApplication, calculateSeptemberBundleSale } from '../septemberPolicy';
 
 import { isSeptemberPolicyActive } from '../policyCalendar';
 import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, CARE_TEMPLATES, septemberPlanGroup, currentPolicySnapshot, buildMobileTasks, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, CareTemplatePicker, HOME_NETWORK_TYPES } from "../appShared";
@@ -31,6 +31,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [homeCustomerName, setHomeCustomerName] = useState('');
   const [homeNetworkType, setHomeNetworkType] = useState('');
   const [homeInternet,setHomeInternet]=useState(false);
+  const [homeInternetPlan,setHomeInternetPlan]=useState('');
   const [homeInternetSpeed,setHomeInternetSpeed]=useState(''); // 100 | 500 | 1g
   const [homeMobileSimul,setHomeMobileSimul]=useState('none'); // none | newChange | mnp | usedMnp
   const [homeMainTv,setHomeMainTv]=useState(false);
@@ -355,7 +356,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(isSeptemberPolicyActive(month)){
         setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.filter(p=>(!p.startDate||p.startDate<=saleDate)&&(!p.endDate||p.endDate>=saleDate)).map(p=>({
           id:p.key,title:`${p.model} · ${p.saleType}`,replacement_amount:p.additionalAmount,
-          policy_type:'additive',start_date:p.startDate||'2026-09-01',end_date:p.endDate||'2099-12-31',...p,
+          policy_type:p.policyType||'additive',start_date:p.startDate||'2026-09-01',end_date:p.endDate||'2099-12-31',...p,
         })));
       }else{
         const {data:sp}=await supabase.from('special_sale_policies').select('*').eq('active',true).lte('start_date',saleDate).gte('end_date',saleDate).order('start_date');
@@ -372,7 +373,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const saleDate=`${month}-${selectedDay}`;
     const [yy,mm]=month.split('-').map(Number),next=new Date(yy,mm,1);
     const monthTo=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-    const [saleRes,homeRes]=await Promise.all([
+    const [saleRes,homeRes,homeSaleRes]=await Promise.all([
       supabase.from('customer_sales')
         .select('id,customer_id,sale_date,metric_label,source_type,source_ref,source_meta,schema_version,customers(customer_name)')
         .eq('user_id',currentEmp.id)
@@ -382,17 +383,18 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
         .eq('user_id',currentEmp.id)
         .gte('source_work_date',`${month}-01`)
-        .lt('source_work_date',monthTo)
+        .lt('source_work_date',monthTo),
+      supabase.from('customer_sales').select('source_ref,source_meta').eq('user_id',currentEmp.id).eq('source_type','home_order').gte('sale_date',`${month}-01`).lt('sale_date',monthTo)
     ]);
     if(!saleRes.error)setDaySales(saleRes.data||[]);
-    if(!homeRes.error){
+    if(!homeRes.error&&!homeSaleRes.error){
       setDayHomeOrders((homeRes.data||[]).filter(o=>String(o.source_work_date||'').slice(0,10)===saleDate));
       // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
       // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
-      const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
+      const previewOrders=enrichHomeOrdersForPolicy(homeRes.data||[],homeSaleRes.data||[]).map(o=>({...o,status:'completed'}));
       setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
     }else{
-      console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
+      console.error('HOME PREVIEW LOAD ERROR',homeRes.error||homeSaleRes.error);
       setDayHomeOrders([]);
       setHomePreviewPolicy(null);
     }
@@ -439,7 +441,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setHomeOrderDraft({ unified:true, label:'홈 실적 입력' });
     setHomeCustomerName('');
     setHomeNetworkType('');
-    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed('');setHomeInternetPlan(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
     setHomeDirectComplete(false);
     setHomeActualCompleteDate('');
     setHomePlannedDate('');
@@ -454,7 +456,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const hasInput=!!(homeOrderDraft?.editing||homeCustomerName.trim()||homeNetworkType||homeInternet||homeMainTv||homeSubTv||homeSmartHome||homeMobileSimul!=='none'||homePlannedDate||homeCustomTitle.trim()||homeExtraPromises.length||homeExpenseOpen);
     if(hasInput&&!await showAppConfirm({title:'홈 입력을 닫을까요?',message:'아직 등록하지 않은 작성 내용은 사라집니다.',confirmLabel:'작성 내용 버리기',tone:'warning'}))return;
     setHomeOrderDraft(null);setEditingHomeSales([]);setLegacyConversion(null);
-    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
+    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeInternetPlan('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
   };
 
   const submitHomeOrder = async () => {
@@ -473,6 +475,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if (homeDirectComplete && !homeActualCompleteDate) return showAppToast('설치완료일을 입력해주세요.',{tone:'error'});
 
     const sourceWorkDate=`${month}-${selectedDay}`;
+    if(september18HomeApplication(sourceWorkDate)&&homeInternet&&homeMainTv&&['500','1g'].includes(homeInternetSpeed)&&!homeInternetPlan)return showAppToast('주말 정책 확인을 위해 인터넷 요금제를 선택해주세요.',{tone:'error'});
     // 실제 판매 구성을 기존 정산 그룹으로 자동 변환
     const products=[];
     if(homeInternet){
@@ -575,7 +578,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           metric_label:product.label,source_type:'home_order',source_ref:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
-            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,
+            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,internetPlan:homeInternet?homeInternetPlan||null:null,
             mainTvPlan:homeMainTv&&isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
             mainTvPlanLevel:homeMainTv?homeMainTvPlan:null,
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
@@ -619,7 +622,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setToast({id:resultId,source:'home',kind:'normal',customerName:customer,label:products.map(p=>p.label).join(' + '),title:activeTeamSupport?'지원 홈 판매 등록 완료':'홈 판매 등록 완료',sub:activeTeamSupport?`${displayStoreName(teamSupportStore)} 팀 실적 전용${homeDirectComplete?'으로 반영했어요':' · 설치완료 후 반영돼요'}`:(homeDirectComplete?'설치완료 실적으로 반영했어요':'설치대기로 등록했어요'),promiseCount:homePromiseRows.length,customerSaleId:primarySaleId,pointDelta:0,teamOnly:activeTeamSupport});
       if(activeTeamSupport)resetTeamSupportSelection();
       setTimeout(()=>setToast(t=>t?.id===resultId?null:t),10000);
-      setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed(''); setHomeMobileSimul('none');
+      setHomeOrderDraft(null); setEditingHomeSales([]); setLegacyConversion(null); setHomeCustomerName(''); setHomeNetworkType(''); setHomeInternetSpeed('');setHomeInternetPlan(''); setHomeMobileSimul('none');
       await onHomeOrdersChanged?.();
       setTimeout(loadDaySales,150);
     }catch(e){ showAppToast(friendlyError(e),{tone:'error',title:'홈 상품 등록 실패'}); }
@@ -1027,6 +1030,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setHomeInternet(compatOrders.some(o=>['homeOnly','homeTv','internet100','internet500','internet1g'].includes(o.product_type)));
       const speedFromOrders=compatOrders.some(o=>o.product_type==='internet1g')?'1g':compatOrders.some(o=>o.product_type==='internet500')?'500':compatOrders.some(o=>o.product_type==='internet100')?'100':'';
       setHomeInternetSpeed(meta0.internetSpeed||speedFromOrders||'');
+      setHomeInternetPlan(meta0.internetPlan||'');
       const simulFromOrders=compatOrders.some(o=>o.product_type==='simulUsedMnp')?'usedMnp':compatOrders.some(o=>o.product_type==='simulMnp')?'mnp':compatOrders.some(o=>o.product_type==='simulNewChange')?'newChange':'none';
       setHomeMobileSimul(meta0.mobileSimul||simulFromOrders||'none');
       setHomeMainTv(compatOrders.some(o=>o.product_type==='homeTv'));
@@ -1175,6 +1179,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         : '현재 적용 가능한 특가&지인정책이 없어요.');
     }
     const saleDate=`${month}-${selectedDay}`;
+    const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
+    if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)){
+      const outcome=calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
+      if(!selectedSpecial||!outcome.dateEligible||!outcome.typeEligible)return showAppToast('선택한 정책의 개통일과 가입 구분을 확인해주세요.',{tone:'error'});
+      if(mobileSaleKind==='incentive_unpaid'&&!outcome.eligible)return showAppToast('아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
+    }
     const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
     const invalidSecondVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bundle,keys])=>(keys||[]).filter(k=>!allowedSecondKeys.has(k)).map(k=>({bundle,key:k})));
     if(invalidSecondVas.length)return showAppToast('2ND에서 선택할 수 없는 부가서비스가 포함돼 있어요. VAS를 다시 선택해주세요.',{tone:'error'});
@@ -1218,10 +1228,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const policy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
       const oldSp=editingSale?.source_meta?.specialPolicy||{};
       const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-      const outcome=mobileSaleKind==='special'&&isSeptemberPolicyActive(month)
-        ?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate})
+      const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)
+        ?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
         :{eligible:true,additionalAmount:Number(policy?.replacement_amount??oldSp.replacementAmount??0)};
-      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:unpaid?null:mobileSpecialPolicyId,policyTitle:unpaid?'인센미지급 특가':policy?.title||oldSp.policyTitle||'',policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||SEPTEMBER_POLICY_VERSION};
+      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||SEPTEMBER_POLICY_VERSION};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
         ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
@@ -1375,7 +1385,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate}):null;
+    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??0):0;
     const nextDay={...base,matrix:nextMatrix,groups:{...base.groups,vas:nextVas,bundle2nd:nextBundle,mnpBundle:nextMnpBundle},bundleFreeOffset:Number(base.bundleFreeOffset||0)+free.bundleOffset,bundleFreeVasOffset:Number(base.bundleFreeVasOffset||0)+free.vasOffset,specialMatrixOffset:Number(base.specialMatrixOffset||0)+specialMatrix,specialVasOffset:Number(base.specialVasOffset||0)+specialVas,specialReplacementPay:Number(base.specialReplacementPay||0)+replacement};
     const beforeDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:base},month,config.categoryMap,config.gibyeonColumnMap);
@@ -1819,13 +1829,22 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
               {mobileSaleKind==='incentive_unpaid'&&<div className="mt-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[10px] text-red-700">판매 실적·성과P·영업 활동 지원비 건수는 인정하고, 요금제·VAS·보험 인센티브만 지급하지 않아요.</div>}
 
+              {mobileSaleKind==='incentive_unpaid'&&specialPolicies.some(p=>p.policy_type==='incentive_unpaid')&&<div className="mt-2 space-y-2 rounded-xl border border-red-100 p-3">
+                <div className="text-xs font-bold text-gray-700">적용할 인센미지급 정책</div>
+                <button type="button" onClick={()=>setMobileSpecialPolicyId('')} className={`w-full rounded-lg border p-2 text-left text-xs ${!mobileSpecialPolicyId?'border-red-300 bg-red-50':'border-gray-200'}`}>{!mobileSpecialPolicyId?'✓ ':''}일반 인센미지급 특가</button>
+                {specialPolicies.filter(p=>p.policy_type==='incentive_unpaid').map(p=><button type="button" key={p.id} onClick={()=>setMobileSpecialPolicyId(p.id)} className={`w-full rounded-lg border p-2 text-left text-xs ${mobileSpecialPolicyId===p.id?'border-red-300 bg-red-50':'border-gray-200'}`}>
+                  <div className="font-bold">{mobileSpecialPolicyId===p.id?'✓ ':''}{p.title}</div><div className="mt-1">고객 할인 {won(p.customerDiscount)} · 인센티브 미지급</div>
+                </button>)}
+                <div className="text-[10px] text-gray-600">아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.</div>
+              </div>}
+
               {mobileSaleKind==='special'&&(
                 <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/30 p-3">
                   <div className="text-[11px] font-semibold text-gray-700">적용 정책 *</div>
-                  {specialPolicies.length>0 ? (
+                  {specialPolicies.some(p=>p.policy_type!=='incentive_unpaid') ? (
                     <>
                       <div className="grid grid-cols-1 gap-1.5 mt-2">
-                        {specialPolicies.map(p=>{
+                        {specialPolicies.filter(p=>p.policy_type!=='incentive_unpaid').map(p=>{
                           const selected=mobileSpecialPolicyId===p.id;
                           return <button key={p.id} type="button"
                             onClick={()=>{setMobileSpecialPolicyId(p.id);setMobileSpecialExceptionAmount('')}}
@@ -2213,8 +2232,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="text-xs font-semibold text-gray-600 mb-2">3. 판매 상품 <span className="font-normal text-gray-400">· 상품을 누른 뒤 바로 세부 선택</span></div>
               <div className="space-y-2">
                 <div className={`rounded-xl border p-2.5 ${homeInternet?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
-                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
+                  <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeInternetPlan('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
                   {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">{l}</button>)}</div>}
+                  {homeInternet&&september18HomeApplication(`${month}-${selectedDay}`)&&<label className="mt-3 block text-xs font-semibold text-gray-700">인터넷 요금제
+                    <select value={homeInternetPlan} onChange={e=>setHomeInternetPlan(e.target.value)} className="mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs"><option value="">요금제 선택</option><option value="premiumSafe">프리미엄 안심 보상</option><option value="other">기타 요금제</option></select>
+                    <span className="mt-2 block text-[10px] font-normal leading-relaxed text-gray-500">9/18~9/21 청약·9월 설치 완료: 프리미엄 안심 보상 500MB 이상 + 방송패스(첫 달 유지). 소호는 프리미엄 이상 TV. 조건 충족 1~2건은 가정망 건당 10만원, 3건 이상은 전체 건당 15만원. 소호는 건수만 인정하며 MNP 동시판매 시 가정망 건당 10만원 추가.</span>
+                  </label>}
                   {homeInternet&&homeInternetSpeed&&<button type="button" onClick={()=>setHomeInternetSpeed('')} className="mt-1 text-[10px] font-semibold text-gray-400">속도 변경</button>}
                 </div>
                 <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>

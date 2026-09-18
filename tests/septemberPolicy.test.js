@@ -32,17 +32,17 @@ test('특가&지인정책은 요금제와 전략P를 모두 충족해야 추가 
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'a175_m2_new', planGroup: 'junior', strategicPoints: 1.8 }).additionalAmount, 50000);
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'a176_mnp', planGroup: '33plus', strategicPoints: 2 }).eligible, true);
   assert.equal(SEPTEMBER_SPECIAL_SALES.filter(x => x.key === 'f976_change').length, 1);
-  const s26Plus = SEPTEMBER_SPECIAL_SALES.filter(x => x.model === 'S26+ 256/512');
+  const s26Plus = SEPTEMBER_SPECIAL_SALES.filter(x => x.model === 'S26+ 256/512' && x.startDate < '2026-09-18');
   assert.deepEqual(s26Plus.map(x => x.saleType), ['MNP', '기기변경']);
   assert.ok(s26Plus.every(x => x.additionalAmount === 50000 && x.planRule === 'high' && x.requiredStrategicPoints === 2));
   assert.ok(s26Plus.every(x => x.startDate === '2026-09-05'));
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 's26_plus_256_512_mnp', planGroup: '115', strategicPoints: 2, saleDate: '2026-09-04' }).eligible, false);
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 's26_plus_256_512_mnp', planGroup: '115', strategicPoints: 2, saleDate: '2026-09-05' }).additionalAmount, 50000);
-  const f971_256 = SEPTEMBER_SPECIAL_SALES.filter(x => x.model === 'F971-256');
+  const f971_256 = SEPTEMBER_SPECIAL_SALES.filter(x => x.model === 'F971-256' && x.startDate < '2026-09-18');
   assert.deepEqual(f971_256.map(x => [x.saleType, x.additionalAmount]), [['MNP', 0], ['기기변경', 0], ['MNP', 50000], ['기기변경', 50000]]);
   assert.deepEqual(f971_256.map(x => [x.startDate, x.endDate]), [
     ['2026-09-11', '2026-09-14'], ['2026-09-11', '2026-09-14'],
-    ['2026-09-15', '2099-12-31'], ['2026-09-15', '2099-12-31'],
+    ['2026-09-15', '2026-09-17'], ['2026-09-15', '2026-09-17'],
   ]);
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'f971_256_mnp', planGroup: '115', strategicPoints: 2, saleDate: '2026-09-10' }).eligible, false);
   assert.equal(calculateSeptemberSpecialSale({ policyKey: 'f971_256_mnp', planGroup: '115', strategicPoints: 2, saleDate: '2026-09-11' }).eligible, true);
