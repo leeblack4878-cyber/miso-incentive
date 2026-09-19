@@ -13,6 +13,7 @@ import HomeOrderManager from "./HomeOrderManager";
 export default function CustomerCareManager({ userId, month, homeProps, navIntent }) {
   const [tasks,setTasks]=useState([]);
   const [customers,setCustomers]=useState([]);
+  const [sales,setSales]=useState([]);
   const [filter,setFilter]=useState('todo');
   const [editor,setEditor]=useState(null);
   const [selectedCustomer,setSelectedCustomer]=useState('');
@@ -27,8 +28,8 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
     if(!userId)return;
     setLoading(true);
     try {
-      const [t,c]=await Promise.all([readAllCustomerRows(supabase,'customer_tasks',userId,'due_date'),readAllCustomerRows(supabase,'customers',userId,'last_sale_date')]);
-      setTasks(t);setCustomers(c);setLoadError(false);
+      const [t,c,s]=await Promise.all([readAllCustomerRows(supabase,'customer_tasks',userId,'due_date'),readAllCustomerRows(supabase,'customers',userId,'last_sale_date'),readAllCustomerRows(supabase,'customer_sales',userId,'id')]);
+      setTasks(t);setCustomers(c);setSales(s);setLoadError(false);
     }catch(error){setLoadError(true);showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 조회 실패'});}
     finally{setLoading(false);}
 
@@ -51,7 +52,11 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const overdue=pending.filter(t=>t.due_date<today);
   const todayTasks=pending.filter(t=>t.due_date===today);
   const next7=pending.filter(t=>t.due_date>=today&&t.due_date<=visibleUntil);
-  const allFuture=pending.filter(t=>t.due_date>today);
+  const activeCustomerIds=new Set([...sales.filter(s=>s.status!=='cancelled').map(s=>s.customer_id),...pending.map(t=>t.customer_id)]);
+  const selectableCustomers=customers.filter(c=>activeCustomerIds.has(c.id)||(filter==='done'&&tasks.some(t=>t.customer_id===c.id)));
+  useEffect(()=>{
+    if(selectedCustomer&&!selectableCustomers.some(c=>c.id===selectedCustomer))setSelectedCustomer('');
+  },[selectedCustomer,customers,sales,tasks,filter]);
 
   const updateTask=async(t,patch)=>{
     const {data,error}=await supabase.from('customer_tasks')
@@ -143,19 +148,6 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   };
 
   return <div className="space-y-4">
-    <div className="rounded-xl bg-white border border-gray-100 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">월별 중고폰 처리</h2><input aria-label="중고폰 집계 월" type="month" value={summaryMonth} onChange={e=>e.target.value&&setSummaryMonth(e.target.value)} className="min-w-0 border rounded-lg p-2 text-xs"/></div>
-      {loading?<div className="text-xs py-3">불러오는 중...</div>:loadError?<button onClick={load} className="text-red-600 text-xs py-3">조회 실패 · 다시 불러오기</button>:<>
-      <div className="mt-3 text-2xl font-bold text-brand-700">{summary.actual.toLocaleString()}원</div>
-      <div className="text-xs text-gray-500 mt-1">완료 {summary.count}건 · 예상금액 {summary.expected.toLocaleString()}원 · 미처리 전체 {summary.pending}건</div>
-      <div className="grid grid-cols-2 gap-2 mt-3">{Object.entries(summary.methods).map(([name,amount])=><div key={name} className="bg-gray-50 rounded-lg p-2 text-xs"><div className="text-gray-500">{name}</div><b>{amount.toLocaleString()}원</b></div>)}</div>
-      <div className="text-[10px] text-gray-400 mt-2">처리 완료일 기준 · 완료 건의 실제금액 합계</div></>}
-    </div>
-    <div className="rounded-xl bg-white border border-gray-100 p-4">
-      <h2 className="text-sm font-bold">고객별 약속관리</h2><div className="mt-1 text-xs text-gray-500">실적을 저장한 고객이 자동으로 등록돼요.</div>
-      <select aria-label="약속관리 고객" value={selectedCustomer} onChange={e=>{setSelectedCustomer(e.target.value);setFilter('all');setQuery('');}} className="mt-3 w-full border rounded-xl p-3 text-sm"><option value="">전체 고객</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_name}</option>)}</select>
-      <button disabled={!selectedCustomer||loading||loadError} onClick={()=>setEditor({customer:customerMap[selectedCustomer]})} className="mt-2 w-full rounded-xl py-3 bg-brand-600 text-white text-xs font-bold disabled:opacity-40">+ 선택 고객 약속 추가</button>
-    </div>
     <div className="grid grid-cols-3 gap-2">
       {[['오늘',todayTasks.length],['기한 경과',overdue.length],['7일 내',next7.length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
@@ -250,6 +242,20 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
        </div>}
     </div>
 
+    <div className="rounded-xl bg-white border border-gray-100 p-4">
+      <h2 className="text-sm font-bold">고객별 약속관리</h2><div className="mt-1 text-xs text-gray-500">실적을 저장한 고객이 자동으로 등록돼요.</div>
+      <select aria-label="약속관리 고객" value={selectedCustomer} onChange={e=>{setSelectedCustomer(e.target.value);if(filter!=='done')setFilter('all');setQuery('');}} className="mt-3 w-full border rounded-xl p-3 text-sm"><option value="">전체 고객</option>{selectableCustomers.map(c=><option key={c.id} value={c.id}>{c.customer_name}</option>)}</select>
+      <button disabled={!selectedCustomer||loading||loadError} onClick={()=>setEditor({customer:customerMap[selectedCustomer]})} className="mt-2 w-full rounded-xl py-3 bg-brand-600 text-white text-xs font-bold disabled:opacity-40">+ 선택 고객 약속 추가</button>
+    </div>
+    <details className="rounded-xl bg-white border border-gray-100 p-4">
+      <summary className="text-sm font-bold cursor-pointer">월별 중고폰 처리금액</summary>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">월별 중고폰 처리</h2><input aria-label="중고폰 집계 월" type="month" value={summaryMonth} onChange={e=>e.target.value&&setSummaryMonth(e.target.value)} className="min-w-0 border rounded-lg p-2 text-xs"/></div>
+      {loading?<div className="text-xs py-3">불러오는 중...</div>:loadError?<button onClick={load} className="text-red-600 text-xs py-3">조회 실패 · 다시 불러오기</button>:<>
+      <div className="mt-3 text-2xl font-bold text-brand-700">{summary.actual.toLocaleString()}원</div>
+      <div className="text-xs text-gray-500 mt-1">완료 {summary.count}건 · 예상금액 {summary.expected.toLocaleString()}원 · 미처리 전체 {summary.pending}건</div>
+      <div className="grid grid-cols-2 gap-2 mt-3">{Object.entries(summary.methods).map(([name,amount])=><div key={name} className="bg-gray-50 rounded-lg p-2 text-xs"><div className="text-gray-500">{name}</div><b>{amount.toLocaleString()}원</b></div>)}</div>
+      <div className="text-[10px] text-gray-400 mt-2">처리 완료일 기준 · 완료 건의 실제금액 합계</div></>}
+    </details>
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="px-4 py-3 border-b border-gray-50">
         <div className="text-sm font-semibold text-gray-800">홈 설치·개통</div>
