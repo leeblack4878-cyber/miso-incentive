@@ -1,3 +1,4 @@
+import PlanReminderDialog, {PLAN_REMINDER_LABELS} from './PlanReminderDialog';
 import { buildReminderTasks, reminderServices, restoreReminders } from '../customerPromises';
 import ReminderChoices from './ReminderChoices';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -65,6 +66,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
   const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+  const [planReminderOpen,setPlanReminderOpen]=useState(false);
   const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
   const [mobileCalcOpen,setMobileCalcOpen]=useState(false);
   const [mobileMoreVasOpen,setMobileMoreVasOpen]=useState(false);
@@ -1006,6 +1008,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     let children;
     try { children=await readSaleChildren(supabase,currentEmp.id,sale.id); }
     catch(error){return showAppToast(friendlyError(error),{tone:'error',title:'약속·비용 조회 실패'});}
+    setPlanReminderOpen(false);
     setEditingSale({...sale,children});
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
@@ -1036,6 +1039,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
   const addOne = (ri=null,ci=null) => {
     if(locked)return;
+    setPlanReminderOpen(false);
     setEditingSale(null);
     setEditingCompletedTaskCount(0);
     const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
@@ -1340,6 +1344,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
   return (
     <div className="space-y-3 relative">
+      {mobileSaleDraft&&planReminderOpen&&<PlanReminderDialog value={mobileReminders.plan} onSelect={plan=>{setMobileReminders(v=>({...v,plan}));setPlanReminderOpen(false);}} onClose={()=>setPlanReminderOpen(false)}/>}
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">{monthLabel(month)} 일일입력</div>
         <div className="flex items-center gap-2">
@@ -1807,6 +1812,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                     onChange={e=>{
                       const ci=Number(e.target.value),ri=mobileSaleDraft.ri;
                       setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
+                      setPlanReminderOpen(true);
                     }}
                     className="w-full border border-gray-200 rounded-xl px-2.5 py-2.5 text-xs bg-white"
                   >
@@ -1818,6 +1824,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 )}
               </div>
             </div>
+
+            {Number.isInteger(mobileSaleDraft.ci)&&<button type="button" onClick={()=>setPlanReminderOpen(true)} className="mt-2 w-full rounded-xl bg-brand-50 px-3 py-2.5 text-left text-xs text-brand-700">요금제 변경 안내 · <b>{PLAN_REMINDER_LABELS[mobileReminders.plan]||'유지'}</b><span className="ml-2 text-[10px]">변경</span></button>}
 
             {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers && Number(mobileSaleDraft.ci)<=1 && (
               <div className="mt-3">
@@ -1882,7 +1890,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             </div>
 
-            <ReminderChoices value={mobileReminders} onChange={setMobileReminders} services={reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS)}/>
+            <ReminderChoices hidePlan value={mobileReminders} onChange={setMobileReminders} services={reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS)}/>
 
             {Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && (
               <div className="mt-4">
