@@ -1,6 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, isBriefingMonthOverdueHome, projectMetric, resolveStoreBriefingGoals } from '../src/dailyBriefing.js';
+import { briefingMobileCount, buildBriefingPeriodRows, buildAllBriefingText, buildStoreBriefingText, canAccessDailyBriefing, dailyInputStatus, isBriefingMonthOverdueHome, projectMetric, resolveStoreBriefingGoals } from '../src/dailyBriefing.js';
+
+test('산본 SIM MNP 5건은 중고 결합과 무관하게 예상 8.3건·69%다',()=>{
+ const matrix=Array.from({length:8},()=>[0]);matrix[5]=[3,2];matrix[7]=[2];
+ const draft={matrix,mnpBundle:{used:99},bundle2nd:{watch:3}};
+ assert.equal(briefingMobileCount(draft,'simMnp'),5);
+ assert.equal(briefingMobileCount(draft,'second'),5);
+ const metric=projectMetric({current:briefingMobileCount(draft,'simMnp'),target:12,factor:30/18});
+ assert.equal(metric.forecast.toFixed(1),'8.3');assert.equal(Math.round(metric.forecastRate),69);
+});
+
+test('선택일 이후 일일 실적과 홈 완료는 제외하고 전월 청약의 당월 설치는 포함한다',()=>{
+ const rows=[{id:'a'},{id:'b'}],dailyRecords={a:{'01':{n:2},'18':{n:3},'19':{n:10}},b:{'19':{n:99}}};
+ const order=(id,date,status='completed',user_id='a')=>({id,user_id,status,source_work_date:'2026-08-31',actual_install_date:date});
+ const orders=[order(1,'2026-09-18'),order(2,'2026-09-19'),order(3,'2026-08-31'),order(4,'2026-09-17','cancelled'),order(5,null,'pending'),order(6,'2026-09-18','completed','b')];
+ const args={rows,dailyRecords,orders,month:'2026-09',rebuild:(row,days,homes)=>({...row,total:Object.values(days).reduce((s,d)=>s+d.n,0),homes:homes.map(h=>h.id)})};
+ assert.deepEqual(buildBriefingPeriodRows({...args,reportDay:18}),[{id:'a',total:5,homes:[1]},{id:'b',total:0,homes:[6]}]);
+ assert.deepEqual(buildBriefingPeriodRows({...args,reportDay:1}),[{id:'a',total:2,homes:[]},{id:'b',total:0,homes:[]}]);
+ assert.equal(buildBriefingPeriodRows({...args,reportDay:19})[0].total,15);
+ assert.equal(dailyRecords.a['19'].n,10);
+});
 
 test('일일 브리핑은 이강진 계정만 접근한다', () => {
   assert.equal(canAccessDailyBriefing('a50a0979-acef-40b1-98b7-f05074f1c835'), true);

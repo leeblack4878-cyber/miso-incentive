@@ -48,6 +48,8 @@ import {
 } from './policyCalendar';
 import {
   DAILY_BRIEFING_SEND_TIME,
+  briefingMobileCount,
+  buildBriefingPeriodRows,
   buildAllBriefingText,
   buildStoreBriefingText,
   canAccessDailyBriefing,
@@ -4385,8 +4387,7 @@ function AdminHomeCare({ employees, month }) {
 function adminMetricValue(row,key){
   const d=row?.draft||{};
   if(key==='hs')return hsCount(d);
-  if(key==='simMnp')return Object.values(d.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
+  if(key==='simMnp'||key==='second')return briefingMobileCount(d,key);
   if(key==='home')return completedHomeCount(d);
   if(key==='free')return Number(d.homeFlat?.tvFree||0);
   if(key==='smart')return Number(d.homeFlat?.smartHome||0);
@@ -4921,7 +4922,7 @@ function dailyCalendarMetrics(raw){
   return {hs,sim,home,second,free,smart,tailored,tailoredAmount,sono,has:dayHasData(d),off:!!d.dayOff};
 }
 
-function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUserId=''}){
+function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUserId='',config}){
   const defaultDay=()=>{
     const now=new Date(),yesterday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1);
     if(monthKeyOf(yesterday)===month)return String(yesterday.getDate()).padStart(2,'0');
@@ -4943,7 +4944,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
       const [{data,error},taskResult,homeResult,customerResult]=await Promise.all([
         supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month),
         employeeIds.length?supabase.from('customer_tasks').select('id,user_id,customer_id,title,due_date,status').in('user_id',employeeIds):Promise.resolve({data:[]}),
-        employeeIds.length?supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date').in('user_id',employeeIds):Promise.resolve({data:[]}),
+        employeeIds.length?supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date,actual_install_date,product_type,network_type,sale_type,main_tv_plan,source_group,source_key').in('user_id',employeeIds):Promise.resolve({data:[]}),
         employeeIds.length?supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds):Promise.resolve({data:[]}),
       ]);
       if(!alive)return;
@@ -4963,6 +4964,14 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   })]));
   const branches=sortStoresByOpenOrder([...new Set((employees||[]).map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
   const reportDay=Math.max(1,Number(selectedDay||1));
+  const periodRows=useMemo(()=>buildBriefingPeriodRows({rows,dailyRecords,orders:scheduleRows.homes,month,reportDay,
+    rebuild:(row,days,completedOrders)=>{
+      const draft=applyDailyToDraft(emptyDraft(),days,month,config.categoryMap,config.gibyeonColumnMap);
+      draft.homePolicy=row.draft?.homePolicy?.source==='orders'||completedOrders.length
+        ?calculateHomePolicyEngine(completedOrders,config):null;
+      return {...row,draft,pay:computePay(draft,row.position,row.hireDate,month,config)};
+    },
+  }),[rows,dailyRecords,scheduleRows.homes,month,reportDay,config]);
   const forecastFactor=monthKeyOf(new Date())===month?daysInMonth(month)/reportDay:1;
   const dateLabel=`${Number(month.slice(5,7))}월 ${reportDay}일`;
   const briefingNow=new Date();
@@ -4991,7 +5000,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   const fmtBriefValue=(metric,value)=>metric.unit==='won'?won(Math.round(value)):metric.unit==='point'?`${fmtNum(value,1)}P`:`${fmtNum(value,Number(value)%1?1:0)}건`;
   const briefingStores=branches.map(branch=>{
     const members=(employees||[]).filter(emp=>emp.branch===branch);
-    const storeRows=(rows||[]).filter(row=>row.branch===branch);
+    const storeRows=periodRows.filter(row=>row.branch===branch);
     const goal=goalMap[branch]||companyGoalDefaults(branch);
     const inputRows=members.map(emp=>{
       const raw=dailyRecords?.[emp.id]?.[selectedDay];
@@ -5550,7 +5559,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
-      {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} />}
+      {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} config={config} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
       {adminTab === 'spot' && canViewDailyBriefing && <SpotAdmin authUserId={authUserId} isFullAdmin={isFullAdmin} month={month} />}

@@ -1,6 +1,27 @@
 export const DAILY_BRIEFING_SEND_TIME = '08:30';
 export const DAILY_BRIEFING_OWNER_IDS = new Set(['a50a0979-acef-40b1-98b7-f05074f1c835']);
 
+export function briefingMobileCount(draft = {}, key) {
+  const countRow = (index) => (draft.matrix?.[index] || []).reduce((sum, n) => sum + Number(n || 0), 0);
+  if (key === 'simMnp') return countRow(5);
+  if (key === 'second') return countRow(7) + Object.values(draft.bundle2nd || {}).reduce((sum, n) => sum + Number(n || 0), 0);
+  return 0;
+}
+
+// Rebuild cumulative metrics from dated sources; never scale a full-month row
+// with an earlier report day's forecast factor.
+export function buildBriefingPeriodRows({ rows = [], dailyRecords = {}, orders = [], month, reportDay, rebuild }) {
+  const cutoff = `${month}-${String(reportDay).padStart(2, '0')}`;
+  return rows.map(row => {
+    const days = Object.fromEntries(Object.entries(dailyRecords[row.id] || {})
+      .filter(([day]) => Number(day) >= 1 && Number(day) <= Number(reportDay)));
+    const completedOrders = orders.filter(order => order.user_id === row.id && order.status === 'completed'
+      && String(order.actual_install_date || '').slice(0, 7) === month
+      && String(order.actual_install_date).slice(0, 10) <= cutoff);
+    return rebuild(row, days, completedOrders);
+  });
+}
+
 export function canAccessDailyBriefing(userId) {
   return DAILY_BRIEFING_OWNER_IDS.has(String(userId || ''));
 }
