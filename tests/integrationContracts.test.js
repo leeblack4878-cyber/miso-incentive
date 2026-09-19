@@ -49,7 +49,9 @@ test('N개월 요금 수납은 추가한 월수만큼 저장하고 완료 전까
   assert.match(source, /task_type:`\$\{key\}_\$\{i\+1\}`/);
   assert.match(source, /due_date:addMonthsDate\(paymentFirstDate,i\)/);
   assert.match(source, /한 회차를 완료해도 다음 회차는 그대로 유지되며, 모든 회차를 완료할 때까지 각 기한에 반복 표시돼요/);
-  assert.match(source, /closed\.some\(c=>c\.task_type===t\.task_type/);
+  const {buildReminderTasks}=await import('../src/customerPromises.js');
+  const previous=[{task_type:'payment3_1',status:'completed'},{task_type:'payment3_2',status:'pending',due_date:'2026-10-01'}];
+  assert.deepEqual(buildReminderTasks({saleDate:'2026-09-19',reminders:{plan:'keep'},services:[],previous}),[previous[1]]);
 });
 
 test('제휴카드 약속은 신청·수령·승인·자동이체 후 최종 완료한다', async () => {

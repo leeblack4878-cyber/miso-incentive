@@ -1,3 +1,5 @@
+import CustomerPromiseEditor from './CustomerPromiseEditor';
+import {readAllCustomerRows,usedPhoneSummary} from '../customerPromises';
 import { useState, useEffect, useCallback } from 'react';
 
 import { supabase } from '../supabase';
@@ -12,6 +14,10 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const [tasks,setTasks]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [filter,setFilter]=useState('todo');
+  const [editor,setEditor]=useState(null);
+  const [selectedCustomer,setSelectedCustomer]=useState('');
+  const [summaryMonth,setSummaryMonth]=useState(month);
+  const [loadError,setLoadError]=useState(false);
   const [query,setQuery]=useState('');
   const [loading,setLoading]=useState(true);
   const [rescheduleTask,setRescheduleTask]=useState(null);
@@ -20,13 +26,12 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const load=useCallback(async()=>{
     if(!userId)return;
     setLoading(true);
-    const [{data:t,error:te},{data:c,error:ce}]=await Promise.all([
-      supabase.from('customer_tasks').select('*').eq('user_id',userId).order('due_date',{ascending:true}),
-      supabase.from('customers').select('*').eq('user_id',userId).order('last_sale_date',{ascending:false})
-    ]);
-    setLoading(false);
-    if(te||ce)return showAppToast(friendlyError(te||ce),{tone:'error',title:'고객 약속 조회 실패'});
-    setTasks(t||[]);setCustomers(c||[]);
+    try {
+      const [t,c]=await Promise.all([readAllCustomerRows(supabase,'customer_tasks',userId,'due_date'),readAllCustomerRows(supabase,'customers',userId,'last_sale_date')]);
+      setTasks(t);setCustomers(c);setLoadError(false);
+    }catch(error){setLoadError(true);showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 조회 실패'});}
+    finally{setLoading(false);}
+
   },[userId]);
 
   useEffect(()=>{load()},[load]);
@@ -52,10 +57,11 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
     const {data,error}=await supabase.from('customer_tasks')
       .update({...patch,updated_at:new Date().toISOString()})
       .eq('id',t.id).eq('user_id',userId).eq('updated_at',t.updated_at).select('id');
-    if(!error&&data?.length!==1)return showAppToast('다른 화면에서 변경됐거나 수정 권한이 없어요. 새로고침 후 확인해주세요.',{tone:'error'});
-    if(error)return showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 수정 실패'});
+    if(!error&&data?.length!==1){showAppToast('다른 화면에서 변경됐거나 수정 권한이 없어요. 새로고침 후 확인해주세요.',{tone:'error'});return false;}
+    if(error){showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 수정 실패'});return false;}
     await load();
     window.dispatchEvent(new CustomEvent('customer-tasks-changed',{detail:{userId}}));
+    return true;
   };
 
   const updateAffiliateCard=async(t,metaPatch)=>{
@@ -83,6 +89,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   };
 
   const complete=async(t)=>{
+    if(t.task_type==='usedPhone'){setEditor({customer:customerMap[t.customer_id],task:t});return;}
     const name=customerMap[t.customer_id]?.customer_name||'고객';
     if(!await showAppConfirm({title:'고객 약속을 완료할까요?',message:`${name} · ${t.title}\n완료 내역에서 다시 되돌릴 수 있어요.`,confirmLabel:'완료 처리'}))return;
     await updateTask(t,{status:'completed',completed_at:new Date().toISOString()});
@@ -105,6 +112,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   };
 
   const visible=tasks.filter(t=>{
+    if(selectedCustomer&&t.customer_id!==selectedCustomer)return false;
     const isPending=t.status!=='completed'&&t.status!=='cancelled';
     if(filter==='todo' && !(isPending && t.due_date<=visibleUntil)) return false;
     if(filter==='today' && !(isPending && t.due_date===today)) return false;
@@ -120,6 +128,14 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
     return ao-bo || String(a.due_date).localeCompare(String(b.due_date));
   });
 
+  const summary=usedPhoneSummary(tasks,summaryMonth);
+  const savePromise=async(patch)=>{
+    if(editor.task)return updateTask(editor.task,patch);
+    const {data,error}=await supabase.from('customer_tasks').insert({...patch,user_id:userId,customer_id:editor.customer.id,source_sale_id:null,base_date:today,status:patch.status||'pending'}).select('id').single();
+    if(error||!data){showAppToast(friendlyError(error||new Error('약속 저장 실패')),{tone:'error'});return false;}
+    await load();window.dispatchEvent(new CustomEvent('customer-tasks-changed',{detail:{userId}}));return true;
+  };
+
   const dLabel=(date)=>{
     const a=new Date(`${today}T00:00:00`),b=new Date(`${date}T00:00:00`);
     const d=Math.round((b-a)/86400000);
@@ -127,6 +143,19 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   };
 
   return <div className="space-y-4">
+    <div className="rounded-xl bg-white border border-gray-100 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">월별 중고폰 처리</h2><input aria-label="중고폰 집계 월" type="month" value={summaryMonth} onChange={e=>e.target.value&&setSummaryMonth(e.target.value)} className="min-w-0 border rounded-lg p-2 text-xs"/></div>
+      {loading?<div className="text-xs py-3">불러오는 중...</div>:loadError?<button onClick={load} className="text-red-600 text-xs py-3">조회 실패 · 다시 불러오기</button>:<>
+      <div className="mt-3 text-2xl font-bold text-brand-700">{summary.actual.toLocaleString()}원</div>
+      <div className="text-xs text-gray-500 mt-1">완료 {summary.count}건 · 예상금액 {summary.expected.toLocaleString()}원 · 미처리 전체 {summary.pending}건</div>
+      <div className="grid grid-cols-2 gap-2 mt-3">{Object.entries(summary.methods).map(([name,amount])=><div key={name} className="bg-gray-50 rounded-lg p-2 text-xs"><div className="text-gray-500">{name}</div><b>{amount.toLocaleString()}원</b></div>)}</div>
+      <div className="text-[10px] text-gray-400 mt-2">처리 완료일 기준 · 완료 건의 실제금액 합계</div></>}
+    </div>
+    <div className="rounded-xl bg-white border border-gray-100 p-4">
+      <h2 className="text-sm font-bold">고객별 약속관리</h2><div className="mt-1 text-xs text-gray-500">실적을 저장한 고객이 자동으로 등록돼요.</div>
+      <select aria-label="약속관리 고객" value={selectedCustomer} onChange={e=>{setSelectedCustomer(e.target.value);setFilter('all');setQuery('');}} className="mt-3 w-full border rounded-xl p-3 text-sm"><option value="">전체 고객</option>{customers.map(c=><option key={c.id} value={c.id}>{c.customer_name}</option>)}</select>
+      <button disabled={!selectedCustomer||loading||loadError} onClick={()=>setEditor({customer:customerMap[selectedCustomer]})} className="mt-2 w-full rounded-xl py-3 bg-brand-600 text-white text-xs font-bold disabled:opacity-40">+ 선택 고객 약속 추가</button>
+    </div>
     <div className="grid grid-cols-3 gap-2">
       {[['오늘',todayTasks.length],['기한 경과',overdue.length],['7일 내',next7.length]].map(([l,v])=>
         <div key={l} className="bg-white rounded-xl border border-gray-100 p-3 text-center">
@@ -156,13 +185,13 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
        <div className="divide-y divide-gray-50">
          {visible.map(t=>{
            const c=customerMap[t.customer_id], isOver=t.status!=='completed'&&t.due_date<today;
-           const card=t.task_type==='affiliateCard'?t.task_meta||{}:null,category=careTaskCategory(t);
+           const card=t.task_type==='affiliateCard'?t.task_meta||{}:null,category=t.task_type==='usedPhone'?'중고폰':t.task_type==='offer'?'오퍼':t.task_type.startsWith('insurance93')?'보험':t.task_type.startsWith('addon93_')?'변경':careTaskCategory(t);
            return <div key={t.id} className="p-4">
              <div className="flex justify-between gap-3">
                <div className="min-w-0">
                  <div className="flex items-center gap-1.5 flex-wrap"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-600">{category}</span><span className="text-sm font-bold text-gray-900">{c?.customer_name||'고객'} · {t.title}</span></div>
                  <div className="text-[11px] text-gray-400 mt-1">
-                   {t.retention_days?`${t.retention_days}일 유지 → ${t.retention_days===93?'94':'184'}일째 변경 가능 · `:''}{t.due_date}
+                   {t.retention_days?`개통 ${t.retention_days}일 뒤 안내 · `:''}{t.due_date}
                  </div>
                  {t.target_plan&&<div className="text-xs text-brand-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
                  {card&&<div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
@@ -172,6 +201,12 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                      <div className={`rounded-lg px-2 py-1.5 ${card.autopay_registered?'bg-emerald-100 text-emerald-700':'bg-white text-gray-500'}`}>자동이체 · {card.autopay_registered?'등록 완료':'미등록'}</div>
                    </div>
                  </div>}
+                 {t.task_type==='usedPhone'&&<div className="mt-2 rounded-xl bg-gray-50 p-3 text-xs space-y-1">
+                   <div>예상금액 · {t.task_meta?.expected_amount==null?'미입력':`${Number(t.task_meta.expected_amount).toLocaleString()}원`}</div>
+                   <div className="font-bold text-brand-700">실제금액 · {t.task_meta?.actual_amount==null?'미입력':`${Number(t.task_meta.actual_amount).toLocaleString()}원`}</div>
+                   {(t.task_meta?.allocations||[]).map((r,i)=><div key={i}>{r.method}{r.note?` (${r.note})`:''} · {Number(r.amount).toLocaleString()}원</div>)}
+                   {t.task_meta?.processed_date&&<div>처리 완료일 · {t.task_meta.processed_date}</div>}
+                 </div>}
                  {t.note&&<div className="text-xs text-gray-500 mt-1">{t.note}</div>}
                </div>
                <div className="shrink-0 flex items-center gap-1.5">{card&&t.status!=='completed'&&t.status!=='cancelled'&&<button onClick={()=>cancelAffiliateCard(t)} className="text-[10px] font-semibold text-red-400 px-1.5 py-1">약속 취소</button>}<span className={`text-[10px] font-bold px-2 py-1 rounded-full h-fit ${
@@ -179,6 +214,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                }`}>{t.status==='completed'?'완료':t.status==='cancelled'?(t.task_meta?.cancel_reason==='home_cancelled'?'청약 취소':'고객 거절'):dLabel(t.due_date)}</span></div>
              </div>
 
+             {t.status!=='cancelled'&&<button onClick={()=>setEditor({customer:c,task:t})} className="mt-3 text-xs font-semibold text-brand-600">내용·금액 수정</button>}
              {t.status==='cancelled'?(
                <button onClick={()=>resumeCancelledCard(t)} className="mt-3 w-full py-2 rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold">다시 진행</button>
              ):t.status==='completed'?(
@@ -221,6 +257,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
       </div>
       <div><HomeOrderManager {...homeProps}/></div>
     </div>
+    {editor&&<CustomerPromiseEditor customer={editor.customer} task={editor.task} today={today} onSave={savePromise} onClose={()=>setEditor(null)}/>}
     {rescheduleTask&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setRescheduleTask(null)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className="text-lg font-bold text-gray-900">약속 날짜를 변경할까요?</div><div className="text-xs text-gray-500 mt-1">고객에게 다시 연락할 날짜를 선택해주세요.</div><input type="date" value={rescheduleDate} onChange={e=>setRescheduleDate(e.target.value)} className="mt-4 w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setRescheduleTask(null)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button onClick={async()=>{if(!rescheduleDate)return showAppToast('변경할 날짜를 선택해주세요.',{tone:'error'});await updateTask(rescheduleTask,{status:'pending',due_date:rescheduleDate});setRescheduleTask(null)}} className="py-3 rounded-xl bg-brand-600 text-white text-sm font-bold">날짜 변경</button></div></div></div>}
   </div>;
 }

@@ -29,6 +29,7 @@ test('mobile create, actual child failure rollback, edit and undo use one transa
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill(name);
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('0');
  await dialog.getByLabel('요금제군',{exact:true}).selectOption('0');
+ await dialog.getByRole('button',{name:'둘 다',exact:true}).click();
  const before=await snapshot(world.admin,world.employee.id);
  const rpc='**/rest/v1/rpc/save_sale_atomic';
  await page.route(rpc,async route=>{const body=route.request().postDataJSON();body.p_expenses=[{amount:1000,expense_date:null,category:'E2E failure'}];await route.continue({postData:JSON.stringify(body)});},{times:1});
@@ -42,6 +43,8 @@ test('mobile create, actual child failure rollback, edit and undo use one transa
  const savedResponse=await wait;expect(savedResponse.ok(),await savedResponse.text()).toBe(true);
  await expect(dialog).toHaveCount(0);
  const created=await snapshot(world.admin,world.employee.id);
+ expect(created.customer_tasks.map(t=>t.task_type).sort()).toEqual(['plan183','plan93']);
+ expect(created.customer_sales[0].source_meta.reminders.plan).toBe('both');
  expect(created.customer_sales).toHaveLength(1);expect(created.daily_records[0].data.matrix[0][0]).toBe(1);
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();
  await dialog.getByLabel('요금제군',{exact:true}).selectOption('1');
@@ -49,6 +52,8 @@ test('mobile create, actual child failure rollback, edit and undo use one transa
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();
  const edit=await wait;expect(edit.ok(),await edit.text()).toBe(true);await expect(dialog).toHaveCount(0);
  const edited=await snapshot(world.admin,world.employee.id);
+ expect(edited.customer_tasks.map(t=>t.task_type).sort()).toEqual(['plan183','plan93']);
+ expect(edited.customer_tasks.map(t=>t.due_date).sort()).toEqual(created.customer_tasks.map(t=>t.due_date).sort());
  expect(edited.customer_sales).toHaveLength(1);expect(edited.customer_sales[0].id).toBe(created.customer_sales[0].id);
  expect(edited.customer_sales[0].source_meta.policySnapshot).toEqual(created.customer_sales[0].source_meta.policySnapshot);
  expect(edited.daily_records[0].data.matrix[0].slice(0,2)).toEqual([0,1]);

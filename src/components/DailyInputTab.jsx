@@ -1,3 +1,5 @@
+import { buildReminderTasks, reminderServices, restoreReminders } from '../customerPromises';
+import ReminderChoices from './ReminderChoices';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 import { supabase } from '../supabase';
@@ -12,7 +14,7 @@ import { allowedSecondVas, mergeSaleMetaPreservingLegacy, calculateHomePolicyFro
 import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale, septemberMobileSaleType, september18HomeApplication, calculateSeptemberBundleSale } from '../septemberPolicy';
 
 import { isSeptemberPolicyActive } from '../policyCalendar';
-import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, CARE_TEMPLATES, septemberPlanGroup, currentPolicySnapshot, buildMobileTasks, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, CareTemplatePicker, HOME_NETWORK_TYPES } from "../appShared";
+import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, septemberPlanGroup, currentPolicySnapshot, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, HOME_NETWORK_TYPES } from "../appShared";
 
 export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
   const n = daysInMonth(month);
@@ -70,13 +72,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [editingSale,setEditingSale]=useState(null);
   const [editingCompletedTaskCount,setEditingCompletedTaskCount]=useState(0);
   const [mobileCustomerName,setMobileCustomerName]=useState('');
-  const [mobileCareKeys,setMobileCareKeys]=useState([]);
-  const [mobileCustomTitle,setMobileCustomTitle]=useState('');
-  const [mobileCustomDueDate,setMobileCustomDueDate]=useState('');
-  const [mobileTargetPlan,setMobileTargetPlan]=useState('');
-  const [mobilePaymentFirstDate,setMobilePaymentFirstDate]=useState('');
-  const [mobilePaymentCount,setMobilePaymentCount]=useState(3);
-  const [mobileAffiliateCard,setMobileAffiliateCard]=useState({cardName:'',approvalRequired:false,taskMeta:null});
+  const [mobileReminders,setMobileReminders]=useState({plan:'keep',services:{}});
   const [mobileVasKeys,setMobileVasKeys]=useState([]);
   const [mobileStrategicPlan,setMobileStrategicPlan]=useState(false); // 105군 이상 본사 전략요금제 체크
   const [mobileBundle2ndKeys,setMobileBundle2ndKeys]=useState([]);
@@ -95,7 +91,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [mobileExpenseCategory,setMobileExpenseCategory]=useState('케이스');
   const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
   const [mobileExpenseMemo,setMobileExpenseMemo]=useState('');
-  const [mobileExtraPromises,setMobileExtraPromises]=useState([]);
   const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
   const [specialPolicies,setSpecialPolicies]=useState([]);
   // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
@@ -1076,30 +1071,11 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileExpenseOpen(false);
 
     const tasks=children.tasks;
+    setMobileReminders(restoreReminders(sale.source_meta,tasks));
     const completed=(tasks||[]).filter(t=>t.status==='completed');
-    const editable=(tasks||[]).filter(t=>!['completed','cancelled'].includes(t.status));
     setEditingCompletedTaskCount(completed.length);
-    setMobileCareKeys([...new Set(editable
-      .map(t=>String(t.task_type||'').startsWith('payment3_')?'payment3':t.task_type)
-      .filter(k=>CARE_TEMPLATES.some(x=>x.key===k)))]);
-    const paymentTasks=(tasks||[]).filter(t=>String(t.task_type||'').startsWith('payment3_')).sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));
-    setMobilePaymentFirstDate(paymentTasks[0]?.due_date||'');
-    setMobilePaymentCount(paymentTasks.length||3);
-    const affiliateTask=editable.find(t=>t.task_type==='affiliateCard');
-    setMobileAffiliateCard({
-      cardName:affiliateTask?.task_meta?.card_name||'',
-      approvalRequired:!!affiliateTask?.task_meta?.approval_required,
-      taskMeta:affiliateTask?.task_meta||null
-    });
-    const customs=editable.filter(t=>t.task_type==='custom');
-    const custom=customs[0];
-    setMobileCustomTitle(custom?.title||'');
-    setMobileCustomDueDate(custom?.due_date||'');
-    setMobileExtraPromises(customs.slice(1).map(t=>({title:t.title||'',dueDate:t.due_date||''})));
     const editExpenses=children.expenses;
     const ex=editExpenses||[]; setMobileExpenseOpen(ex.length>0); setMobileExpenseCategory(ex[0]?.category||'케이스'); setMobileExpenseAmount(ex[0]?.amount?String(ex[0].amount):''); setMobileExpenseMemo(ex[0]?.memo||''); setMobileExtraExpenses(ex.slice(1).map(e=>({category:e.category||'기타',amount:String(e.amount||''),memo:e.memo||''})));
-    const plan=editable.find(t=>t.task_type==='plan93'||t.task_type==='plan183');
-    setMobileTargetPlan(plan?.target_plan||'');
   };
 
   const addOne = (ri=null,ci=null) => {
@@ -1112,13 +1088,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileCalcOpen(false);
     setMobileMoreVasOpen(false);
     setMobileCustomerName('');
-    setMobileCareKeys([]);
-    setMobileCustomTitle('');
-    setMobileCustomDueDate('');
-    setMobileTargetPlan('');
-    setMobilePaymentFirstDate('');
-    setMobilePaymentCount(3);
-    setMobileAffiliateCard({cardName:'',approvalRequired:false,taskMeta:null});
+    setMobileReminders({plan:'keep',services:{}});
     setMobileVasKeys([]);
     setMobileStrategicPlan(false);
     setMobileBundle2ndKeys([]);
@@ -1135,7 +1105,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileExpenseCategory('케이스');
     setMobileExpenseAmount('');
     setMobileExpenseMemo('');
-    setMobileExtraPromises([]); setMobileExtraExpenses([]); setMobileSaleKind(''); setMobileSpecialPolicyId(''); setMobileSpecialExceptionAmount('');
   };
 
   const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false, parentCi=mobileSaleDraft?.ci) => {
@@ -1166,8 +1135,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if(!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return showAppToast('가입구분과 요금제군을 선택해주세요.',{tone:'error'});
     const customer=mobileCustomerName.trim();
     if(!customer)return showAppToast('고객명을 입력해야 실적을 등록할 수 있어요.',{tone:'error'});
-    if(mobileCareKeys.includes('payment3')&&!mobilePaymentFirstDate)return showAppToast('3개월 요금 수납의 첫 수납 예정일을 선택해주세요.',{tone:'error'});
-    if(mobileCareKeys.includes('affiliateCard')&&!String(mobileAffiliateCard.cardName||'').trim())return showAppToast('약속할 제휴카드명을 입력해주세요.',{tone:'error'});
     if(mobileSaleKind==='special' && !mobileSpecialPolicyId){
       return showLegacyAlert(specialPolicies.length
         ? '특가&지인정책에 적용할 모델과 가입 구분을 선택해주세요.'
@@ -1229,14 +1196,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||SEPTEMBER_POLICY_VERSION};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
-        ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
+        reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
       }));
       const saleId=editingSale?.id||crypto.randomUUID();
-      const closed=editingSale?.children?.tasks.filter(t=>['completed','cancelled'].includes(t.status))||[];
-      const previousCard=mobileAffiliateCard.taskMeta||{};
-      let tasks=buildMobileTasks({userId:currentEmp.id,saleId,saleDate,templateKeys:mobileCareKeys,customTitle:mobileCustomTitle,customDueDate:mobileCustomDueDate,targetPlan:mobileTargetPlan,paymentFirstDate:mobilePaymentFirstDate,paymentCount:mobilePaymentCount,affiliateCard:mobileAffiliateCard});
-      tasks=tasks.filter(t=>!closed.some(c=>c.task_type===t.task_type&&t.task_type.startsWith('payment3_'))).map(t=>t.task_type==='affiliateCard'?{...t,task_meta:{...t.task_meta,...previousCard,card_name:mobileAffiliateCard.cardName.trim(),approval_required:!!mobileAffiliateCard.approvalRequired}}:t);
-      tasks.push(...mobileExtraPromises.filter(x=>String(x.title||'').trim()&&x.dueDate).map(x=>({task_type:'custom',title:x.title.trim(),base_date:saleDate,due_date:x.dueDate,status:'pending',task_meta:{}})));
+      const tasks=buildReminderTasks({saleDate,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]});
       const expenses=mobileExpenseOpen?[{category:mobileExpenseCategory,amount:mobileExpenseAmount,memo:mobileExpenseMemo},...mobileExtraExpenses].filter(x=>Number(x.amount)>0).map(x=>({expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null})):[];
       const free=bundleFreeAmounts();
       const feedbackMeta={saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
@@ -1389,7 +1352,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const afterPay=computePay(afterDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
     const vasLabels=(mobileVasKeys||[]).filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
     const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
-    const promiseCount=mobileCareKeys.reduce((n,k)=>n+(k==='payment3'?mobilePaymentCount:1),0)+([{title:mobileCustomTitle,dueDate:mobileCustomDueDate},...mobileExtraPromises].filter(x=>String(x.title||'').trim()&&x.dueDate).length);
+    const promiseCount=buildReminderTasks({saleDate:`${month}-${selectedDay}`,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]}).length;
     const incentive=Math.max(0,Number(afterPay.currentPerformanceAmount||0)-Number(beforePay.currentPerformanceAmount||0));
     const points=Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0);
     const productivity=Number(afterPay.kpiScore||0)-Number(beforePay.kpiScore||0);
@@ -1973,6 +1936,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             </div>
 
+            <ReminderChoices value={mobileReminders} onChange={setMobileReminders} services={reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS)}/>
+
             {Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && (
               <div className="mt-4">
                 <div className="text-xs font-semibold text-gray-600 mb-2">4. 중고 MNP 결합 인센티브</div>
@@ -2055,16 +2020,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </div>
 
             <div className={`mt-4 grid gap-2 ${editingSale?'grid-cols-2':'grid-cols-3'}`}>
-              <button
-                type="button"
-                onClick={() => {
-                  const el=document.getElementById('mobile-care-options');
-                  if(el)el.classList.toggle('hidden');
-                }}
-                className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileCareKeys.length||mobileCustomTitle?'bg-brand-50 border-brand-200 text-brand-700':'bg-gray-50 border-gray-100 text-gray-600'}`}
-              >
-                + 고객 약속{mobileCareKeys.length?` ${mobileCareKeys.length}`:''}
-              </button>
               {editingSale&&<button type="button" onClick={()=>setMobileExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 영업비용</button>}
 {!editingSale&&(<>
               {!isSeptemberPolicyActive(month)&&<>
@@ -2089,20 +2044,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
 </>)}            </div>
 
-            <div id="mobile-care-options" className="hidden mt-4">
-              <CareTemplatePicker
-                selected={mobileCareKeys} setSelected={setMobileCareKeys}
-                customTitle={mobileCustomTitle} setCustomTitle={setMobileCustomTitle}
-                customDueDate={mobileCustomDueDate} setCustomDueDate={setMobileCustomDueDate}
-                targetPlan={mobileTargetPlan} setTargetPlan={setMobileTargetPlan}
-                paymentFirstDate={mobilePaymentFirstDate} setPaymentFirstDate={setMobilePaymentFirstDate}
-                paymentCount={mobilePaymentCount} setPaymentCount={setMobilePaymentCount}
-                affiliateCard={mobileAffiliateCard} setAffiliateCard={setMobileAffiliateCard}
-                saleDate={`${month}-${selectedDay}`}
-              />
-              {mobileExtraPromises.map((x,i)=><div key={i} className="mt-2 grid grid-cols-[1fr_auto] gap-2"><div><input value={x.title} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,title:e.target.value}:v))} placeholder="추가 약속 내용" className="w-full border rounded-lg px-3 py-2 text-xs"/><input type="date" value={x.dueDate} onChange={e=>setMobileExtraPromises(a=>a.map((v,j)=>j===i?{...v,dueDate:e.target.value}:v))} className="mt-1 w-full border rounded-lg px-3 py-2 text-xs"/></div><button type="button" onClick={()=>setMobileExtraPromises(a=>a.filter((_,j)=>j!==i))} className="text-red-400 text-xs">삭제</button></div>)}
-              <button type="button" onClick={()=>setMobileExtraPromises(a=>[...a,{title:'',dueDate:''}])} className="mt-2 text-xs font-semibold text-brand-600">+ 약속 추가</button>
-            </div>
+            <div className="mt-3 text-xs text-gray-500">중고폰·오퍼·제휴카드·케이스 약속은 저장 후 약속관리에서 등록해주세요.</div>
 
             {!editingSale&&!isSeptemberPolicyActive(month)&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 스팟 추가 인센티브</div>
