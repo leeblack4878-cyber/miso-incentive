@@ -24,7 +24,7 @@ test('320px customer auto-list, reminders, split settlement, reload and completi
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  await dialog.getByRole('button',{name:'저장 후 처리완료'}).click();await expect(dialog).toHaveCount(0);expect(posts).toBe(1);
  await page.locator('summary').filter({hasText:'월별 중고폰 처리금액'}).click();await expect(page.getByText('300,000원',{exact:true})).toBeVisible();
- await page.reload();await expect(page.getByText('300,000원',{exact:true})).toBeVisible();
+ await page.reload();await page.locator('summary').filter({hasText:'월별 중고폰 처리금액'}).click();await expect(page.getByText('300,000원',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'완료·취소',exact:true}).click();page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'완료 취소',exact:true}).click();
  await expect(page.getByText('완료 0건 · 예상금액 0원 · 미처리 전체 1건')).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
