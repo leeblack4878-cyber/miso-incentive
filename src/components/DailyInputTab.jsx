@@ -65,7 +65,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
   const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
-  const [recentMobileCombos,setRecentMobileCombos]=useState([]);
   const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
   const [mobileCalcOpen,setMobileCalcOpen]=useState(false);
   const [mobileMoreVasOpen,setMobileMoreVasOpen]=useState(false);
@@ -141,49 +140,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key));
   const additionalMainVas=normalizedMainVas.filter(v=>!primaryVasKeys.has(v.key));
   const isDayOff = !!day.dayOff;
-
-  const recentComboStorageKey=currentEmp?.id?`miso_recent_mobile_combos_v1:${currentEmp.id}`:'';
-  useEffect(()=>{
-    if(!recentComboStorageKey){setRecentMobileCombos([]);return;}
-    try{
-      const parsed=JSON.parse(localStorage.getItem(recentComboStorageKey)||'[]');
-      setRecentMobileCombos(Array.isArray(parsed)?parsed.slice(0,3):[]);
-    }catch{setRecentMobileCombos([]);}
-  },[recentComboStorageKey]);
-
-  const rememberMobileCombo=()=>{
-    if(!recentComboStorageKey||!mobileSaleDraft)return;
-    const combo={
-      ri:Number(mobileSaleDraft.ri),ci:Number(mobileSaleDraft.ci),label:mobileSaleDraft.label,
-      strategicPlan:!!mobileStrategicPlan,vasKeys:[...(mobileVasKeys||[])],
-      bundle2ndKeys:[...(mobileBundle2ndKeys||[])],bundleVasMap:{...(mobileBundleVasMap||{})},
-      bundleSaleTypeMap:{...(mobileBundleSaleTypeMap||{})},usedMnpBundle:!!mobileUsedMnpBundle
-    };
-    const signature=JSON.stringify(combo);
-    const next=[combo,...recentMobileCombos.filter(x=>JSON.stringify(x)!==signature)].slice(0,3);
-    setRecentMobileCombos(next);
-    try{localStorage.setItem(recentComboStorageKey,JSON.stringify(next));}catch{/* 기기 저장공간 제한 시 빠른 선택만 생략 */}
-  };
-
-  const applyRecentMobileCombo=(combo)=>{
-    const ri=Number(combo?.ri),maxCi=Math.max(0,activeMatrixCols.length-1);
-    if(!Number.isInteger(ri)||!MATRIX_ROW_DEFS[ri])return;
-    const storedCi=Math.min(Math.max(0,Number(combo?.ci)||0),maxCi);
-    const ci=MATRIX_ROW_DEFS[ri].hasTiers?(isSeptemberPolicyActive(month)&&storedCi===3?5:storedCi):0;
-    const vasKeys=(combo.vasKeys||[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k).filter((k,i,a)=>(k==='vasNone'||(config.vas||DEFAULT_VAS).some(v=>v.key===k))&&a.indexOf(k)===i);
-    const bundleKeys=(combo.bundle2ndKeys||[]).filter(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).some(v=>v.key===k)).slice(0,2);
-    setMobileSaleDraft({ri,ci,label:mobileLabelFor(ri,ci)});
-    setMobileSaleKind('normal');
-    setMobileStrategicPlan(!!combo.strategicPlan);
-    setMobileVasKeys(vasKeys);
-    setMobileBundle2ndKeys(bundleKeys);
-    setMobileBundleVasMap(Object.fromEntries(bundleKeys.map(k=>[k,(combo.bundleVasMap?.[k]||[]).filter(v=>v==='vasNone'||(config.vas||DEFAULT_VAS).some(x=>x.key===v))])));
-    setMobileBundleSaleTypeMap(Object.fromEntries(bundleKeys.map(k=>[k,combo.bundleSaleTypeMap?.[k]||'normal'])));
-    setMobileUsedMnpBundle(!!combo.usedMnpBundle);
-    setMobileDetailsOpen(bundleKeys.length>0);
-    setMobileMoreVasOpen(vasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
-    showAppToast('최근 판매 조합을 불러왔어요.',{tone:'info'});
-  };
 
   const setDayOff = async (nextOff) => {
     if (locked) return;
@@ -1222,7 +1178,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       await onSalesChanged?.();
       if(activeTeamSupport)await onTeamCreditSaved?.();
 
-      rememberMobileCombo();
 
       setMobileSaleDraft(null);
       setLegacyConversion(null);
@@ -1751,15 +1706,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className={`rounded-lg py-2 text-center ${mobileDetailsOpen?'bg-brand-100 text-brand-700':'bg-gray-100 text-gray-400'}`}>2 추가항목</div>
               <div className={`rounded-lg py-2 text-center ${mobileCustomerName.trim()?'bg-emerald-50 text-emerald-700':'bg-gray-100 text-gray-400'}`}>3 확인·등록</div>
             </div>
-            {!editingSale&&recentMobileCombos.length>0&&<div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/50 p-3">
-              <div className="text-[10px] font-bold text-brand-700 mb-2">최근 판매 조합 빠른 선택</div>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-                {recentMobileCombos.map((combo,i)=><button key={`${combo.label}-${i}`} type="button" onClick={()=>applyRecentMobileCombo(combo)} className="shrink-0 rounded-lg bg-white border border-brand-100 px-3 py-2 text-left">
-                  <div className="text-[11px] font-bold text-gray-700">{combo.label}</div>
-                  <div className="text-[9px] text-gray-400 mt-0.5">VAS {(combo.vasKeys||[]).filter(k=>k!=='vasNone').length} · 2ND {(combo.bundle2ndKeys||[]).length}</div>
-                </button>)}
-              </div>
-            </div>}
             {!editingSale&&<div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-700">항목을 선택하는 동안에는 저장되지 않아요. 맨 아래 <b>실적 등록</b>을 눌러야 판매건·고객정보·약속이 함께 등록됩니다.</div>}
             {legacyConversion?.kind==='mobile'&&<div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[10px] text-amber-700">
               기존 데이터에서 확인된 값 · <b>{legacyConversion.title}{legacyConversion.detail?` · ${legacyConversion.detail}`:''}</b><br/>
