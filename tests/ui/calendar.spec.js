@@ -64,10 +64,28 @@ test('9/18 아이폰18은 인센미지급 정책에서 선택하고 일반 추�
  await expect(iphone).toContainText('300,000');await iphone.click();await expect(iphone).toContainText('✓');
  await page.getByRole('combobox',{name:'가입구분',exact:true}).selectOption('1');
  await page.getByRole('combobox',{name:'요금제군',exact:true}).selectOption('0');
+ await page.getByRole('dialog',{name:'요금제 변경 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
  await expect(iphone).toContainText('✓');
  await expect(page.getByText(/선택 시 사전예약 판매로 기록됩니다/)).toBeVisible();
  await page.getByRole('button',{name:'특가&지인정책',exact:true}).click();
  await expect(iphone).toHaveCount(0);
  await expect(page.getByRole('button',{name:/S26-256\/512 · MNP/})).toContainText('100,000');
  await expect(page.getByRole('button',{name:/S26울트라 256\/512 · MNP/})).toContainText('80,000');
+});
+
+test('요금제 선택 직후 변경 안내 팝업과 재선택, 최근 조합 제거',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await openCalendar(page,{date:'2026-09-19'});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ const sale=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await sale.getByRole('button',{name:'일반 판매',exact:true}).click();
+ await sale.getByLabel('가입구분',{exact:true}).selectOption('0');
+ await sale.getByLabel('요금제군',{exact:true}).selectOption('0');
+ const reminder=page.getByRole('dialog',{name:'요금제 변경 안내',exact:true});
+ await expect(reminder).toBeVisible();expect(await reminder.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await reminder.getByRole('button',{name:'둘 다 (93일·183일)',exact:true}).click();
+ await expect(reminder).toHaveCount(0);await expect(sale.getByRole('button',{name:/요금제 변경 안내 · 둘 다/})).toBeVisible();
+ await sale.getByRole('button',{name:/요금제 변경 안내 · 둘 다/}).click();
+ await reminder.getByRole('button',{name:'유지',exact:true}).click();
+ await expect(sale.getByRole('button',{name:/요금제 변경 안내 · 유지/})).toBeVisible();
+ await expect(sale.getByText('최근 판매 조합 빠른 선택')).toHaveCount(0);
 });

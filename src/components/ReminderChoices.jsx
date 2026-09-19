@@ -1,7 +1,8 @@
-export default function ReminderChoices({value,onChange,services}) {
+export default function ReminderChoices({value,onChange,services,hidePlan=false}) {
+ if(hidePlan&&!services.length)return null;
  const choices=(label,current,options,set)=><div className="mt-3"><div className="text-xs font-semibold text-gray-700 mb-1.5">{label}</div><div className="flex flex-wrap gap-1.5">{options.map(([key,text])=><button type="button" key={key} aria-pressed={current===key} onClick={()=>set(key)} className={`rounded-lg border px-3 py-2 text-xs ${current===key?'border-brand-300 bg-brand-50 text-brand-700 font-bold':'border-gray-200 text-gray-500'}`}>{text}</button>)}</div></div>;
  return <div className="mt-4 rounded-xl bg-gray-50 p-3"><div className="text-sm font-bold">변경 안내 일정</div><div className="text-[11px] text-gray-500 mt-1">개통일 기준으로 고객 약속에 자동 등록돼요.</div>
- {choices('요금제',value.plan,[['93','3개월 뒤 (93일)'],['183','6개월 뒤 (183일)'],['both','둘 다'],['keep','유지']],plan=>onChange({...value,plan}))}
+ {!hidePlan&&choices('요금제',value.plan,[['93','3개월 뒤 (93일)'],['183','6개월 뒤 (183일)'],['both','둘 다'],['keep','유지']],plan=>onChange({...value,plan}))}
  {services.map(s=><div key={s.key}>{choices(s.label,value.services?.[s.key]||'keep',[['93',s.insurance?'93일 뒤 확인':'3개월 뒤 삭제 안내'],['keep','유지']],v=>onChange({...value,services:{...value.services,[s.key]:v}}))}</div>)}
  <div className="text-[10px] text-gray-500 mt-3">3개월은 93일, 6개월은 183일 뒤 안내합니다. 실제 변경·해지는 고객 확인 후 진행해주세요.</div></div>;
 }

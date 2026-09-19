@@ -410,13 +410,13 @@ test('판매 완료 카드에 성과P 전략P 생산성 증가분을 함께 표�
   assert.match(strategicSource, /vasVcolorMusic: 0\.3/);
 });
 
-test('모바일 빠른 입력은 최근 조합·단계형 추가항목·계산근거·완전한 실행취소를 제공한다', async () => {
+test('모바일 입력은 최근 조합 없이 단계형 추가항목·계산근거·완전한 실행취소를 제공한다', async () => {
   const source = await readAppSource();
   assert.match(source, /const \[mobileSaleKind,setMobileSaleKind\]=useState\('\'\)/);
   assert.match(source, /const addOne = \(ri=null,ci=null\)/);
   assert.match(source, /if\(!mobileSaleDraft\|\|!mobileSaleKind\|\|!Number\.isInteger\(mobileSaleDraft\.ri\)/);
-  assert.match(source, /miso_recent_mobile_combos_v1/);
-  assert.match(source, /최근 판매 조합 빠른 선택/);
+  assert.doesNotMatch(source, /miso_recent_mobile_combos_v1/);
+  assert.doesNotMatch(source, /최근 판매 조합 빠른 선택/);
   assert.match(source, /2ND·고객약속·영업비용 추가/);
   assert.match(source, /계산 근거 보기/);
   assert.match(source, /\['생산성',mobilePreview\.productivity\]/);
@@ -447,7 +447,6 @@ test('일일 입력은 기기 임시저장과 온라인 복구 재시도를 제�
 test('9월 모바일 입력은 사용하지 않는 33~84군을 숨기고 기존 선택을 그 외로 전환한다', async () => {
   const source = await readAppSource();
   assert.match(source, /option\.ci===3/);
-  assert.match(source, /storedCi===3\?5:storedCi/);
   assert.match(source, /Number\(meta\.ci\)===3\?5:meta\.ci/);
   assert.match(source, /activeMatrixOptions\.map/);
 });
