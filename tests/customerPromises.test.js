@@ -33,3 +33,9 @@ test('missing actual differs from zero; incomplete and overallocated settlement 
  assert.throws(()=>usedPhoneMeta({actual_amount:-1}));
  assert.equal(usedPhoneMeta({actual_amount:0,processed_date:'2026-09-19'},true).actual_amount,0);
 });
+
+test('legacy combined addon promise survives unrelated sale edit without multiplying dates',()=>{
+ const legacy={task_type:'addon93',status:'pending',due_date:'2026-12-25',note:'기존 약속'};
+ const reminders=restoreReminders({vasKeys:['vasKyobo']},[legacy]);
+ assert.deepEqual(buildReminderTasks({saleDate:'2026-09-19',reminders,services:reminderServices(['vasKyobo'],[]),previous:[legacy]}),[legacy]);
+});

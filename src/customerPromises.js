@@ -1,6 +1,6 @@
 export const USED_PHONE_METHODS = ['고객 입금','위약금 수납','요금 수납','잔여 할부금 수납','새 기기 기기값 수납','기타'];
 export const isInsurance = key => ['vasPhonePass','vasSafePass'].includes(key);
-export const isAutoReminder = task => /^(plan93|plan183|addon93|insurance93)(_|$)/.test(task.task_type);
+export const isAutoReminder = task => /^(plan93|plan183)$|^(addon93|insurance93)_/.test(task.task_type);
 export function reminderServices(keys, catalog) {
   return [...new Set(keys)].filter(k => !['vasNone','vasStrategicPlan'].includes(k)).map(key => ({key,label:catalog.find(v=>v.key===key)?.label||key,insurance:isInsurance(key)}));
 }
@@ -8,7 +8,7 @@ const addDays = (date, days) => {const d=new Date(`${date}T12:00:00Z`);d.setUTCD
 export function restoreReminders(meta={}, tasks=[]) {
   if(meta.reminders)return structuredClone(meta.reminders);
   const types=new Set(tasks.filter(t=>!['completed','cancelled'].includes(t.status)).map(t=>t.task_type));
-  return {plan:types.has('plan93')?(types.has('plan183')?'both':'93'):types.has('plan183')?'183':'keep',services:Object.fromEntries((meta.vasKeys||[]).map(k=>[k,types.has('addon93')&&!isInsurance(k)?'93':'keep']))};
+  return {plan:types.has('plan93')?(types.has('plan183')?'both':'93'):types.has('plan183')?'183':'keep',services:{}};
 }
 export function buildReminderTasks({saleDate,reminders,services,previous=[]}) {
   const desired=[];
