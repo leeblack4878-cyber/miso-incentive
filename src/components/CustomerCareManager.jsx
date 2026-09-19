@@ -1,3 +1,4 @@
+import {customerSaleChoices, customerChoiceLabel, customerMonthLabel, taskChoiceKey} from '../customerSaleChoices';
 import CustomerPromiseEditor from './CustomerPromiseEditor';
 import {readAllCustomerRows,usedPhoneSummary} from '../customerPromises';
 import { useState, useEffect, useCallback } from 'react';
@@ -14,6 +15,9 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const [tasks,setTasks]=useState([]);
   const [customers,setCustomers]=useState([]);
   const [sales,setSales]=useState([]);
+  const [orders,setOrders]=useState([]);
+  const [customerMonth,setCustomerMonth]=useState(month);
+  const [customerQuery,setCustomerQuery]=useState('');
   const [filter,setFilter]=useState('todo');
   const [editor,setEditor]=useState(null);
   const [selectedCustomer,setSelectedCustomer]=useState('');
@@ -28,8 +32,8 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
     if(!userId)return;
     setLoading(true);
     try {
-      const [t,c,s]=await Promise.all([readAllCustomerRows(supabase,'customer_tasks',userId,'due_date'),readAllCustomerRows(supabase,'customers',userId,'last_sale_date'),readAllCustomerRows(supabase,'customer_sales',userId,'id')]);
-      setTasks(t);setCustomers(c);setSales(s);setLoadError(false);
+      const [t,c,s,o]=await Promise.all([readAllCustomerRows(supabase,'customer_tasks',userId,'due_date'),readAllCustomerRows(supabase,'customers',userId,'last_sale_date'),readAllCustomerRows(supabase,'customer_sales',userId,'id'),readAllCustomerRows(supabase,'home_orders',userId,'id','id,status')]);
+      setTasks(t);setCustomers(c);setSales(s);setOrders(o);setLoadError(false);
     }catch(error){setLoadError(true);showAppToast(friendlyError(error),{tone:'error',title:'고객 약속 조회 실패'});}
     finally{setLoading(false);}
 
@@ -52,11 +56,15 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const overdue=pending.filter(t=>t.due_date<today);
   const todayTasks=pending.filter(t=>t.due_date===today);
   const next7=pending.filter(t=>t.due_date>=today&&t.due_date<=visibleUntil);
-  const activeCustomerIds=new Set([...sales.filter(s=>s.status!=='cancelled').map(s=>s.customer_id),...pending.map(t=>t.customer_id)]);
-  const selectableCustomers=customers.filter(c=>activeCustomerIds.has(c.id)||(filter==='done'&&tasks.some(t=>t.customer_id===c.id)));
+  const customerChoices=customerSaleChoices({customers,sales,tasks,orders,includeHistory:filter==='done'});
+  const choiceMap=Object.fromEntries(customerChoices.map(c=>[c.key,c]));
+  const selectedChoice=choiceMap[selectedCustomer];
+  const customerMonths=[...new Set([month,...customerChoices.map(c=>c.month)])].sort().reverse();
+  const selectableChoices=customerChoices.filter(c=>(customerMonth==='all'||c.month===customerMonth)&&(!customerQuery.trim()||c.name.includes(customerQuery.trim())));
+  useEffect(()=>{setSelectedCustomer('');setCustomerMonth(month);setCustomerQuery('');setEditor(null);},[userId,month]);
   useEffect(()=>{
-    if(selectedCustomer&&!selectableCustomers.some(c=>c.id===selectedCustomer))setSelectedCustomer('');
-  },[selectedCustomer,customers,sales,tasks,filter]);
+    if(selectedCustomer&&!selectableChoices.some(c=>c.key===selectedCustomer))setSelectedCustomer('');
+  },[selectedCustomer,customers,sales,tasks,orders,filter,customerMonth,customerQuery]);
 
   const updateTask=async(t,patch)=>{
     const {data,error}=await supabase.from('customer_tasks')
@@ -117,7 +125,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   };
 
   const visible=tasks.filter(t=>{
-    if(selectedCustomer&&t.customer_id!==selectedCustomer)return false;
+    if(selectedCustomer&&taskChoiceKey(t)!==selectedCustomer)return false;
     const isPending=t.status!=='completed'&&t.status!=='cancelled';
     if(filter==='todo' && !(isPending && t.due_date<=visibleUntil)) return false;
     if(filter==='today' && !(isPending && t.due_date===today)) return false;
@@ -136,7 +144,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
   const summary=usedPhoneSummary(tasks,summaryMonth);
   const savePromise=async(patch)=>{
     if(editor.task)return updateTask(editor.task,patch);
-    const {data,error}=await supabase.from('customer_tasks').insert({...patch,user_id:userId,customer_id:editor.customer.id,source_sale_id:null,base_date:today,status:patch.status||'pending'}).select('id').single();
+    const {data,error}=await supabase.from('customer_tasks').insert({...patch,task_meta:{...patch.task_meta,...(editor.choice?.reference?{sale_reference:editor.choice.reference}:{})},user_id:userId,customer_id:editor.customer.id,source_sale_id:null,base_date:editor.choice?.date||today,status:patch.status||'pending'}).select('id').single();
     if(error||!data){showAppToast(friendlyError(error||new Error('약속 저장 실패')),{tone:'error'});return false;}
     await load();window.dispatchEvent(new CustomEvent('customer-tasks-changed',{detail:{userId}}));return true;
   };
@@ -185,6 +193,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                  <div className="text-[11px] text-gray-400 mt-1">
                    {t.retention_days?`개통 ${t.retention_days}일 뒤 안내 · `:''}{t.due_date}
                  </div>
+                 {choiceMap[taskChoiceKey(t)]&&<div className="text-[10px] text-gray-500 mt-1">{customerChoiceLabel(choiceMap[taskChoiceKey(t)])}</div>}
                  {t.target_plan&&<div className="text-xs text-brand-700 mt-1">변경 예정 요금제 · <b>{t.target_plan}</b></div>}
                  {card&&<div className="mt-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
                    <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-blue-800">{card.card_name||'카드명 미입력'}</span><span className="text-[10px] font-bold text-blue-600">{t.status==='completed'?'최종 완료':AFFILIATE_CARD_STAGES[card.card_stage]||'신청 전'}</span></div>
@@ -243,9 +252,16 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
     </div>
 
     <div className="rounded-xl bg-white border border-gray-100 p-4">
-      <h2 className="text-sm font-bold">고객별 약속관리</h2><div className="mt-1 text-xs text-gray-500">실적을 저장한 고객이 자동으로 등록돼요.</div>
-      <select aria-label="약속관리 고객" value={selectedCustomer} onChange={e=>{setSelectedCustomer(e.target.value);if(filter!=='done')setFilter('all');setQuery('');}} className="mt-3 w-full border rounded-xl p-3 text-sm"><option value="">전체 고객</option>{selectableCustomers.map(c=><option key={c.id} value={c.id}>{c.customer_name}</option>)}</select>
-      <button disabled={!selectedCustomer||loading||loadError} onClick={()=>setEditor({customer:customerMap[selectedCustomer]})} className="mt-2 w-full rounded-xl py-3 bg-brand-600 text-white text-xs font-bold disabled:opacity-40">+ 선택 고객 약속 추가</button>
+      <h2 className="text-sm font-bold">고객별 약속관리</h2><div className="mt-1 text-xs text-gray-500">입력 월과 고객명으로 모바일·홈 판매 건을 찾아요.</div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <select aria-label="고객 입력 월" value={customerMonth} onChange={e=>{setCustomerMonth(e.target.value);setSelectedCustomer('');}} className="min-w-0 border rounded-xl p-2.5 text-xs"><option value="all">전체 기간</option>{customerMonths.map(m=><option key={m} value={m}>{customerMonthLabel(m)}</option>)}</select>
+        <input aria-label="판매 고객명 검색" value={customerQuery} onChange={e=>{setCustomerQuery(e.target.value);setSelectedCustomer('');}} placeholder="고객명 검색" className="min-w-0 border rounded-xl px-3 py-2.5 text-xs"/>
+      </div>
+      <select aria-label="약속관리 고객" value={selectedCustomer} onChange={e=>{setSelectedCustomer(e.target.value);if(filter!=='done')setFilter('all');setQuery('');}} className="mt-2 w-full min-w-0 border rounded-xl p-3 text-sm"><option value="">고객 판매 건 선택</option>{[...new Set(selectableChoices.map(c=>c.month))].map(m=><optgroup key={m} label={customerMonthLabel(m)}>{selectableChoices.filter(c=>c.month===m).map(c=><option key={c.key} value={c.key}>{customerChoiceLabel(c)}</option>)}</optgroup>)}</select>
+      {selectedChoice&&<div className="mt-2 rounded-lg bg-gray-50 p-2 text-xs text-gray-600 break-words">{customerChoiceLabel(selectedChoice)}</div>}
+      {!loading&&!loadError&&!selectableChoices.length&&<div className="mt-2 text-xs text-gray-500">해당 월·이름의 고객이 없어요. 다른 월이나 전체 기간을 선택해주세요.</div>}
+      <button disabled={!selectedChoice||loading||loadError} onClick={()=>setEditor({customer:customerMap[selectedChoice.customerId],choice:selectedChoice})} className="mt-2 w-full rounded-xl py-3 bg-brand-600 text-white text-xs font-bold disabled:opacity-40">+ 선택 고객 약속 추가</button>
+
     </div>
     <details className="rounded-xl bg-white border border-gray-100 p-4">
       <summary className="text-sm font-bold cursor-pointer">월별 중고폰 처리금액</summary>
@@ -263,7 +279,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
       </div>
       <div><HomeOrderManager {...homeProps}/></div>
     </div>
-    {editor&&<CustomerPromiseEditor customer={editor.customer} task={editor.task} today={today} onSave={savePromise} onClose={()=>setEditor(null)}/>}
+    {editor&&<CustomerPromiseEditor contextLabel={editor.choice?customerChoiceLabel(editor.choice):null} customer={editor.customer} task={editor.task} today={today} onSave={savePromise} onClose={()=>setEditor(null)}/>}
     {rescheduleTask&&<div className="fixed inset-0 z-[110] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setRescheduleTask(null)}><div className="w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}><div className="text-lg font-bold text-gray-900">약속 날짜를 변경할까요?</div><div className="text-xs text-gray-500 mt-1">고객에게 다시 연락할 날짜를 선택해주세요.</div><input type="date" value={rescheduleDate} onChange={e=>setRescheduleDate(e.target.value)} className="mt-4 w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>setRescheduleTask(null)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-bold">취소</button><button onClick={async()=>{if(!rescheduleDate)return showAppToast('변경할 날짜를 선택해주세요.',{tone:'error'});await updateTask(rescheduleTask,{status:'pending',due_date:rescheduleDate});setRescheduleTask(null)}} className="py-3 rounded-xl bg-brand-600 text-white text-sm font-bold">날짜 변경</button></div></div></div>}
   </div>;
 }

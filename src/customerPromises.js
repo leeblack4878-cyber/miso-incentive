@@ -44,7 +44,7 @@ export function usedPhoneSummary(tasks,month) {
   rows.forEach(t=>{const m=t.task_meta||{};result.expected+=Number(m.expected_amount||0);result.actual+=Number(m.actual_amount||0);(m.allocations||[]).forEach(r=>{if(r.method in result.methods)result.methods[r.method]+=Number(r.amount||0);});});
   return result;
 }
-export async function readAllCustomerRows(client,table,userId,order) {
+export async function readAllCustomerRows(client,table,userId,order,columns='*') {
   const rows=[];
-  for(let from=0;;from+=1000){const {data,error}=await client.from(table).select('*').eq('user_id',userId).order(order,{ascending:false}).order('id').range(from,from+999);if(error)throw error;rows.push(...(data||[]));if((data||[]).length<1000)return rows;}
+  for(let from=0;;from+=1000){const {data,error}=await client.from(table).select(columns).eq('user_id',userId).order(order,{ascending:false}).order('id').range(from,from+999);if(error)throw error;rows.push(...(data||[]));if((data||[]).length<1000)return rows;}
 }

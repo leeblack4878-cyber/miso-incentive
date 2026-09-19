@@ -3,7 +3,7 @@ import {AFFILIATE_CARD_NAMES} from '../appShared';
 import {USED_PHONE_METHODS,usedPhoneMeta} from '../customerPromises';
 const kinds=[['usedPhone','중고폰 관리'],['offer','오퍼'],['affiliateCard','제휴카드'],['case','케이스'],['custom','기타']];
 const inputClass='mt-1 w-full min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm';
-export default function CustomerPromiseEditor({customer,task,today,onSave,onClose}) {
+export default function CustomerPromiseEditor({customer,task,today,onSave,onClose,contextLabel}) {
  const [type,setType]=useState(task?.task_type||'usedPhone');
  const [title,setTitle]=useState(task?.title||'');
  const [date,setDate]=useState(task?.due_date||today);
@@ -31,6 +31,7 @@ export default function CustomerPromiseEditor({customer,task,today,onSave,onClos
  };
  return <div className="fixed inset-0 z-[120] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>!saving&&onClose()}><div role="dialog" aria-label="고객 약속 편집" className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
  <h2 className="text-lg font-bold">{customer?.customer_name||'고객'} · {task?'약속 수정':'약속 추가'}</h2>
+ {contextLabel&&<div className="mt-2 text-xs text-gray-500 break-words">{contextLabel}</div>}
  {!task&&<div className="flex flex-wrap gap-2 mt-4">{kinds.map(([key,label])=><button type="button" key={key} onClick={()=>{setType(key);setMeta({});}} className={`px-3 py-2 rounded-xl text-xs ${type===key?'bg-brand-600 text-white':'bg-gray-100 text-gray-600'}`}>{label}</button>)}</div>}
  <label className="block text-xs mt-4">약속 내용<input className={inputClass} value={title} onChange={e=>setTitle(e.target.value)} placeholder={kinds.find(k=>k[0]===type)?.[1]||'약속 내용'}/></label>
  <label className="block text-xs mt-3">예정일<input type="date" className={inputClass} value={date} onChange={e=>setDate(e.target.value)}/></label>
