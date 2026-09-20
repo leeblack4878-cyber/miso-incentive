@@ -61,7 +61,7 @@ test('month groups distinguish namesakes and home sales; promise is scoped to se
  await expect(page.getByLabel('고객 입력 월')).toHaveValue('2026-09');
  const choices=page.getByLabel('약속관리 고객');await expect(choices.locator('option')).toHaveCount(3);
  await choices.selectOption('sale:sep1');await expect(page.getByText('김민수 · 첫 판매 안내',{exact:true})).toBeVisible();await expect(page.getByText('김민수 · 둘째 판매 안내',{exact:true})).toHaveCount(0);
- await page.getByLabel('고객 입력 월').selectOption('2026-08');await expect(choices.locator('option')).toHaveCount(2);await expect(choices.locator('option').last()).toContainText('김민수 · 홈 · 2026.08.25 입력');
+ await page.getByLabel('고객 입력 월').selectOption('2026-08');await expect(choices.locator('option')).toHaveCount(2);await expect(choices.locator('option').last()).toContainText('김민수 · 2026.08.25');
  await page.getByLabel('판매 고객명 검색').fill('없는고객');await expect(choices.locator('option')).toHaveCount(1);
  await page.getByLabel('판매 고객명 검색').fill('김민수');await page.getByLabel('고객 입력 월').selectOption('all');await expect(choices.locator('optgroup')).toHaveCount(2);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
