@@ -88,4 +88,18 @@ test('요금제 선택 직후 변경 안내 팝업과 재선택, 최근 조합 �
  await reminder.getByRole('button',{name:'유지',exact:true}).click();
  await expect(sale.getByRole('button',{name:/요금제 변경 안내 · 유지/})).toBeVisible();
  await expect(sale.getByText('최근 판매 조합 빠른 선택')).toHaveCount(0);
+ await sale.getByRole('button',{name:/^교보문고/}).first().click();
+ const service=page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true});
+ await expect(service).toBeVisible();expect(await service.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await service.getByRole('button',{name:'93일 뒤 삭제 안내',exact:true}).click();
+ await sale.getByRole('button',{name:/93일 뒤 삭제 안내 · 변경/}).click();
+ await expect(service.getByRole('button',{name:'93일 뒤 삭제 안내',exact:true})).toHaveAttribute('aria-pressed','true');
+ await service.getByRole('button',{name:'기존 선택 유지하고 닫기'}).click();
+ await sale.getByRole('button',{name:/^폰안심패스/}).first().click();
+ await expect(service.getByText('보험 유지·해지를 확인할까요?')).toBeVisible();
+ await service.getByRole('button',{name:'93일 뒤 유지·해지 확인',exact:true}).click();
+ await sale.getByRole('button',{name:/^✓ 교보문고/}).first().click();
+ await expect(service).toHaveCount(0);await expect(sale.getByRole('button',{name:/93일 뒤 삭제 안내 · 변경/})).toHaveCount(0);
+ await sale.getByRole('button',{name:'미유치',exact:true}).click();await expect(service).toHaveCount(0);
+
 });
