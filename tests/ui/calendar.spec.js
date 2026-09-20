@@ -103,3 +103,13 @@ test('요금제 선택 직후 변경 안내 팝업과 재선택, 최근 조합 �
  await sale.getByRole('button',{name:'미유치',exact:true}).click();await expect(service).toHaveCount(0);
 
 });
+
+for(const height of [520,844])test(`설치 안내 확인 버튼은 하단 메뉴 위에서 클릭 가능 (${height}px)`,async({page})=>{
+ await page.setViewportSize({width:320,height});await openCalendar(page,{date:'2026-09-20'});
+ await page.getByRole('button',{name:/앱 다운로드/}).click();
+ const dialog=page.getByRole('dialog',{name:'미소페이 앱 다운로드 안내'});
+ const confirm=dialog.getByRole('button',{name:'확인했어요'});
+ await confirm.scrollIntoViewIfNeeded();
+ expect(await confirm.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
+ await confirm.click();await expect(dialog).toHaveCount(0);
+});
