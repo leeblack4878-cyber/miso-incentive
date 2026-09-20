@@ -24,11 +24,11 @@ test('used phone 300000 split 100000 penalty + 200000 deposit counted once in co
  const summary=usedPhoneSummary(rows,'2026-10');assert.equal(summary.actual,300000);assert.equal(summary.expected,320000);assert.equal(summary.methods['고객 입금'],200000);assert.equal(summary.count,1);assert.equal(summary.pending,1);
  assert.equal(usedPhoneSummary(rows,'2026-09').actual,0);
 });
-test('missing actual differs from zero; incomplete and overallocated settlement blocked',()=>{
+test('missing actual differs from zero; missing required amounts still blocked',()=>{
  assert.equal(usedPhoneMeta({}).actual_amount,null);
  assert.throws(()=>usedPhoneMeta({},true));
- assert.throws(()=>usedPhoneMeta({actual_amount:30,allocations:[{method:'고객 입금',amount:31}]}));
- assert.throws(()=>usedPhoneMeta({actual_amount:30,processed_date:'2026-09-19',allocations:[{method:'고객 입금',amount:20}]},true));
+ assert.equal(usedPhoneMeta({actual_amount:30,allocations:[{method:'고객 입금',amount:31}]}).staff_excess_amount,1);
+ assert.equal(usedPhoneMeta({actual_amount:30,processed_date:'2026-09-19',allocations:[{method:'고객 입금',amount:20}]},true).surplus_amount,10);
  assert.throws(()=>usedPhoneMeta({allocations:[{method:'기타',amount:1}]}));
  assert.throws(()=>usedPhoneMeta({actual_amount:-1}));
  assert.equal(usedPhoneMeta({actual_amount:0,processed_date:'2026-09-19'},true).actual_amount,0);
@@ -38,4 +38,15 @@ test('legacy combined addon promise survives unrelated sale edit without multipl
  const legacy={task_type:'addon93',status:'pending',due_date:'2026-12-25',note:'기존 약속'};
  const reminders=restoreReminders({vasKeys:['vasKyobo']},[legacy]);
  assert.deepEqual(buildReminderTasks({saleDate:'2026-09-19',reminders,services:reminderServices(['vasKyobo'],[]),previous:[legacy]}),[legacy]);
+});
+
+test('used phone settles either side of actual proceeds and month totals keep excess and surplus separate',()=>{
+ const form={expected_amount:400000,actual_amount:360000,processed_date:'2026-09-20',allocations:[{method:'고객 입금',amount:400000}]};
+ const low=usedPhoneMeta(form,true),high=usedPhoneMeta({...form,actual_amount:450000},true);
+ assert.equal(low.staff_excess_amount,40000);assert.equal(low.surplus_amount,0);
+ assert.equal(high.staff_excess_amount,0);assert.equal(high.surplus_amount,50000);
+ const rows=[low,high].map(task_meta=>({task_type:'usedPhone',status:'completed',task_meta}));
+ const sum=usedPhoneSummary([...rows,{...rows[0],status:'pending'},{...rows[1],status:'cancelled'}],'2026-09');
+ assert.equal(sum.actual,810000);assert.equal(sum.staff_excess_amount,40000);assert.equal(sum.surplus_amount,50000);assert.equal(sum.methods['고객 입금'],800000);
+ const corrected=usedPhoneMeta({...low,actual_amount:400000},true);assert.equal(corrected.staff_excess_amount,0);
 });
