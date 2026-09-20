@@ -21,3 +21,29 @@ test('cancelled home and deleted empty customers are hidden; pending references/
 test('undated legacy records remain accessible without invented dates',()=>{
  const row=customerSaleChoices({customers,tasks:[{customer_id:'c',status:'pending'}]})[0];assert.equal(row.month,'unknown');assert.match(customerChoiceLabel(row),/날짜 미확인/);
 });
+test('same name/day mobile, home and identical products have distinct stable labels',()=>{
+ const input=[
+  {id:'a',customer_id:'c',sale_date:'2026-09-19',source_type:'mobile',metric_label:'MNP'},
+  {id:'b',customer_id:'c',sale_date:'2026-09-19',source_type:'mobile',metric_label:'MNP'},
+  {id:'h',customer_id:'c',sale_date:'2026-09-19',source_type:'home_order',metric_label:'인터넷+TV'},
+  {id:'n',customer_id:'namesake',sale_date:'2026-09-19',source_type:'mobile',metric_label:'MNP'},
+ ];
+ const args={customers:[...customers,{id:'namesake',customer_name:'김민수'}],sales:input};
+ const rows=customerSaleChoices(args),labels=rows.map(customerChoiceLabel);
+ assert.equal(new Set(labels).size,4);
+ assert.match(labels[0],/모바일 · MNP · 1건째/);
+ assert.match(labels[2],/홈 · 인터넷\+TV/);
+ assert.deepEqual(customerSaleChoices({...args,sales:[...input].reverse()}),rows);
+ assert.deepEqual(rows.map(r=>r.reference.id),['a','b','h','n']);
+ assert.equal(customerChoiceLabel(customerSaleChoices({customers,sales:[input[0]]})[0]),'김민수 · 2026.09.19');
+});
+test('collision labels preserve deleted manual promises and September/October attribution',()=>{
+ const ref={id:'deleted',date:'2026-09-19',kind:'모바일',label:'MNP'};
+ const task={customer_id:'c',status:'pending',task_meta:{sale_reference:ref}};
+ const rows=customerSaleChoices({customers,sales:[sales[0],{...sales[0],id:'oct',sale_date:'2026-10-01'}],tasks:[task]});
+ const old=rows.find(r=>r.key===taskChoiceKey(task));
+ assert.equal(old.month,'2026-09');assert.deepEqual(old.reference,ref);
+ assert.match(customerChoiceLabel(old),/이전 판매/);
+ assert.equal(customerChoiceLabel(rows[0]),'김민수 · 2026.10.01');
+ assert.equal(new Set(rows.map(customerChoiceLabel)).size,3);
+});

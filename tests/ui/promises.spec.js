@@ -1,4 +1,22 @@
 import {test,expect} from '@playwright/test';
+test('320px same-day duplicate customers remain distinguishable and sale-scoped',async({page})=>{
+ await page.setViewportSize({width:320,height:844});
+ const sales=['a','b','h'].map(id=>({id,customer_id:'same',sale_date:'2026-09-19',source_type:id==='h'?'home_order':'mobile',metric_label:id==='h'?'인터넷+TV':'MNP'}));
+ const tasks=sales.map(s=>({id:`task-${s.id}`,customer_id:'same',source_sale_id:s.id,task_type:'custom',status:'pending',title:`약속 ${s.id}`,due_date:'2026-09-20'}));
+ await page.route('https://placeholder.supabase.co/**',route=>{
+  const table=new URL(route.request().url()).pathname.split('/').pop();
+  return route.fulfill({json:table==='customers'?[{id:'same',customer_name:'김민수'}]:table==='customer_sales'?sales:table==='customer_tasks'?tasks:[]});
+ });
+ await page.goto('/tests/ui/promises.html');
+ const select=page.getByLabel('약속관리 고객');
+ await expect(select.locator('option')).toHaveText(['고객 판매 건 선택','김민수 · 2026.09.19 · 모바일 · MNP · 1건째','김민수 · 2026.09.19 · 모바일 · MNP · 2건째','김민수 · 2026.09.19 · 홈 · 인터넷+TV · 3건째']);
+ for(const sale of sales){
+  await select.selectOption(`sale:${sale.id}`);
+  for(const other of sales)await expect(page.getByText(`김민수 · 약속 ${other.id}`,{exact:true})).toHaveCount(other.id===sale.id?1:0);
+ }
+ await page.reload();await expect(select.locator('option').last()).toHaveText('김민수 · 2026.09.19 · 홈 · 인터넷+TV · 3건째');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
 test('320px customer auto-list, reminders, split settlement, reload and completion undo',async({page})=>{
  await page.setViewportSize({width:320,height:844});let tasks=[],posts=0;
  await page.route('https://placeholder.supabase.co/**',async route=>{
