@@ -10,7 +10,7 @@ import { payDisplay } from './payDisplay';
 import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, useFinalStorePerformance, finalStoreMetric } from './viewShared';
 import { isIncentiveUnpaidSpecial, currentPolicySnapshot, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, homeNetworkLabel, DEFAULT_RENEW, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, tierBonus, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, HOME_ORDER_PRODUCTS, careTaskCategory, addDaysDate, HS_PARTS, matrixRowCount, hsCount } from './appShared';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Trophy, Home, ClipboardList, History, Users, ChevronDown, Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2, UserPlus, Info, Calendar, ChevronRight, AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star } from 'lucide-react';
+import { Download, Trophy, Home, ClipboardList, History, Users, ChevronDown, Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2, UserPlus, Info, Calendar, ChevronRight, AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star } from 'lucide-react';
 import { supabase } from './supabase';
 import { friendlyError } from './errorMessages';
 import { feedbackBridge, showAppToast, showAppConfirm, showLegacyAlert } from './feedback';
@@ -105,11 +105,11 @@ function PwaInstallButton(){
   },[]);
   if(installed)return null;
   const install=async()=>{
-    if(installPrompt){await installPrompt.prompt();const choice=await installPrompt.userChoice;if(choice?.outcome==='accepted')setInstallPrompt(null);return}
+    if(installPrompt){const prompt=installPrompt;setInstallPrompt(null);try{await prompt.prompt();await prompt.userChoice;return}catch{setGuideOpen(true);return}}
     setGuideOpen(true);
   };
   const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  return <><button onClick={install} className="hidden sm:flex h-9 items-center gap-1 rounded-xl border border-brand-100 bg-brand-50 px-2.5 text-[10px] font-bold text-brand-700" title="홈 화면에 앱 설치"><Home size={14}/>앱 설치</button><button onClick={install} className="sm:hidden w-9 h-9 rounded-xl border border-brand-100 bg-brand-50 text-brand-700 flex items-center justify-center" title="앱 설치"><Home size={15}/></button>{guideOpen&&<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center"><img src="/icons/icon.svg?v=smile1" alt="" className="w-full h-full"/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">브라우저 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. Chrome 최신 버전에서 가장 원활해요.</div>}<div className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">설치하면 주소창 없이 앱처럼 열리고, 다음 단계에서 휴대폰 푸시 알림도 연결할 수 있어요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>}</>;
+  return <><div className="max-w-5xl mx-auto px-4 pb-3 flex justify-end"><button type="button" onClick={install} className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white" title="미소페이 앱 다운로드"><Download size={18}/>앱 다운로드<span className="text-[11px] font-normal text-white/90">· 홈 화면에 추가</span></button></div>{guideOpen&&<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div role="dialog" aria-modal="true" aria-label="미소페이 앱 다운로드 안내" className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center"><img src="/icons/icon.svg?v=smile1" alt="" className="w-full h-full"/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">Chrome 또는 삼성 인터넷의 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. 카카오톡 등 앱 안에서 열었다면 먼저 메뉴의 <b>다른 브라우저로 열기</b>를 선택해주세요.</div>}<div className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">별도의 APK 파일 없이 설치할 수 있어요. 홈 화면의 미소페이 아이콘을 누르면 바로 열려요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>}</>;
 }
 
 function AppQuickGuide({open,onClose,isManager=false}){
@@ -1464,7 +1464,6 @@ export default function App({ authUser, authProfile, onSignOut }) {
               <div className="text-xs font-semibold text-gray-700">{authProfile?.name || authUser?.email}</div>
               <div className="text-[10px] text-gray-400">{ROLE_LABELS[authProfile?.role] || authProfile?.role}</div>
             </div>
-            <PwaInstallButton />
             <button type="button" onClick={()=>setQuickGuideOpen(true)} title="사용 안내" className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-brand-600"><HelpCircle size={16}/></button>
             <NotificationBell userId={authUser?.id} onOpen={()=>setNotificationOpen(true)} />
             {onSignOut && (
@@ -1474,6 +1473,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
             )}
           </div>
         </div>
+        <PwaInstallButton />
         {role === 'employee' && (
           <div className="max-w-5xl mx-auto px-4 pb-3 flex items-center gap-2">
             <span className="text-xs text-gray-400">조회 직원</span>
