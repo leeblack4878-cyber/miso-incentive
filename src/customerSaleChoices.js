@@ -35,6 +35,6 @@ export function customerSaleChoices({customers=[],sales=[],tasks=[],orders=[],in
   return [...choices.values()].map(row=>({...row,month:/^\d{4}-\d{2}-\d{2}$/.test(row.date)?row.date.slice(0,7):'unknown'})).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')||a.key.localeCompare(b.key));
 }
 export function customerChoiceLabel(row) {
-  const date=row.date?`${row.date.slice(0,4)}.${row.date.slice(5,7)}.${row.date.slice(8,10)} 입력`:'입력일 미확인';
-  return `${row.name} · ${row.kind} · ${date}${row.archived?' · 이전 판매 연결':''}${row.label?` · ${row.label}`:''}${row.reference?` · #${row.reference.id.slice(-6)}`:''}`;
+  const date=row.date?`${row.date.slice(0,4)}.${row.date.slice(5,7)}.${row.date.slice(8,10)}`:'날짜 미확인';
+  return `${row.name} · ${date}`;
 }
