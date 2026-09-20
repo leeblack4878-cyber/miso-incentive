@@ -1,3 +1,4 @@
+import {getInstallState,subscribeInstall,requestAppInstall} from './pwaInstall';
 import { activeRoster, hasMonthHistory, readAllPages } from './performanceRoster';
 import { PerformanceResetApprovals } from './components/PerformanceResetPanel';
 import { DEFAULT_BASE_PAY, DEFAULT_BASE_PENALTY, DEFAULT_POSITION_ALLOWANCE, DEFAULT_TENURE, DEFAULT_TENURE_CAP, DEFAULT_GRADES, DEFAULT_HOME_TIERS, DEFAULT_MATRIX, DEFAULT_CATEGORY_MAP, DEFAULT_CUSTREG_TIERS, DEFAULT_TAILORED_TIERS, mergeDefaultVas, defaultConfig } from './policyDefaults';
@@ -94,22 +95,18 @@ function AppFeedbackHost(){
 }
 
 function PwaInstallButton(){
-  const [installPrompt,setInstallPrompt]=useState(null),[guideOpen,setGuideOpen]=useState(false),[installed,setInstalled]=useState(false);
-  useEffect(()=>{
-    const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
-    setInstalled(standalone);
-    const ready=(event)=>{event.preventDefault();setInstallPrompt(event)};
-    const done=()=>{setInstalled(true);setInstallPrompt(null);showAppToast('미소페이를 홈 화면에 설치했어요.')};
-    window.addEventListener('beforeinstallprompt',ready);window.addEventListener('appinstalled',done);
-    return()=>{window.removeEventListener('beforeinstallprompt',ready);window.removeEventListener('appinstalled',done)};
-  },[]);
-  if(installed)return null;
+  const [installState,setInstallState]=useState(getInstallState),[guideOpen,setGuideOpen]=useState(false);
+  const [installMessage,setInstallMessage]=useState('');
+  useEffect(()=>{const unsubscribe=subscribeInstall(setInstallState);setInstallState(getInstallState());return unsubscribe;},[]);
+  if(installState.installed)return null;
   const install=async()=>{
-    if(installPrompt){const prompt=installPrompt;setInstallPrompt(null);try{await prompt.prompt();await prompt.userChoice;return}catch{setGuideOpen(true);return}}
+    const outcome=await requestAppInstall();
+    if(outcome==='accepted'){setGuideOpen(false);showAppToast('설치 요청을 전달했어요. 휴대폰의 설치 완료를 기다려주세요.',{tone:'info'});return;}
+    setInstallMessage(outcome==='error'?'설치 창을 열지 못했어요. 아래 방법으로 설치해주세요.':outcome==='dismissed'?'설치를 취소했어요. 다시 설치하려면 아래 방법을 이용해주세요.':'');
     setGuideOpen(true);
   };
   const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  return <><div className="max-w-5xl mx-auto px-4 pb-3 flex justify-end"><button type="button" onClick={install} className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white" title="미소페이 앱 다운로드"><Download size={18}/>앱 다운로드<span className="text-[11px] font-normal text-white/90">· 홈 화면에 추가</span></button></div>{guideOpen&&createPortal(<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div role="dialog" aria-modal="true" aria-label="미소페이 앱 다운로드 안내" className="w-full max-w-sm max-h-[90dvh] overflow-y-auto overscroll-contain rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center"><img src="/icons/icon.svg?v=smile1" alt="" className="w-full h-full"/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed">Chrome 또는 삼성 인터넷의 메뉴에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택해주세요. 카카오톡 등 앱 안에서 열었다면 먼저 메뉴의 <b>다른 브라우저로 열기</b>를 선택해주세요.</div>}<div className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">별도의 APK 파일 없이 설치할 수 있어요. 홈 화면의 미소페이 아이콘을 누르면 바로 열려요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">확인했어요</button></div></div>,document.body)}</>;
+  return <><div className="max-w-5xl mx-auto px-4 pb-3 flex justify-end"><button type="button" onClick={install} className="w-full sm:w-auto min-h-[44px] flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white" title="미소페이 앱 다운로드"><Download size={18}/>{installState.prompt?'앱 다운로드':'앱 설치 안내'}<span className="text-[11px] font-normal text-white/90">· 홈 화면에 추가</span></button></div>{guideOpen&&createPortal(<div className="fixed inset-0 z-[126] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setGuideOpen(false)}><div role="dialog" aria-modal="true" aria-label="미소페이 앱 다운로드 안내" className="w-full max-w-sm max-h-[90dvh] overflow-y-auto overscroll-contain rounded-t-3xl sm:rounded-3xl bg-white p-5 pb-[max(20px,env(safe-area-inset-bottom))]" onClick={e=>e.stopPropagation()}><div className="w-12 h-12 rounded-2xl bg-brand-600 text-white flex items-center justify-center"><img src="/icons/icon.svg?v=smile1" alt="" className="w-full h-full"/></div><div className="text-lg font-black text-gray-900 mt-3">미소페이 앱 설치</div>{installMessage&&<div className="mt-2 text-sm text-amber-700">{installMessage}</div>}{installState.prompt&&<button type="button" onClick={install} className="mt-3 w-full rounded-xl bg-brand-600 py-3 font-bold text-white">지금 설치하기</button>}{isiOS?<div className="mt-3 space-y-2 text-sm text-gray-600"><div className="rounded-xl bg-gray-50 p-3"><b>1.</b> Safari 하단의 <b>공유 버튼</b>을 눌러요.</div><div className="rounded-xl bg-gray-50 p-3"><b>2.</b> 메뉴에서 <b>홈 화면에 추가</b>를 선택해요.</div><div className="rounded-xl bg-gray-50 p-3"><b>3.</b> 오른쪽 위 <b>추가</b>를 누르면 끝!</div></div>:<div className="mt-3 text-sm text-gray-600 leading-relaxed"><div className="font-bold text-gray-900">Chrome에서는 이렇게 설치해주세요.</div><ol className="list-decimal pl-5 mt-2 space-y-2"><li>이 안내창을 <b>닫기</b>로 닫아요.</li><li>주소창 오른쪽 위 <b>점 3개(⋮)</b>를 눌러요.</li><li><b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 선택해요.</li><li>브라우저의 <b>설치 / 추가</b> 버튼을 눌러요.</li></ol><p className="mt-3 text-xs">삼성 인터넷은 메뉴(☰)에서 홈 화면에 추가를 선택해요. 카카오톡 안이라면 다른 브라우저로 열기를 먼저 선택해주세요.</p></div>}<div className="mt-3 rounded-xl bg-brand-50 p-3 text-xs text-brand-700">이 창은 설치 방법 안내예요. 이미 설치했다면 휴대폰 홈 화면의 미소페이 아이콘으로 열어주세요.</div><button onClick={()=>setGuideOpen(false)} className="mt-4 w-full rounded-xl bg-brand-600 py-3 text-sm font-bold text-white">닫기</button></div></div>,document.body)}</>;
 }
 
 function AppQuickGuide({open,onClose,isManager=false}){
