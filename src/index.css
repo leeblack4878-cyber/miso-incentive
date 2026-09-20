@@ -5,7 +5,7 @@
 html, body, #root { min-height: 100%; }
 body {
   margin: 0;
-  background: #f2f4f6;
+  background: #f3f8fc;
   font-family: Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #191f28;
   -webkit-font-smoothing: antialiased;
@@ -45,7 +45,7 @@ select:focus-visible {
 }
 
 /* Calm, compact surfaces with room for Korean labels and large amounts. */
-:root { color-scheme: light; --app-ink: #191f28; --app-accent: #2563db; }
+:root { color-scheme: light; --app-ink: #191f28; --app-accent: #1768cf; }
 body { line-height: 1.55; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
@@ -53,12 +53,12 @@ button:disabled { cursor: not-allowed; }
 textarea:focus-visible, a:focus-visible { outline: 3px solid #92bcff; outline-offset: 3px; }
 input, select, textarea { accent-color: var(--app-accent); }
 .app-header { background: #fff; border-color: transparent; box-shadow: none; }
-.surface-card { background: white; border: 0; border-radius: 22px; box-shadow: none; }
+.surface-card { background: white; border: 0; border-radius: 24px; box-shadow: 0 3px 16px rgb(23 104 207 / .035); }
 .summary-hero { background: #fff; color: #191f28; border-radius: 22px; padding: 24px; }
 
 .metric-value { font-variant-numeric: tabular-nums; letter-spacing: -.035em; overflow-wrap: anywhere; }
 .app-bottom-nav { padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -4px 20px rgb(23 43 58 / .04); }
-.app-bottom-nav button[aria-current="page"] { background: transparent; color: #191f28; border-radius: 14px; font-weight: 700; }
+.app-bottom-nav button[aria-current="page"] { background: #eff8ff; color: #1554a8; border-radius: 14px; font-weight: 700; }
 .page-heading { font-size: 22px; line-height: 1.35; font-weight: 750; letter-spacing: -.04em; color: #191f28; }
 @media (max-width: 640px) {
  .app-header-main { flex-wrap: wrap; gap: 8px; }
@@ -90,13 +90,13 @@ input, select, textarea { accent-color: var(--app-accent); }
 .summary-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; padding: 20px 0; }
 .summary-stats > div { min-width: 0; }
 .today-work-row { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 52px; padding: 10px 0; text-align: left; background: transparent; }
-.today-work-row:hover { background: #f2f4f6; border-radius: 12px; }
+.today-work-row:hover { background: #f3f8fc; border-radius: 12px; }
 .today-work-row .work-label { flex: 1; color: #4e5968; font-size: 14px; }
 .today-work-row .work-count { font-size: 17px; font-weight: 650; color: #191f28; }
 
 /* Shared personal/store cards: slightly tighter padding, unchanged value size. */
 .performance-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.performance-tile { min-width: 0; text-align: center; border-radius: 16px; background: #f2f4f6; padding: 10px 8px; }
+.performance-tile { min-width: 0; text-align: center; border-radius: 20px; background: #edf6ff; padding: 10px 8px; }
 .performance-tile > :first-child { min-height: 20px; display: flex; align-items: center; justify-content: center; }
 .performance-dialog { width: calc(100% - 24px); max-width: 520px; max-height: 86dvh; padding: 0; border: 0; border-radius: 22px; color: #191f28; overflow-y: auto; overscroll-behavior: contain; }
 .performance-dialog::backdrop { background: rgb(25 31 40 / .4); }
@@ -107,3 +107,17 @@ input, select, textarea { accent-color: var(--app-accent); }
 .performance-detail-grid > div { min-width: 0; overflow-wrap: anywhere; }
 .performance-detail-grid dt { color: #6b7684; font-size: 12px; }
 .performance-detail-grid dd { margin: 4px 0 0; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Soft blue accents: retain compact data layouts and semantic status colors. */
+.app-header { box-shadow: 0 2px 12px rgb(23 104 207 / .035); }
+.app-header-main > :first-child > :first-child {
+  border-radius: 14px;
+  background: linear-gradient(145deg, #359af0, #1768cf);
+  box-shadow: 0 3px 8px rgb(23 104 207 / .16);
+}
+.app-header-main .lucide { stroke-width: 1.8; }
+.app-bottom-nav { border-radius: 22px 22px 0 0; box-shadow: 0 -4px 20px rgb(23 104 207 / .055); }
+.app-bottom-nav button[aria-current="page"] .lucide { stroke-width: 2.3; }
+button.bg-brand-600, button.bg-brand-500 { border-radius: 16px; }
+[data-testid="dashboard-scope-bar"] { border-radius: 18px; border-color: #dff1ff; }
+.performance-tile .metric-value { color: #174786; }
