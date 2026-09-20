@@ -32,9 +32,24 @@ export function customerSaleChoices({customers=[],sales=[],tasks=[],orders=[],in
     // Never infer a sale from customer name/date: old tasks may belong to a namesake.
     choices.set(key,{key,customerId:task.customer_id,name:names.get(task.customer_id)||'고객',date:ref?.date||taskDates.get(key)||'',kind:ref?.kind||'기존 약속',label:ref?.label||'판매 연결 미확인',reference:ref||null,archived:!!ref});
   }
-  return [...choices.values()].map(row=>({...row,month:/^\d{4}-\d{2}-\d{2}$/.test(row.date)?row.date.slice(0,7):'unknown'})).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')||a.key.localeCompare(b.key));
+  const rows=[...choices.values()].map(row=>({...row,month:/^\d{4}-\d{2}-\d{2}$/.test(row.date)?row.date.slice(0,7):'unknown'})).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')||a.key.localeCompare(b.key));
+  // Resolve display collisions before month/search filtering. Never change sale keys
+  // or stored references, and never use a name to merge unrelated customers.
+  const groups=new Map();
+  for(const row of rows){
+    const label=customerChoiceLabel(row);
+    if(!groups.has(label))groups.set(label,[]);
+    groups.get(label).push(row);
+  }
+  for(const group of groups.values()){
+    if(group.length<2)continue;
+    group.forEach((row,index)=>{
+      row.choiceDetail=[row.kind,row.label,row.archived?'이전 판매':null,`${index+1}건째`].filter(Boolean).join(' · ');
+    });
+  }
+  return rows;
 }
 export function customerChoiceLabel(row) {
   const date=row.date?`${row.date.slice(0,4)}.${row.date.slice(5,7)}.${row.date.slice(8,10)}`:'날짜 미확인';
-  return `${row.name} · ${date}`;
+  return `${row.name} · ${date}${row.choiceDetail?` · ${row.choiceDetail}`:''}`;
 }
