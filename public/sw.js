@@ -1,5 +1,5 @@
-const CACHE_NAME = 'miso-shell-v5';
-const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+const CACHE_NAME = 'miso-shell-v6';
+const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png?v=smile1', '/icons/icon-512.png?v=smile1'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));
@@ -37,8 +37,8 @@ self.addEventListener('push', (event) => {
   try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data?.text() || '' }; }
   event.waitUntil(self.registration.showNotification(data.title || '미소페이', {
     body: data.body || '새 알림이 도착했어요.',
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/icon-192.png',
+    icon: data.icon || '/icons/icon-192.png?v=smile1',
+    badge: data.badge || '/icons/icon-192.png?v=smile1',
     tag: data.tag || 'miso-pay',
     data: data.data || { url: '/?open=notifications' },
     vibrate: [180, 80, 180],
