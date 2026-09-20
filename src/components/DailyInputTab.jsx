@@ -68,6 +68,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
   const [planReminderOpen,setPlanReminderOpen]=useState(false);
+  const [serviceReminder,setServiceReminder]=useState(null);
+  const toggleMainService=(service)=>{
+    const selected=mobileVasKeys.includes(service.key);
+    setMobileVasKeys(prev=>service.key==='vasNone'?(selected?[]:['vasNone']):(selected?prev.filter(k=>k!==service.key):[...prev.filter(k=>k!=='vasNone'),service.key]));
+    if(!selected&&service.key!=='vasNone')setServiceReminder(reminderServices([service.key],config.vas||DEFAULT_VAS)[0]||null);
+  };
   const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
   const [mobileCalcOpen,setMobileCalcOpen]=useState(false);
   const [mobileMoreVasOpen,setMobileMoreVasOpen]=useState(false);
@@ -1010,6 +1016,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     try { children=await readSaleChildren(supabase,currentEmp.id,sale.id); }
     catch(error){return showAppToast(friendlyError(error),{tone:'error',title:'약속·비용 조회 실패'});}
     setPlanReminderOpen(false);
+    setServiceReminder(null);
     setEditingSale({...sale,children});
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
@@ -1041,6 +1048,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const addOne = (ri=null,ci=null) => {
     if(locked)return;
     setPlanReminderOpen(false);
+    setServiceReminder(null);
     setEditingSale(null);
     setEditingCompletedTaskCount(0);
     const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
@@ -1346,6 +1354,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   return (
     <div className="space-y-3 relative">
       {mobileSaleDraft&&planReminderOpen&&<PlanReminderDialog value={mobileReminders.plan} onSelect={plan=>{setMobileReminders(v=>({...v,plan}));setPlanReminderOpen(false);}} onClose={()=>setPlanReminderOpen(false)}/>}
+      {mobileSaleDraft&&serviceReminder&&<PlanReminderDialog service={serviceReminder} value={mobileReminders.services?.[serviceReminder.key]||'keep'} onSelect={choice=>{setMobileReminders(v=>({...v,services:{...v.services,[serviceReminder.key]:choice}}));setServiceReminder(null);}} onClose={()=>setServiceReminder(null)}/>}
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">{monthLabel(month)} 일일입력</div>
         <div className="flex items-center gap-2">
@@ -1850,16 +1859,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                     <button
                       key={v.key}
                       type="button"
-                      onClick={() => {
-                        if (v.key === 'vasNone') {
-                          setMobileVasKeys(selected ? [] : ['vasNone']);
-                        } else {
-                          setMobileVasKeys((prev) => {
-                            const clean = prev.filter((k) => k !== 'vasNone');
-                            return selected ? clean.filter((k) => k !== v.key) : [...clean, v.key];
-                          });
-                        }
-                      }}
+                      onClick={()=>toggleMainService(v)}
                       className={`text-left px-3 py-2.5 rounded-xl border text-xs ${
                         selected
                           ? 'bg-brand-50 border-brand-200 text-brand-700'
@@ -1880,7 +1880,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   <span className="float-right">{mobileMoreVasOpen?'▲':'▼'}</span>
                 </button>
                 {mobileMoreVasOpen&&<div className="grid grid-cols-1 gap-1.5 mt-1.5">
-                  {additionalMainVas.map(v=>{const selected=mobileVasKeys.includes(v.key);return <button key={v.key} type="button" onClick={()=>setMobileVasKeys(prev=>{const clean=prev.filter(k=>k!=='vasNone');return selected?clean.filter(k=>k!==v.key):[...clean,v.key]})}
+                  {additionalMainVas.map(v=>{const selected=mobileVasKeys.includes(v.key);return <button key={v.key} type="button" onClick={()=>toggleMainService(v)}
                     className={`text-left px-3 py-2.5 rounded-xl border text-xs ${selected?'bg-brand-50 border-brand-200 text-brand-700':'bg-white border-gray-100 text-gray-600'}`}>
                     <span className="font-semibold">{selected?'✓ ':''}{v.label}</span>{v.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>}
                   </button>})}
@@ -1891,7 +1891,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             </div>
 
-            <ReminderChoices hidePlan value={mobileReminders} onChange={setMobileReminders} services={reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS)}/>
+            <ReminderChoices hidePlan onServiceClick={setServiceReminder} value={mobileReminders} onChange={setMobileReminders} services={reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS)}/>
 
             {Number(mobileSaleDraft.ri)===5 && Number(mobileSaleDraft.ci)<=3 && (
               <div className="mt-4">
