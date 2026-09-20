@@ -1,6 +1,6 @@
 import {customerSaleChoices, customerChoiceLabel, customerMonthLabel, taskChoiceKey} from '../customerSaleChoices';
 import CustomerPromiseEditor from './CustomerPromiseEditor';
-import {readAllCustomerRows,usedPhoneSummary} from '../customerPromises';
+import {readAllCustomerRows,usedPhoneSummary,usedPhoneBalance} from '../customerPromises';
 import { useState, useEffect, useCallback } from 'react';
 
 import { supabase } from '../supabase';
@@ -205,6 +205,8 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
                  {t.task_type==='usedPhone'&&<div className="mt-2 rounded-xl bg-gray-50 p-3 text-xs space-y-1">
                    <div>예상금액 · {t.task_meta?.expected_amount==null?'미입력':`${Number(t.task_meta.expected_amount).toLocaleString()}원`}</div>
                    <div className="font-bold text-brand-700">실제금액 · {t.task_meta?.actual_amount==null?'미입력':`${Number(t.task_meta.actual_amount).toLocaleString()}원`}</div>
+                   {usedPhoneBalance(t.task_meta||{}).staff_excess_amount>0&&<div className="font-bold text-red-600">담당자 중고폰 초과금액 · {usedPhoneBalance(t.task_meta||{}).staff_excess_amount.toLocaleString()}원</div>}
+                   {usedPhoneBalance(t.task_meta||{}).surplus_amount>0&&<div className="font-bold text-brand-700">중고폰 잔여금액 · {usedPhoneBalance(t.task_meta||{}).surplus_amount.toLocaleString()}원</div>}
                    {(t.task_meta?.allocations||[]).map((r,i)=><div key={i}>{r.method}{r.note?` (${r.note})`:''} · {Number(r.amount).toLocaleString()}원</div>)}
                    {t.task_meta?.processed_date&&<div>처리 완료일 · {t.task_meta.processed_date}</div>}
                  </div>}
@@ -269,6 +271,7 @@ export default function CustomerCareManager({ userId, month, homeProps, navInten
       {loading?<div className="text-xs py-3">불러오는 중...</div>:loadError?<button onClick={load} className="text-red-600 text-xs py-3">조회 실패 · 다시 불러오기</button>:<>
       <div className="mt-3 text-2xl font-bold text-brand-700">{summary.actual.toLocaleString()}원</div>
       <div className="text-xs text-gray-500 mt-1">완료 {summary.count}건 · 예상금액 {summary.expected.toLocaleString()}원 · 미처리 전체 {summary.pending}건</div>
+      <div className="mt-3 text-xs space-y-1"><div className="text-red-600">담당자 중고폰 초과금액 합계 {summary.staff_excess_amount.toLocaleString()}원</div><div className="text-brand-700">중고폰 잔여금액 합계 {summary.surplus_amount.toLocaleString()}원</div></div>
       <div className="grid grid-cols-2 gap-2 mt-3">{Object.entries(summary.methods).map(([name,amount])=><div key={name} className="bg-gray-50 rounded-lg p-2 text-xs"><div className="text-gray-500">{name}</div><b>{amount.toLocaleString()}원</b></div>)}</div>
       <div className="text-[10px] text-gray-400 mt-2">처리 완료일 기준 · 완료 건의 실제금액 합계</div></>}
     </details>

@@ -1,6 +1,6 @@
 import {useRef,useState} from 'react';
 import {AFFILIATE_CARD_NAMES} from '../appShared';
-import {USED_PHONE_METHODS,usedPhoneMeta} from '../customerPromises';
+import {USED_PHONE_METHODS,usedPhoneMeta,usedPhoneBalance} from '../customerPromises';
 const kinds=[['usedPhone','중고폰 관리'],['offer','오퍼'],['affiliateCard','제휴카드'],['case','케이스'],['custom','기타']];
 const inputClass='mt-1 w-full min-w-0 rounded-xl border border-gray-200 px-3 py-2.5 text-sm';
 export default function CustomerPromiseEditor({customer,task,today,onSave,onClose,contextLabel}) {
@@ -13,6 +13,7 @@ export default function CustomerPromiseEditor({customer,task,today,onSave,onClos
  const [saving,setSaving]=useState(false);const busy=useRef(false);
  const update=patch=>setMeta(m=>({...m,...patch}));
  const allocations=meta.allocations||[{method:'고객 입금',amount:'',note:''}];
+ const balance=usedPhoneBalance({...meta,allocations});
  const save=async(complete)=>{
   if(busy.current)return;setError('');
   try{
@@ -46,6 +47,11 @@ export default function CustomerPromiseEditor({customer,task,today,onSave,onClos
  {allocations.length>1&&<button type="button" className="text-xs text-red-500" onClick={()=>update({allocations:allocations.filter((_,j)=>j!==i)})}>처리 항목 삭제</button>}</div>)}
  <button type="button" className="text-xs font-bold text-brand-600" onClick={()=>update({allocations:[...allocations,{method:'고객 입금',amount:'',note:''}]})}>+ 처리 방식 추가</button>
  <div className="text-xs text-gray-600">배분 합계 {allocations.reduce((s,r)=>s+Number(r.amount||0),0).toLocaleString()}원 / 실제금액 {meta.actual_amount==null||meta.actual_amount===''?'미입력':`${Number(meta.actual_amount).toLocaleString()}원`}</div>
+ {meta.actual_amount!=null&&meta.actual_amount!==''&&<div className="rounded-xl bg-brand-50 p-3 text-xs space-y-1">
+ <div className="font-bold text-red-600">담당자 중고폰 초과금액 {balance.staff_excess_amount.toLocaleString()}원</div>
+ <div className="font-bold text-brand-700">중고폰 잔여금액 {balance.surplus_amount.toLocaleString()}원</div>
+ <div className="text-gray-500">처리금액이 실제금액보다 많으면 담당자 초과금액, 적으면 잔여금액으로 자동 기록돼요. 급여에는 자동 반영되지 않아요.</div>
+ </div>}
  <label className="block text-xs">처리 완료일<input type="date" className={inputClass} value={meta.processed_date||''} onChange={e=>update({processed_date:e.target.value})}/></label>
  <div className="text-[11px] text-gray-500">완료 처리한 건만 처리 완료일의 월 총액에 반영돼요.</div>
  </div>}

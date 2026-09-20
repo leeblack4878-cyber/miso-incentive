@@ -26,6 +26,12 @@ function amount(value, optional=false) {
   if(value===''||value==null||!Number.isSafeInteger(Number(value))||Number(value)<0)throw new Error('금액은 0 이상의 정수로 입력해주세요.');
   return Number(value);
 }
+export function usedPhoneBalance(meta) {
+  if(meta.actual_amount==null||meta.actual_amount==='')return {staff_excess_amount:0,surplus_amount:0};
+  const allocated=(meta.allocations||[]).reduce((sum,row)=>sum+Number(row.amount||0),0);
+  const difference=allocated-Number(meta.actual_amount);
+  return {staff_excess_amount:Math.max(0,difference),surplus_amount:Math.max(0,-difference)};
+}
 export function usedPhoneMeta(form, complete=false) {
   const expected_amount=amount(form.expected_amount,true),actual_amount=amount(form.actual_amount,true);
   const allocations=(form.allocations||[]).filter(r=>r.amount!==''&&r.amount!=null).map(r=>{
@@ -33,15 +39,13 @@ export function usedPhoneMeta(form, complete=false) {
     if(r.method==='기타'&&!String(r.note||'').trim())throw new Error('기타 처리 내용을 입력해주세요.');
     return {method:r.method,amount:amount(r.amount),note:String(r.note||'').trim()};
   });
-  const total=allocations.reduce((s,r)=>s+r.amount,0);
-  if(actual_amount!==null&&total>actual_amount)throw new Error('처리 방식별 금액이 실제금액을 초과해요.');
-  if(complete&&(actual_amount===null||total!==actual_amount||!form.processed_date))throw new Error('실제금액, 처리 완료일을 입력하고 처리 방식별 합계를 실제금액과 맞춰주세요.');
-  return {expected_amount,actual_amount,allocations,processed_date:form.processed_date||null};
+  if(complete&&(actual_amount===null||!form.processed_date))throw new Error('실제금액과 처리 완료일을 입력해주세요.');
+  return {expected_amount,actual_amount,allocations,...usedPhoneBalance({actual_amount,allocations}),processed_date:form.processed_date||null};
 }
 export function usedPhoneSummary(tasks,month) {
   const rows=tasks.filter(t=>t.task_type==='usedPhone'&&t.status==='completed'&&String(t.task_meta?.processed_date||'').slice(0,7)===month);
-  const result={count:rows.length,expected:0,actual:0,pending:tasks.filter(t=>t.task_type==='usedPhone'&&t.status==='pending').length,methods:Object.fromEntries(USED_PHONE_METHODS.map(m=>[m,0]))};
-  rows.forEach(t=>{const m=t.task_meta||{};result.expected+=Number(m.expected_amount||0);result.actual+=Number(m.actual_amount||0);(m.allocations||[]).forEach(r=>{if(r.method in result.methods)result.methods[r.method]+=Number(r.amount||0);});});
+  const result={count:rows.length,expected:0,actual:0,staff_excess_amount:0,surplus_amount:0,pending:tasks.filter(t=>t.task_type==='usedPhone'&&t.status==='pending').length,methods:Object.fromEntries(USED_PHONE_METHODS.map(m=>[m,0]))};
+  rows.forEach(t=>{const m=t.task_meta||{};const balance=usedPhoneBalance(m);result.staff_excess_amount+=balance.staff_excess_amount;result.surplus_amount+=balance.surplus_amount;result.expected+=Number(m.expected_amount||0);result.actual+=Number(m.actual_amount||0);(m.allocations||[]).forEach(r=>{if(r.method in result.methods)result.methods[r.method]+=Number(r.amount||0);});});
   return result;
 }
 export async function readAllCustomerRows(client,table,userId,order,columns='*') {
