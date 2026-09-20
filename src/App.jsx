@@ -1030,7 +1030,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     });
     setShadowLedgerMap(mapped);
     const strategicMapped={};
-    ids.forEach(id=>{strategicMapped[id]=summarizeVasQuality((data||[]).filter(sale=>sale.user_id===id&&!sale.source_meta?.teamOnly));});
+    ids.forEach(id=>{strategicMapped[id]={...summarizeVasQuality((data||[]).filter(sale=>sale.user_id===id&&!sale.source_meta?.teamOnly)),month:m};});
     setStrategicMetricMap(strategicMapped);
   },[config]);
 
@@ -1515,7 +1515,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
       ) : role === 'employee' ? (
         <EmployeeView key={`${empId}:${month}`}
           tab={tab} setTab={setTab} months={months} month={month} setMonth={setMonth}
-          draft={draft} setDraft={updateDraft} config={config} pay={myPay} mergedDraft={myMergedDraft}
+          draft={draft} setDraft={updateDraft} config={config} pay={myPay} strategicMetric={strategicMetricMap[empId]?.month===month?strategicMetricMap[empId]:null} mergedDraft={myMergedDraft}
           status={(monthRecords[empId] || {}).status || 'none'}
           saveDraft={saveDraft} saving={saving} saved={saved} dirty={dirty} lastSavedAt={lastSavedAt}
           dailyDays={effectiveDailyRecords[empId] || {}} allDailyRecords={effectiveDailyRecords} saveDailyDay={saveDailyDay}
@@ -3441,7 +3441,7 @@ function employeeStoreScopeOptions(employee, rows=[]) {
   return employee?.branch?[{key:`store:${employee.branch}`,label:displayStoreName(employee.branch),branches:[employee.branch]}]:[];
 }
 
-function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
+function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, config, pay, strategicMetric, mergedDraft, status, saveDraft, saving, saved, dirty, lastSavedAt, dailyDays, allDailyRecords, saveDailyDay, monthLocked, policyInputBlocked=false, canSeeCriteria, myRank, myRankTotal, myBranchRank, myBranchTotal, currentEmp, loginEmp, stores, onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, personalGoals, savePersonalGoals, goalSaving, showPersonalGoal, competitionRows, storeOverviewRows=competitionRows, canViewStoreRanking=false, authUser, authProfile, onOpenStoreGoals }) {
   const viewedUserId=currentEmp?.id||authUser?.id;
   const isManagingAnotherEmployee=!!authUser?.id&&!!currentEmp?.id&&currentEmp.id!==authUser.id;
   const [expenseTotal,setExpenseTotal]=useState(0);
@@ -3672,6 +3672,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             draft={draft}
             setDraft={setDraft}
             pay={pay}
+            strategicMetric={strategicMetric}
+            calculationDraft={mergedDraft}
             locked={monthLocked||policyInputBlocked}
             policyInputBlocked={policyInputBlocked}
             currentEmp={currentEmp}

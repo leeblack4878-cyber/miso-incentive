@@ -1,3 +1,4 @@
+import { estimateMobileSale, changeStrategicMetric } from '../mobileSaleEstimate';
 import PerformanceResetPanel from './PerformanceResetPanel';
 import PlanReminderDialog, {PLAN_REMINDER_LABELS} from './PlanReminderDialog';
 import { buildReminderTasks, reminderServices, restoreReminders } from '../customerPromises';
@@ -18,7 +19,7 @@ import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_S
 import { isSeptemberPolicyActive } from '../policyCalendar';
 import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, septemberPlanGroup, currentPolicySnapshot, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, HOME_NETWORK_TYPES } from "../appShared";
 
-export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser }) {
+export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, strategicMetric, calculationDraft=draft, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -657,14 +658,14 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const afterDays = { ...dailyDays, [selectedDay]: nextDay };
 
     const beforeDraft = applyDailyToDraft(
-      draft,
+      calculationDraft,
       beforeDays,
       month,
       config.categoryMap,
       config.gibyeonColumnMap
     );
     const afterDraft = applyDailyToDraft(
-      draft,
+      calculationDraft,
       afterDays,
       month,
       config.categoryMap,
@@ -674,8 +675,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const position = currentEmp?.position || '사원';
     const hireDate = currentEmp?.hireDate;
 
-    const beforePay = computePay(beforeDraft, position, hireDate, month, config);
-    const afterPay = computePay(afterDraft, position, hireDate, month, config);
+    const beforePay = computePay(beforeDraft, position, hireDate, month, config, 0, strategicMetric);
+    const afterPay = computePay(afterDraft, position, hireDate, month, config, 0, changeStrategicMetric(strategicMetric,customerMeta,1));
     // 저장 피드백은 최저보장과 비교한 마감 예상액이 아니라,
     // 이번 판매로 실제 누적된 판매 인센티브·활동지원금·등급 보너스의 증가분을 보여줍니다.
     const payDelta = Math.max(0, Number(afterPay.currentPerformanceAmount||0) - Number(beforePay.currentPerformanceAmount||0));
@@ -741,7 +742,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       ri,
       ci,
       ...feedback,
-      payDelta,
+      payDelta:customerMeta.estimate?.incentive??payDelta,
       salePayDelta,
       activityPayDelta,
       bonusPayDelta,
@@ -1025,6 +1026,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileCustomerName(sale.customers?.customer_name||'');
     const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
     setMobileVasKeys([...new Set(editableVasKeys)]);
+    setMobileStrategicPlan(!!meta.strategicPlan);
     setMobileMoreVasOpen(editableVasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
     setMobileBundle2ndKeys(meta.bundle2ndKeys);
     setMobileBundleVasMap(meta.bundleVasMap);
@@ -1171,7 +1173,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const tasks=buildReminderTasks({saleDate,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]});
       const expenses=mobileExpenseOpen?[{category:mobileExpenseCategory,amount:mobileExpenseAmount,memo:mobileExpenseMemo},...mobileExtraExpenses].filter(x=>Number(x.amount)>0).map(x=>({expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null})):[];
       const free=bundleFreeAmounts();
-      const feedbackMeta={saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
+      const feedbackMeta={estimate:mobilePreview,saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
       const next=activeTeamSupport?null:commitMobileOne(mobileSaleDraft.ri,mobileSaleDraft.ci,{...feedbackMeta,prepareOnly:true});
       const spot=editingSale?null:mobileSpotPolicyId?{policy_id:mobileSpotPolicyId}:!isSeptemberPolicyActive(month)&&mobileSpotDirectOpen&&mobileSpotDirectTitle.trim()&&Number(mobileSpotDirectAmount)>0?{direct_title:mobileSpotDirectTitle.trim(),direct_amount:Number(mobileSpotDirectAmount),direct_memo:mobileSpotDirectMemo.trim()||null}:null;
       const credit=activeTeamSupport?{credited_store:teamSupportStore,metrics:mobileTeamCreditMetrics({ri:meta.ri,ci:meta.ci,...feedbackMeta}),note:`${loginEmp?.name||'담당'} 지원 판매`}:null;
@@ -1267,24 +1269,17 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
   const coreDayTotal=groupedCoreSales.length+(day.householdRenewals?.length||0);
 
+  const estimateSale=(meta,existingSale=null,conversion=null)=>estimateMobileSale({
+    meta,existingSale,legacyConversion:conversion,dayKey:selectedDay,dailyDays:{...dailyDays,[selectedDay]:day},
+    draft:calculationDraft,strategicMetric,month,config,employee:currentEmp,september:isSeptemberPolicyActive(month),
+  },{normalizeDay,applyDailyToDraft,computePay});
+
   const saleIncentiveBreakdown=(sale)=>{
     const meta=sale?.source_meta||{};
     const rows=[];
     if(sale?.source_type==='mobile'){
-      const ri=Number(meta.ri),ci=Number(meta.ci);
-      const plan=Number(config.matrix?.[ri]?.[ci]||0);
-      if(plan)rows.push(['요금제',plan]);
-      (meta.vasKeys||[]).forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))rows.push([it.label||'VAS',Number(it.rate)]);});
-      (meta.bundle2ndKeys||[]).forEach(k=>{const it=(config.bundle2nd||[]).find(v=>v.key===k);const free=(meta.bundleSaleTypeMap?.[k]||'normal')==='free';if(Number(it?.rate||0)&&!free)rows.push([it.label||'2ND',Number(it.rate)]);});
-      if(meta.usedMnpBundle){const it=(config.mnpBundle||[]).find(v=>v.key==='usedMnpBundle');if(Number(it?.rate||0))rows.push(['중고MNP 결합',Number(it.rate)]);}
-      const sp=meta.specialPolicy||{};
-      if(sp.policyId||sp.policyType){
-        const unpaid=isIncentiveUnpaidSpecial(sp),prefix=unpaid?'인센미지급 특가':'특가&지인정책';
-        if(unpaid&&plan)rows.push([`${prefix} 요금제 제외`,-plan]);
-        if(unpaid&&Number(sp.normalVasFee||0))rows.push([`${prefix} VAS·보험 제외`,-Number(sp.normalVasFee)]);
-        const repl=Number(sp.exceptionStatus==='approved'?sp.exceptionApprovedAmount:sp.replacementAmount||0);
-        if(repl)rows.push(['모델별 추가 인센티브',repl]);
-      }
+      const estimate=estimateSale(meta,sale);
+      return estimate?{rows:estimate.rows,total:estimate.incentive}:{rows:[],total:null};
     }else if(sale?.source_type==='home_order'){
       const customer=sale.customers?.customer_name||'고객';
       const date=String(sale.sale_date||'').slice(0,10);
@@ -1300,55 +1295,24 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const mobilePreview=(()=>{
     if(!mobileSaleDraft||!mobileSaleKind||!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return null;
     const saleDate=`${month}-${selectedDay}`;
-    const base=normalizeDay(day),nextMatrix=base.matrix.map(r=>[...r]);
-    nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]=Number(nextMatrix[mobileSaleDraft.ri][mobileSaleDraft.ci]||0)+1;
-    const nextVas={...(base.groups?.vas||{})};
-    (mobileVasKeys||[]).forEach(k=>{if(k!=='vasNone')nextVas[k]=Number(nextVas[k]||0)+1});
-    const nextBundle={...(base.groups?.bundle2nd||{})};mobileBundle2ndKeys.forEach(k=>nextBundle[k]=Number(nextBundle[k]||0)+1);
-    const nextMnpBundle={...(base.groups?.mnpBundle||{})};if(Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle)nextMnpBundle.usedMnpBundle=Number(nextMnpBundle.usedMnpBundle||0)+1;
-    const free=bundleFreeAmounts();
     const selectedPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
     const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
     const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
-    const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??0):0;
-    const nextDay={...base,matrix:nextMatrix,groups:{...base.groups,vas:nextVas,bundle2nd:nextBundle,mnpBundle:nextMnpBundle},bundleFreeOffset:Number(base.bundleFreeOffset||0)+free.bundleOffset,bundleFreeVasOffset:Number(base.bundleFreeVasOffset||0)+free.vasOffset,specialMatrixOffset:Number(base.specialMatrixOffset||0)+specialMatrix,specialVasOffset:Number(base.specialVasOffset||0)+specialVas,specialReplacementPay:Number(base.specialReplacementPay||0)+replacement};
-    const beforeDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:base},month,config.categoryMap,config.gibyeonColumnMap);
-    const afterDraft=applyDailyToDraft(draft,{...dailyDays,[selectedDay]:nextDay},month,config.categoryMap,config.gibyeonColumnMap);
-    const beforePay=computePay(beforeDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
-    const afterPay=computePay(afterDraft,currentEmp?.position||'사원',currentEmp?.hireDate,month,config);
+    const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
+    const oldSp=editingSale?.source_meta?.specialPolicy||{};
+    const previewMeta={teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
+      bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,
+      bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle,
+      specialPolicy:{normalMatrixFee:specialMatrix,normalVasFee:specialVas,replacementAmount:replacement,
+        ...(mobileSpecialPolicyId===oldSp.policyId?{exceptionStatus:oldSp.exceptionStatus,exceptionApprovedAmount:oldSp.exceptionApprovedAmount}:{})}};
+    const estimate=estimateSale(previewMeta,editingSale,legacyConversion);
+    if(!estimate)return null;
     const vasLabels=(mobileVasKeys||[]).filter((k,i,a)=>k!=='vasNone'&&a.indexOf(k)===i).map(k=>(config.vas||DEFAULT_VAS).find(v=>v.key===k)?.label||k);
     const secondLabels=mobileBundle2ndKeys.map(k=>(config.bundle2nd||DEFAULT_BUNDLE2ND).find(v=>v.key===k)?.label?.replace('2ND · ','')||k);
     const promiseCount=buildReminderTasks({saleDate:`${month}-${selectedDay}`,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]}).length;
-    const incentive=Math.max(0,Number(afterPay.currentPerformanceAmount||0)-Number(beforePay.currentPerformanceAmount||0));
-    const points=Number(afterPay.totalPoints||0)-Number(beforePay.totalPoints||0);
-    const productivity=Number(afterPay.kpiScore||0)-Number(beforePay.kpiScore||0);
-    const calculationLines=[];
-    const activityDelta=Number(afterPay.tenurePay||0)-Number(beforePay.tenurePay||0);
-    const planDelta=Number(afterPay.matrixTotal||0)-Number(beforePay.matrixTotal||0);
-    const appliedPlanDelta=Number(afterPay.mobilePlanPay||0)-Number(beforePay.mobilePlanPay||0);
-    const vasDelta=Number(afterPay.rawVasPay||0)-Number(beforePay.rawVasPay||0);
-    const secondDelta=Number(afterPay.rawBundle2ndTotal||0)-Number(beforePay.rawBundle2ndTotal||0);
-    const appliedSecondDelta=Number(afterPay.bundle2ndPay||0)-Number(beforePay.bundle2ndPay||0);
-    const strategicDelta=Number(afterPay.strategicAdjustment||0)-Number(beforePay.strategicAdjustment||0);
-    if(activityDelta)calculationLines.push(['영업활동 지원금',activityDelta]);
-    calculationLines.push([`요금제 · ${mobileSaleDraft.label}`,planDelta]);
-    const eligiblePlanDelta=Number(afterPay.adjustedMatrixTotal||0)-Number(beforePay.adjustedMatrixTotal||0);
-    const eligibleSecondDelta=Number(afterPay.bundle2ndTotal||0)-Number(beforePay.bundle2ndTotal||0);
-    const homeAdjustment=(appliedPlanDelta-eligiblePlanDelta)+(appliedSecondDelta-eligibleSecondDelta);
-    if(vasLabels.length)calculationLines.push([`VAS·보험 ${vasLabels.length}개`,vasDelta]);
-    if(secondLabels.length)calculationLines.push([`2ND ${secondLabels.length}개 · ${secondLabels.join(', ')}`,secondDelta]);
-    if(homeAdjustment)calculationLines.push(['홈 실적 기준 예상 조정',homeAdjustment]);
-    if(strategicDelta)calculationLines.push(['전략포인트 비중 예상 조정',strategicDelta]);
-    if(mobileUsedMnpBundle)calculationLines.push(['중고 MNP 결합',Number((config.mnpBundle||DEFAULT_MNP_BUNDLE).find(v=>v.key==='usedMnpBundle')?.rate||0)]);
-    if(free.bundleOffset)calculationLines.push(['2ND 할인·조건 미충족 제외',-Number(free.bundleOffset||0)]);
-    if(specialMatrix||specialVas)calculationLines.push(['인센미지급 특가 제외',-(specialMatrix+specialVas)]);
-    if(replacement)calculationLines.push(['특가·지인 추가',replacement]);
-    const explained=calculationLines.reduce((sum,[,amount])=>sum+Number(amount||0),0);
-    const otherDelta=incentive-explained;
-    if(otherDelta)calculationLines.push(['누적 구간·기타 예상 변동',otherDelta]);
-    return {incentive,points,productivity,strategicPoints,calculationLines,vasLabels,secondLabels,promiseCount};
+    return {...estimate,strategicPoints,calculationLines:estimate.rows,vasLabels,secondLabels,promiseCount};
   })();
 
   return (
@@ -1565,12 +1529,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                           <div className="relative mb-2">
                             <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
                               className={`text-[12px] font-bold ${inc.total>0?'text-brand-700':'text-gray-400'}`}>
-                              {inc.total>0?`+${won(inc.total)}`:'0원'}
+                              {inc.total==null?'계산 확인 중':`${inc.total>0?'+':''}${won(inc.total)}`}
                             </button>
                             <div className="text-[9px] text-gray-400">예상 인센티브</div>
                             {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
                               <div className="text-[10px] font-bold text-gray-700 mb-1">이 판매건 예상 인센티브</div><div className="text-[9px] text-gray-400 mb-2">설치예정 홈은 현재 월 입력 기준으로 미리 계산하며, 실제 지급은 설치완료 후 반영돼요.</div>
-                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                              {inc.total==null?<div className="text-[10px] text-gray-500">월 실적을 확인할 수 없어 예상금액을 표시하지 않았어요. 잠시 후 다시 확인해주세요.</div>:inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
                             </div>}
                           </div>
                           <div className="flex gap-1">
@@ -1604,12 +1568,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                           <div className="relative mb-2">
                             <button type="button" onClick={()=>setSaleIncentiveOpen(v=>v===group.key?null:group.key)}
                               className={`text-[12px] font-bold ${inc.total>0?'text-brand-700':'text-gray-400'}`}>
-                              {inc.total>0?`+${won(inc.total)}`:'0원'}
+                              {inc.total==null?'계산 확인 중':`${inc.total>0?'+':''}${won(inc.total)}`}
                             </button>
-                            <div className="text-[9px] text-gray-400">인센티브</div>
+                            <div className="text-[9px] text-gray-400">예상 인센티브</div>
                             {saleIncentiveOpen===group.key&&<div className="absolute right-0 top-10 z-30 w-56 bg-white border rounded-xl shadow-lg p-3 text-left">
-                              <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 인센티브</div>
-                              {inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
+                              <div className="text-[10px] font-bold text-gray-700 mb-2">이 판매건 예상 인센티브</div><div className="text-[10px] text-gray-500 mb-2">현재 월 누적 기준이며, 비중 구간 변경에 따른 기존 실적 조정도 포함해요. 건별 금액을 합산한 값은 월 합계와 다를 수 있어요.</div>
+                              {inc.total==null?<div className="text-[10px] text-gray-500">월 실적을 확인할 수 없어 예상금액을 표시하지 않았어요. 잠시 후 다시 확인해주세요.</div>:inc.rows.length?inc.rows.map(([l,v],i)=><div key={i} className="flex justify-between gap-2 text-[10px] py-1"><span className="text-gray-500">{l}</span><b className={v<0?'text-red-500':'text-brand-700'}>{v>0?'+':''}{won(v)}</b></div>):<div className="text-[10px] text-gray-400">직접 발생 수수료가 없어요.</div>}
                             </div>}
                           </div>
                           <div className="flex gap-1">
@@ -2053,19 +2017,20 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             )}
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
+              {!mobilePreview&&mobileSaleKind&&<div className="mb-2 text-xs text-gray-500">월 누적 실적 확인 후 예상금액을 표시해요.</div>}
               {mobilePreview&&<div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5">
                 <div className="text-[10px] font-bold text-brand-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
                 <div className="text-[9px] text-brand-500 mt-1 truncate">{mobilePreview.vasLabels.length?`VAS ${mobilePreview.vasLabels.join(', ')}`:'VAS 미유치'}{mobilePreview.promiseCount?` · 고객약속 ${mobilePreview.promiseCount}건`:''}</div>
                 {editingSale&&<div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[10px] text-brand-700"><b>변경 전후</b> · {editingSale.metric_label||'기존 판매'} → {mobileSaleDraft.label}</div>}
-                {!editingSale&&<>
-                  <div className="mt-2 text-sm font-black text-emerald-700">이번 판매 총 +{won(mobilePreview.incentive)}</div>
+                {<>
+                  <div className="mt-2 text-sm font-black text-emerald-700">이번 판매 예상 {mobilePreview.incentive>0?'+':''}{won(mobilePreview.incentive)}</div>
                   <div className="mt-2 grid grid-cols-3 gap-1.5">
                     {[['성과P',mobilePreview.points],['생산성',mobilePreview.productivity],['전략P',mobilePreview.strategicPoints]].map(([label,value])=><div key={label} className="rounded-lg bg-white/80 px-2 py-1.5 text-center"><div className="text-[9px] text-brand-400">{label}</div><div className="text-[11px] font-bold text-brand-700">+{fmtNum(value,1)}P</div></div>)}
                   </div>
                   <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-brand-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
                   {mobileCalcOpen&&<div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 space-y-1">
                     {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-brand-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
-                    <div className="pt-1 border-t border-brand-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
+                    <div className="pt-1 border-t border-brand-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 전략 비중 구간이 바뀌면 기존 실적의 조정액도 포함돼요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
                   </div>}
                 </>}
               </div>}
@@ -2240,7 +2205,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   <div>
                     {toast.payDelta > 0 && (
                       <>
-                        <div className="text-sm font-bold text-emerald-300">이번 판매로 총 +{won(toast.payDelta)}</div>
+                        <div className="text-sm font-bold text-emerald-300">이번 판매로 총 {toast.payDelta>0?'+':''}{won(toast.payDelta)}</div>
                         {toast.source==='mobile'&&<div className="text-[10px] opacity-70 mt-1">
                           {[toast.salePayDelta>0&&`판매 인센티브 ${won(toast.salePayDelta)}`,toast.activityPayDelta>0&&`활동지원금 ${won(toast.activityPayDelta)}`,toast.bonusPayDelta>0&&`등급·추가보상 ${won(toast.bonusPayDelta)}`].filter(Boolean).join(' · ')}
                         </div>}

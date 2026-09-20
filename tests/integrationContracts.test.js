@@ -276,7 +276,7 @@ test('오늘 휴무일이면 미입력으로 안내하지 않는다', async () =
 test('판매 저장 피드백은 최저보장 마감액이 아닌 실제 누적 증가분을 사용한다', async () => {
   const source = await readAppSource();
   assert.match(source, /afterPay\.currentPerformanceAmount[\s\S]*beforePay\.currentPerformanceAmount/);
-  assert.match(source, /이번 판매로 총 \+\{won\(toast\.payDelta\)\}/);
+  assert.match(source, /이번 판매로 총 [^\n]*won\(toast\.payDelta\)/);
   assert.match(source, /판매 인센티브.*활동지원금/);
   assert.doesNotMatch(source, /예상 인센티브 \+\{won\(toast\.payDelta\)\}/);
 });
@@ -424,7 +424,7 @@ test('모바일 입력은 최근 조합 없이 단계형 추가항목·계산근
   assert.match(source, /if\(await deleteSale\(data,\{skipConfirm:true\}\)\)setToast\(null\)/);
   assert.match(source, /deleteSaleAtomic\(supabase/);
   assert.match(source, /방금 등록 취소/);
-  assert.match(source, /VAS·보험 \$\{vasLabels\.length\}개/);
+  assert.match(source, /line\('VAS·보험',delta\('rawVasPay'\)\)/);
   assert.match(source, /홈 실적 기준 예상 조정/);
   assert.match(source, /전략포인트 비중 예상 조정/);
   assert.match(source, /정산 시 최종 반영액은 달라질 수 있습니다/);
@@ -541,7 +541,7 @@ test('인센미지급 특가는 요금제 VAS 보험만 제외하고 과거 무�
   assert.match(source, /policyType:unpaid\?'incentive_unpaid':'additive'/);
   assert.match(source, /판매 실적·성과P·영업 활동 지원비 건수는 인정/);
   assert.match(source, /isIncentiveUnpaidSpecial/);
-  assert.match(source, /VAS·보험 제외/);
+  assert.match(source, /인센미지급 특가 제외/);
   assert.match(sql, /replacement_amount/);
   assert.match(sql, /2099-12-31/);
 });
