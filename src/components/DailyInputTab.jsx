@@ -1,3 +1,4 @@
+import PerformanceResetPanel from './PerformanceResetPanel';
 import PlanReminderDialog, {PLAN_REMINDER_LABELS} from './PlanReminderDialog';
 import { buildReminderTasks, reminderServices, restoreReminders } from '../customerPromises';
 import ReminderChoices from './ReminderChoices';
@@ -17,7 +18,7 @@ import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_S
 import { isSeptemberPolicyActive } from '../policyCalendar';
 import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, septemberPlanGroup, currentPolicySnapshot, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, HOME_NETWORK_TYPES } from "../appShared";
 
-export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser, resetMonthOpen, setResetMonthOpen, resetPhrase, setResetPhrase, resetBusy, resetOwnMonthPerformance }) {
+export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser }) {
   const n = daysInMonth(month);
   const todayKey = (() => {
     const now = new Date();
@@ -2264,43 +2265,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           </div>
         </div>
       )}
-      {currentEmp?.id===authUser?.id&&<div className="mt-4 bg-white rounded-xl border border-red-100 overflow-hidden">
-        <div className="p-4">
-          <div className="text-[10px] font-bold text-red-500">실적 관리</div>
-          <div className="text-sm font-bold text-gray-900 mt-1">당월 실적 초기화</div>
-          <div className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-            잘못 입력된 실적을 월 단위로 초기화할 수 있어요. 실행 직전 데이터는 자동 백업됩니다.
-          </div>
-          <button type="button" disabled={locked}
-            onClick={()=>{setResetMonthOpen(true);setResetPhrase('')}}
-            className="mt-3 px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-bold disabled:opacity-40">
-            {monthLabel(month)} 실적 초기화
-          </button>
-        </div>
-      </div>}
-
-      {resetMonthOpen&&<div className="fixed inset-0 z-[96] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>!resetBusy&&setResetMonthOpen(false)}>
-        <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl p-5" onClick={e=>e.stopPropagation()}>
-          <div className="text-xs font-bold text-red-600">1차 확인</div>
-          <div className="text-lg font-bold text-gray-900 mt-1">{monthLabel(month)} 실적을 초기화할까요?</div>
-          <div className="text-xs text-gray-500 mt-2 leading-relaxed">
-            이 작업은 해당 월의 실적 데이터를 지웁니다. 초기화 직전 데이터는 자동 백업됩니다.
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="text-xs font-semibold text-gray-700">2차 확인</div>
-            <div className="text-[11px] text-gray-500 mt-1">아래에 <b>당월실적초기화</b>를 직접 입력해주세요.</div>
-            <input value={resetPhrase} onChange={e=>setResetPhrase(e.target.value)} disabled={resetBusy}
-              placeholder="당월실적초기화" className="w-full mt-2 border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            <button type="button" disabled={resetBusy} onClick={()=>setResetMonthOpen(false)} className="py-3 rounded-xl bg-gray-100 text-gray-600 text-sm font-semibold">취소</button>
-            <button type="button" disabled={resetBusy||resetPhrase.trim()!=='당월실적초기화'} onClick={resetOwnMonthPerformance}
-              className="py-3 rounded-xl bg-red-600 text-white text-sm font-bold disabled:opacity-35">
-              {resetBusy?'초기화 중...':'실적 초기화 실행'}
-            </button>
-          </div>
-        </div>
-      </div>}
+      {currentEmp?.id===authUser?.id&&<PerformanceResetPanel key={`${authUser.id}:${month}`} month={month} userId={authUser.id} locked={locked||policyInputBlocked}/>}
 
     </div>
   );
