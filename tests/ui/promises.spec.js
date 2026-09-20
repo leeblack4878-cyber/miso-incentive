@@ -38,9 +38,13 @@ test('320px customer auto-list, reminders, split settlement, reload and completi
  await dialog.getByLabel('예상금액',{exact:true}).fill('320000');await dialog.getByLabel('실제금액',{exact:true}).fill('300000');
  await dialog.getByLabel('처리 방식 1',{exact:true}).selectOption('위약금 수납');await dialog.getByLabel('처리 금액 1',{exact:true}).fill('100000');
  await dialog.getByRole('button',{name:'+ 처리 방식 추가'}).click();await dialog.getByLabel('처리 금액 2',{exact:true}).fill('200000');
+ await dialog.getByLabel('처리 금액 2',{exact:true}).fill('240000');
+ await expect(dialog).toContainText('담당자 중고폰 초과금액 40,000원');
+ await dialog.getByLabel('실제금액',{exact:true}).fill('350000');await expect(dialog).toContainText('중고폰 잔여금액 10,000원');
+ await dialog.getByLabel('실제금액',{exact:true}).fill('300000');
  await dialog.getByLabel('처리 완료일',{exact:true}).fill('2026-09-19');
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
- await dialog.getByRole('button',{name:'저장 후 처리완료'}).click();await expect(dialog).toHaveCount(0);expect(posts).toBe(1);expect(tasks[0].task_meta.sale_reference.id).toBe('sale1');
+ await dialog.getByRole('button',{name:'저장 후 처리완료'}).click();await expect(dialog).toHaveCount(0);expect(posts).toBe(1);expect(tasks[0].task_meta.staff_excess_amount).toBe(40000);expect(tasks[0].task_meta.sale_reference.id).toBe('sale1');
  await page.locator('summary').filter({hasText:'월별 중고폰 처리금액'}).click();await expect(page.getByText('300,000원',{exact:true})).toBeVisible();
  await page.reload();await page.locator('summary').filter({hasText:'월별 중고폰 처리금액'}).click();await expect(page.getByText('300,000원',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'완료·취소',exact:true}).click();page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'완료 취소',exact:true}).click();
