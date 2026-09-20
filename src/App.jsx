@@ -1,3 +1,5 @@
+import { activeRoster, hasMonthHistory, readAllPages } from './performanceRoster';
+import { PerformanceResetApprovals } from './components/PerformanceResetPanel';
 import { DEFAULT_BASE_PAY, DEFAULT_BASE_PENALTY, DEFAULT_POSITION_ALLOWANCE, DEFAULT_TENURE, DEFAULT_TENURE_CAP, DEFAULT_GRADES, DEFAULT_HOME_TIERS, DEFAULT_MATRIX, DEFAULT_CATEGORY_MAP, DEFAULT_CUSTREG_TIERS, DEFAULT_TAILORED_TIERS, mergeDefaultVas, defaultConfig } from './policyDefaults';
 import { BADGE_DEFS, MONTHLY_RANK_METRICS, evaluateAutomaticBadges } from './badgeRules';
 import { createPortal } from 'react-dom';
@@ -853,7 +855,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, name, employee_code, store_name, store_scope, position, hire_date, role, active')
-      .eq('active', true)
+      .eq('status', 'approved')
       .order('name', { ascending: true });
 
     if (error) {
@@ -870,6 +872,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
 
     const list = (data || []).map((p) => ({
       id: p.id,
+      active: p.active === true,
       name: p.name || (p.id === authUser.id ? (authUser.email || '내 계정') : '이름 미설정'),
       branch: p.store_name || '미지정',
       storeScope: Array.isArray(p.store_scope) ? p.store_scope : [],
@@ -943,13 +946,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
     const nextMonth = new Date(yy, mm, 1);
     const nextKey = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
 
-    const { data, error } = await supabase
+    const { data, error } = await readAllPages(()=>supabase
       .from('daily_records')
       .select('user_id, work_date, data, updated_at')
       .in('user_id', ids)
       .gte('work_date', `${m}-01`)
       .lt('work_date', nextKey)
-      .order('work_date', { ascending: true });
+      .order('work_date', { ascending: true }).order('user_id'));
 
     if (error) {
       console.error('DAILY LOAD ERROR:', error);
@@ -979,10 +982,10 @@ export default function App({ authUser, authProfile, onSignOut }) {
     if(!ids.length){setHomePolicyMap({});return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
     const [orderRes,saleRes]=await Promise.all([
-      supabase.from('home_orders')
+      readAllPages(()=>supabase.from('home_orders')
         .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
-        .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`),
-      supabase.from('customer_sales').select('source_ref,source_meta').eq('source_type','home_order').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to),
+        .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`).order('id')),
+      readAllPages(()=>supabase.from('customer_sales').select('source_ref,source_meta').eq('source_type','home_order').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to).order('id')),
     ]);
     const {data,error}=orderRes;
     if(error||saleRes.error){console.error('HOME POLICY LOAD ERROR',error||saleRes.error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
@@ -1009,9 +1012,9 @@ export default function App({ authUser, authProfile, onSignOut }) {
     ids.forEach(id=>{mapped[id]={totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0,performancePoints:0,insurancePoints:0,details:[]};});
     if(!ids.length){setShadowLedgerMap(mapped);setStrategicMetricMap({});return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
-    const {data,error}=await supabase.from('customer_sales')
+    const {data,error}=await readAllPages(()=>supabase.from('customer_sales')
       .select('id,user_id,sale_date,metric_label,source_meta,customers(customer_name)')
-      .eq('source_type','mobile').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to);
+      .eq('source_type','mobile').in('user_id',ids).gte('sale_date',`${m}-01`).lt('sale_date',to).order('id'));
     if(error){console.error('SHADOW LEDGER LOAD ERROR',error);setShadowLedgerMap(mapped);setStrategicMetricMap({});return;}
     (data||[]).forEach(sale=>{
       if(sale.source_meta?.teamOnly)return;
@@ -1334,7 +1337,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
     e.id,applyCancelledLegacyHomeAdjustments(dailyRecords[e.id],cancelledLegacyHomeMap[e.id])
   ])),[employees,dailyRecords,cancelledLegacyHomeMap]);
 
-  const rows = employees.map((e) => {
+  const rows = employees.filter(e=>hasMonthHistory(e,{dailyRecords,monthRecords,homePolicyMap,shadowLedgerMap,approvedMobileSpotMap})).map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
     const mergedBase = applyDailyToDraft(rec.draft, effectiveDailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
     const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null};
@@ -1361,7 +1364,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   useEffect(()=>{
     let alive=true;
     if(!authUser?.id||!loginEmp?.branch||canViewStoreMemberRows){setStoreAggregateDays({});return()=>{alive=false};}
-    supabase.rpc('get_my_store_performance_days',{p_month:month}).then(({data,error})=>{
+    readAllPages(()=>supabase.rpc('get_my_store_performance_days',{p_month:month})).then(({data,error})=>{
       if(!alive)return;
       if(error){console.error('STORE AGGREGATE LOAD ERROR:',error);setStoreAggregateDays({});return;}
       const mapped={};
@@ -1375,7 +1378,8 @@ export default function App({ authUser, authProfile, onSignOut }) {
     return()=>{alive=false};
   },[authUser?.id,loginEmp?.branch,month,canViewStoreMemberRows]);
 
-  const scopedEmployees=scopedEmployeesFor({viewer:loginEmp,authUserId:authUser?.id,isStoreLeader,employees,areaStores:SALES_AREA_STORES});
+  const scopedPerformanceEmployees=scopedEmployeesFor({viewer:loginEmp,authUserId:authUser?.id,isStoreLeader,employees,areaStores:SALES_AREA_STORES});
+  const scopedEmployees=activeRoster(scopedPerformanceEmployees);
 
   useEffect(() => {
     if (!scopedEmployees.length) return;
@@ -1405,13 +1409,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const salesRows = [...rows,...teamCreditRows]
     .filter((r) => !NON_SALES_STORES.includes(r.branch))
     .map((r) => (r.position === '기타' ? { ...r, pay: { ...r.pay, total: 0, guaranteedComponent: 0 } } : r));
-  const scopedIds = new Set(scopedEmployees.map((e) => e.id));
+  const scopedIds = new Set(scopedPerformanceEmployees.map((e) => e.id));
   const scopedRows = rows.filter((r) => scopedIds.has(r.id));
-  const scopedBranches=new Set(scopedEmployees.map(employee=>employee.branch));
+  const scopedBranches=new Set(scopedPerformanceEmployees.map(employee=>employee.branch));
   const scopedSalesRows = salesRows.filter((r) => scopedIds.has(r.id)||(r.teamOnly&&scopedBranches.has(r.branch)));
 
   const totalPay = scopedSalesRows.reduce((s, r) => s + r.pay.total, 0);
-  const pendingCount = scopedRows.filter((r) => r.status === 'pending').length;
+  const pendingCount = scopedRows.filter((r) => r.active!==false && r.status === 'pending').length;
 
   // 홈 화면 랭킹용 — 본인이 영업 조직 소속일 때만 순위 계산
   // 지원 판매는 매장 합계에는 들어가지만 가상의 개인/직원으로 순위에 노출하지 않습니다.
@@ -3465,9 +3469,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [ledgerError,setLedgerError]=useState(false);
   const [approvalError,setApprovalError]=useState(false);
   const displayPay=payDisplay(pay,historySpotTotal,expenseTotal);
-  const [resetMonthOpen,setResetMonthOpen]=useState(false);
-  const [resetPhrase,setResetPhrase]=useState('');
-  const [resetBusy,setResetBusy]=useState(false);
   const [ledgerRevision,setLedgerRevision]=useState(0);
   useEffect(()=>{const refresh=()=>setLedgerRevision(v=>v+1);window.addEventListener('sales-data-changed',refresh);return()=>window.removeEventListener('sales-data-changed',refresh)},[]);
   const [careNavIntent,setCareNavIntent]=useState(null);
@@ -3538,25 +3539,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
     })();
     return()=>{alive=false};
   },[viewedUserId,month,dailyDays]);
-
-  const resetOwnMonthPerformance=async()=>{
-    if(monthLocked||policyInputBlocked)return showLegacyAlert(policyInputBlocked?'정책 준비 중인 월은 초기화할 수 없어요.':'마감된 월은 초기화할 수 없어요.');
-    if(String(resetPhrase).trim()!=='당월실적초기화')return;
-    if(!authUser?.id || currentEmp?.id!==authUser.id)return showLegacyAlert('본인의 실적만 초기화할 수 있어요.');
-    setResetBusy(true);
-    try{
-      const {data,error}=await supabase.rpc('reset_my_month_performance',{
-        p_month:month,
-        p_confirm_phrase:'당월실적초기화'
-      });
-      if(error)throw error;
-      showLegacyAlert(`${monthLabel(month)} 실적을 초기화했어요.\n초기화 직전 데이터는 백업되었습니다.`);
-      window.location.reload();
-    }catch(e){
-      showLegacyAlert(`실적 초기화 실패: ${friendlyError(e)}`);
-      setResetBusy(false);
-    }
-  };
 
   const set = (group, next) => setDraft({ ...draft, [group]: next });
   useEffect(() => {
@@ -3699,12 +3681,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             onHomeOrdersChanged={onHomeOrdersChanged}
             onSalesChanged={onSalesChanged}
             authUser={authUser}
-            resetMonthOpen={resetMonthOpen}
-            setResetMonthOpen={setResetMonthOpen}
-            resetPhrase={resetPhrase}
-            setResetPhrase={setResetPhrase}
-            resetBusy={resetBusy}
-            resetOwnMonthPerformance={resetOwnMonthPerformance}
           /></React.Suspense>
 
           <div className="mt-4">
@@ -4940,11 +4916,11 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
     let alive=true;
     (async()=>{
       setLoading(true);
-      const employeeIds=(employees||[]).map(emp=>emp.id).filter(Boolean);
+      const employeeIds=[...new Set([...employees,...rows.filter(row=>!row.teamOnly)].map(emp=>emp.id).filter(Boolean))];
       const [{data,error},taskResult,homeResult,customerResult]=await Promise.all([
         supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month),
         employeeIds.length?supabase.from('customer_tasks').select('id,user_id,customer_id,title,due_date,status').in('user_id',employeeIds):Promise.resolve({data:[]}),
-        employeeIds.length?supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date,actual_install_date,product_type,network_type,sale_type,main_tv_plan,source_group,source_key').in('user_id',employeeIds):Promise.resolve({data:[]}),
+        employeeIds.length?readAllPages(()=>supabase.from('home_orders').select('id,user_id,customer_id,customer_name,planned_install_date,status,source_work_date,actual_install_date,product_type,network_type,sale_type,main_tv_plan,source_group,source_key').in('user_id',employeeIds).order('id')):Promise.resolve({data:[]}),
         employeeIds.length?supabase.from('customers').select('id,user_id,customer_name').in('user_id',employeeIds):Promise.resolve({data:[]}),
       ]);
       if(!alive)return;
@@ -4955,14 +4931,14 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
       setLoading(false);
     })();
     return()=>{alive=false};
-  },[month,employees.map(emp=>emp.id).join('|')]); // eslint-disable-line
+  },[month,employees.map(emp=>emp.id).join('|'),rows.filter(row=>!row.teamOnly).map(row=>row.id).join('|')]); // eslint-disable-line
 
   const goalMap=Object.fromEntries(goalRows.map(row=>[row.store_name,resolveStoreBriefingGoals({
     defaults:companyGoalDefaults(row.store_name),
     companyGoals:row.company_goals,
     challengeGoals:row.challenge_goals,
   })]));
-  const branches=sortStoresByOpenOrder([...new Set((employees||[]).map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
+  const branches=sortStoresByOpenOrder([...new Set([...employees,...rows].map(emp=>emp.branch).filter(Boolean).filter(branch=>!NON_SALES_STORES.includes(branch)))]);
   const reportDay=Math.max(1,Number(selectedDay||1));
   const periodRows=useMemo(()=>buildBriefingPeriodRows({rows,dailyRecords,orders:scheduleRows.homes,month,reportDay,
     rebuild:(row,days,completedOrders)=>{
@@ -5129,8 +5105,8 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
     scoped.forEach(emp=>{
       const m=dailyCalendarMetrics(dailyRecords?.[emp.id]?.[dayKey]);
       total.hs+=m.hs; total.sim+=m.sim; total.home+=m.home; total.second+=m.second; total.free+=m.free; total.smart+=m.smart; total.tailored+=m.tailored;
-      if(m.has)total.input+=1;
-      if(m.off)total.off+=1;
+      if(emp.active!==false&&m.has)total.input+=1;
+      if(emp.active!==false&&m.off)total.off+=1;
     });
     return total;
   };
@@ -5185,7 +5161,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
       <div className="px-4 py-3 bg-gray-50/70">
         <div className="flex items-center justify-between">
           <div className="text-sm font-bold text-gray-800">{parseInt(selectedDay,10)}일 상세</div>
-          <div className="text-[10px] text-gray-400">입력 {fmtCount(selected.input)}명 · 미입력 {fmtCount(Math.max(0,scoped.length-selected.input-selected.off))}명 · 휴무 {fmtCount(selected.off)}명</div>
+          <div className="text-[10px] text-gray-400">입력 {fmtCount(selected.input)}명 · 미입력 {fmtCount(Math.max(0,activeRoster(scoped).length-selected.input-selected.off))}명 · 휴무 {fmtCount(selected.off)}명</div>
         </div>
         <div className="grid grid-cols-3 gap-2 mt-2">
           {[['HS',selected.hs],['SIM MNP',selected.sim],['홈',selected.home],['2ND',selected.second],['프리',selected.free],['스홈',selected.smart]].map(([label,value])=><div key={label} className="rounded-lg bg-white border border-gray-100 px-2 py-2 text-center"><div className="text-[9px] text-gray-400">{label}</div><div className="text-xs font-bold text-gray-800 mt-0.5">{fmtCount(value)}건</div></div>)}
@@ -5193,7 +5169,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
       </div>
       <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
         {employeeDetails.map(({emp,hs,sim,home,has,off})=><div key={emp.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
-          <div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{emp.name}</div><div className="text-[9px] text-gray-400">{off?'휴무':has?'입력 완료':'미입력'}</div></div>
+          <div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{emp.name}{emp.active===false?' · 비활성':''}</div><div className="text-[9px] text-gray-400">{emp.active===false?'이전 실적':off?'휴무':has?'입력 완료':'미입력'}</div></div>
           <div className="text-[10px] text-gray-500 text-right shrink-0">{off?'—':`HS ${fmtCount(hs)} · SIM MNP ${fmtCount(sim)} · 홈 ${fmtCount(home)}`}</div>
         </div>)}
       </div>
@@ -5214,7 +5190,7 @@ function PerformanceCheckPanel({ month, rows, dailyRecords, employees }) {
     })();
   },[month]);
   const workRows=(rows||[]).filter(r=>!NON_SALES_STORES.includes(r.branch));
-  const missing=workRows.filter(r=>!dayHasData(dailyRecords?.[r.id]?.[selectedDay]));
+  const missing=workRows.filter(r=>r.active!==false&&!r.teamOnly&&!dayHasData(dailyRecords?.[r.id]?.[selectedDay]));
   const duplicates=[];
   // 같은 날짜에 동일 고객명이 2개 이상인 건은 실제 중복 여부를 점검하도록 안내
   const [duplicateRows,setDuplicateRows]=useState([]);
@@ -5346,9 +5322,10 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
   const [dashboardStore,setDashboardStore]=useState('all');
-  const dashboardStores=sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)));
+  const dashboardStores=sortStoresByOpenOrder([...employees,...rows].map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)));
   const dashboardStoreKey=resolveDashboardStore(dashboardStore,dashboardStores,canSwitchStores,loginBranch);
   const dashboardRows=(rows||[]).filter(r=>dashboardStoreKey==='all'||r.branch===dashboardStoreKey);
+  const performanceEmployees=[...employees,...rows.filter(row=>row.active===false)];
   const dashboardEmployees=(employees||[]).filter(e=>dashboardStoreKey==='all'||e.branch===dashboardStoreKey);
   const dashboardLabel=dashboardStoreKey==='all'?(isFullAdmin?'전체 운영 현황':'담당 매장 전체'):displayStoreName(dashboardStoreKey);
   const dashboardForecastFactor=performanceForecastFactor(month);
@@ -5492,7 +5469,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
           <AdminPerformanceCalendar
             month={month}
-            employees={employees}
+            employees={performanceEmployees}
             dailyRecords={dailyRecords}
             loginBranch={loginBranch}
             canSwitchStores={canSwitchStores}
@@ -5558,7 +5535,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'managerPayroll' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
       {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
-      {adminTab === 'performanceApproval' && <PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} />}
+      {adminTab === 'performanceApproval' && <div className="space-y-4"><PerformanceResetApprovals key={month} month={month} employees={employees} authUserId={authUserId} locked={monthLocked||policyInputBlocked}/><PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} /></div>}
       {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} config={config} />}
       {adminTab === 'expenses' && <AdminExpenseOverview month={month} employees={employees} loginBranch={loginBranch} canSwitchStores={canSwitchStores} />}
       {adminTab === 'storeGoals' && <StoreGoalAdmin month={month} employees={employees} rows={rows} isFullAdmin={isFullAdmin} authUserId={authUserId} />}
