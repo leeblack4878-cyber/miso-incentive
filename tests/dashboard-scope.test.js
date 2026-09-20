@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveDashboardStore,performanceForecastFactor} from '../src/dashboardScope.js';
+import {resolveDashboardStore,performanceForecastFactor,dashboardScopeBranches,dashboardAreaOptions} from '../src/dashboardScope.js';
 
 test('관리자 선택은 이미 허용된 매장 안에서만 적용한다',()=>{
   assert.equal(resolveDashboardStore('B',['A','B'],true,'A'),'B');
@@ -14,4 +14,16 @@ test('예상 마감은 한국 날짜 경과일 기준이며 다른 월은 확대
   assert.equal(performanceForecastFactor('2026-09',new Date('2026-09-15T15:00:00Z')),30/16);
   assert.equal(performanceForecastFactor('2026-08',new Date('2026-09-15T03:00:00Z')),1);
   assert.equal(performanceForecastFactor('2026-10',new Date('2026-09-15T03:00:00Z')),1);
+});
+
+test('상권 선택은 허용 매장 교집합만 합산하며 매장 관리자 권한을 넓히지 않는다',()=>{
+ const areas={ansan:['A','B'],siheung:['C','D']},labels={ansan:'안산 상권',siheung:'시흥 상권'};
+ assert.deepEqual(dashboardScopeBranches('area:ansan',['A','C'],areas),['A']);
+ assert.deepEqual(dashboardScopeBranches('area:siheung',['A','C'],areas),['C']);
+ assert.deepEqual(dashboardScopeBranches('all',['A','C'],areas),['A','C']);
+ assert.deepEqual(dashboardScopeBranches('area:unknown',['A','C'],areas),[]);
+ assert.equal(resolveDashboardStore('area:ansan',['A','C'],true,'A',areas),'area:ansan');
+ assert.equal(resolveDashboardStore('area:siheung',['A'],true,'A',areas),'all');
+ assert.equal(resolveDashboardStore('area:ansan',['A','B'],false,'A',areas),'A');
+ assert.deepEqual(dashboardAreaOptions(['C'],areas,labels),[{key:'area:siheung',label:'시흥 상권'}]);
 });

@@ -2,16 +2,17 @@ import {test,expect} from '@playwright/test';
 const stores=['대야동_롯데마트점','장곡동_장곡역점'];
 const ids=['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002'];
 const matrix=n=>[[n]];
-async function setup(page,{actor='admin',hq=null,hqFail=false,final=false}={}){
+async function setup(page,{actor='admin',hq=null,hqFail=false,final=false,extraArea=false}={}){
  await page.clock.setFixedTime(new Date('2026-09-15T03:00:00Z'));
  const adminId='a50a0979-acef-40b1-98b7-f05074f1c835',areaId='471280af-a046-4d25-a27d-63a0c5978403';
  const profiles=ids.map((id,i)=>({id,name:`직원${i+1}`,store_name:stores[i],position:actor==='manager'&&i===0?'점장':'사원',role:actor==='manager'&&i===0?'manager':'employee',active:true,hire_date:'2026-01-01'}));
  if(actor==='area')profiles.push({id:'outside-area',name:'타상권직원',store_name:'성포동_성포역점',position:'사원',role:'employee',active:true});
  if(actor==='admin'||actor==='area')profiles.push({id:actor==='admin'?adminId:areaId,name:'조회관리자',store_name:'운영진',position:actor==='admin'?'대표':'담당',role:actor==='admin'?'admin':'manager',active:true,hire_date:'2026-01-01'});
+ if(extraArea)profiles.push({id:'ansan-staff',name:'안산직원',store_name:'본오3동_상록수역점',position:'사원',role:'employee',active:true});
  await page.route('https://placeholder.supabase.co/**',async route=>{
   const req=route.request(),u=new URL(req.url()),table=u.pathname.split('/').pop();
   if(table==='profiles')return route.fulfill({json:profiles});
-  if(table==='daily_records')return route.fulfill({json:ids.map((id,i)=>({user_id:id,work_date:'2026-09-15',data:{matrix:matrix(i?20:10)}}))});
+  if(table==='daily_records')return route.fulfill({json:[...ids.map((id,i)=>({user_id:id,work_date:'2026-09-15',data:{matrix:matrix(i?20:10)}})),...(extraArea?[{user_id:'ansan-staff',work_date:'2026-09-15',data:{matrix:matrix(7)}}]:[])]});
   if(table==='head_office_performance')return route.fulfill(hqFail?{status:403,json:{message:'failed'}}:{json:hq});
   if(table==='head_office_store_performance'){
    const rows=final?[{month:'2026-09',store_name:stores[0],as_of_date:'2026-09-30',metrics:{hs:12,status:'final'}}]:[];
@@ -48,7 +49,9 @@ test('매장 관리자는 본인 매장만 보고 마감 확정 실적을 재환
 test('영업담당 선택 목록은 담당 상권 안에서만 제공한다',async({page})=>{
  await setup(page,{actor:'area'});
  const picker=page.getByLabel('운영 현황 매장');
- await expect(picker.locator('option')).toHaveCount(3);
+ await expect(picker.locator('option')).toHaveCount(4);
+ await expect(picker).toContainText('시흥 상권');await expect(picker).not.toContainText('안산 상권');
+ await picker.selectOption('area:siheung');await checkForecast(page,60);
  await expect(picker).not.toContainText('성포');
  await picker.selectOption(stores[1]);await checkForecast(page,40);
 });
@@ -62,4 +65,20 @@ for(const state of ['empty','different','error'])test(`본사 비교 ${state}: �
  await expect(page.getByText('본사 실적 비교',{exact:true})).toBeVisible();
  if(state==='error')await expect(page.getByRole('alert')).toContainText('본사 데이터를 불러오지 못했어요');
  if(state==='empty')await expect(page.getByText('본사 데이터 등록 전 · 직원 입력 기준')).toBeVisible();
+});
+
+test('상권 선택은 달력·핵심 성과·직원 현황에 같은 범위를 적용한다',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await setup(page,{extraArea:true});
+ const picker=page.getByLabel('운영 현황 매장'),hs=page.getByTestId('admin-metric-hs');
+ await expect(hs).toContainText('37건');
+ await picker.selectOption('area:siheung');await expect(hs).toContainText('30건');
+ let staff=page.getByText(/· 직원 현황/).locator('..').locator('..');
+ await expect(staff).toContainText('시흥 상권');await expect(staff).toContainText('직원1');await expect(staff).not.toContainText('안산직원');
+ await picker.selectOption('area:ansan');await expect(hs).toContainText('7건');
+ await expect(staff).toContainText('안산 상권');await expect(staff).toContainText('안산직원');await expect(staff).not.toContainText('직원1');
+ const calendar=page.getByText('2026년 9월 성과 달력',{exact:true}).locator('..').locator('..').locator('..');
+ await expect(calendar).toContainText('입력 1명');await expect(calendar).not.toContainText('직원2');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await picker.selectOption(stores[0]);await expect(hs).toContainText('10건');
+ await picker.selectOption('all');await expect(hs).toContainText('37건');
 });
