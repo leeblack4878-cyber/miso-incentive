@@ -76,9 +76,29 @@ test('상권 선택은 달력·핵심 성과·직원 현황에 같은 범위를 
  await expect(staff).toContainText('시흥 상권');await expect(staff).toContainText('직원1');await expect(staff).not.toContainText('안산직원');
  await picker.selectOption('area:ansan');await expect(hs).toContainText('7건');
  await expect(staff).toContainText('안산 상권');await expect(staff).toContainText('안산직원');await expect(staff).not.toContainText('직원1');
+ await page.getByText('날짜별 성과 달력',{exact:true}).click();
  const calendar=page.getByText('2026년 9월 성과 달력',{exact:true}).locator('..').locator('..').locator('..');
  await expect(calendar).toContainText('입력 1명');await expect(calendar).not.toContainText('직원2');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await picker.selectOption(stores[0]);await expect(hs).toContainText('10건');
  await picker.selectOption('all');await expect(hs).toContainText('37건');
+});
+
+test('매장 선택은 스크롤 중에도 고정되고 달력 접기와 현재 위치를 유지한다',async({page})=>{
+ await page.setViewportSize({width:320,height:700});await setup(page);
+ const calendar=page.getByTestId('dashboard-calendar');
+ await expect(calendar).not.toHaveAttribute('open','');
+ const card=page.getByTestId('admin-metric-hs');
+ expect((await card.boundingBox()).y).toBeLessThan((await calendar.boundingBox()).y);
+ await page.getByText('날짜별 성과 달력',{exact:true}).click();await expect(calendar).toHaveAttribute('open','');
+ const bar=page.getByTestId('dashboard-scope-bar');
+ await page.evaluate(()=>window.scrollTo(0,850));
+ const before=await page.evaluate(()=>window.scrollY);
+ const header=await page.locator('.app-header').boundingBox(),box=await bar.boundingBox();
+ expect(Math.abs(box.y-(header.y+header.height))).toBeLessThan(2);
+ await page.getByLabel('운영 현황 매장').selectOption(stores[1]);
+ await expect(page.getByTestId('admin-metric-hs')).toContainText('20건');
+ await expect(calendar).toHaveAttribute('open','');
+ expect(Math.abs(await page.evaluate(()=>window.scrollY)-before)).toBeLessThan(3);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

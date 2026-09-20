@@ -5085,7 +5085,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   </div>;
 }
 
-function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchStores=false, storeKey, onStoreChange }) {
+function AdminPerformanceCalendar({ month, employees, dailyRecords, storeKey, scopeLabel }) {
   const availableStores=useMemo(()=>sortStoresByOpenOrder((employees||[]).map(e=>e.branch).filter(Boolean).filter(b=>!NON_SALES_STORES.includes(b))),[employees]);
   const [selectedDay,setSelectedDay]=useState(()=>{
     const now=new Date();
@@ -5098,7 +5098,6 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
   },[month]);
 
   const scopeBranches=dashboardScopeBranches(storeKey,availableStores,SALES_AREA_STORES);
-  const areaOptions=dashboardAreaOptions(availableStores,SALES_AREA_STORES,SALES_AREA_LABELS);
   const scoped=(employees||[]).filter(e=>scopeBranches.includes(e.branch)&&!NON_SALES_STORES.includes(e.branch));
   const n=daysInMonth(month);
 
@@ -5124,15 +5123,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
         <div className="text-base font-bold text-gray-900">{monthLabel(month)} 성과 달력</div>
         <div className="text-[10px] text-gray-400 mt-1">달력에는 HS · SIM MNP · 홈만 간단히 표시해요.</div>
       </div>
-      {canSwitchStores ? (
-        <select value={storeKey} aria-label="운영 현황 매장" onChange={e=>onStoreChange(e.target.value)} className="max-w-[150px] text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-2">
-          <option value="all">전체 매장</option>
-          {areaOptions.map(area=><option key={area.key} value={area.key}>{area.label}</option>)}
-          {availableStores.map(b=><option key={b} value={b}>{displayStoreName(b)}</option>)}
-        </select>
-      ) : (
-        <div className="text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg px-2.5 py-2">{displayStoreName(storeKey)}</div>
-      )}
+      <div className="text-xs font-semibold text-brand-700 bg-brand-50 rounded-lg px-2.5 py-2">{scopeLabel}</div>
     </div>
 
     <div className="p-3">
@@ -5325,6 +5316,21 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
   const [dashboardStore,setDashboardStore]=useState('all');
+  const [headerHeight,setHeaderHeight]=useState(72);
+  const scopeScrollRef=useRef(null);
+  useEffect(()=>{
+    const header=document.querySelector('.app-header');
+    if(!header)return;
+    const measure=()=>setHeaderHeight(header.getBoundingClientRect().height);
+    measure();
+    const observer=new ResizeObserver(measure);observer.observe(header);
+    return()=>observer.disconnect();
+  },[]);
+  const changeDashboardStore=(value)=>{scopeScrollRef.current=window.scrollY;setDashboardStore(value);};
+  React.useLayoutEffect(()=>{
+    if(scopeScrollRef.current===null)return;
+    window.scrollTo({top:scopeScrollRef.current,behavior:'instant'});scopeScrollRef.current=null;
+  },[dashboardStore]);
   const dashboardStores=sortStoresByOpenOrder([...employees,...rows].map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)));
   const dashboardStoreKey=resolveDashboardStore(dashboardStore,dashboardStores,canSwitchStores,loginBranch,SALES_AREA_STORES);
   const dashboardBranches=dashboardScopeBranches(dashboardStoreKey,dashboardStores,SALES_AREA_STORES);
@@ -5469,23 +5475,28 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       )}
 
       {adminTab === 'dashboard' && (
-        <div className="space-y-4">
-          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin')setCustomerCareFilter('overdue');setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} canViewSpotAdmin={canViewDailyBriefing} />
-
-          <AdminPerformanceCalendar
-            month={month}
-            employees={performanceEmployees}
-            dailyRecords={dailyRecords}
-            loginBranch={loginBranch}
-            canSwitchStores={canSwitchStores}
-            storeKey={dashboardStoreKey} onStoreChange={setDashboardStore}
-          />
+        <div className="space-y-4" style={{overflowAnchor:'none'}}>
+          <div data-testid="dashboard-scope-bar" className="sticky z-10 bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2 flex items-center justify-between gap-3" style={{top:headerHeight}}>
+            <span className="text-xs font-semibold text-gray-500 shrink-0">매장·상권</span>
+            {canSwitchStores?<select aria-label="운영 현황 매장" value={dashboardStoreKey} onChange={e=>changeDashboardStore(e.target.value)} className="min-w-0 flex-1 max-w-[240px] rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-sm font-bold text-brand-700">
+              <option value="all">전체 매장</option>
+              {dashboardAreaOptions(dashboardStores,SALES_AREA_STORES,SALES_AREA_LABELS).map(area=><option key={area.key} value={area.key}>{area.label}</option>)}
+              {dashboardStores.map(branch=><option key={branch} value={branch}>{displayStoreName(branch)}</option>)}
+            </select>:<span className="text-sm font-bold text-brand-700">{dashboardLabel}</span>}
+          </div>
 
           <PerformanceCard month={month} title={`${monthLabel(month)} 핵심 성과`} scopeLabel={`매장 · ${dashboardLabel}`}
             metrics={ADMIN_MAIN_METRICS.map(([key,label,unit])=>({key,label,unit,value:adminHomeMetricValue(key),forecast:unit==='count'?Math.round(adminHomeMetricValue(key,true)):adminHomeMetricValue(key,true)}))}
             scopeRows={dashboardRows} branches={[...new Set(dashboardRows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))]}
             config={config} mode="admin" testPrefix="admin" loadStoreGoals onEditGoals={()=>setAdminTab('storeGoals')}
           ><span className="text-xs text-gray-500 shrink-0">{dashboardEmployees.length}명</span></PerformanceCard>
+
+          <details data-testid="dashboard-calendar" className="bg-white rounded-xl border border-gray-100">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-gray-800">날짜별 성과 달력</summary>
+            <AdminPerformanceCalendar month={month} employees={performanceEmployees} dailyRecords={dailyRecords} storeKey={dashboardStoreKey} scopeLabel={dashboardLabel}/>
+          </details>
+
+          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin')setCustomerCareFilter('overdue');setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} canViewSpotAdmin={canViewDailyBriefing} />
 
           {!dashboardArea&&<StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
             rows={dashboardRows}
