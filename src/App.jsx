@@ -4,7 +4,7 @@ import { DEFAULT_BASE_PAY, DEFAULT_BASE_PENALTY, DEFAULT_POSITION_ALLOWANCE, DEF
 import { BADGE_DEFS, MONTHLY_RANK_METRICS, evaluateAutomaticBadges } from './badgeRules';
 import { createPortal } from 'react-dom';
 import PerformanceCard from './components/PerformanceCard';
-import { resolveDashboardStore, performanceForecastFactor } from './dashboardScope';
+import { resolveDashboardStore, performanceForecastFactor, dashboardScopeBranches, dashboardAreaOptions } from './dashboardScope';
 import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
 import { payDisplay } from './payDisplay';
 import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, useFinalStorePerformance, finalStoreMetric } from './viewShared';
@@ -5097,7 +5097,9 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
     setSelectedDay(monthKeyOf(now)===month?String(now.getDate()).padStart(2,'0'):'01');
   },[month]);
 
-  const scoped=(employees||[]).filter(e=>(storeKey==='all'||e.branch===storeKey)&&!NON_SALES_STORES.includes(e.branch));
+  const scopeBranches=dashboardScopeBranches(storeKey,availableStores,SALES_AREA_STORES);
+  const areaOptions=dashboardAreaOptions(availableStores,SALES_AREA_STORES,SALES_AREA_LABELS);
+  const scoped=(employees||[]).filter(e=>scopeBranches.includes(e.branch)&&!NON_SALES_STORES.includes(e.branch));
   const n=daysInMonth(month);
 
   const daySummary=(dayKey)=>{
@@ -5125,6 +5127,7 @@ function AdminPerformanceCalendar({ month, employees, dailyRecords, canSwitchSto
       {canSwitchStores ? (
         <select value={storeKey} aria-label="운영 현황 매장" onChange={e=>onStoreChange(e.target.value)} className="max-w-[150px] text-xs font-semibold bg-white border border-gray-200 rounded-lg px-2 py-2">
           <option value="all">전체 매장</option>
+          {areaOptions.map(area=><option key={area.key} value={area.key}>{area.label}</option>)}
           {availableStores.map(b=><option key={b} value={b}>{displayStoreName(b)}</option>)}
         </select>
       ) : (
@@ -5323,11 +5326,13 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
 function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals }) {
   const [dashboardStore,setDashboardStore]=useState('all');
   const dashboardStores=sortStoresByOpenOrder([...employees,...rows].map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)));
-  const dashboardStoreKey=resolveDashboardStore(dashboardStore,dashboardStores,canSwitchStores,loginBranch);
-  const dashboardRows=(rows||[]).filter(r=>dashboardStoreKey==='all'||r.branch===dashboardStoreKey);
+  const dashboardStoreKey=resolveDashboardStore(dashboardStore,dashboardStores,canSwitchStores,loginBranch,SALES_AREA_STORES);
+  const dashboardBranches=dashboardScopeBranches(dashboardStoreKey,dashboardStores,SALES_AREA_STORES);
+  const dashboardArea=dashboardStoreKey.startsWith('area:')?dashboardStoreKey.slice(5):null;
+  const dashboardRows=(rows||[]).filter(r=>dashboardStoreKey==='all'||dashboardBranches.includes(r.branch));
   const performanceEmployees=[...employees,...rows.filter(row=>row.active===false)];
-  const dashboardEmployees=(employees||[]).filter(e=>dashboardStoreKey==='all'||e.branch===dashboardStoreKey);
-  const dashboardLabel=dashboardStoreKey==='all'?(isFullAdmin?'전체 운영 현황':'담당 매장 전체'):displayStoreName(dashboardStoreKey);
+  const dashboardEmployees=(employees||[]).filter(e=>dashboardStoreKey==='all'||dashboardBranches.includes(e.branch));
+  const dashboardLabel=dashboardStoreKey==='all'?(isFullAdmin?'전체 운영 현황':'담당 매장 전체'):dashboardArea?SALES_AREA_LABELS[dashboardArea]:displayStoreName(dashboardStoreKey);
   const dashboardForecastFactor=performanceForecastFactor(month);
 
   const finalPerformances=useFinalStorePerformance(month);
@@ -5482,13 +5487,13 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             config={config} mode="admin" testPrefix="admin" loadStoreGoals onEditGoals={()=>setAdminTab('storeGoals')}
           ><span className="text-xs text-gray-500 shrink-0">{dashboardEmployees.length}명</span></PerformanceCard>
 
-          <StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
+          {!dashboardArea&&<StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
             rows={dashboardRows}
             employees={dashboardEmployees}
             authUserId={authUserId}
             month={month}
             onOpen={()=>setAdminTab('storeGoals')}
-          />
+          />}
           <StoreChallengeCard
             month={month}
             allRows={rankingRows||rows}
