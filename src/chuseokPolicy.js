@@ -8,15 +8,15 @@ export function chuseokMobileRate(count,store){
 }
 export function chuseokPolicy(row){
  if(!row)return null;
- const mobileRate=chuseokMobileRate(row.store_mobile,row.store_name);
- const internetRate=chuseokRate(row.store_internet,[1,2,3,4],[50000,80000,100000,150000]);
- const tvRate=chuseokRate(row.store_tv,[1,3,5,7],[20000,25000,30000,40000]);
+ const mobileRate=chuseokMobileRate(row.mobile_count,row.store_name);
+ const internetRate=chuseokRate(row.internet_count,[1,2,3,4],[50000,80000,100000,150000]);
+ const tvRate=chuseokRate(row.tv_count,[1,3,5,7],[20000,25000,30000,40000]);
  const mobilePay=Number(row.mobile_count)*mobileRate,internetPay=Number(row.internet_count)*internetRate,tvPay=Number(row.tv_count)*tvRate;
  return {...row,month:CHUSEOK_MONTH,mobileRate,internetRate,tvRate,mobilePay,internetPay,tvPay,total:mobilePay+internetPay+tvPay};
 }
 export function chuseokSalePay(policy,{month,dayKey,meta,existingSale}){
  if(!policy||month!==CHUSEOK_MONTH||Number(dayKey)<22||Number(dayKey)>28||meta.teamOnly)return 0;
  const included=m=>m&&!m.teamOnly&&Number.isInteger(m.ri)&&m.ri>=0&&m.ri<=5?1:0;
- const count=Math.max(0,Number(policy.store_mobile)-included(existingSale?.source_meta)+included(meta));
+ const count=Math.max(0,Number(policy.mobile_count)-included(existingSale?.source_meta)+included(meta));
  return included(meta)*chuseokMobileRate(count,policy.store_name);
 }

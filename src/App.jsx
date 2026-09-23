@@ -3759,7 +3759,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               <RowKV label={`HS·SIM MNP ${pay.chuseokPolicy.mobile_count}건 × ${won(pay.chuseokPolicy.mobileRate)}`} value={won(pay.chuseokPolicy.mobilePay)}/>
               <RowKV label={`인터넷 ${pay.chuseokPolicy.internet_count}건 × ${won(pay.chuseokPolicy.internetRate)}`} value={won(pay.chuseokPolicy.internetPay)}/>
               <RowKV label={`TV프리 ${pay.chuseokPolicy.tv_count}건 × ${won(pay.chuseokPolicy.tvRate)}`} value={won(pay.chuseokPolicy.tvPay)}/>
-              <div className="text-gray-500">매장 기간 누적 구간 적용 · 홈은 기간 내 청약·9월 설치완료 기준</div>
+              <div className="text-gray-500">개인 기간 누적 구간 적용 · 매장 유형별 기준 · 홈은 기간 내 청약·9월 설치완료 기준</div>
             </div>}
             <RowKV label="직책 수당" value={won(pay.positionAllowance)} />
 
