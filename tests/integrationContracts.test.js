@@ -426,8 +426,8 @@ test('모바일 입력은 최근 조합 없이 단계형 추가항목·계산근
   assert.match(source, /방금 등록 취소/);
   assert.match(source, /line\('VAS·보험',delta\('rawVasPay'\)\)/);
   assert.match(source, /홈 실적 기준 예상 조정/);
-  assert.match(source, /전략포인트 비중 예상 조정/);
-  assert.match(source, /정산 시 최종 반영액은 달라질 수 있습니다/);
+  assert.match(source, /전략포인트 비중 · 해당 판매/);
+  assert.match(source, /월 등급 보상은 포함하지 않으며 급여내역에서/);
   assert.doesNotMatch(source, /2ND 회선 VAS 수수료 제외/);
   assert.match(source, /bundleVasCommissionExcluded:true/);
   assert.match(source, /vasKeys:\[\.\.\.mobileVasKeys\],\s*bundleVasMap:mobileBundleVasMap/);

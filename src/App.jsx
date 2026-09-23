@@ -1,3 +1,4 @@
+import {chuseokPolicy} from './chuseokPolicy';
 import {getInstallState,subscribeInstall,requestAppInstall} from './pwaInstall';
 import { activeRoster, hasMonthHistory, readAllPages } from './performanceRoster';
 import { PerformanceResetApprovals } from './components/PerformanceResetPanel';
@@ -494,6 +495,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [employeeGoalsLoading, setEmployeeGoalsLoading] = useState(false);
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
+  const [chuseokMap,setChuseokMap]=useState({});
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
   const [cancelledLegacyHomeMap,setCancelledLegacyHomeMap]=useState({}); // customer_sales 없는 취소 홈의 일일 잔여 차감
   const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
@@ -1330,6 +1332,17 @@ export default function App({ authUser, authProfile, onSignOut }) {
     setMonthRecords((prev) => ({ ...prev, [id]: next }));
   };
 
+  useEffect(()=>{
+    let alive=true;
+    setChuseokMap({});
+    if(month==='2026-09'&&authUser?.id) supabase.rpc('chuseok_policy_counts',{p_month:month}).then(({data,error})=>{
+      if(!alive)return;
+      if(error){console.error('CHUSEOK POLICY LOAD ERROR',error);return;}
+      setChuseokMap(Object.fromEntries((data||[]).map(row=>[row.user_id,chuseokPolicy(row)])));
+    });
+    return()=>{alive=false};
+  },[month,authUser?.id,dailyRecords,homePolicyMap,teamSalesCredits]);
+
   const effectiveDailyRecords=useMemo(()=>Object.fromEntries(employees.map(e=>[
     e.id,applyCancelledLegacyHomeAdjustments(dailyRecords[e.id],cancelledLegacyHomeMap[e.id])
   ])),[employees,dailyRecords,cancelledLegacyHomeMap]);
@@ -1337,7 +1350,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const rows = employees.filter(e=>hasMonthHistory(e,{dailyRecords,monthRecords,homePolicyMap,shadowLedgerMap,approvedMobileSpotMap})).map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
     const mergedBase = applyDailyToDraft(rec.draft, effectiveDailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
-    const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null};
+    const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null,chuseokPolicy:chuseokMap[e.id]||null};
     const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0, strategicMetricMap[e.id]);
     const shadow=shadowLedgerMap[e.id]||{totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0};
     const existingMobilePay=Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0);
@@ -1386,7 +1399,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, [scopedEmployees, empId]);
 
   const myMergedBase = applyDailyToDraft(draft, effectiveDailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
-  const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null};
+  const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null,chuseokPolicy:chuseokMap[empId]||null};
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0, strategicMetricMap[empId]);
   const teamCreditDaysByStore=(teamSalesCredits||[]).reduce((map,credit)=>{
     if(credit.source_type==='home'&&!credit.is_completed)return map;
@@ -3741,6 +3754,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
             <RowKV label="영업 활동 지원 정책" value={won(pay.tenurePay)} />
             <RowKV label="월 성과 등급 지원비" value={won(pay.gradeBonus)} />
+            {pay.chuseokPolicy&&<div className="bg-brand-50 px-4 py-3 text-xs">
+              <div className="font-bold">추석 판매 활성화 · 9/22~28</div>
+              <RowKV label={`HS·SIM MNP ${pay.chuseokPolicy.mobile_count}건 × ${won(pay.chuseokPolicy.mobileRate)}`} value={won(pay.chuseokPolicy.mobilePay)}/>
+              <RowKV label={`인터넷 ${pay.chuseokPolicy.internet_count}건 × ${won(pay.chuseokPolicy.internetRate)}`} value={won(pay.chuseokPolicy.internetPay)}/>
+              <RowKV label={`TV프리 ${pay.chuseokPolicy.tv_count}건 × ${won(pay.chuseokPolicy.tvRate)}`} value={won(pay.chuseokPolicy.tvPay)}/>
+              <div className="text-gray-500">개인 기간 누적 구간 적용 · 매장 유형별 기준 · 홈은 기간 내 청약·9월 설치완료 기준</div>
+            </div>}
             <RowKV label="직책 수당" value={won(pay.positionAllowance)} />
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
@@ -3754,7 +3774,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.septemberWeekendSimMnpPolicy?.amount||0)!==0&&<RowKV label="└ 9월 주말 SIM MNP 추가 지급" value={won(pay.septemberWeekendSimMnpPolicy.amount)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
               {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
-              {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 무료판매 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
+              {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 할인·조건 미충족 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
               {Number(pay.specialMatrixOffset||0)!==0&&<RowKV label="└ 특판 요금제 제외" value={`-${won(pay.specialMatrixOffset)}`} />}
               {Number(pay.specialVasOffset||0)!==0&&<RowKV label="└ 특판 VAS 제외" value={`-${won(pay.specialVasOffset)}`} />}
               {Number(pay.specialReplacementPay||0)!==0&&<RowKV label="└ 특판 대체 인센티브" value={won(pay.specialReplacementPay)} />}

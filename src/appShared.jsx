@@ -630,7 +630,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const settlement=calculatePayrollSettlement({
     minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
     specialReplacementPay,strategicAdjustment:employeeStrategic.amount,positionAllowance,
-    extras:{gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
+    extras:{chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
   });
   const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
 
@@ -642,6 +642,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const performanceWithAllowance = mobileGuaranteeBasis;
 
   return {
+    chuseokPolicy:month==='2026-09'?draft.chuseokPolicy:null,
     months, bucket, activityCount, baseActivityCount, bundle2ndActivityCount, tenurePay,
     mobilePoints, bundle2ndPoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
