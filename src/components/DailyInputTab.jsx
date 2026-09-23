@@ -1167,7 +1167,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||SEPTEMBER_POLICY_VERSION};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
-        reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
+        reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
       }));
       const saleId=editingSale?.id||crypto.randomUUID();
       const tasks=buildReminderTasks({saleDate,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]});
@@ -1304,7 +1304,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const oldSp=editingSale?.source_meta?.specialPolicy||{};
     const previewMeta={teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
       bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,
-      bundleVasCommissionExcluded:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle,
+      bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle,
       specialPolicy:{normalMatrixFee:specialMatrix,normalVasFee:specialVas,replacementAmount:replacement,
         ...(mobileSpecialPolicyId===oldSp.policyId?{exceptionStatus:oldSp.exceptionStatus,exceptionApprovedAmount:oldSp.exceptionApprovedAmount}:{})}};
     const estimate=estimateSale(previewMeta,editingSale,legacyConversion);
@@ -1911,10 +1911,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                         </div>
                         {['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
-                            {isSeptemberPolicyActive(month)?'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.':'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
+                            {isSeptemberPolicyActive(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}
                       </div>
-                      <div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
+                      {v.key==='b_AppleWatch'?<div className="text-[10px] text-gray-500">보험 가입 불가 상품 · 보험 미가입 차감 없음</div>:<><div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
                       <div className="grid grid-cols-1 gap-1">
                         {[...allowedSecondVas(config.vas || DEFAULT_VAS),{key:'vasNone',label:'미유치',rate:0}].map(vas=>{
                           const vasSelected=bundleVasKeys.includes(vas.key);
@@ -1931,7 +1931,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             <span className="font-semibold">{vasSelected?'✓ ':''}{vas.label}</span>{vas.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(vas.rate)}</span>}
                           </button>
                         })}
-                      </div>
+                      </div></>}
                     </div>}
                   </div>
                 })}
@@ -2016,7 +2016,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             )}
 
-            <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
+            <div className="mt-5 -mx-5 px-5 pt-3 pb-5 bg-white border-t border-gray-100">
               {!mobilePreview&&mobileSaleKind&&<div className="mb-2 text-xs text-gray-500">월 누적 실적 확인 후 예상금액을 표시해요.</div>}
               {mobilePreview&&<div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5">
                 <div className="text-[10px] font-bold text-brand-700 truncate">{`${month}-${selectedDay}`} · {mobileCustomerName.trim()||'고객명 미입력'} · {mobileSaleDraft.label}{mobilePreview.secondLabels.length?` · 2ND ${mobilePreview.secondLabels.join(', ')}`:''}</div>
@@ -2030,7 +2030,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   <button type="button" onClick={()=>setMobileCalcOpen(v=>!v)} className="mt-2 w-full text-[10px] font-bold text-brand-700">{mobileCalcOpen?'계산 근거 닫기 ▲':'금액 계산 근거 보기 ▼'}</button>
                   {mobileCalcOpen&&<div className="mt-2 rounded-lg bg-white/80 px-2.5 py-2 space-y-1">
                     {mobilePreview.calculationLines.map(([label,amount],i)=><div key={i} className="flex justify-between gap-2 text-[9px]"><span className="text-gray-500">{label}</span><b className={Number(amount)<0?'text-red-500':'text-brand-700'}>{amount===null?'선택 반영':`${Number(amount)>0?'+':''}${won(amount)}`}</b></div>)}
-                    <div className="pt-1 border-t border-brand-100 text-[9px] leading-relaxed text-gray-400">홈 실적·전략포인트 비중은 월중 현재 상태로 계산한 예상치예요. 전략 비중 구간이 바뀌면 기존 실적의 조정액도 포함돼요. 이후 정상 기준을 충족하면 이전 실적을 포함해 다시 계산되며, 정산 시 최종 반영액은 달라질 수 있습니다.</div>
+                    <div className="pt-1 border-t border-brand-100 text-[9px] leading-relaxed text-gray-400">현재 월 기준으로 이 판매 건에 적용되는 예상금액이에요. 월 등급 보상은 포함하지 않으며 급여내역에서 확인할 수 있어요. 홈 실적·전략 비중이 바뀌면 예상금액도 달라질 수 있어요.</div>
                   </div>}
                 </>}
               </div>}

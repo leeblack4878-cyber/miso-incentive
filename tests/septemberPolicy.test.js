@@ -70,3 +70,9 @@ test('맞춤제안은 월 전체 건수 구간의 건당 금액을 전체 건에
   assert.equal(calculateSeptemberTailoredTier(25).amount, 175000);
   assert.equal(calculateSeptemberTailoredTier(30).amount, 300000);
 });
+
+test('Apple Watch insurance is exempt but parent plan and discount rules remain',()=>{
+ assert.equal(calculateSeptemberBundleSale({rate:150000,isAppleWatch:true,insuranceJoined:false,parent115:true}).paid,150000);
+ assert.equal(calculateSeptemberBundleSale({rate:150000,isAppleWatch:true,insuranceJoined:false,parent115:true,saleType:'discount'}).paid,20000);
+ assert.equal(calculateSeptemberBundleSale({rate:150000,isAppleWatch:true,insuranceJoined:false,parent115:false}).paid,0);
+});

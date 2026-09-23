@@ -113,3 +113,20 @@ for(const height of [520,844])test(`설치 안내 확인 버튼은 하단 메뉴
  expect(await confirm.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
  await confirm.click();await expect(dialog).toHaveCount(0);
 });
+
+test('애플워치는 보험 선택 없이 안내하고 계산 영역이 입력란을 가리지 않는다',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await openCalendar(page,{date:'2026-09-23'});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ const sale=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await sale.getByRole('button',{name:'일반 판매',exact:true}).click();
+ await sale.getByLabel('가입구분',{exact:true}).selectOption('2');
+ await sale.getByLabel('요금제군',{exact:true}).selectOption('0');
+ await page.getByRole('dialog',{name:'요금제 변경 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await sale.getByRole('button',{name:/2ND·고객약속·영업비용 추가/}).click();
+ const apple=sale.getByRole('button',{name:/애플워치SE3/});await apple.click();
+ await expect(sale.getByText('보험 가입 불가 상품 · 보험 미가입 차감 없음')).toBeVisible();
+ await sale.getByRole('button',{name:'금액 계산 근거 보기 ▼'}).click();
+ await apple.scrollIntoViewIfNeeded();
+ await apple.click();await expect(sale.getByText('보험 가입 불가 상품 · 보험 미가입 차감 없음')).toHaveCount(0);
+ expect(await sale.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});

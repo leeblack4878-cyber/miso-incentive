@@ -148,7 +148,7 @@ export function calculateSeptemberSono(count, baseRate, achievedRate) {
 
 export function calculateSeptemberBundleSale({ rate = 0, saleType = 'normal', insuranceJoined = true, parent115 = true, isAppleWatch = false } = {}) {
   const normalRate = Math.max(0, Number(rate || 0));
-  const eligible = !!insuranceJoined && (!isAppleWatch || !!parent115);
+  const eligible = isAppleWatch ? !!parent115 : !!insuranceJoined;
   const paid = !eligible ? 0 : saleType === 'discount' ? Math.min(20000, normalRate) : normalRate;
   return { eligible, paid, offset: Math.max(0, normalRate - paid), performanceCount: 1, activityCount: 1, performancePoints: 0.2 };
 }

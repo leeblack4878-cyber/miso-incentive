@@ -1,3 +1,4 @@
+import {chuseokSalePay} from './chuseokPolicy.js';
 import { summarizeStrategicProducts } from './strategicPoints.js';
 import { calculateSeptemberBundleSale } from './septemberPolicy.js';
 import { dayAfterSaleDeletion } from './saleMutations.js';
@@ -25,7 +26,8 @@ export function mobileSaleOffsets(meta, config, september) {
   return {bundleOffset,vasOffset};
 }
 
-// Shared marginal estimate: compare this month's totals without / with this sale.
+// Shared sale estimate: monthly context determines the applicable band.
+// Grade bonuses and other monthly threshold payouts belong only in payroll.
 // Existing sales are removed first, so list and unchanged edit have the same basis.
 export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,strategicMetric,
   month,config,employee,september,legacyConversion}, {normalizeDay,applyDailyToDraft,computePay}) {
@@ -56,16 +58,21 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   const calculate=(day,metric)=>computePay(applyDailyToDraft(draft,{...dailyDays,[dayKey]:day},month,config.categoryMap,config.gibyeonColumnMap),employee?.position||'사원',employee?.hireDate,month,config,0,metric);
   const before=calculate(base,beforeMetric),after=calculate(next,changeStrategicMetric(beforeMetric,meta,1));
   const delta=key=>Number(after[key]||0)-Number(before[key]||0);
-  const incentive=delta('currentPerformanceAmount');
+  // Apply the current monthly band only to this sale; never attribute a
+  // monthly threshold payout (or repricing of other sales) to this customer.
+  const hs = meta.ri >= 0 && meta.ri <= 4 ? 1 : 0;
+  const strategyPerSale = after.strategicAdjustmentBand === 'bonus' ? hs*10000
+    : after.strategicAdjustmentBand === 'demerit' ? -(hs+(meta.usedMnpBundle?1:0))*10000 : 0;
   const rows=[];const line=(label,value)=>{if(value)rows.push([label,value]);};
   line('영업활동 지원금',delta('tenurePay'));
   line('요금제',delta('matrixTotal'));line('VAS·보험',delta('rawVasPay'));line('2ND 기본금액',delta('rawBundle2ndTotal'));
   line('홈 실적 기준 예상 조정',delta('mobilePlanPay')-delta('adjustedMatrixTotal')+delta('bundle2ndPay')-delta('bundle2ndTotal'));
-  line('전략포인트 비중 예상 조정',delta('strategicAdjustment'));
+  line('전략포인트 비중 · 해당 판매',strategyPerSale);
   line('중고 MNP 결합',delta('mnpBundlePay'));
   line('2ND 할인·조건 미충족 제외',-offsets.bundleOffset-offsets.vasOffset);
   line('인센미지급 특가 제외',-Number(sp.normalMatrixFee||0)-Number(sp.normalVasFee||0));
   line('특가·지인 추가',replacement);
-  line('누적 구간·기타 예상 변동',incentive-rows.reduce((s,[,v])=>s+v,0));
+  line('추석 판매 활성화',chuseokSalePay(draft.chuseokPolicy,{month,dayKey,meta,existingSale}));
+  const incentive=rows.reduce((sum,[,value])=>sum+value,0);
   return {incentive,rows,points:delta('totalPoints'),productivity:delta('kpiScore'),beforeRatio:before.strategicRatio,afterRatio:after.strategicRatio};
 }
