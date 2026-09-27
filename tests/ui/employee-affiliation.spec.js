@@ -19,6 +19,7 @@ test('운영진은 매장 추가 없이 직원 소속으로 저장·재편집·�
   await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),b=>b.click());
   await page.goto('/tests/ui/calendar.html?actor=admin');
   await page.getByRole('button',{name:'관리자',exact:true}).click();
+  await page.getByRole('button',{name:'관리 설정',exact:true}).click();
   await page.getByRole('button',{name:'직원 관리',exact:true}).click();
   const employee=()=>page.getByText('소속검증직원 · 사원',{exact:true}).locator('..').locator('..');
   await employee().getByRole('button',{name:'수정',exact:true}).click();
