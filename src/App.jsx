@@ -5921,6 +5921,11 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [newStore, setNewStore] = useState('');
+  // Staff affiliations include non-sales groups without registering new stores.
+  const affiliationOptions = <>
+    <optgroup label="매장">{stores.filter(s=>!NON_SALES_STORES.includes(s)).map(s=><option key={s} value={s}>{s}</option>)}</optgroup>
+    <optgroup label="소속 그룹">{NON_SALES_STORES.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>
+  </>;
 
   const submit = () => {
     if (!form.name.trim() || !form.branch) return;
@@ -5997,8 +6002,8 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
 
       <div className="bg-white rounded-xl border border-gray-100 p-4 grid grid-cols-2 gap-2">
         <input placeholder="이름" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
-        <select value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm">
-          {stores.map((s) => <option key={s} value={s}>{s}</option>)}
+        <select aria-label="새 직원 소속" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm">
+          {affiliationOptions}
         </select>
         <select value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm">
           {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -6008,15 +6013,15 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <input placeholder="이름 검색" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white w-28" />
-        <select value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
-          <option value="전체">전체 매장</option>
-          {stores.map((s) => <option key={s} value={s}>{s}</option>)}
+        <select aria-label="직원 소속 필터" value={filterBranch} onChange={(e) => setFilterBranch(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
+          <option value="전체">전체 소속</option>
+          {affiliationOptions}
         </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white">
           <option value="hireDesc">입사월 최신순</option>
           <option value="hireAsc">입사월 오래된순</option>
           <option value="name">이름순</option>
-          <option value="branch">매장순</option>
+          <option value="branch">소속순</option>
         </select>
         <span className="text-xs text-gray-400">{visibleEmployees.length}명</span>
         <button type="button" onClick={()=>refreshEmployeeGoals?.()} disabled={employeeGoalsLoading} className="ml-auto text-xs font-medium text-brand-600 disabled:text-gray-300">
@@ -6029,8 +6034,8 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
             {editingId === e.id ? (
               <div className="grid grid-cols-2 gap-2">
                 <input value={editForm.name} onChange={(ev) => setEditForm({ ...editForm, name: ev.target.value })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm" />
-                <select value={editForm.branch} onChange={(ev) => setEditForm({ ...editForm, branch: ev.target.value })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm">
-                  {stores.map((s) => <option key={s} value={s}>{s}</option>)}
+                <select aria-label="직원 소속 수정" value={editForm.branch} onChange={(ev) => setEditForm({ ...editForm, branch: ev.target.value })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm">
+                  {affiliationOptions}
                 </select>
                 <select value={editForm.position} onChange={(ev) => setEditForm({ ...editForm, position: ev.target.value })} className="border border-gray-200 rounded-lg px-2 py-1 text-sm">
                   {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -6075,7 +6080,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
             )}
           </div>
         ))}
-        {visibleEmployees.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">해당 매장에 등록된 직원이 없습니다.</div>}
+        {visibleEmployees.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">해당 소속에 등록된 직원이 없습니다.</div>}
       </div>
 
       <button onClick={toggleShowInactive} className="text-xs text-gray-400 underline">
