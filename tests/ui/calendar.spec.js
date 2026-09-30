@@ -130,3 +130,22 @@ test('애플워치는 보험 선택 없이 안내하고 계산 영역이 입력�
  await apple.click();await expect(sale.getByText('보험 가입 불가 상품 · 보험 미가입 차감 없음')).toHaveCount(0);
  expect(await sale.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
+
+test('10월 모델별 정책과 홈캠 Lite 선택을 320px에서 표시한다',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await openCalendar(page,{ready:['2026-10']});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ await page.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await expect(page.getByRole('button',{name:/F776-512 · MNP/})).toContainText('200,000');
+ await expect(page.getByRole('button',{name:/F776-256 · MNP/})).toContainText('150,000');
+ await expect(page.getByRole('button',{name:/S937/})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('10월 홈캠 Lite 선택과 9월 기본 입력 분리',async({page})=>{
+ await page.setViewportSize({width:320,height:844});await openCalendar(page,{ready:['2026-10']});
+ await page.getByRole('button',{name:/홈 실적 입력/}).click();
+ const dialog=page.getByRole('dialog',{name:'홈 실적 입력'});
+ await dialog.getByRole('button',{name:'스마트홈',exact:true}).click();
+ await dialog.getByRole('button',{name:'홈캠 Lite · 5만원',exact:true}).click();
+ await expect(dialog.getByRole('button',{name:'홈캠 Lite · 5만원',exact:true})).toHaveClass(/bg-brand-50/);
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});

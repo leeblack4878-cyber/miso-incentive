@@ -104,8 +104,8 @@ export function septemberMobileSaleType(row){
   return Number(row)===0?'010 신규':Number(row)===1?'MNP':[2,3,4].includes(Number(row))?'기기변경':null;
 }
 
-export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '', saleType } = {}) {
-  const policy = SEPTEMBER_SPECIAL_SALES.find(item => item.key === policyKey);
+export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '', saleType } = {}, policies = SEPTEMBER_SPECIAL_SALES) {
+  const policy = policies.find(item => item.key === policyKey);
   if (!policy) return { eligible: false, additionalAmount: 0, reason: '정책 미선택' };
   const normalizedSaleDate = String(saleDate || '').slice(0, 10);
   const dateEligible = !normalizedSaleDate

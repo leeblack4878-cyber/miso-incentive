@@ -1,3 +1,5 @@
+import { loadHomePolicyMetadata } from '../homePolicyMetadata';
+import { specialSalesForDate, calculateMonthlySpecialSale } from '../octoberPolicy';
 import { estimateMobileSale, changeStrategicMetric } from '../mobileSaleEstimate';
 import PerformanceResetPanel from './PerformanceResetPanel';
 import PlanReminderDialog, {PLAN_REMINDER_LABELS} from './PlanReminderDialog';
@@ -14,9 +16,9 @@ import { teamSupportEligibleFor } from '../permissionScopes';
 import PolicyInputNotice from '../components/PolicyInputNotice';
 import { MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName, fmtNum, fmtInputNumber, won } from '../uiDefinitions';
 import { allowedSecondVas, mergeSaleMetaPreservingLegacy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from '../policyRules';
-import { SEPTEMBER_POLICY_VERSION, SEPTEMBER_MATRIX_COLUMNS, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale, septemberMobileSaleType, september18HomeApplication, calculateSeptemberBundleSale } from '../septemberPolicy';
+import { SEPTEMBER_MATRIX_COLUMNS, septemberMobileSaleType, september18HomeApplication, calculateSeptemberBundleSale } from '../septemberPolicy';
 
-import { isSeptemberPolicyActive } from '../policyCalendar';
+import { isConfirmedMonthlyPolicy } from '../policyCalendar';
 import { daysInMonth, monthKeyOf, normalizeDay, emptyHouseholdRenewForm, NON_SALES_STORES, DEFAULT_VAS, DEFAULT_BUNDLE2ND, dayHasPerformanceData, aggregateHouseholdRenewals, calculateHouseholdRenew, homeMainTvPlanLabel, ensureCustomer, CURRENT_SALE_SCHEMA_VERSION, withCurrentSaleSchema, homeTeamCreditMetrics, notifyStoreManagers, homeNetworkLabel, DEFAULT_SONO, applyDailyToDraft, computePay, mobileStrategicPoint, saleSchemaVersion, emptyDayMatrix, inferHomeProductTypeFromLabel, legacySaleBadge, compatHomeRows, isIncentiveUnpaidSpecial, septemberPlanGroup, currentPolicySnapshot, mobileTeamCreditMetrics, DAILY_GROUP_KEYS, DEFAULT_MNP_BUNDLE, monthLabel, DailySaveBadge, dayHasData, calendarCoreMetrics, fmtCount, HOUSEHOLD_RENEW_PLANS, StandalonePromiseModal, HOME_NETWORK_TYPES } from "../appShared";
 
 export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, draft, setDraft, pay, strategicMetric, calculationDraft=draft, locked, policyInputBlocked=false, currentEmp, loginEmp, stores=[], onTeamCreditSaved, onHomeOrdersChanged, onSalesChanged, authUser }) {
@@ -43,6 +45,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [homeSubTv,setHomeSubTv]=useState(false);
   const [homeSubTvType,setHomeSubTvType]=useState('');
   const [homeSmartHome,setHomeSmartHome]=useState(false);
+  const [homeSmartHomeKind,setHomeSmartHomeKind]=useState('standard');
   const [homeDirectComplete, setHomeDirectComplete] = useState(false);
   const [homeActualCompleteDate, setHomeActualCompleteDate] = useState('');
   const [homePlannedDate, setHomePlannedDate] = useState('');
@@ -139,13 +142,13 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
 
   const dayMatrix = day.matrix;
-  const activeMatrixCols=isSeptemberPolicyActive(month)?SEPTEMBER_MATRIX_COLUMNS:MATRIX_COLS;
+  const activeMatrixCols=isConfirmedMonthlyPolicy(month)?SEPTEMBER_MATRIX_COLUMNS:MATRIX_COLS;
   // 9월의 33~84군은 현장 입력에서 사용하지 않습니다. 해당 고객은 '그 외'로 기록합니다.
   // 저장 배열 인덱스는 과거 데이터 호환을 위해 그대로 두고 선택지만 숨깁니다.
   const activeMatrixOptions=activeMatrixCols
     .map((label,ci)=>({label,ci}))
-    .filter(option=>!(isSeptemberPolicyActive(month)&&option.ci===3));
-  const normalizedMainVas=(config.vas||DEFAULT_VAS).filter(v=>!(isSeptemberPolicyActive(month)&&v.key==='vasVcolor'));
+    .filter(option=>!(isConfirmedMonthlyPolicy(month)&&option.ci===3));
+  const normalizedMainVas=(config.vas||DEFAULT_VAS).filter(v=>!(isConfirmedMonthlyPolicy(month)&&v.key==='vasVcolor'));
   const primaryVasKeys=new Set(['vasKyobo','vasVcolorBundle','vasVcolor','vasPhonePass','vasSafePass']);
   const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key));
   const additionalMainVas=normalizedMainVas.filter(v=>!primaryVasKeys.has(v.key));
@@ -313,8 +316,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         .order('start_date');
       setMobileSpotPolicies(data||[]);
       setMobileSpotPolicyId('');
-      if(isSeptemberPolicyActive(month)){
-        setSpecialPolicies(SEPTEMBER_SPECIAL_SALES.filter(p=>(!p.startDate||p.startDate<=saleDate)&&(!p.endDate||p.endDate>=saleDate)).map(p=>({
+      if(isConfirmedMonthlyPolicy(month)){
+        setSpecialPolicies(specialSalesForDate(saleDate).map(p=>({
           id:p.key,title:`${p.model} · ${p.saleType}`,replacement_amount:p.additionalAmount,
           policy_type:p.policyType||'additive',start_date:p.startDate||'2026-09-01',end_date:p.endDate||'2099-12-31',...p,
         })));
@@ -349,8 +352,11 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setDayHomeOrders((homeRes.data||[]).filter(o=>String(o.source_work_date||'').slice(0,10)===saleDate));
       // 직원 입력 카드에서는 설치예정도 "이 건을 설치완료했을 때"의 예상 수수료를 보여줍니다.
       // 실제 급여/정산 계산은 기존대로 completed 주문만 반영하므로 지급액에는 영향을 주지 않습니다.
-      const previewOrders=(homeRes.data||[]).map(o=>({...o,status:'completed'}));
-      setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
+      try{
+        const metadata=await loadHomePolicyMetadata(supabase,homeRes.data||[]);
+        const previewOrders=metadata.orders.map(o=>({...o,status:'completed'}));
+        setHomePreviewPolicy(calculateHomePolicyEngine(previewOrders,config));
+      }catch(error){console.error('HOME PREVIEW METADATA ERROR',error);setHomePreviewPolicy(null);}
     }else{
       console.error('HOME PREVIEW LOAD ERROR',homeRes.error);
       setDayHomeOrders([]);
@@ -399,7 +405,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setHomeOrderDraft({ unified:true, label:'홈 실적 입력' });
     setHomeCustomerName('');
     setHomeNetworkType('');
-    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);
+    setHomeInternet(false); setHomeInternetSpeed(''); setHomeMobileSimul('none'); setHomeMainTv(false); setHomeMainTvPlan(''); setHomeSubTv(false); setHomeSubTvType(''); setHomeSmartHome(false);setHomeSmartHomeKind('standard');
     setHomeDirectComplete(false);
     setHomeActualCompleteDate('');
     setHomePlannedDate('');
@@ -414,7 +420,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const hasInput=!!(homeOrderDraft?.editing||homeCustomerName.trim()||homeNetworkType||homeInternet||homeMainTv||homeSubTv||homeSmartHome||homeMobileSimul!=='none'||homePlannedDate||homeCustomTitle.trim()||homeExtraPromises.length||homeExpenseOpen);
     if(hasInput&&!await showAppConfirm({title:'홈 입력을 닫을까요?',message:'아직 등록하지 않은 작성 내용은 사라집니다.',confirmLabel:'작성 내용 버리기',tone:'warning'}))return;
     setHomeOrderDraft(null);setEditingHomeSales([]);setLegacyConversion(null);
-    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
+    setHomeCustomerName('');setHomeNetworkType('');setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('');setHomeSubTv(false);setHomeSubTvType('');setHomeSmartHome(false);setHomeSmartHomeKind('standard');setHomeMobileSimul('none');setHomeDirectComplete(false);setHomeActualCompleteDate('');setHomePlannedDate('');
   };
 
   const submitHomeOrder = async () => {
@@ -437,7 +443,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const products=[];
     if(homeInternet){
       if(homeMainTv){
-        const mainTvPlanText=isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):'';
+        const mainTvPlanText=isConfirmedMonthlyPolicy(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):'';
         products.push({groupKey:'homeBase',itemKey:'homeTv',productType:'homeTv',label:`TV(주)${mainTvPlanText?` · ${mainTvPlanText}`:''}`});
       }
       else products.push({groupKey:'homeBase',itemKey:'homeOnly',productType:'homeOnly',label:'홈 단독'});
@@ -459,7 +465,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(homeSubTvType==='free') products.push({groupKey:'homeFlat',itemKey:'tvFree',productType:'tvFree',label:'TV프리(부)'});
       else products.push({groupKey:'homeAddon',itemKey:'addSetTop',productType:'subSetTop',label:'일반 부셋탑'});
     }
-    if(homeSmartHome) products.push({groupKey:'homeFlat',itemKey:'smartHome',productType:'smartHome',label:'스마트홈'});
+    if(homeSmartHome) products.push({groupKey:'homeFlat',itemKey:'smartHome',productType:'smartHome',label:homeSmartHomeKind==='lite'?'스마트홈 · 홈캠 Lite':'스마트홈'});
 
     const editingRefs=new Set((editingHomeSales||[]).map(x=>String(x.source_ref||'')));
     const {data:possibleDuplicates,error:duplicateError}=await supabase.from('home_orders')
@@ -535,8 +541,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           metric_label:product.label,source_type:'home_order',source_ref:null,
           schema_version:CURRENT_SALE_SCHEMA_VERSION,
           source_meta:withCurrentSaleSchema({
-            networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,internetPlan:homeInternet&&september18HomeApplication(sourceWorkDate)?'premiumSafe':null,
-            mainTvPlan:homeMainTv&&isSeptemberPolicyActive(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
+            smartHomeKind:homeSmartHome?homeSmartHomeKind:null,networkType:homeNetworkType,saleType:'normal',internetSpeed:homeInternetSpeed||null,internetPlan:homeInternet&&september18HomeApplication(sourceWorkDate)?'premiumSafe':null,
+            mainTvPlan:homeMainTv&&isConfirmedMonthlyPolicy(month)?homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType):null,
             mainTvPlanLevel:homeMainTv?homeMainTvPlan:null,
             mobileSimul:homeMobileSimul||'none',unifiedHome:true,directComplete:homeDirectComplete,
             simulBase:homeInternet?'home':(!homeInternet&&homeSmartHome?'smartHome':null),teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null
@@ -552,7 +558,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       let spotClaimRow=null;
       if(homeSpotPolicyId){
         spotClaimRow={policy_id:homeSpotPolicyId,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',source_context:'home'};
-      } else if(!isSeptemberPolicyActive(month)&&homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
+      } else if(!isConfirmedMonthlyPolicy(month)&&homeSpotDirectOpen&&homeSpotDirectTitle.trim()&&Number(homeSpotDirectAmount)>0){
         spotClaimRow={policy_id:null,user_id:currentEmp.id,claim_date:sourceWorkDate,customer_name:customer,status:'pending',direct_title:homeSpotDirectTitle.trim(),direct_amount:Number(homeSpotDirectAmount),direct_memo:homeSpotDirectMemo.trim()||null,source_context:'home'};
       }
       const expenseRows=homeExpenseOpen?[{category:homeExpenseCategory,amount:homeExpenseAmount,memo:homeExpenseMemo},...(homeExtraExpenses||[])].filter(x=>Number(x.amount)>0).map(x=>({user_id:currentEmp.id,source_sale_id:primarySaleId,expense_date:sourceWorkDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null})):[];
@@ -995,6 +1001,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       setHomeSubTv(compatOrders.some(o=>['subSetTop','tvFree'].includes(o.product_type)));
       setHomeSubTvType(compatOrders.some(o=>o.product_type==='tvFree')?'free':'normal');
       setHomeSmartHome(compatOrders.some(o=>o.product_type==='smartHome'));
+      setHomeSmartHomeKind(meta0.smartHomeKind||'standard');
       setHomeDirectComplete(compatOrders.length>0 && compatOrders.every(o=>o.status==='completed'));
       setHomeActualCompleteDate(compatOrders.find(o=>o.actual_install_date)?.actual_install_date?.slice?.(0,10)||'');
       setHomePlannedDate(compatOrders.find(o=>o.planned_install_date)?.planned_install_date?.slice?.(0,10)||'');
@@ -1021,10 +1028,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setEditingSale({...sale,children});
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
-    const editableCi=isSeptemberPolicyActive(month)&&Number(meta.ci)===3?5:meta.ci;
+    const editableCi=isConfirmedMonthlyPolicy(month)&&Number(meta.ci)===3?5:meta.ci;
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setMobileCustomerName(sale.customers?.customer_name||'');
-    const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isSeptemberPolicyActive(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
+    const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isConfirmedMonthlyPolicy(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
     setMobileVasKeys([...new Set(editableVasKeys)]);
     setMobileStrategicPlan(!!meta.strategicPlan);
     setMobileMoreVasOpen(editableVasKeys.some(k=>additionalMainVas.some(v=>v.key===k)));
@@ -1087,7 +1094,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const rate=Number(bundleTable.find(x=>x.key===k)?.rate||0);
       const noInsurance=(vasMap?.[k]||[]).includes('vasNone');
       const appleWithout115=k==='b_AppleWatch'&&Number(parentCi)!==0;
-      if(isSeptemberPolicyActive(month)){
+      if(isConfirmedMonthlyPolicy(month)){
         bundleOffset+=calculateSeptemberBundleSale({rate,saleType,insuranceJoined:!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
       }else if(saleType==='free')bundleOffset+=rate;
       else return;
@@ -1113,8 +1120,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     }
     const saleDate=`${month}-${selectedDay}`;
     const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
-    if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)){
-      const outcome=calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
+    if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)){
+      const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
       if(!selectedSpecial||!outcome.dateEligible||!outcome.typeEligible)return showAppToast('선택한 정책의 개통일과 가입 구분을 확인해주세요.',{tone:'error'});
       if(mobileSaleKind==='incentive_unpaid'&&!outcome.eligible)return showAppToast('아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
     }
@@ -1161,10 +1168,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const policy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
       const oldSp=editingSale?.source_meta?.specialPolicy||{};
       const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-      const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)
-        ?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
+      const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)
+        ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
         :{eligible:true,additionalAmount:Number(policy?.replacement_amount??oldSp.replacementAmount??0)};
-      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||SEPTEMBER_POLICY_VERSION};
+      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
         reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
@@ -1175,7 +1182,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const free=bundleFreeAmounts();
       const feedbackMeta={estimate:mobilePreview,saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
       const next=activeTeamSupport?null:commitMobileOne(mobileSaleDraft.ri,mobileSaleDraft.ci,{...feedbackMeta,prepareOnly:true});
-      const spot=editingSale?null:mobileSpotPolicyId?{policy_id:mobileSpotPolicyId}:!isSeptemberPolicyActive(month)&&mobileSpotDirectOpen&&mobileSpotDirectTitle.trim()&&Number(mobileSpotDirectAmount)>0?{direct_title:mobileSpotDirectTitle.trim(),direct_amount:Number(mobileSpotDirectAmount),direct_memo:mobileSpotDirectMemo.trim()||null}:null;
+      const spot=editingSale?null:mobileSpotPolicyId?{policy_id:mobileSpotPolicyId}:!isConfirmedMonthlyPolicy(month)&&mobileSpotDirectOpen&&mobileSpotDirectTitle.trim()&&Number(mobileSpotDirectAmount)>0?{direct_title:mobileSpotDirectTitle.trim(),direct_amount:Number(mobileSpotDirectAmount),direct_memo:mobileSpotDirectMemo.trim()||null}:null;
       const credit=activeTeamSupport?{credited_store:teamSupportStore,metrics:mobileTeamCreditMetrics({ri:meta.ri,ci:meta.ci,...feedbackMeta}),note:`${loginEmp?.name||'담당'} 지원 판매`}:null;
       const result=await saveSaleAtomic(supabase,{userId:currentEmp.id,saleId,customerName:customer,saleDate,sourceType:editingSale?.source_type||'mobile',metricLabel:mobileSaleDraft.label,meta,tasks,expenses,spot,credit,expectedDay:daily?.data??null,nextDay:next,editingSale});
       if(result.daily_data)setDay(normalizeDay(result.daily_data));
@@ -1271,7 +1278,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
   const estimateSale=(meta,existingSale=null,conversion=null)=>estimateMobileSale({
     meta,existingSale,legacyConversion:conversion,dayKey:selectedDay,dailyDays:{...dailyDays,[selectedDay]:day},
-    draft:calculationDraft,strategicMetric,month,config,employee:currentEmp,september:isSeptemberPolicyActive(month),
+    draft:calculationDraft,strategicMetric,month,config,employee:currentEmp,september:isConfirmedMonthlyPolicy(month),
   },{normalizeDay,applyDailyToDraft,computePay});
 
   const saleIncentiveBreakdown=(sale)=>{
@@ -1299,7 +1306,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isSeptemberPolicyActive(month)?calculateSeptemberSpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
+    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
     const oldSp=editingSale?.source_meta?.specialPolicy||{};
     const previewMeta={teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
@@ -1660,13 +1667,13 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">인터넷 속도</div>
             <div className="grid grid-cols-3 gap-2">{[['1g','1GB'],['500','500MB'],['100','100MB']].map(([key,label])=><button key={key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,speed:key})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.speed===key?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>{label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 상품</div>
-            <div className="space-y-1.5">{(isSeptemberPolicyActive(month)?[{key:'premiumSafe',label:'프리미엄 안심 보상'},{key:'premium',label:'동일 또는 그 외 요금제'}]:HOUSEHOLD_RENEW_PLANS).map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
+            <div className="space-y-1.5">{(isConfirmedMonthlyPolicy(month)?[{key:'premiumSafe',label:'프리미엄 안심 보상'},{key:'premium',label:'동일 또는 그 외 요금제'}]:HOUSEHOLD_RENEW_PLANS).map(p=><button key={p.key} type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,plan:p.key})} className={`w-full py-2.5 px-3 rounded-xl border text-left text-xs font-semibold ${householdRenewForm.plan===p.key?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-600'}`}>{householdRenewForm.plan===p.key?'✓ ':''}{p.label}</button>)}</div>
             <div className="text-xs font-semibold text-gray-600 mt-4 mb-2">재약정 구성</div>
             <div className="grid grid-cols-2 gap-2"><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${!householdRenewForm.homeOnly?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>홈+TV 재약정</button><button type="button" onClick={()=>setHouseholdRenewForm({...householdRenewForm,homeOnly:true,tvUpsell:false})} className={`py-2.5 rounded-xl border text-xs font-bold ${householdRenewForm.homeOnly?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-500'}`}>홈만 재약정</button></div>
-            {householdRenewForm.homeOnly&&!isSeptemberPolicyActive(month)&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
+            {householdRenewForm.homeOnly&&!isConfirmedMonthlyPolicy(month)&&<div className="text-[10px] text-amber-600 mt-1.5">홈 단독 재약정은 기본 재약정 수수료에서 최대 50,000원이 차감됩니다.</div>}
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">HS 동시판매</div><div className="text-[10px] text-gray-400">1GB +80,000원 · 500MB +50,000원</div></div><input type="checkbox" checked={!!householdRenewForm.hsSimul} onChange={e=>setHouseholdRenewForm({...householdRenewForm,hsSimul:e.target.checked})}/></label>
             <label className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-3"><div><div className="text-xs font-semibold text-gray-700">TV 업셀</div><div className="text-[10px] text-gray-400">조건 충족 시 +20,000원</div></div><input type="checkbox" checked={!!householdRenewForm.tvUpsell} onChange={e=>setHouseholdRenewForm({...householdRenewForm,tvUpsell:e.target.checked})}/></label>
-            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2">{isSeptemberPolicyActive(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>속도 상향 재약정 (+30,000원)</span><input type="checkbox" checked={!!householdRenewForm.speedUp} onChange={e=>setHouseholdRenewForm({...householdRenewForm,speedUp:e.target.checked})}/></label>}<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label>{!isSeptemberPolicyActive(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label>}<div className="text-[10px] text-gray-400 leading-relaxed">{isSeptemberPolicyActive(month)?'인터넷 요금제 하향 재약정은 지급되지 않습니다.':'100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.'}</div></div>
+            <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2">{isConfirmedMonthlyPolicy(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>속도 상향 재약정 (+30,000원)</span><input type="checkbox" checked={!!householdRenewForm.speedUp} onChange={e=>setHouseholdRenewForm({...householdRenewForm,speedUp:e.target.checked})}/></label>}<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>기존 속도보다 낮춰 재약정</span><input type="checkbox" checked={!!householdRenewForm.downSpeed} onChange={e=>setHouseholdRenewForm({...householdRenewForm,downSpeed:e.target.checked})}/></label>{!isConfirmedMonthlyPolicy(month)&&<label className="flex items-center justify-between gap-3 text-xs text-gray-600"><span>일시 상향 후 동일 조건 재약정</span><input type="checkbox" checked={!!householdRenewForm.temporaryUpgradeSame} onChange={e=>setHouseholdRenewForm({...householdRenewForm,temporaryUpgradeSame:e.target.checked})}/></label>}<div className="text-[10px] text-gray-400 leading-relaxed">{isConfirmedMonthlyPolicy(month)?'인터넷 요금제 하향 재약정은 지급되지 않습니다.':'100MB 재약정, 속도 하향, 일시 상향 후 동일 요금제·동일 속도 재약정은 지급액 0원으로 계산합니다.'}</div></div>
             <div className="mt-4 rounded-2xl bg-brand-50 border border-brand-100 p-4"><div className="text-[10px] text-brand-500">자동 계산 지급액</div><div className="text-2xl font-bold text-brand-700 mt-0.5">{won(householdRenewPreview.amount)}</div><div className="text-[10px] text-brand-600 mt-1">생산성 KPI · 인터넷 0.3P{householdRenewForm.homeOnly?'':' + TV 0.3P'}</div>{!householdRenewPreview.invalid&&<div className="text-[10px] text-gray-500 mt-2 leading-relaxed">기본 {won(householdRenewPreview.base)}{householdRenewPreview.soloDiscount?` - 홈 단독 ${won(householdRenewPreview.soloDiscount)}`:''}{householdRenewPreview.hsPay?` + HS 동시 ${won(householdRenewPreview.hsPay)}`:''}{householdRenewPreview.tvPay?` + TV 업셀 ${won(householdRenewPreview.tvPay)}`:''}</div>}</div>
             {(day.householdRenewals||[]).length>0&&<div className="mt-4"><div className="text-xs font-bold text-gray-700 mb-2">{selectedDay}일 등록 내역</div><div className="divide-y divide-gray-100 border border-gray-100 rounded-xl overflow-hidden">{(day.householdRenewals||[]).map((item,idx)=>{const c=calculateHouseholdRenew(item,config);return <div key={item.id||idx} className="px-3 py-2.5 flex items-center justify-between gap-2"><div className="min-w-0"><div className="text-xs font-semibold text-gray-700 truncate">{item.customer||'이름 없음'} · {item.speed==='1g'?'1GB':item.speed==='500'?'500MB':'100MB'}</div><div className="text-[10px] text-gray-400 mt-0.5">{HOUSEHOLD_RENEW_PLANS.find(x=>x.key===item.plan)?.label||item.plan} · {won(c.amount)}</div></div><div className="flex gap-1"><button type="button" onClick={()=>openHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-gray-50 text-[10px] font-semibold text-brand-600">수정</button><button type="button" onClick={()=>deleteHouseholdRenew(idx)} className="px-2 py-1 rounded-lg bg-red-50 text-[10px] font-semibold text-red-500">삭제</button></div></div>})}</div></div>}
             <div className="grid grid-cols-2 gap-2 mt-5"><button type="button" onClick={()=>{setHouseholdRenewOpen(false);setHouseholdRenewEditIndex(null);setHouseholdRenewForm(emptyHouseholdRenewForm())}} className="py-2.5 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">취소</button><button type="button" onClick={saveHouseholdRenew} className="py-2.5 rounded-xl bg-brand-600 text-white text-sm font-bold">{householdRenewEditIndex===null?'등록':'수정 저장'}</button></div>
@@ -1901,7 +1908,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {(isSeptemberPolicyActive(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
+                          {(isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
                               className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-brand-50 border-brand-200 text-brand-700'):'bg-white border-gray-100 text-gray-500'}`}>
@@ -1911,7 +1918,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                         </div>
                         {['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
-                            {isSeptemberPolicyActive(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
+                            {isConfirmedMonthlyPolicy(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}
                       </div>
                       {v.key==='b_AppleWatch'?<div className="text-[10px] text-gray-500">보험 가입 불가 상품 · 보험 미가입 차감 없음</div>:<><div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
@@ -1941,7 +1948,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             <div className={`mt-4 grid gap-2 ${editingSale?'grid-cols-2':'grid-cols-3'}`}>
               {editingSale&&<button type="button" onClick={()=>setMobileExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 영업비용</button>}
 {!editingSale&&(<>
-              {!isSeptemberPolicyActive(month)&&<>
+              {!isConfirmedMonthlyPolicy(month)&&<>
               <button
                 type="button"
                 onClick={() => {
@@ -1965,7 +1972,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
             <div className="mt-3 text-xs text-gray-500">중고폰·오퍼·제휴카드·케이스 약속은 저장 후 약속관리에서 등록해주세요.</div>
 
-            {!editingSale&&!isSeptemberPolicyActive(month)&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+            {!editingSale&&!isConfirmedMonthlyPolicy(month)&&<div id="mobile-spot-options" className="hidden mt-4 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 스팟 추가 인센티브</div>
               {mobileSpotPolicies.length>0&&<div className="space-y-1.5">
                 {mobileSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setMobileSpotPolicyId(p.id);setMobileSpotDirectOpen(false)}}
@@ -2105,6 +2112,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   {homeSubTv&&homeSubTvType&&<button type="button" onClick={()=>setHomeSubTvType('')} className="mt-1 text-[10px] font-semibold text-gray-400">종류 변경</button>}
                 </div>
                 <button type="button" onClick={()=>setHomeSmartHome(v=>!v)} className={`w-full rounded-xl border p-3 text-left text-sm font-bold ${homeSmartHome?'border-brand-300 bg-brand-50 text-brand-700':'border-gray-200 bg-white text-gray-600'}`}>{homeSmartHome?'✓ ':''}스마트홈</button>
+                {homeSmartHome&&month>='2026-10'&&<div className="grid grid-cols-2 gap-2">{[['standard','일반 · 10만원'],['lite','홈캠 Lite · 5만원']].map(([key,label])=><button key={key} type="button" onClick={()=>setHomeSmartHomeKind(key)} className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${homeSmartHomeKind===key?'border-brand-300 bg-brand-50 text-brand-700':'border-gray-200 text-gray-500'}`}>{label}</button>)}</div>}
               </div>
               <div className="text-[10px] text-gray-400 mt-2">TV(부)와 스마트홈은 인터넷 없이도 선택할 수 있어요.</div>
             </div>
@@ -2132,10 +2140,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </div>
 
 <div className="mt-4 grid grid-cols-2 gap-2">
-              {!isSeptemberPolicyActive(month)&&<button type="button" onClick={()=>{const el=document.getElementById('home-spot-options');if(el)el.classList.toggle('hidden')}} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSpotPolicyId||homeSpotDirectOpen?'bg-orange-50 border-orange-200 text-orange-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 스팟 정책</button>}
+              {!isConfirmedMonthlyPolicy(month)&&<button type="button" onClick={()=>{const el=document.getElementById('home-spot-options');if(el)el.classList.toggle('hidden')}} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeSpotPolicyId||homeSpotDirectOpen?'bg-orange-50 border-orange-200 text-orange-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 스팟 정책</button>}
               <button type="button" onClick={()=>setHomeExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${homeExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 오퍼/영업비용</button>
             </div>
-            {!isSeptemberPolicyActive(month)&&<div id="home-spot-options" className="hidden mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+            {!isConfirmedMonthlyPolicy(month)&&<div id="home-spot-options" className="hidden mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
               <div className="text-xs font-semibold text-gray-700 mb-2">🔥 홈 스팟 추가 인센티브</div>
               {homeSpotPolicies.map(p=><button key={p.id} type="button" onClick={()=>{setHomeSpotPolicyId(p.id);setHomeSpotDirectOpen(false)}} className={`w-full mb-1 text-left px-3 py-2 rounded-lg text-xs border ${homeSpotPolicyId===p.id?'bg-white border-orange-300 text-orange-700':'bg-white/70 border-transparent text-gray-600'}`}><b>{homeSpotPolicyId===p.id?'✓ ':''}{p.title}</b><span className="float-right">+{won(p.amount)}</span></button>)}
               <button type="button" onClick={()=>{setHomeSpotPolicyId('');setHomeSpotDirectOpen(v=>!v)}} className="w-full mt-1 px-3 py-2 rounded-lg text-left text-xs font-bold bg-orange-100/70 text-orange-700">+ 스팟 직접 입력</button>
@@ -2163,7 +2171,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </div>
 
             <div className="sticky -bottom-5 mt-5 -mx-5 px-5 pt-3 pb-5 bg-white/95 backdrop-blur border-t border-gray-100 shadow-[0_-8px_20px_rgba(0,0,0,0.04)]">
-            <div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5"><div className="text-[10px] font-bold text-brand-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-brand-500 mt-1">{[homeInternet&&(homeMainTv?`인터넷+TV(주)${isSeptemberPolicyActive(month)?` ${homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}`:''}`:`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&'스마트홈',homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
+            <div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5"><div className="text-[10px] font-bold text-brand-700">{homeNetworkType?homeNetworkLabel(homeNetworkType):'망 미선택'} · {homeDirectComplete?'설치완료':'설치대기'}</div><div className="text-[9px] text-brand-500 mt-1">{[homeInternet&&(homeMainTv?`인터넷+TV(주)${isConfirmedMonthlyPolicy(month)?` ${homeMainTvPlanLabel(homeMainTvPlan,homeNetworkType)}`:''}`:`인터넷 ${homeInternetSpeed?homeInternetSpeed.toUpperCase():''}`),homeSubTv&&(homeSubTvType==='free'?'TV프리(부)':'일반 부셋탑'),homeSmartHome&&(homeSmartHomeKind==='lite'?'홈캠 Lite':'스마트홈'),homeMobileSimul!=='none'&&({newChange:'신규/기변 동시판매',mnp:'MNP 동시판매',usedMnp:'중고 MNP 동시판매'}[homeMobileSimul])].filter(Boolean).join(' · ')||'판매 상품을 선택해주세요'}</div></div>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"

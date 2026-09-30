@@ -24,3 +24,26 @@ test('monthly grade bonus never changes customer estimate, payroll still awards 
  const draft=api.applyDailyToDraft(args.draft,args.dailyDays,args.month,config.categoryMap,config.gibyeonColumnMap);
  assert.equal(api.computePay(draft,'점장','2020-01-01',args.month,withGrade.config,0,args.strategicMetric).gradeBonus,300000);
 });
+
+test('October actual payroll and per-sale estimate include quality bonus and half model rate only without home',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');
+ const config=octoberConfig(api.defaultConfig()),day=api.normalizeDay();day.matrix[1][0]=1;day.specialReplacementPay=150000;
+ const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
+ const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0};
+ const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);
+ assert.equal(pay.mobilePlanPay,45000);assert.equal(pay.specialReplacementPay,75000);
+ assert.equal(pay.plan115Bonus,5000);assert.equal(pay.strategicAdjustment,5000);
+ assert.equal(pay.mobileGuaranteeBasis-pay.tenurePay,130000);
+ const withHome=api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric);
+ assert.equal(withHome.specialReplacementPay,150000);assert.equal(withHome.plan115Bonus,10000);
+ const meta={ri:1,ci:0,strategicPlan:true,vasKeys:['vasKyobo'],specialPolicy:{replacementAmount:150000}};
+ const estimate=estimateMobileSale({meta,existingSale:{source_type:'mobile',source_meta:meta},dayKey:'01',dailyDays:{'01':day},draft,strategicMetric:metric,month:'2026-10',config,employee:{position:'기타'},september:true},api);
+ assert.equal(estimate.rows.find(r=>r[0]==='특가·지인 추가')[1],75000);
+ assert.equal(estimate.rows.find(r=>r[0]==='115군 비중 · 해당 판매')[1],5000);
+});
+test('October retains September Sono tier and renewal formulas',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');const config=octoberConfig(api.defaultConfig());
+ const draft=api.emptyDraft();draft.sono={sonoBasic:5,sono594:5};draft.tailoredCount=20;
+ const pay=api.computePay(draft,'기타',null,'2026-10',config);
+ assert.equal(pay.sonoPay,900000);assert.equal(pay.tailoredBonus,140000);
+});
