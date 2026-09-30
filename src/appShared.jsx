@@ -1,3 +1,4 @@
+import { OCTOBER_POLICY_VERSION, octoberQuality } from './octoberPolicy.js';
 import { useState, useEffect } from 'react';
 import { Check, AlertTriangle, UploadCloud } from 'lucide-react';
 import { supabase } from './supabase';
@@ -160,7 +161,7 @@ function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).fin
 
 function calculateHouseholdRenew(item,config){
   const speed=item?.speed||'1g';
-  if(config?.policyVersion===SEPTEMBER_POLICY_VERSION){
+  if([SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION].includes(config?.policyVersion)){
     const invalid=!!item?.downSpeed;
     const premiumSafe=item?.plan==='premiumSafe';
     const baseKey=premiumSafe
@@ -558,7 +559,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
 
   const specialMatrixOffset = Number(draft.specialMatrixOffset || 0);
   const specialVasOffset = Number(draft.specialVasOffset || 0);
-  const specialReplacementPay = Number(draft.specialReplacementPay || 0);
+  const rawSpecialReplacementPay = Number(draft.specialReplacementPay || 0);
   const bundleFreeOffset = Number(draft.bundleFreeOffset || 0);
   const bundleFreeVasOffset = Number(draft.bundleFreeVasOffset || 0);
 
@@ -570,6 +571,8 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     : legacyHomeAnyCount;
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
+  const octoberPolicy=config.policyVersion===OCTOBER_POLICY_VERSION;
+  const specialReplacementPay=rawSpecialReplacementPay*(octoberPolicy?penaltyFactor:1);
 
   const commissionParts = calculateMobileCommissionParts({
     matrix:draft.matrix||[],matrixRates:config.matrix||[],specialMatrixOffset,
@@ -608,7 +611,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     : homeAnyCount>0 ? calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []) : 0;
   const renewPay = Math.max(0, calculateFlatIncentive(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = calculateFlatIncentive(draft.mnpBundle || {}, config.mnpBundle || []);
-  const septemberPolicy=config.policyVersion===SEPTEMBER_POLICY_VERSION;
+  const septemberPolicy=[SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION].includes(config.policyVersion);
   const sonoPay = septemberPolicy
     ? (config.sono||[]).reduce((sum,item)=>sum+calculateSeptemberSono(Number(draft.sono?.[item.key]||0),Number(item.rate||0),Number(item.achievedRate||item.rate||0)),0)
     : calculateFlatIncentive(draft.sono || {}, config.sono || []);
@@ -620,7 +623,9 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const sonoCount = Object.values(draft.sono || {}).reduce((sum, value) => sum + Number(value || 0), 0);
   const strategicPoints = Number(strategicMetric?.strategicPointsWithoutDaemyung || 0)
     + Math.max(Number(strategicMetric?.daemyungCount || 0), sonoCount) * 2;
-  const employeeStrategic = month >= SEPTEMBER_POLICY_MONTH
+  const employeeStrategic = octoberPolicy
+    ? octoberQuality({matrix:draft.matrix,strategicPoints,homeNoPerformance})
+    : month >= SEPTEMBER_POLICY_MONTH
     ? calculateEmployeeStrategicAdjustment({hsCount:hsCount(draft),simMnpCount:Object.values(draft.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0),strategicPoints})
     : {ratio:null,amount:0,band:'not_applicable'};
   const septemberWeekendSimMnpPolicy = calculateSeptemberWeekendSimMnpBonus(
@@ -629,7 +634,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
 
   const settlement=calculatePayrollSettlement({
     minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
-    specialReplacementPay,strategicAdjustment:employeeStrategic.amount,positionAllowance,
+    specialReplacementPay,strategicAdjustment:employeeStrategic.amount+Number(employeeStrategic.plan115Bonus||0),positionAllowance,
     extras:{chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
   });
   const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
@@ -655,6 +660,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
     mnpBundlePay, septemberWeekendSimMnpPolicy, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
+    plan115Bonus:Number(employeeStrategic.plan115Bonus||0),plan115Ratio:employeeStrategic.plan115Ratio??null,
     strategicPoints, strategicRatio:employeeStrategic.ratio, strategicAdjustment:employeeStrategic.amount,
     strategicAdjustmentBand:employeeStrategic.band, total,
   };

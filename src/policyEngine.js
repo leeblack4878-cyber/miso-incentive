@@ -322,7 +322,7 @@ function homeSimulType(types) {
 
 export function enrichHomeOrdersForPolicy(orders=[],sales=[]){
   const metadata=new Map(sales.filter(s=>s.source_ref).map(s=>[String(s.source_ref),s.source_meta||{}]));
-  return orders.map(o=>({...o,internet_plan:metadata.get(String(o.id))?.internetPlan??o.internet_plan??null}));
+  return orders.map(o=>({...o,smart_home_kind:metadata.get(String(o.id))?.smartHomeKind??o.smart_home_kind??null,internet_plan:metadata.get(String(o.id))?.internetPlan??o.internet_plan??null}));
 }
 
 export function buildHomeBundlesFromOrders(orders = []) {
@@ -424,8 +424,10 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
       details.push({ date: bundle.date, customer: bundle.customer, type: '홈', item: 'TV프리(부)', amount: tvFreeRate, note: '부가 홈 수수료' });
     }
     if (bundle.types.has('smartHome') && smartHomeRate) {
-      smartHomePay += smartHomeRate;
-      details.push({ date: bundle.date, customer: bundle.customer, type: '홈', item: '스마트홈', amount: smartHomeRate, note: '부가 홈 수수료' });
+      const lite=bundle.orders.some(o=>o.product_type==='smartHome'&&o.smart_home_kind==='lite');
+      const amount=lite&&config.smartHomeLiteRate!=null?Number(config.smartHomeLiteRate):smartHomeRate;
+      smartHomePay += amount;
+      details.push({ date: bundle.date, customer: bundle.customer, type: '홈', item: lite?'홈캠 Lite':'스마트홈', amount, note: '부가 홈 수수료' });
     }
     if (bundle.types.has('smartHome') && bundle.simul !== 'none' && smartHomeSimulRate) {
       smartHomeSimulPay += smartHomeSimulRate;

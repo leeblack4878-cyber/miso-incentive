@@ -1,3 +1,4 @@
+import { OCTOBER_POLICY_VERSION, OCTOBER_POLICY_MONTH, octoberConfig } from './octoberPolicy.js';
 import { CURRENT_POLICY_VERSION } from './policyEngine.js';
 import {
   SEPTEMBER_POLICY_MONTH,
@@ -33,6 +34,7 @@ export const BUILTIN_POLICY_PERIODS = Object.freeze([
     strategy: 'september-v1',
     baseVersion: CURRENT_POLICY_VERSION,
   }),
+  Object.freeze({version:OCTOBER_POLICY_VERSION,effectiveFrom:`${OCTOBER_POLICY_MONTH}-01`,strategy:'october-v1',baseVersion:CURRENT_POLICY_VERSION}),
 ]);
 
 function normalizedDate(value = '') {
@@ -53,6 +55,10 @@ export function isSeptemberPolicyActive(value = '') {
   return policyPeriodFor(value).version === SEPTEMBER_POLICY_VERSION;
 }
 
+export function isConfirmedMonthlyPolicy(value='') {
+  return [SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION].includes(policyPeriodFor(value).version);
+}
+
 // Display only: do not infer or activate a new month's payment policy.
 export function policyDisplayFor(month) {
   const period = policyPeriodFor(month);
@@ -71,6 +77,7 @@ export function resolvePolicyConfigForMonth(month, legacyConfig = {}, history = 
     || legacyConfig;
   const base = { ...legacyConfig, ...(frozenBase || {}) };
 
+  if (period.strategy === 'october-v1') return octoberConfig(base);
   if (period.strategy === 'september-v1') return septemberConfig(base);
   return { ...base, policyVersion: period.version };
 }
@@ -81,5 +88,5 @@ function currentLocalMonth() {
 }
 
 export function isPolicyConfigReadOnly(month, currentMonth = currentLocalMonth()) {
-  return String(month || '') < String(currentMonth || '') || isSeptemberPolicyActive(month);
+  return String(month || '') < String(currentMonth || '') || isConfirmedMonthlyPolicy(month);
 }

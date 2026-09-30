@@ -23,7 +23,7 @@ test('RLS 0건 비용 삭제는 성공 문구와 합계 차감이 없다',async(
 for(const width of [320,390])test(`${width}px 모바일에서 정책·업무·비용 카드가 가로로 넘치지 않는다`,async({page})=>{
  await page.setViewportSize({width,height:844});await routes(page);await page.goto('/tests/ui/panels.html');
  await page.getByRole('button',{name:/영업비용/}).click();
- await expect(page.getByLabel('적용 지급기준')).toContainText('2026-09 지급기준');
+ await expect(page.getByLabel('적용 지급기준')).toContainText('2026-10 지급기준');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test('영업비용 저장 중 연속 클릭은 중복 등록되지 않고 실패 후 입력을 유지한다',async({page})=>{

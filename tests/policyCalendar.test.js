@@ -11,8 +11,8 @@ import {
 test('월을 바꿔도 판매월에 유효한 정책 버전을 선택한다', () => {
   assert.equal(policyPeriodFor('2026-08').version, '2026-08-v1');
   assert.equal(policyPeriodFor('2026-09').version, '2026-09-v1');
-  assert.equal(policyPeriodFor('2026-10').version, '2026-09-v1');
-  assert.equal(isSeptemberPolicyActive('2027-01'), true);
+  assert.equal(policyPeriodFor('2026-10').version, '2026-10-v1');
+  assert.equal(isSeptemberPolicyActive('2027-01'), false);
 });
 
 test('과거 기본정책은 저장된 스냅샷을 우선하고 9월 이후에는 확정 변환을 적용한다', () => {
@@ -28,7 +28,7 @@ test('과거 기본정책은 저장된 스냅샷을 우선하고 9월 이후에�
   assert.equal(august.matrix[0][0], 111);
   assert.equal(august.policyVersion, '2026-08-v1');
   assert.equal(october.marker, '8월고정');
-  assert.equal(october.policyVersion, '2026-09-v1');
+  assert.equal(october.policyVersion, '2026-10-v1');
   assert.notEqual(october.matrix[0][0], 999);
 });
 

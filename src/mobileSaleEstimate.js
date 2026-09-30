@@ -1,3 +1,4 @@
+import { OCTOBER_POLICY_VERSION } from './octoberPolicy.js';
 import {chuseokSalePay} from './chuseokPolicy.js';
 import { summarizeStrategicProducts } from './strategicPoints.js';
 import { calculateSeptemberBundleSale } from './septemberPolicy.js';
@@ -61,8 +62,10 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   // Apply the current monthly band only to this sale; never attribute a
   // monthly threshold payout (or repricing of other sales) to this customer.
   const hs = meta.ri >= 0 && meta.ri <= 4 ? 1 : 0;
-  const strategyPerSale = after.strategicAdjustmentBand === 'bonus' ? hs*10000
-    : after.strategicAdjustmentBand === 'demerit' ? -(hs+(meta.usedMnpBundle?1:0))*10000 : 0;
+  const october=config.policyVersion===OCTOBER_POLICY_VERSION;
+  const factor=october&&after.homeNoPerformance?.5:1;
+  const strategyPerSale = after.strategicAdjustmentBand === 'bonus' ? hs*10000*factor
+    : after.strategicAdjustmentBand === 'demerit' ? -(hs+(october?(meta.ri===5?1:0):(meta.usedMnpBundle?1:0)))*10000 : 0;
   const rows=[];const line=(label,value)=>{if(value)rows.push([label,value]);};
   line('영업활동 지원금',delta('tenurePay'));
   line('요금제',delta('matrixTotal'));line('VAS·보험',delta('rawVasPay'));line('2ND 기본금액',delta('rawBundle2ndTotal'));
@@ -71,7 +74,8 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   line('중고 MNP 결합',delta('mnpBundlePay'));
   line('2ND 할인·조건 미충족 제외',-offsets.bundleOffset-offsets.vasOffset);
   line('인센미지급 특가 제외',-Number(sp.normalMatrixFee||0)-Number(sp.normalVasFee||0));
-  line('특가·지인 추가',replacement);
+  line('특가·지인 추가',replacement*factor);
+  line('115군 비중 · 해당 판매',october&&hs&&meta.ci===0&&after.plan115Ratio>=60?10000*factor:0);
   line('추석 판매 활성화',chuseokSalePay(draft.chuseokPolicy,{month,dayKey,meta,existingSale}));
   const incentive=rows.reduce((sum,[,value])=>sum+value,0);
   return {incentive,rows,points:delta('totalPoints'),productivity:delta('kpiScore'),beforeRatio:before.strategicRatio,afterRatio:after.strategicRatio};

@@ -47,11 +47,11 @@ test('권한 오류를 월 마감으로 단정하지 않고 홈 내부 오류는
  assert.match(friendlyError('is_month_locked'),/마감되어/);
  assert.doesNotMatch(friendlyError('HOME_REPLACE_ORDERS_MISMATCH'),/HOME_/);
 });
-test('10월은 기존 9월 정책 유지 사실만 표시하며 정책 선택을 변경하지 않는다',()=>{
+test('10월 확정 정책은 이월 표시 없이 판매월에 적용한다',()=>{
  assert.equal(policyDisplayFor('2026-09').carriedForward,false);
- assert.equal(policyDisplayFor('2026-10').carriedForward,true);
+ assert.equal(policyDisplayFor('2026-10').carriedForward,false);
  assert.equal(policyDisplayFor('2026-10').version,policyPeriodFor('2026-10').version);
- assert.equal(policyPeriodFor('2026-10').version,'2026-09-v1');
+ assert.equal(policyPeriodFor('2026-10').version,'2026-10-v1');
 });
 
 test('atomic save rejects a zero-row result and preserves the original database error',async()=>{
