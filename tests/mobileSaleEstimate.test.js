@@ -85,3 +85,17 @@ test('reporting plan detail never changes commission, KPI, strategy or stored ma
   assert.deepEqual(value,original,planDetail.key);
  }
 });
+
+test('automatically classified October plans flow into real payroll including no-home reduction',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');
+ const {MOBILE_PLANS,mobilePlanCommissionColumn}=await import('../src/mobilePlans.js');
+ const config=octoberConfig(api.defaultConfig());
+ for(const [key,ri,amount] of [['general_75',1,0],['general_33',5,0],['senior_33',1,40000],['senior_44',0,0],['junior_37',5,40000],['junior_75',1,40000],['general_105',1,50000],['junior_85',1,70000]]){
+  const ci=mobilePlanCommissionColumn(MOBILE_PLANS.find(p=>p.key===key),ri),day=api.normalizeDay();day.matrix[ri][ci]=1;
+  const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
+  const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0};
+  const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);
+  assert.equal(pay.mobilePlanPay,amount/2,`${key} no-home`);
+  assert.equal(api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric).mobilePlanPay,amount,`${key} home`);
+ }
+});

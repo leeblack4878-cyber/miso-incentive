@@ -72,3 +72,27 @@ test('editing classification moves one count; deleting removes it; unknown histo
  assert.equal(summarizeMobilePlans([],opts).total,0);
  assert.equal(summarizeMobilePlans([sale('bad',null,{planDetail:{type:'general',key:'general_unknown'}})],opts).missing,1);
 });
+
+test('October automatic bands cover all 29 plans and all subscription types with actual base amounts',async()=>{
+ const {mobilePlanCommissionColumn:column}=await import('../src/mobilePlans.js');
+ const {octoberConfig}=await import('../src/octoberPolicy.js');
+ const {matrix}=octoberConfig();
+ const expected={general_130:0,general_115:0,general_105:2,general_95:2,general_85:2,
+ general_75:5,general_70:5,general_61:5,general_55:5,general_47:5,general_37:5,general_33:5,general_28:5,
+ senior_47:4,senior_44:3,senior_37:3,senior_33:3,senior_28:5,senior_under28:5,
+ junior_85:1,junior_75:4,junior_70:4,junior_61:4,junior_55:4,junior_47:4,junior_37:3,junior_33:3,junior_28:5,junior_under28:5};
+ const amounts=[[50000,90000,50000,50000,25000,90000],[40000,70000,40000,40000,20000,70000],[20000,50000,20000,20000,10000,50000],[0,40000,0,0,0,40000],[20000,40000,20000,20000,10000,40000],[0,0,0,0,0,0]];
+ for(const [key,band] of Object.entries(expected))for(let ri=0;ri<8;ri++){
+  const ci=column(plan(key),ri),want=ri>=6?0:band===3&&ri!==1&&ri!==5?5:band;
+  assert.equal(ci,want,`${key}/${ri}`);
+  assert.equal(matrix[ri][ci],ri>=6?0:amounts[band][ri],`${key}/${ri} base commission`);
+ }
+ assert.equal(column(null,1),null);assert.equal(column({key:'general_95',type:'senior'},1),null);assert.equal(column(plan('general_95'),null),null);
+});
+
+test('used MNP bundle requires actual 61+ plan independently of commission band',async()=>{
+ const {mobilePlanUsedMnpEligible:eligible}=await import('../src/mobilePlans.js');
+ for(const key of ['general_61','general_75','junior_61','junior_85'])assert.equal(eligible(plan(key)),true);
+ for(const key of ['senior_33','senior_44','junior_33','junior_55','general_55'])assert.equal(eligible(plan(key)),false);
+ assert.equal(eligible(null),false);
+});
