@@ -1,3 +1,4 @@
+import {toggleStrategicService} from '../additionalStrategicServices';
 import {readAllPages} from '../performanceRoster';
 import MobilePlanFields from './MobilePlanFields';
 import {getMobilePlan,mobilePlanLabel,mobilePlanCommissionColumn,mobilePlanUsedMnpEligible} from '../mobilePlans';
@@ -82,7 +83,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [serviceReminder,setServiceReminder]=useState(null);
   const toggleMainService=(service)=>{
     const selected=mobileVasKeys.includes(service.key);
-    setMobileVasKeys(prev=>service.key==='vasNone'?(selected?[]:['vasNone']):(selected?prev.filter(k=>k!==service.key):[...prev.filter(k=>k!=='vasNone'),service.key]));
+    setMobileVasKeys(prev=>toggleStrategicService(prev,service.key));
     if(!selected&&service.key!=='vasNone')setServiceReminder(reminderServices([service.key],config.vas||DEFAULT_VAS)[0]||null);
   };
   const [mobileDetailsOpen,setMobileDetailsOpen]=useState(false);
@@ -1943,7 +1944,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 {mobileMoreVasOpen&&<div className="grid grid-cols-1 gap-1.5 mt-1.5">
                   {additionalMainVas.map(v=>{const selected=mobileVasKeys.includes(v.key);return <button key={v.key} type="button" onClick={()=>toggleMainService(v)}
                     className={`text-left px-3 py-2.5 rounded-xl border text-xs ${selected?'bg-brand-50 border-brand-200 text-brand-700':'bg-white border-gray-100 text-gray-600'}`}>
-                    <span className="font-semibold">{selected?'✓ ':''}{v.label}</span>{v.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>}
+                    <span className="font-semibold">{selected?'✓ ':''}{v.label}</span><span className="float-right text-[10px] text-gray-400">{v.point?`${v.point}P`:''}{v.rate>0?` · +${won(v.rate)}`:''}</span>
                   </button>})}
                 </div>}
               </>}

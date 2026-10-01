@@ -1,6 +1,11 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-01-additional-strategic-services',month:'2026-10',date:'2026-10-01',title:'미지급 전략 부가서비스 6개 추가',effective:'10월 입력부터 적용',changes:[
+    'AI보이스링 인사말0.3P·캐릭터플러스0.5P, V컬러링 기본0.3P, V프로필0.3P 추가.',
+    '통화편의팩0.6P·통화기능안내0.1P 추가.',
+    '새 항목은 직접 지급액0원, 매출 포인트만 반영. 기존 유료 항목 금액 유지.',
+  ],details:['필링류 중복 가입 불가를 선택 화면에 반영. 기존 저장 기록 일괄 변경 없음.','듀얼넘버는 기존0.4P 유지. 원본표0.3P와 차이는 별도 확인 필요.']},
   {id:'2026-10-01-second-followup',month:'2026-10',date:'2026-10-01',title:'2ND 단독·번들 및 후속 판매 입력',effective:'10월 입력부터 적용',changes:[
     '2ND 선택 후 단독·번들 구분. 같은 달 먼저 판매한 휴대폰에도 번들 추가 가능.',
     '전월·당월 모단말 실적과 지급액은 다시 반영하지 않고 2ND 판매월 정책으로 2ND만 반영.',

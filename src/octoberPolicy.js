@@ -1,3 +1,4 @@
+import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 import { septemberConfig, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale } from './septemberPolicy.js';
 
 export const OCTOBER_POLICY_VERSION = '2026-10-v1';
@@ -41,6 +42,7 @@ export function octoberConfig(base={}) {
   const matrix=september.matrix.map(row=>[...row]);
   matrix[5][0]=90000;
   return {...september,matrix,
+    vas:[...september.vas,...ADDITIONAL_STRATEGIC_SERVICES.map(item=>({...item}))],
     bundle2nd:september.bundle2nd.map(item=>({...item,label:item.label.replace('14~17','14~18')})),
     smartHomeLiteRate:50000,
     homeAddon:(september.homeAddon||[]).map(item=>item.key==='smartHomeSimul'?{...item,rate:0}:item),
