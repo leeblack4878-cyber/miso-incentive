@@ -2,7 +2,7 @@ import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 export const STRATEGIC_PRODUCT_POINTS = Object.freeze({
   vasStrategicPlan: 0.5, vasKyobo: 1, vasVcolor: 1, vasVcolorBundle: 1,
   vasPhonePass: 0.8, vasSafePass: 0.8, vasVcolorMusic: 0.3, vasBellMoya: 0.3,
-  vasDualNumber: 0.4, vasDesignatedNumber: 0.2, vasDaemyung: 2,
+  vasDualNumber: 0.3, vasDesignatedNumber: 0.2, vasDaemyung: 2,
   ...Object.fromEntries(ADDITIONAL_STRATEGIC_SERVICES.map(item=>[item.key,item.point])),
 });
 
@@ -13,15 +13,19 @@ export function strategicProductKeys(meta = {}) {
   return [...mainKeys, ...bundleKeys].filter(key => Object.hasOwn(STRATEGIC_PRODUCT_POINTS, key));
 }
 
-export function calculateSaleStrategicPoints(meta = {}) {
-  return Number(strategicProductKeys(meta).reduce((sum, key) => sum + STRATEGIC_PRODUCT_POINTS[key], 0).toFixed(10));
+function productPoint(key,date) {
+  return key==='vasDualNumber'&&date&&String(date).slice(0,7)<'2026-10'?0.4:STRATEGIC_PRODUCT_POINTS[key];
+}
+
+export function calculateSaleStrategicPoints(meta = {}, date = meta.saleDate) {
+  return Number(strategicProductKeys(meta).reduce((sum, key) => sum + productPoint(key,date), 0).toFixed(10));
 }
 
 export function summarizeStrategicProducts(sales = []) {
   let strategicPoints = 0, daemyungCount = 0, insurance = 0, strategicVas = 0;
   (sales || []).forEach(sale => {
     const keys = strategicProductKeys(sale?.source_meta || {});
-    strategicPoints += keys.reduce((sum, key) => sum + STRATEGIC_PRODUCT_POINTS[key], 0);
+    strategicPoints += keys.reduce((sum, key) => sum + productPoint(key,sale.sale_date||sale.source_meta?.saleDate), 0);
     daemyungCount += keys.includes('vasDaemyung') ? 1 : 0;
     insurance += keys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
     strategicVas += keys.filter(key => ['vasKyobo', 'vasVcolor', 'vasVcolorBundle'].includes(key)).length;

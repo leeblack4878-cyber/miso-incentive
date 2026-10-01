@@ -31,15 +31,16 @@ for(const [model,width] of [['iphone18_pro',320],['iphone18_pro_max',390]])test(
  await dialog.getByLabel('모단말 모델').selectOption(model);
  await dialog.getByLabel('모단말 판매일').fill('2026-09-18');
  await dialog.getByLabel('모단말 요금제군').selectOption('0');
- await dialog.getByPlaceholder('고객명을 입력해주세요').fill('전월 모단말 고객');
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('전월 모단말 고객');await dialog.getByLabel('모단말 고객명',{exact:true}).fill('전월 모단말 고객');
  await dialog.getByRole('button',{name:/애플워치/}).click();
+ await dialog.getByLabel('모단말 고객명',{exact:true}).fill('다른 고객');await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(page.getByText('2ND 고객명은 모단말 고객명과 같아야 해요.',{exact:true})).toBeVisible();expect(state.writes).toHaveLength(0);await dialog.getByLabel('모단말 고객명',{exact:true}).fill('전월 모단말 고객');
  await expect(dialog.getByText(/메인회선 전략/)).toHaveCount(0);
  await expect(dialog.getByLabel('가입구분',{exact:true})).toHaveValue('7');
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();
  await expect(dialog).toHaveCount(0);
  expect(state.writes).toHaveLength(1);
- const first=state.writes[0];expect(first.p_meta.secondParent).toEqual({model,date:'2026-09-18',ci:0});
+ const first=state.writes[0];expect(first.p_meta.secondParent).toEqual({model,date:'2026-09-18',ci:0,customerName:'전월 모단말 고객'});
  expect(first.p_meta.secondOnlyBundle).toBe(true);expect(first.p_next_day.matrix.flat().reduce((a,b)=>a+b,0)).toBe(0);
  expect(first.p_next_day.groups.bundle2nd.b_AppleWatch).toBe(1);expect(first.p_tasks).toEqual([]);
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();
@@ -62,7 +63,7 @@ test('전월 모델·날짜·115군 조건 검사, Galaxy 자회선 선택 및 �
  const state=await open(page);
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('7');await dialog.getByRole('button',{name:'번들',exact:true}).click();
- await dialog.getByPlaceholder('고객명을 입력해주세요').fill('조건 점검');
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('조건 점검');await dialog.getByLabel('모단말 고객명',{exact:true}).fill('조건 점검');
  await dialog.getByLabel('모단말 모델').selectOption('iphone18_pro');
  await dialog.getByLabel('모단말 판매일').fill('2026-08-31');
  await dialog.getByLabel('모단말 요금제군').selectOption('1');
@@ -85,7 +86,7 @@ test('Galaxy 전월 모단말: 자회선만 저장하고 방금 등록 취소로
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('7');await dialog.getByRole('button',{name:'번들',exact:true}).click();
  await dialog.getByLabel('모단말 모델').selectOption('galaxy_foldable');
  await dialog.getByLabel('모단말 판매일').fill('2026-09-15');await dialog.getByLabel('모단말 요금제군').selectOption('1');
- await dialog.getByPlaceholder('고객명을 입력해주세요').fill('갤럭시 전월 고객');
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('갤럭시 전월 고객');await dialog.getByLabel('모단말 고객명',{exact:true}).fill('갤럭시 전월 고객');
  await dialog.getByRole('button',{name:/X216/}).click();
  await dialog.getByRole('button',{name:/폰교체/}).click();
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
@@ -103,7 +104,7 @@ test('same-month existing parent: current policy, child-only save and switch to 
  const state=await open(page,{date:'2026-10-15',width:320,parents:[parent]});
  const original=structuredClone(parent),dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('7');await dialog.getByRole('button',{name:'번들',exact:true}).click();
- await dialog.getByLabel('기존 휴대폰 판매').selectOption(parent.id);await expect(dialog.getByPlaceholder('고객명을 입력해주세요')).toHaveValue('기존 휴대폰 고객');
+ await dialog.getByLabel('기존 휴대폰 판매').selectOption(parent.id);await expect(dialog.getByPlaceholder('고객명을 입력해주세요')).toHaveValue('기존 휴대폰 고객');await expect(dialog.getByPlaceholder('고객명을 입력해주세요')).toHaveAttribute('readonly','');
  await dialog.getByLabel('모단말 모델',{exact:true}).selectOption('iphone_other');await expect(dialog.getByLabel('모단말 판매일')).toHaveValue('2026-10-01');
  await dialog.getByRole('button',{name:/애플워치/}).click();await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.writes[0].p_meta.secondParent.sourceSaleId).toBe(parent.id);expect(state.writes[0].p_sale_date).toBe('2026-10-15');

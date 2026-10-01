@@ -124,3 +124,10 @@ test('new zero-fee strategic services add points without a direct VAS fee in act
  const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
  assert.equal(api.computePay(draft,'기타',null,'2026-10',config,0,null).vasPay,50000);
 });
+
+test('dual-number preview metric uses sale month consistently',()=>{
+ const meta={vasKeys:['vasDualNumber']},metric={strategicPointsWithoutDaemyung:10,daemyungCount:0};
+ assert.equal(changeStrategicMetric(metric,meta,1,'2026-10').strategicPointsWithoutDaemyung,10.3);
+ assert.equal(changeStrategicMetric(metric,meta,1,'2026-09').strategicPointsWithoutDaemyung,10.4);
+ assert.equal(changeStrategicMetric(changeStrategicMetric(metric,meta,1,'2026-10'),meta,-1,'2026-10').strategicPointsWithoutDaemyung,10);
+});

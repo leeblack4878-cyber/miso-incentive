@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePreviousSecond,previousMonthBounds} from '../src/secondParentPolicy.js';
+import {validatePreviousSecond,previousMonthBounds,validateSecondCustomer} from '../src/secondParentPolicy.js';
 const base={saleDate:'2026-10-01',parent:{model:'iphone18_pro',date:'2026-09-18',ci:0},bundleKeys:['b_AppleWatch']};
 test('October accepts previous-month iPhone18 Pro AND Pro Max, not other Apple models',()=>{
  for(const model of ['iphone18_pro','iphone18_pro_max'])assert.equal(validatePreviousSecond({...base,parent:{...base.parent,model}}),'');
@@ -29,4 +29,10 @@ test('current-month follow-up accepts the selling-month eligible Apple models wi
  assert.match(validatePreviousSecond({...base,parent:{model:'iphone_other',date:'2026-09-18',ci:0}}),/모델/);
  assert.equal(validatePreviousSecond({...base,saleDate:'2026-10-15',parent:{model:'galaxy_s',date:'2026-10-14',ci:3},bundleKeys:['b_L335']}),'');
  for(const date of ['2026-10-16','2026-08-31','2026-09-31','2026-99-01'])assert.match(validatePreviousSecond({...base,saleDate:'2026-10-15',parent:{model:'galaxy_s',date,ci:0},bundleKeys:['b_L335']}),/판매일/);
+});
+
+test('2ND same-name check allows outer whitespace and rejects different or missing parent name',()=>{
+ assert.equal(validateSecondCustomer(' 김미소 ','김미소'),'');
+ assert.ok(validateSecondCustomer('김미소','이미소'));
+ assert.ok(validateSecondCustomer('김미소',''));
 });

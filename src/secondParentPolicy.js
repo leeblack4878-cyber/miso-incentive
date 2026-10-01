@@ -28,3 +28,9 @@ export function validatePreviousSecond({saleDate,parent={},bundleKeys=[]}={}) {
   if(model.apple&&parent.ci!==0)return '애플워치는 모단말 115군 이상 조건을 확인해주세요.';
   return '';
 }
+
+export function validateSecondCustomer(customer,parentCustomer) {
+  if(!String(parentCustomer||'').trim())return '모단말에 등록했던 고객명을 입력해주세요.';
+  if(String(customer||'').trim()!==String(parentCustomer).trim())return '2ND 고객명은 모단말 고객명과 같아야 해요.';
+  return '';
+}
