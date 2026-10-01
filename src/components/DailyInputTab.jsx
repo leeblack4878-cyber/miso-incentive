@@ -391,7 +391,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       showAppToast('일일 입력 저장이 끝난 뒤 삭제해주세요.',{tone:'info'});return;
     }
     try {
-      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{},true,secondParentCi(meta));
+      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{},!meta.bundleVasCommissionExcluded,secondParentCi(meta));
       const result=await deleteSaleAtomic(supabase,{userId:currentEmp?.id,sale,normalizeDay,free});
       if(result.daily_data){setDay(normalizeDay(result.daily_data));setSaveState('saved');}
       await onSalesChanged?.();
@@ -1169,7 +1169,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(editingSale){
         const oldMeta=inferMobileMeta(editingSale);
         if(!oldMeta)throw new Error('기존 판매정보를 확인할 수 없습니다.');
-        base=dayAfterSaleDeletion(base,{...editingSale,source_type:'mobile',source_meta:{...editingSale.source_meta,...oldMeta}},bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{},true,secondParentCi(oldMeta)));
+        base=dayAfterSaleDeletion(base,{...editingSale,source_type:'mobile',source_meta:{...editingSale.source_meta,...oldMeta}},bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{},!oldMeta.bundleVasCommissionExcluded,secondParentCi(oldMeta)));
       }else if(legacyConversion?.kind==='mobile'){
         base=structuredClone(base);
         base.matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(base.matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);

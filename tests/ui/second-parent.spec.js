@@ -79,19 +79,20 @@ test('전월 모델·날짜·115군 조건 검사, Galaxy 자회선 선택 및 �
 });
 test('Galaxy 전월 모단말: 자회선만 저장하고 방금 등록 취소로 되돌린다',async({page})=>{
  const state=await open(page,{width:320});
+ state.day={bundleFreeVasOffset:12000}; // unrelated legacy adjustment must survive
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByRole('button',{name:'전월 모단말에 2ND 추가'}).click();
  await dialog.getByLabel('전월 모단말 모델').selectOption('galaxy_foldable');
  await dialog.getByLabel('모단말 판매일').fill('2026-09-15');await dialog.getByLabel('모단말 요금제군').selectOption('1');
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill('갤럭시 전월 고객');
  await dialog.getByRole('button',{name:/X216/}).click();
- await dialog.getByRole('button',{name:/폰안심패스/}).click();
+ await dialog.getByRole('button',{name:/폰교체/}).click();
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  await page.screenshot({path:'/tmp/miso-second-parent.png'});
  await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.day.groups.bundle2nd.b_X216).toBe(1);expect(state.day.matrix.flat().reduce((a,b)=>a+b,0)).toBe(0);
- expect(state.writes[0].p_meta.bundleVasMap.b_X216).toEqual(['vasSafePass']);
+ expect(state.writes[0].p_meta.bundleVasMap.b_X216).toEqual(['vasPhonePass']);
  await page.getByRole('button',{name:'방금 등록 취소',exact:true}).click();
- await expect.poll(()=>state.writes.length).toBe(2);expect(state.day.groups.bundle2nd.b_X216).toBe(0);
+ await expect.poll(()=>state.writes.length).toBe(2);expect(state.day.groups.bundle2nd.b_X216).toBe(0);expect(state.day.bundleFreeVasOffset).toBe(12000);
  expect(state.day.matrix.flat().reduce((a,b)=>a+b,0)).toBe(0);
 });
