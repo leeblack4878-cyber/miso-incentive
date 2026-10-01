@@ -483,7 +483,7 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
   useEffect(()=>{if(!ids.length){setData({});setLoading(false);return}
     (async()=>{setLoading(true);const [y,m]=month.split('-').map(Number),n=new Date(y,m,1),to=`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`;
       const [sr,hr,dr]=await Promise.all([
-        supabase.from('customer_sales').select('user_id,source_type,source_meta').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to),
+        supabase.from('customer_sales').select('user_id,source_type,source_meta,sale_date').in('user_id',ids).gte('sale_date',`${month}-01`).lt('sale_date',to),
         supabase.from('home_orders').select('id,user_id,customer_id,customer_name,product_type,sale_type,status,source_work_date,actual_install_date').in('user_id',ids).or(`source_work_date.gte.${month}-01,actual_install_date.gte.${month}-01`),
         supabase.from('daily_records').select('user_id,work_date,data').in('user_id',ids).gte('work_date',`${month}-01`).lt('work_date',to)
       ]);

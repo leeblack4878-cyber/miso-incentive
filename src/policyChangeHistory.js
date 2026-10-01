@@ -1,11 +1,16 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-01-owner-clarifications',month:'2026-10',date:'2026-10-01',title:'듀얼넘버·전략 요금제·2ND 명의 기준 확정',effective:'10월 정책에 적용',changes:[
+    '듀얼넘버 매출 포인트:0.4P → 표 기준0.3P. 9월 이전0.4P 보존.',
+    '부가서비스의 전략 요금제 선택 제거. 요금제 조건별 본사 전략요금제 체크로 통일.',
+    '2ND 번들 동일 명의 필수. 기존 모단말 고객명 자동입력, 직접 입력 시 이름 대조.',
+  ],details:['미지급 전략서비스 포인트도 기존170% 미만 감액/200% 이상 추가 지급 계산에 포함. 직접 수수료는0원 유지.','모단말 인정은 당월 또는 바로 전월까지. 10월의 전월은9월이며8월 이전 제외.']},
   {id:'2026-10-01-additional-strategic-services',month:'2026-10',date:'2026-10-01',title:'미지급 전략 부가서비스 6개 추가',effective:'10월 입력부터 적용',changes:[
     'AI보이스링 인사말0.3P·캐릭터플러스0.5P, V컬러링 기본0.3P, V프로필0.3P 추가.',
     '통화편의팩0.6P·통화기능안내0.1P 추가.',
     '새 항목은 직접 지급액0원, 매출 포인트만 반영. 기존 유료 항목 금액 유지.',
-  ],details:['필링류 중복 가입 불가를 선택 화면에 반영. 기존 저장 기록 일괄 변경 없음.','듀얼넘버는 기존0.4P 유지. 원본표0.3P와 차이는 별도 확인 필요.']},
+  ],details:['필링류 중복 가입 불가를 선택 화면에 반영. 기존 저장 기록 일괄 변경 없음.','당시 듀얼넘버0.4P 유지 기록은 위 대표 확정 기준(10월0.3P)으로 대체됨.']},
   {id:'2026-10-01-second-followup',month:'2026-10',date:'2026-10-01',title:'2ND 단독·번들 및 후속 판매 입력',effective:'10월 입력부터 적용',changes:[
     '2ND 선택 후 단독·번들 구분. 같은 달 먼저 판매한 휴대폰에도 번들 추가 가능.',
     '전월·당월 모단말 실적과 지급액은 다시 반영하지 않고 2ND 판매월 정책으로 2ND만 반영.',

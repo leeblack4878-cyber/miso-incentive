@@ -46,3 +46,8 @@ test('Apple Watch insurance exemption and parent 115 requirement retained',()=>{
  assert.equal(calculateSeptemberBundleSale({rate,isAppleWatch:true,parent115:true,insuranceJoined:false}).paid,150000);
  assert.equal(calculateSeptemberBundleSale({rate,isAppleWatch:true,parent115:false,insuranceJoined:true}).paid,0);
 });
+
+test('confirmed dual-number correction uses October 0.3P with no direct fee and September retains 0.4P',()=>{
+ const oct=octoberConfig().vas.find(v=>v.key==='vasDualNumber'),sep=septemberConfig().vas.find(v=>v.key==='vasDualNumber');
+ assert.equal(oct.point,0.3);assert.equal(oct.rate,0);assert.equal(sep.point,0.4);assert.equal(sep.rate,0);
+});

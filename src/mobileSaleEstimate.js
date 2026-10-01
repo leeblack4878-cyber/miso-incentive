@@ -5,9 +5,9 @@ import { summarizeStrategicProducts } from './strategicPoints.js';
 import { calculateSeptemberBundleSale } from './septemberPolicy.js';
 import { dayAfterSaleDeletion } from './saleMutations.js';
 
-export function changeStrategicMetric(metric, meta, direction) {
+export function changeStrategicMetric(metric, meta, direction, month = metric?.month) {
   if (!metric) return null;
-  const part = summarizeStrategicProducts([{source_meta:meta}]);
+  const part = summarizeStrategicProducts([{source_meta:meta,sale_date:month}]);
   return Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount'].map(key =>
     [key, Math.max(0, Number((Number(metric[key]||0)+direction*Number(part[key]||0)).toFixed(10)))]));
 }
@@ -40,7 +40,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   let beforeMetric=strategicMetric;
   if(existingSale&&!existingSale.source_meta?.teamOnly){
     base=dayAfterSaleDeletion(base,existingSale,mobileSaleOffsets(existingSale.source_meta,config,september));
-    beforeMetric=changeStrategicMetric(strategicMetric,existingSale.source_meta,-1);
+    beforeMetric=changeStrategicMetric(strategicMetric,existingSale.source_meta,-1,month);
   } else if(legacyConversion?.kind==='mobile') {
     base=structuredClone(base);
     base.matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(base.matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);
@@ -58,7 +58,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   add(next,'specialMatrixOffset',Number(sp.normalMatrixFee||0));add(next,'specialVasOffset',Number(sp.normalVasFee||0));
   add(next,'specialReplacementPay',replacement);
   const calculate=(day,metric)=>computePay(applyDailyToDraft(draft,{...dailyDays,[dayKey]:day},month,config.categoryMap,config.gibyeonColumnMap),employee?.position||'사원',employee?.hireDate,month,config,0,metric);
-  const before=calculate(base,beforeMetric),after=calculate(next,changeStrategicMetric(beforeMetric,meta,1));
+  const before=calculate(base,beforeMetric),after=calculate(next,changeStrategicMetric(beforeMetric,meta,1,month));
   const delta=key=>Number(after[key]||0)-Number(before[key]||0);
   // Apply the current monthly band only to this sale; never attribute a
   // monthly threshold payout (or repricing of other sales) to this customer.

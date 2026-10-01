@@ -667,8 +667,8 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   };
 }
 
-function mobileStrategicPoint({strategicPlan=false,vasKeys=[],bundleVasMap={}}={}){
-  return calculateSaleStrategicPoints({strategicPlan,vasKeys,bundleVasMap});
+function mobileStrategicPoint({strategicPlan=false,vasKeys=[],bundleVasMap={},month}={}){
+  return calculateSaleStrategicPoints({strategicPlan,vasKeys,bundleVasMap},month);
 }
 
 const HOME_ORDER_PRODUCTS = [

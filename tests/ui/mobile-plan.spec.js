@@ -57,11 +57,12 @@ test('관리자 집계는 매장 전환·유형·SIM 구분과 미입력 건수�
  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
 test('기존 세부 미입력 판매 수정은 전략요금제 체크와 지급 구간을 보존한다',async({page})=>{
- const sale={id:'old-sale',user_id:employeeId,sale_date:'2026-10-01',source_type:'mobile',schema_version:3,metric_label:'MNP · 115군↑',customers:{customer_name:'기존 고객'},source_meta:{ri:1,ci:0,strategicPlan:true,vasKeys:[],bundle2ndKeys:[],bundleVasMap:{},bundleVasCommissionExcluded:true}};
+ const sale={id:'old-sale',user_id:employeeId,sale_date:'2026-10-01',source_type:'mobile',schema_version:3,metric_label:'MNP · 115군↑',customers:{customer_name:'기존 고객'},source_meta:{ri:1,ci:0,strategicPlan:false,vasKeys:['vasStrategicPlan'],bundle2ndKeys:[],bundleVasMap:{},bundleVasCommissionExcluded:true}};
  const state=await open(page,{sales:[sale]});state.day={matrix:[[0],[1]],groups:{}};
  await expect(page.getByText('세부 요금제 미입력',{exact:true})).toBeVisible();await page.getByRole('button',{name:'판매건 수정',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await expect(dialog.getByRole('button',{name:/본사 전략요금제/})).toContainText('✓');await expect(dialog.getByLabel('세부 요금제')).toHaveValue('');
+ await expect(dialog.getByRole('button',{name:'전략 요금제',exact:true})).toHaveCount(0);
  await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_130');
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.writes[0].p_meta.strategicPlan).toBe(true);expect(state.writes[0].p_meta.ci).toBe(0);expect(state.day.matrix[1][0]).toBe(1);
