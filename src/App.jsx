@@ -37,6 +37,7 @@ const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePoli
 const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
+const PolicyHistory=React.lazy(()=>import('./components/PolicyHistory'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
 import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, specialPolicyLedgerRows, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
 
@@ -5386,6 +5387,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       { key: 'settlement', label: '정산 검토', icon: Wallet, section:'settlement' },
       { key: 'calculationAudit', label: '계산 검증', icon: ShieldCheck, section:'settlement' },
       { key: 'rates', label: '지급기준 관리', icon: Settings, section:'settings' },
+      { key: 'policyHistory', label: '정책 히스토리', icon: History, section:'settings' },
     ] : []),
     ...(canManagePermissions ? [{ key: 'permissions', label: '권한 관리', icon: ShieldCheck, section:'settings' }] : []),
   ];
@@ -5420,7 +5422,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
   const activeAdminSection=TABS.find(tab=>tab.key===adminTab)?.section||'operations';
   const activeSectionTabs=TABS.filter(tab=>tab.section===activeAdminSection);
   useEffect(() => {
-    if ((adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
+    if ((adminTab === 'policyHistory' || adminTab === 'rates' || adminTab === 'permissions' || adminTab === 'settlement' || adminTab === 'calculationAudit' || adminTab === 'headOfficeData') && !isFullAdmin) setAdminTab('dashboard');
     if (adminTab === 'hqStructure' && !canViewHqStructure) setAdminTab('dashboard');
     if (adminTab === 'dailyBriefing' && !canViewDailyBriefing) setAdminTab('dashboard');
     if (adminTab === 'spot' && !canViewDailyBriefing) setAdminTab('dashboard');
@@ -5587,6 +5589,10 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
       {adminTab === 'employees' && (
         <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
+      )}
+
+      {adminTab === 'policyHistory' && isFullAdmin && (
+        <React.Suspense fallback={<DeferredAdminPanelFallback label="정책 히스토리"/>}><PolicyHistory /></React.Suspense>
       )}
 
       {adminTab === 'rates' && isFullAdmin && (
