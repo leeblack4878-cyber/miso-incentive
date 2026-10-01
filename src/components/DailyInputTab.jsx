@@ -157,8 +157,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     .map((label,ci)=>({label,ci}))
     .filter(option=>!(isConfirmedMonthlyPolicy(month)&&option.ci===3));
   const normalizedMainVas=(config.vas||DEFAULT_VAS).filter(v=>!(isConfirmedMonthlyPolicy(month)&&v.key==='vasVcolor'));
-  const primaryVasKeys=new Set(['vasKyobo','vasVcolorBundle','vasVcolor','vasPhonePass','vasSafePass']);
-  const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key));
+  const primaryVasKeys=new Set(['vasStrategicPlan','vasKyobo','vasVcolorBundle','vasVcolor','vasPhonePass','vasSafePass']);
+  const primaryMainVas=normalizedMainVas.filter(v=>primaryVasKeys.has(v.key)).sort((a,b)=>Number(b.key==='vasVcolorBundle')-Number(a.key==='vasVcolorBundle'));
   const additionalMainVas=normalizedMainVas.filter(v=>!primaryVasKeys.has(v.key));
   const isDayOff = !!day.dayOff;
 
@@ -1930,7 +1930,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold">{selected ? '✓ ' : ''}{v.label}</span>
-                        {v.rate > 0 && <span className="text-[10px] text-gray-400">+{won(v.rate)}</span>}
+                        {v.key==='vasStrategicPlan'?<span className="text-[10px] text-gray-400">{v.point}P</span>:v.rate > 0 && <span className="text-[10px] text-gray-400">+{won(v.rate)}</span>}
                       </div>
                     </button>
                   );
