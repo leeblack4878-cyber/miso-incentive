@@ -1,4 +1,8 @@
 import {test,expect} from '@playwright/test';
+async function choosePlan(page,dialog,key){
+ await dialog.getByLabel('세부 요금제').selectOption(key);
+ await page.getByRole('dialog',{name:'요금제 변경 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+}
 const employeeId='00000000-0000-4000-8000-000000000001';
 const stores=['대야동_롯데마트점','장곡동_장곡역점'];
 async function open(page,{actor='',sales=[],width=390}={}){
@@ -24,21 +28,20 @@ for(const width of [320,390])test(`${width}px 실제 요금제 선택·수정·�
  const state=await open(page,{width});await page.getByRole('button',{name:/모바일 실적 입력/}).click();
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();await dialog.getByPlaceholder('고객명을 입력해주세요').fill('요금제 고객');
- await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');await dialog.getByLabel('요금제군',{exact:true}).selectOption('2');
- await page.getByRole('dialog',{name:'요금제 변경 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
- await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(page.getByText('요금제 유형과 세부 요금제를 선택해주세요.',{exact:true})).toBeVisible();expect(state.writes).toHaveLength(0);
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await expect(dialog.getByRole('button',{name:'실적 등록',exact:true})).toBeDisabled();expect(state.writes).toHaveLength(0);
  await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'시니어',exact:true}).click();
- await expect(dialog.getByLabel('세부 요금제').locator('option')).toHaveCount(7);await dialog.getByLabel('세부 요금제').selectOption('senior_under28');
+ await expect(dialog.getByLabel('세부 요금제').locator('option')).toHaveCount(7);await choosePlan(page,dialog,'senior_under28');
  await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'주니어',exact:true}).click();
  await expect(dialog.getByLabel('세부 요금제')).toHaveValue('');await expect(dialog.getByLabel('세부 요금제').locator('option')).toHaveCount(11);
  await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();
- await expect(dialog.getByLabel('세부 요금제').locator('option')).toHaveCount(14);await dialog.getByLabel('세부 요금제').selectOption('general_95');
- await expect(dialog.getByLabel('요금제군',{exact:true})).toHaveValue('2');expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await expect(dialog.getByLabel('세부 요금제').locator('option')).toHaveCount(14);await choosePlan(page,dialog,'general_95');
+ await expect(dialog.getByLabel('요금제군',{exact:true})).toHaveCount(0);expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.writes[0].p_meta.planDetail.key).toBe('general_95');expect(state.day.matrix[1][2]).toBe(1);
  const original=structuredClone(state.day);
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await expect(dialog.getByLabel('세부 요금제')).toHaveValue('general_95');
- await dialog.getByLabel('세부 요금제').selectOption('general_105');await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
+ await choosePlan(page,dialog,'general_105');await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.writes[1].p_meta.planDetail.key).toBe('general_105');expect(state.day).toEqual(original);
  await page.getByRole('button',{name:'내역',exact:true}).click();const panel=page.getByRole('region',{name:'요금제별 집계'});await panel.getByRole('button',{name:/요금제별 집계/}).click();await expect(panel.getByRole('button',{name:/일반 1건/})).toBeVisible();await expect(panel.getByText('105군',{exact:true}).locator('..')).toContainText('1건');
  await page.getByRole('button',{name:'실적입력',exact:true}).click();await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][2]).toBe(0);
@@ -59,7 +62,7 @@ test('기존 세부 미입력 판매 수정은 전략요금제 체크와 지급 
  await expect(page.getByText('세부 요금제 미입력',{exact:true})).toBeVisible();await page.getByRole('button',{name:'판매건 수정',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await expect(dialog.getByRole('button',{name:/본사 전략요금제/})).toContainText('✓');await expect(dialog.getByLabel('세부 요금제')).toHaveValue('');
- await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await dialog.getByLabel('세부 요금제').selectOption('general_130');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_130');
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(state.writes[0].p_meta.strategicPlan).toBe(true);expect(state.writes[0].p_meta.ci).toBe(0);expect(state.day.matrix[1][0]).toBe(1);
 });
@@ -71,4 +74,24 @@ test('조회 실패는 요금제 0건으로 표시하지 않는다',async({page}
   return route.fallback();
  });
  const panel=page.getByRole('region',{name:'요금제별 집계'});await panel.getByRole('button',{name:/요금제별 집계/}).click();await expect(panel.getByRole('alert')).toContainText('불러오지 못했어요');await expect(panel.getByRole('button',{name:/일반 0건/})).toHaveCount(0);
+});
+
+test('시니어 저가 MNP 자동 지급·가입구분 변경·일반 미지급 수정·삭제',async({page})=>{
+ const state=await open(page);await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();await dialog.getByPlaceholder('고객명을 입력해주세요').fill('자동지급 고객');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'시니어',exact:true}).click();await choosePlan(page,dialog,'senior_44');
+ await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(state.writes[0].p_meta.ci).toBe(3);expect(state.day.matrix[1][3]).toBe(1);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await expect(dialog.getByLabel('세부 요금제')).toHaveValue('senior_44');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('0');await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(state.writes[1].p_meta.ci).toBe(5);expect(state.day.matrix[1][3]).toBe(0);expect(state.day.matrix[0][5]).toBe(1);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByLabel('가입구분',{exact:true}).selectOption('5');
+ await expect(dialog.getByRole('button',{name:/중고 MNP 61군/})).toHaveCount(0);
+ await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[2].p_meta.ci).toBe(3);expect(state.day.matrix[5][3]).toBe(1);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_75');
+ await expect(dialog.getByRole('button',{name:/중고 MNP 61군/})).toBeVisible();
+ await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[3].p_meta.ci).toBe(5);expect(state.day.matrix[5][3]).toBe(0);expect(state.day.matrix[5][5]).toBe(1);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(5);expect(state.day.matrix[5][5]).toBe(0);
 });

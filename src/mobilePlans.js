@@ -27,3 +27,23 @@ export function summarizeMobilePlans(sales=[],{userIds=[],branches=null,employee
  }
  return {total,missing,counts,types};
 }
+
+// Owner-confirmed October mapping. Historical rows are never bulk reclassified.
+export function mobilePlanCommissionColumn(value,ri){
+ const plan=getMobilePlan(value);
+ if(!Number.isInteger(ri)||ri<0||ri>7)return null;
+ if(ri===7)return 0;
+ if(!plan)return null;
+ if(ri===6)return 0;
+ const tier=Number(plan.key.split('_')[1]);
+ if(plan.type==='general')return tier>=115?0:tier>=85?2:5;
+ if(plan.type==='junior'&&tier>=85)return 1;
+ if(tier>=47)return 4;
+ if(tier>=33&&(ri===1||ri===5))return 3;
+ return 5;
+}
+
+export function mobilePlanUsedMnpEligible(value){
+ const plan=getMobilePlan(value);
+ return !!plan&&Number(plan.key.split('_')[1])>=61;
+}

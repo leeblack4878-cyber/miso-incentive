@@ -1,6 +1,11 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-01-auto-mobile-plan',month:'2026-10',date:'2026-10-01',title:'요금제 선택으로 지급 구간 자동 적용',effective:'10월 입력부터 적용',changes:[
+    '지급 기준 구간 수동 선택 제거. 고객유형·세부 요금제로 자동 산정.',
+    '일반 33~75군: 요금제 기본 인센티브 없음.',
+    '시니어·주니어 33~44군: MNP·SIM MNP 기본 4만원, 신규·기변 기본 미지급.',
+  ],details:['일반 115군 이상·85~105군, 주니어 85군 및 시니어·주니어 47군 이상은 해당 기존 단가 적용.','부가서비스·특가·인센미지급·홈 무실적 등 기존 추가 지급 및 차감 조건 유지. 기존 저장건 일괄 재계산 없음.']},
   {id:'2026-10-01-second-parent',month:'2026-10',date:'2026-10-01',title:'2ND 전월 모단말 인정 확정',effective:'10월 1일부터 적용',changes:[
     '갤럭시: 정책 대상 모단말의 전월 판매건도 인정.',
     '애플: 아이폰18 프로·프로맥스만 전월 모단말 인정.',
