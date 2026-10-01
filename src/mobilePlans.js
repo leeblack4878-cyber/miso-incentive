@@ -34,7 +34,7 @@ export function mobilePlanCommissionColumn(value,ri){
  if(!Number.isInteger(ri)||ri<0||ri>7)return null;
  if(ri===7)return 0;
  if(!plan)return null;
- if(ri===6)return 0;
+ if(ri===6)return Number(plan.key.split('_')[1])>=66?0:5;
  const tier=Number(plan.key.split('_')[1]);
  if(plan.type==='general')return tier>=115?0:tier>=85?2:5;
  if(plan.type==='junior'&&tier>=85)return 1;

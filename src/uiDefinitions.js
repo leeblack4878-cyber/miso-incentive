@@ -11,8 +11,8 @@ export const MATRIX_ROW_DEFS = [
   { label: '일반모델 기변B', dailyLabel: '기기변경 B', hasTiers: true, isGibyeon: true },
   { label: '일반모델 기변C', dailyLabel: '기기변경 C', hasTiers: true, isGibyeon: true },
   { label: 'SIM MNP', dailyLabel: 'SIM MNP(선약)', hasTiers: true },
-  { label: '중고 신규(66군↑)', dailyLabel: '중고 신규(66군 이상)', hasTiers: false }, // 인센티브 무관 — 요금제군 구분 없이 건수만
-  { label: '2ND단독', dailyLabel: '2ND단독', hasTiers: false }, // 요금제군 구분 없이 건수만, 단일 단가 적용
+  { label: '중고 신규(66군↑)', dailyLabel: '중고 신규', hasTiers: false }, // 인센티브 무관 — 요금제군 구분 없이 건수만
+  { label: '2ND단독', dailyLabel: '2ND', hasTiers: false }, // 요금제군 구분 없이 건수만, 단일 단가 적용
 ];
 
 export const MATRIX_COLS = ['115군↑', '95~105군·청소년85군', '85군', '61군이상', '약자요금제', '그 외'];

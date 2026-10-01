@@ -1,6 +1,7 @@
+import {readAllPages} from '../performanceRoster';
 import MobilePlanFields from './MobilePlanFields';
 import {getMobilePlan,mobilePlanLabel,mobilePlanCommissionColumn,mobilePlanUsedMnpEligible} from '../mobilePlans';
-import { isSecondOnlyBundle, secondParentCi, PREVIOUS_SECOND_PARENTS, previousMonthBounds, validatePreviousSecond } from '../secondParentPolicy';
+import { isSecondOnlyBundle, secondParentCi, CURRENT_SECOND_PARENTS, PREVIOUS_SECOND_PARENTS, previousMonthBounds, validatePreviousSecond } from '../secondParentPolicy';
 import { loadHomePolicyMetadata } from '../homePolicyMetadata';
 import { specialSalesForDate, calculateMonthlySpecialSale } from '../octoberPolicy';
 import { estimateMobileSale, changeStrategicMetric } from '../mobileSaleEstimate';
@@ -334,6 +335,18 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     })();
   }, [Boolean(mobileSaleDraft), month, selectedDay, editingSale]);
 
+
+  const [parentSales,setParentSales]=useState({rows:[],loading:false,error:false});
+  useEffect(()=>{
+    if(!secondOnlyBundle||!currentEmp?.id)return;
+    let alive=true;const saleDate=`${month}-${selectedDay}`;
+    setParentSales({rows:[],loading:true,error:false});
+    readAllPages(()=>supabase.from('customer_sales').select('id,user_id,sale_date,source_type,source_meta,metric_label,customers(customer_name)')
+      .eq('user_id',currentEmp.id).in('source_type',['mobile','daily']).gte('sale_date',previousMonthBounds(saleDate)?.start).lte('sale_date',saleDate).order('id'))
+      .then(result=>{if(result.error)throw result.error;if(alive)setParentSales({rows:result.data.filter(row=>Number.isInteger(row.source_meta?.ri)&&row.source_meta.ri>=0&&row.source_meta.ri<=4&&!row.source_meta.cancelled&&!row.source_meta.deleted),loading:false,error:false});})
+      .catch(()=>{if(alive)setParentSales({rows:[],loading:false,error:true});});
+    return ()=>{alive=false;};
+  },[secondOnlyBundle,currentEmp?.id,month,selectedDay]);
 
   const loadDaySales=useCallback(async()=>{
     if(!currentEmp?.id)return;
@@ -702,7 +715,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const bonusPayDelta = Math.max(0,payDelta-salePayDelta-activityPayDelta);
 
     const rowDef = MATRIX_ROW_DEFS[ri];
-    const label = customerMeta.secondOnlyBundle?'2ND · 전월 모단말':rowDef.hasTiers
+    const label = customerMeta.secondOnlyBundle?'2ND · 번들':rowDef.hasTiers
       ? `${rowDef.dailyLabel || rowDef.label} · ${MATRIX_COLS[ci]}`
       : (rowDef.dailyLabel || rowDef.label);
 
@@ -1038,7 +1051,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setSecondParent(isSecondOnlyBundle(meta)?meta.secondParent:null);
     setPlanDetail(getMobilePlan(meta.planDetail));
-    if(isSecondOnlyBundle(meta))setMobileSaleDraft({ri:7,ci:0,label:'2ND · 전월 모단말'});
+    if(isSecondOnlyBundle(meta))setMobileSaleDraft({ri:7,ci:0,label:'2ND · 번들'});
     setMobileCustomerName(sale.customers?.customer_name||'');
     const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isConfirmedMonthlyPolicy(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
     setMobileVasKeys([...new Set(editableVasKeys)]);
@@ -1720,35 +1733,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               고객명·VAS·2ND 등 당시 저장되지 않은 값은 비워두었어요.
             </div>}
 
-            {month>='2026-10'&&!editingSale&&!legacyConversion&&<button type="button" aria-pressed={secondOnlyBundle} onClick={()=>{
-              const enabled=!secondOnlyBundle;
-              setSecondParent(enabled?{model:'',date:'',ci:null}:null);
-              setMobileSaleDraft(enabled?{ri:7,ci:0,label:'2ND · 전월 모단말'}:{ri:null,ci:null,label:''});
-              setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileVasKeys([]);setMobileStrategicPlan(false);setPlanDetail(null);
-              setMobileReminders({plan:'keep',services:{}});setMobileUsedMnpBundle(false);
-              setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});setMobileDetailsOpen(enabled);
-            }} className={`mt-4 w-full rounded-xl border px-3 py-3 text-left text-xs font-semibold ${secondOnlyBundle?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-600'}`}>
-              {secondOnlyBundle?'✓ ':''}전월 모단말에 2ND 추가
-            </button>}
-            {secondOnlyBundle&&<div className="mt-3 rounded-xl bg-brand-50 p-3 space-y-3">
-              <div className="text-xs font-semibold text-brand-700">전월 모단말 · 이번 달 2ND만 반영</div>
-              <label className="block text-xs text-gray-600">모단말 모델
-                <select aria-label="전월 모단말 모델" value={secondParent.model} onChange={e=>{
-                  setSecondParent(v=>({...v,model:e.target.value}));setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});
-                }} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white">
-                  <option value="">선택해주세요</option>{PREVIOUS_SECOND_PARENTS.map(x=><option key={x.key} value={x.key}>{x.label}</option>)}
-                </select>
-              </label>
-              <label className="block text-xs text-gray-600">모단말 판매일
-                <input aria-label="모단말 판매일" type="date" value={secondParent.date} min={previousMonthBounds(`${month}-${selectedDay}`)?.start} max={previousMonthBounds(`${month}-${selectedDay}`)?.end} onChange={e=>setSecondParent(v=>({...v,date:e.target.value}))} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white"/>
-              </label>
-              <label className="block text-xs text-gray-600">모단말 요금제군
-                <select aria-label="모단말 요금제군" value={secondParent.ci??''} onChange={e=>setSecondParent(v=>({...v,ci:Number(e.target.value)}))} className="mt-1 w-full rounded-lg border p-2.5 bg-white">
-                  <option value="" disabled>선택해주세요</option>{activeMatrixOptions.map(({label,ci})=><option key={ci} value={ci}>{label}</option>)}
-                </select>
-              </label>
-              <MobilePlanFields prefix="모단말 " value={secondParent.planDetail} onChange={value=>setSecondParent(v=>({...v,planDetail:value}))}/>
-            </div>}
             {!secondOnlyBundle&&<div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">1. 판매 정책 구분 *</div>
               <div className="grid grid-cols-3 gap-2">
@@ -1820,7 +1804,6 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             <input value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
               placeholder="고객명을 입력해주세요" className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
 
-            {!secondOnlyBundle&&<>
             <div className={`mt-4 grid gap-2 ${month>='2026-10'?'grid-cols-1':'grid-cols-2'}`}>
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">3. 가입구분</label>
@@ -1828,6 +1811,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   value={mobileSaleDraft.ri??''}
                   onChange={e=>{
                     const ri=Number(e.target.value);
+                    if(ri===7||mobileSaleDraft.ri===7){setSecondParent(null);setMobileVasKeys([]);setMobileStrategicPlan(false);setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});setMobileUsedMnpBundle(false);setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileReminders({plan:'keep',services:{}});}
                     const ci=month>='2026-10'?mobilePlanCommissionColumn(planDetail,ri):MATRIX_ROW_DEFS[ri]?.hasTiers ? null : 0;
                     setMobileSaleDraft({ri,ci,label:ci===null?'':mobileLabelFor(ri,ci)});
                   }}
@@ -1858,6 +1842,50 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>}
             </div>
 
+            {month>='2026-10'&&mobileSaleDraft.ri===7&&<div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="2ND 판매 방식">
+              {[false,true].map(bundle=><button key={String(bundle)} type="button" aria-pressed={secondOnlyBundle===bundle} onClick={()=>{
+                setSecondParent(bundle?{model:'',date:'',ci:null}:null);
+                setMobileSaleDraft({ri:7,ci:0,label:bundle?'2ND · 번들':'2ND · 단독'});
+                setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileVasKeys([]);setMobileStrategicPlan(false);setPlanDetail(null);
+                setMobileReminders({plan:'keep',services:{}});setMobileUsedMnpBundle(false);
+                setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});setMobileDetailsOpen(bundle);
+              }} className={`rounded-xl border p-3 text-sm font-semibold ${secondOnlyBundle===bundle?'border-brand-300 bg-brand-50 text-brand-700':'border-gray-200'}`}>{bundle?'번들':'단독'}</button>)}
+            </div>}
+            {secondOnlyBundle&&<div className="mt-3 rounded-xl bg-brand-50 p-3 space-y-3">
+              <div className="text-xs font-semibold text-brand-700">모단말 정보 · 2ND 판매일에 2ND만 반영</div>
+              <label className="block text-xs text-gray-600">기존 휴대폰 판매
+                <select aria-label="기존 휴대폰 판매" value={secondParent.sourceSaleId||''} disabled={parentSales.loading} onChange={e=>{
+                  const row=parentSales.rows.find(x=>x.id===e.target.value);
+                  if(!row){setSecondParent({model:'',date:'',ci:null});return;}
+                  const meta=row.source_meta||{};
+                  setSecondParent({sourceSaleId:row.id,model:'',date:row.sale_date,ci:meta.ci,planDetail:getMobilePlan(meta.planDetail)});
+                  setMobileCustomerName(row.customers?.customer_name||'');
+                  setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});
+                }} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white">
+                  <option value="">{parentSales.loading?'불러오는 중…':'직접 입력'}</option>
+                  {parentSales.rows.map((row,index)=><option key={row.id} value={row.id}>{row.sale_date} · {row.customers?.customer_name||'고객명 없음'} · {index+1}</option>)}
+                </select>
+              </label>
+              {parentSales.error&&<p role="alert" className="text-xs text-red-600">기존 판매를 불러오지 못했어요. 모단말 정보를 직접 입력할 수 있어요.</p>}
+
+              <label className="block text-xs text-gray-600">모단말 모델
+                <select aria-label="모단말 모델" value={secondParent.model} onChange={e=>{
+                  setSecondParent(v=>({...v,model:e.target.value}));setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});
+                }} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white">
+                  <option value="">선택해주세요</option>{(secondParent.date&&secondParent.date.slice(0,7)!==month?PREVIOUS_SECOND_PARENTS:CURRENT_SECOND_PARENTS).map(x=><option key={x.key} value={x.key}>{x.label}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs text-gray-600">모단말 판매일
+                <input aria-label="모단말 판매일" type="date" disabled={!!secondParent.sourceSaleId} value={secondParent.date} min={previousMonthBounds(`${month}-${selectedDay}`)?.start} max={`${month}-${selectedDay}`} onChange={e=>setSecondParent(v=>({...v,date:e.target.value}))} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white"/>
+              </label>
+              <label className="block text-xs text-gray-600">모단말 요금제군
+                <select aria-label="모단말 요금제군" value={secondParent.ci??''} onChange={e=>setSecondParent(v=>({...v,ci:Number(e.target.value)}))} className="mt-1 w-full rounded-lg border p-2.5 bg-white">
+                  <option value="" disabled>선택해주세요</option>{SEPTEMBER_MATRIX_COLUMNS.map((label,ci)=><option key={ci} value={ci}>{label}</option>)}
+                </select>
+              </label>
+              <MobilePlanFields prefix="모단말 " value={secondParent.planDetail} onChange={value=>setSecondParent(v=>({...v,planDetail:value}))}/>
+            </div>}
+            {!secondOnlyBundle&&mobileSaleDraft.ri!==7&&<>
             {Number.isInteger(mobileSaleDraft.ri)&&mobileSaleDraft.ri!==7&&<MobilePlanFields value={planDetail} automatic={month>='2026-10'} onChange={value=>{
               setPlanDetail(value);
               if(month>='2026-10'){
@@ -1867,6 +1895,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 if(getMobilePlan(value)&&![0,1].includes(ci)&&value.key!=='general_105')setMobileStrategicPlan(false);
               }
             }} required={month>='2026-10'}/>}
+            {mobileSaleDraft.ri===6&&getMobilePlan(planDetail)&&<p className="mt-2 text-xs text-gray-500">{mobileSaleDraft.ci===0?'생산성 반영 대상':'생산성 미반영 요금제'}</p>}
             {Number.isInteger(mobileSaleDraft.ci)&&<button type="button" onClick={()=>setPlanReminderOpen(true)} className="mt-2 w-full rounded-xl bg-brand-50 px-3 py-2.5 text-left text-xs text-brand-700">요금제 변경 안내 · <b>{PLAN_REMINDER_LABELS[mobileReminders.plan]||'유지'}</b><span className="ml-2 text-[10px]">변경</span></button>}
 
             {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers && (Number.isInteger(mobileSaleDraft.ci)&&mobileSaleDraft.ci<=1 || month>='2026-10'&&planDetail?.key==='general_105') && (
@@ -1946,11 +1975,11 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             </button>
 
             {mobileDetailsOpen&&<>
-            <div className="mt-4">
+            {(mobileSaleDraft.ri!==7||secondOnlyBundle)&&<div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">5. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
               <input value={mobileBundleSearch} onChange={e=>setMobileBundleSearch(e.target.value)} placeholder="2ND 기기명 검색" className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2.5 text-xs"/>
               <div className="grid grid-cols-1 gap-1.5">
-                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!secondOnlyBundle||PREVIOUS_SECOND_PARENTS.some(p=>p.key===secondParent.model&&p.apple===(v.key==='b_AppleWatch'))).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
+                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!secondOnlyBundle||CURRENT_SECOND_PARENTS.some(p=>p.key===secondParent.model&&p.apple===(v.key==='b_AppleWatch'))).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
                   const bundleVasKeys=mobileBundleVasMap[v.key]||[];
                   return <div key={v.key} className={`rounded-xl border ${selected?'bg-brand-50 border-brand-200':'bg-white border-gray-100'}`}>
@@ -2005,7 +2034,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   </div>
                 })}
               </div>
-            </div>
+            </div>}
 
             <div className={`mt-4 grid gap-2 ${editingSale?'grid-cols-2':'grid-cols-3'}`}>
               {editingSale&&<button type="button" onClick={()=>setMobileExpenseOpen(v=>!v)} className={`py-2.5 rounded-xl border text-xs font-semibold ${mobileExpenseOpen?'bg-emerald-50 border-emerald-200 text-emerald-700':'bg-gray-50 border-gray-100 text-gray-600'}`}>+ 영업비용</button>}

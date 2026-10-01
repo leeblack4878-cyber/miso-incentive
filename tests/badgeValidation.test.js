@@ -22,3 +22,11 @@ test('legacy cancelled home totals cannot grant first home or lifetime badges',(
  s.home_orders=[{id:1,user_id:'me',source_work_date:'2026-09-16',status:'cancelled',product_type:'homeOnly'}];
  assert.ok(!calculateVerifiedBadges(s,'me','2026-09').includes('home_first'));
 });
+test('server badge calculator excludes October low-plan used-new productivity',()=>{
+ for(const [ci,earned] of [[0,true],[5,false]]){
+  const s=source(0,0);s.daily=s.daily.map(row=>({...row,work_date:'2026-10-01'}));
+  s.daily[0].data={matrix:Array.from({length:8},(_,ri)=>Array.from({length:6},(_,col)=>ri===6&&col===ci?200:0))};
+  s.history=s.daily;
+  assert.equal(calculateVerifiedBadges(s,'me','2026-10').includes('prod_100'),earned);
+ }
+});
