@@ -24,6 +24,11 @@
 - 운영 배포: GitHub `main` 반영 후 Vercel 자동 배포
 - 주요 코드: `src/App.jsx`, 공용 계산은 `src/appShared.jsx`, 실적입력·고객관리·홈 설치관리와 관리자 기능은 `src/components/`로 단계적으로 분리. 실적입력·고객관리·평가·급여·관리자 화면은 진입 시 지연 로딩한다. 월별 실적·목표 표시는 MonthlyPerformance.jsx, 공유 기본값/매장 조회는 viewShared.js에서 관리한다.
 
+## 실제 요금제 집계 (2026-10-01)
+
+- 집계용 `source_meta.planDetail`(일반/시니어/주니어, 29개 키)과 수수료 계산용 ri/ci를 분리한다. 세부 요금제로 지급 구간을 자동 변환하지 않는다. 과거 미입력은 추정/일괄 보정하지 않고 고객별 판매 수정으로만 보완한다.
+- 전월 2ND 모단말의 참고용 분류는 `secondParent.planDetail`이며 당월 요금제 집계에 포함하지 않는다.
+
 ## 데이터 기준
 
 - `daily_records`: 날짜별 구버전/일일 집계와 입력 상태
