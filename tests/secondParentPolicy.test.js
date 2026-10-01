@@ -15,11 +15,18 @@ test('Galaxy S/foldable parents allow previous-month sales and matching children
  assert.match(validatePreviousSecond({...base,bundleKeys:['b_L335']}),/맞는/);
  assert.match(validatePreviousSecond({...base,parent:{...base.parent,ci:1}}),/115/);
 });
-test('Only immediately preceding calendar month; no duplicate parent input in current month',()=>{
- for(const date of ['2026-08-31','2026-10-01','2026-09-31',''])assert.match(validatePreviousSecond({...base,parent:{...base.parent,date}}),/전월/);
+test('Reject older months and future dates; accept the preceding calendar month',()=>{
+ for(const date of ['2026-08-31','2026-10-02','2026-09-31',''])assert.match(validatePreviousSecond({...base,parent:{...base.parent,date}}),/전월/);
  assert.equal(validatePreviousSecond({...base,parent:{...base.parent,date:'2026-09-01'}}),'');
  assert.match(validatePreviousSecond({...base,saleDate:'2026-09-30'}),/10월/);
  assert.deepEqual(previousMonthBounds('2027-01-03'),{start:'2026-12-01',end:'2026-12-31'});
  assert.deepEqual(previousMonthBounds('2028-03-01'),{start:'2028-02-01',end:'2028-02-29'});
  assert.match(validatePreviousSecond({...base,bundleKeys:[]}),/1~2/);
+});
+
+test('current-month follow-up accepts the selling-month eligible Apple models without a second HS',()=>{
+ assert.equal(validatePreviousSecond({...base,saleDate:'2026-10-15',parent:{model:'iphone_other',date:'2026-10-01',ci:0}}),'');
+ assert.match(validatePreviousSecond({...base,parent:{model:'iphone_other',date:'2026-09-18',ci:0}}),/모델/);
+ assert.equal(validatePreviousSecond({...base,saleDate:'2026-10-15',parent:{model:'galaxy_s',date:'2026-10-14',ci:3},bundleKeys:['b_L335']}),'');
+ for(const date of ['2026-10-16','2026-08-31','2026-09-31','2026-99-01'])assert.match(validatePreviousSecond({...base,saleDate:'2026-10-15',parent:{model:'galaxy_s',date,ci:0},bundleKeys:['b_L335']}),/판매일/);
 });

@@ -95,3 +95,14 @@ test('시니어 저가 MNP 자동 지급·가입구분 변경·일반 미지급 
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[3].p_meta.ci).toBe(5);expect(state.day.matrix[5][3]).toBe(0);expect(state.day.matrix[5][5]).toBe(1);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(5);expect(state.day.matrix[5][5]).toBe(0);
 });
+
+test('중고 신규 실제 요금제 61→70 전환과 삭제는 생산성 인정 구간을 이동한다',async({page})=>{
+ const state=await open(page);await page.getByRole('button',{name:/모바일 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();await dialog.getByPlaceholder('고객명을 입력해주세요').fill('중고 신규 고객');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('6');await expect(dialog.getByLabel('가입구분',{exact:true}).locator('option:checked')).toHaveText('중고 신규');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_61');
+ await expect(dialog.getByText('생산성 미반영 요금제')).toBeVisible();await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.day.matrix[6][5]).toBe(1);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await choosePlan(page,dialog,'general_70');await expect(dialog.getByText('생산성 반영 대상')).toBeVisible();await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(state.day.matrix[6][5]).toBe(0);expect(state.day.matrix[6][0]).toBe(1);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[6][0]).toBe(0);
+});

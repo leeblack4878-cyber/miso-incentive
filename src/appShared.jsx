@@ -452,7 +452,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     } else if (map.mobilePointKey) {
       autoMobilePoint[map.mobilePointKey] = (autoMobilePoint[map.mobilePointKey] || 0) + rowTotal;
     }
-    if (map.kpiKey) autoKpi[map.kpiKey] = (autoKpi[map.kpiKey] || 0) + rowTotal;
+    if (map.kpiKey) autoKpi[map.kpiKey] = (autoKpi[map.kpiKey] || 0) + (ri===6&&month>='2026-10'?rowTotal-Number(row[5]||0):rowTotal);
   });
 
   // 홈/2ND/VAS/소노 등 건수 그룹 — 이제 일일입력이 유일한 입력 경로라 그 달 합계로 완전히 교체

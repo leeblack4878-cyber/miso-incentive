@@ -83,7 +83,7 @@ test('October automatic bands cover all 29 plans and all subscription types with
  junior_85:1,junior_75:4,junior_70:4,junior_61:4,junior_55:4,junior_47:4,junior_37:3,junior_33:3,junior_28:5,junior_under28:5};
  const amounts=[[50000,90000,50000,50000,25000,90000],[40000,70000,40000,40000,20000,70000],[20000,50000,20000,20000,10000,50000],[0,40000,0,0,0,40000],[20000,40000,20000,20000,10000,40000],[0,0,0,0,0,0]];
  for(const [key,band] of Object.entries(expected))for(let ri=0;ri<8;ri++){
-  const ci=column(plan(key),ri),want=ri>=6?0:band===3&&ri!==1&&ri!==5?5:band;
+  const ci=column(plan(key),ri),want=ri===6?(Number(key.split('_')[1])>=66?0:5):ri===7?0:band===3&&ri!==1&&ri!==5?5:band;
   assert.equal(ci,want,`${key}/${ri}`);
   assert.equal(matrix[ri][ci],ri>=6?0:amounts[band][ri],`${key}/${ri} base commission`);
  }

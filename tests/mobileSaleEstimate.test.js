@@ -99,3 +99,14 @@ test('automatically classified October plans flow into real payroll including no
   assert.equal(api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric).mobilePlanPay,amount,`${key} home`);
  }
 });
+
+test('used-new productivity counts only actual plans at least 66 while preserving legacy column 0',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');
+ const {MOBILE_PLANS,mobilePlanCommissionColumn}=await import('../src/mobilePlans.js');
+ const config=octoberConfig(api.defaultConfig());
+ for(const [key,count] of [['general_61',0],['general_70',1],['junior_75',1],['senior_47',0]]){
+  const day=api.normalizeDay(),ci=mobilePlanCommissionColumn(MOBILE_PLANS.find(p=>p.key===key),6);day.matrix[6][ci]=1;
+  const result=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
+  assert.equal(result.kpi.kpiUsedNew010,count,key);
+ }
+});

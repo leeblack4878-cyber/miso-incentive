@@ -1,6 +1,11 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-01-second-followup',month:'2026-10',date:'2026-10-01',title:'2ND 단독·번들 및 후속 판매 입력',effective:'10월 입력부터 적용',changes:[
+    '2ND 선택 후 단독·번들 구분. 같은 달 먼저 판매한 휴대폰에도 번들 추가 가능.',
+    '전월·당월 모단말 실적과 지급액은 다시 반영하지 않고 2ND 판매월 정책으로 2ND만 반영.',
+    '중고 신규는 선택 요금제 66군 이상일 때만 생산성에 포함.',
+  ],details:['전월 모단말 인정 모델과 애플워치115군·보험 예외 등 기존 조건 유지. 당월은 당월 정책 대상 모델 적용.','기존 휴대폰 판매 선택은 조회 가능한 해당 직원의 원본에 한정하며 이전 판매를 수정하지 않음.']},
   {id:'2026-10-01-auto-mobile-plan',month:'2026-10',date:'2026-10-01',title:'요금제 선택으로 지급 구간 자동 적용',effective:'10월 입력부터 적용',changes:[
     '지급 기준 구간 수동 선택 제거. 고객유형·세부 요금제로 자동 산정.',
     '일반 33~75군: 요금제 기본 인센티브 없음.',
