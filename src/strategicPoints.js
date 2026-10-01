@@ -1,7 +1,9 @@
+import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 export const STRATEGIC_PRODUCT_POINTS = Object.freeze({
   vasStrategicPlan: 0.5, vasKyobo: 1, vasVcolor: 1, vasVcolorBundle: 1,
   vasPhonePass: 0.8, vasSafePass: 0.8, vasVcolorMusic: 0.3, vasBellMoya: 0.3,
   vasDualNumber: 0.4, vasDesignatedNumber: 0.2, vasDaemyung: 2,
+  ...Object.fromEntries(ADDITIONAL_STRATEGIC_SERVICES.map(item=>[item.key,item.point])),
 });
 
 export function strategicProductKeys(meta = {}) {

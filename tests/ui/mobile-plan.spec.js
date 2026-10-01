@@ -106,3 +106,19 @@ test('중고 신규 실제 요금제 61→70 전환과 삭제는 생산성 인�
  expect(state.day.matrix[6][5]).toBe(0);expect(state.day.matrix[6][0]).toBe(1);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[6][0]).toBe(0);
 });
+for(const width of [320,390])test(`${width}px 신규 부가서비스 0원·포인트·필링 교체·수정·삭제`,async({page})=>{
+ const state=await open(page,{width});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();await dialog.getByPlaceholder('고객명을 입력해주세요').fill('부가서비스 고객');await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_115');
+ await dialog.getByRole('button',{name:/기타 전략 항목 펼치기/}).click();
+ for(const [label,point] of [['벨링모아A + AI보이스링(인사말)','0.3P'],['벨링모아A + AI보이스링 캐릭터플러스','0.5P'],['V컬러링 기본','0.3P'],['V프로필','0.3P'],['통화편의팩','0.6P'],['통화기능안내','0.1P']]){
+  const button=dialog.getByRole('button').filter({hasText:label});await expect(button).toContainText(point);await expect(button).not.toContainText('원');
+ }
+ async function select(label){await dialog.getByRole('button').filter({hasText:label}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();}
+ await select('V프로필');await select('V컬러링 기본');await select('통화편의팩');
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[0].p_meta.vasKeys).toEqual(['vasVcolorBasic','vasCallConvenience']);expect(state.day.groups.vas.vasVprofile||0).toBe(0);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();if(await dialog.getByRole('button',{name:/기타 전략 항목 펼치기/}).count())await dialog.getByRole('button',{name:/기타 전략 항목 펼치기/}).click();await select('벨링모아A + AI보이스링 캐릭터플러스');
+ await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[1].p_meta.vasKeys).toEqual(['vasCallConvenience','vasBellAiCharacter']);expect(state.day.groups.vas.vasVcolorBasic).toBe(0);expect(state.day.groups.vas.vasBellAiCharacter).toBe(1);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.groups.vas.vasCallConvenience).toBe(0);expect(state.day.groups.vas.vasBellAiCharacter).toBe(0);
+});

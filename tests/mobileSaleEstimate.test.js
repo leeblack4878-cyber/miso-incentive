@@ -110,3 +110,17 @@ test('used-new productivity counts only actual plans at least 66 while preservin
   assert.equal(result.kpi.kpiUsedNew010,count,key);
  }
 });
+
+test('new zero-fee strategic services add points without a direct VAS fee in actual payroll',async()=>{
+ const {ADDITIONAL_STRATEGIC_SERVICES:services}=await import('../src/additionalStrategicServices.js');
+ const {octoberConfig}=await import('../src/octoberPolicy.js');const config=octoberConfig(api.defaultConfig());
+ for(const service of services){
+  const day=api.normalizeDay();day.matrix[1][0]=1;day.groups.vas[service.key]=1;
+  const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
+  const pay=api.computePay(draft,'기타',null,'2026-10',config,0,{strategicPointsWithoutDaemyung:service.point,daemyungCount:0});
+  assert.equal(pay.vasPay,0,service.key);
+ }
+ const day=api.normalizeDay();day.groups.vas.vasKyobo=1;day.groups.vas.vasVcolorBundle=1;day.groups.vas.vasPhonePass=1;
+ const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
+ assert.equal(api.computePay(draft,'기타',null,'2026-10',config,0,null).vasPay,50000);
+});
