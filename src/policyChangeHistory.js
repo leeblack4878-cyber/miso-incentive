@@ -1,6 +1,14 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-01-second-parent',month:'2026-10',date:'2026-10-01',title:'2ND 전월 모단말 인정 확정',effective:'10월 1일부터 적용',changes:[
+    '갤럭시: 정책 대상 모단말의 전월 판매건도 인정.',
+    '애플: 아이폰18 프로·프로맥스만 전월 모단말 인정.',
+    '전월 HS를 다시 집계하지 않고 이번 달 2ND만 반영.',
+  ],details:[
+    '애플워치 주회선 115군·보험 면제, 갤럭시 보험 및 일반/할인판매 지급 기준 유지.',
+    '전월 모단말 모델·판매일·요금제군을 입력하고 2ND 기기를 선택해 등록.',
+  ]},
   {id:'2026-10-01',month:'2026-10',date:'2026-10-01',title:'10월 기본 정책',effective:'10월 1일부터 적용',changes:[
     'SIM MNP 115군: 8만원 → 9만원',
     '전략P 디메리트: 160% 미만 → 170% 미만',
@@ -10,7 +18,7 @@ export const POLICY_CHANGE_HISTORY = [
     '홈캠 Lite 5만원 / 일반 스마트홈 10만원. 스마트홈 동시판매 추가 5만원 제외.',
     '홈 무실적 시 모델 추가금과 양수 퀄리티 보너스도 50% 지급.',
     '6개월 미만 단기기변은 실적 입력 대상에서 제외. 분모·생산성만 별도 인정하지 않음.',
-    '2ND 결합 날짜는 기존 기준 유지(재확인 예정). 애플워치 보험 면제 유지.',
+    '최초 반영 시 2ND 날짜 조건은 확인 대기. 이후 전월 모단말 인정 기준 확정(별도 이력). 애플워치 보험 면제 유지.',
   ]},
   {id:'2026-09-23-correction',month:'2026-09',date:'2026-09-23',title:'애플워치·건별 금액 정정',effective:'9월 실적에 반영',changes:[
     '애플워치 보험 미가입 차감 제거. 주회선 115군 조건 유지.',

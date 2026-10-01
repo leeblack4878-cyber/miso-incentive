@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 import {estimateMobileSale,changeStrategicMetric,mobileSaleOffsets} from '../src/mobileSaleEstimate.js';
 import {septemberConfig} from '../src/septemberPolicy.js';
 // Use the actual payroll engine; replace only its unrelated database client.
-const result=await build({stdin:{contents:"export {normalizeDay,applyDailyToDraft,computePay} from './src/appShared.jsx'; export {defaultConfig} from './src/policyDefaults.js'; export {emptyDraft} from './src/viewShared.js';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'no-database',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'db',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export const supabase={};'}));}}]});
+const result=await build({stdin:{contents:"export {normalizeDay,applyDailyToDraft,computePay,mobileTeamCreditMetrics} from './src/appShared.jsx'; export {defaultConfig} from './src/policyDefaults.js'; export {emptyDraft} from './src/viewShared.js';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'no-database',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'db',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export const supabase={};'}));}}]});
 const mod={exports:{}};new Function('require','module','exports',result.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports);
 const api=mod.exports;
 const config=septemberConfig(api.defaultConfig());
@@ -46,4 +46,33 @@ test('October retains September Sono tier and renewal formulas',async()=>{
  const draft=api.emptyDraft();draft.sono={sonoBasic:5,sono594:5};draft.tailoredCount=20;
  const pay=api.computePay(draft,'기타',null,'2026-10',config);
  assert.equal(pay.sonoPay,900000);assert.equal(pay.tailoredBonus,140000);
+});
+
+test('previous-parent 2ND: one child / 0.2P / no HS or standalone; edit and delete preserve prior totals',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');
+ const {dayAfterSaleDeletion}=await import('../src/saleMutations.js');
+ const config=octoberConfig(api.defaultConfig()),day=api.normalizeDay();
+ day.matrix[1][0]=2;day.matrix[7][0]=3; // existing unrelated sales must survive
+ const meta={ri:7,ci:0,secondOnlyBundle:true,secondParent:{model:'iphone18_pro_max',date:'2026-09-18',ci:0},vasKeys:[],bundle2ndKeys:['b_AppleWatch'],bundleVasMap:{},bundleSaleTypeMap:{b_AppleWatch:'normal'},bundleVasCommissionExcluded:true};
+ const args={meta,dayKey:'01',dailyDays:{'01':day},draft:api.emptyDraft(),strategicMetric:{strategicPointsWithoutDaemyung:0,daemyungCount:0},month:'2026-10',config,employee:{position:'기타'},september:true};
+ const fresh=estimateMobileSale(args,api);
+ assert.ok(Math.abs(fresh.points-.2)<1e-9);assert.ok(Math.abs(fresh.productivity-.2)<1e-9);
+ assert.equal(fresh.rows.find(x=>x[0]==='2ND 기본금액')[1],150000);
+ assert.equal(fresh.rows.find(x=>x[0]==='홈 실적 기준 예상 조정')[1],-75000);
+ assert.equal(fresh.rows.some(x=>['요금제','115군 비중 · 해당 판매','전략포인트 비중 · 해당 판매'].includes(x[0])),false);
+ const saved=structuredClone(day);saved.groups.bundle2nd.b_AppleWatch=1;
+ const sale={source_type:'mobile',source_meta:meta};
+ assert.deepEqual(estimateMobileSale({...args,existingSale:sale,dailyDays:{'01':saved}},api),fresh);
+ const edited=estimateMobileSale({...args,existingSale:sale,dailyDays:{'01':saved},meta:{...meta,bundleSaleTypeMap:{b_AppleWatch:'discount'}}},api);
+ assert.equal(edited.rows.find(x=>x[0]==='2ND 할인·조건 미충족 제외')[1],-130000);
+ const removed=dayAfterSaleDeletion(saved,sale,mobileSaleOffsets(meta,config,true));
+ assert.deepEqual(removed.matrix,day.matrix);assert.equal(removed.groups.bundle2nd.b_AppleWatch,0);
+ assert.equal(mobileSaleOffsets({...meta,secondParent:{...meta.secondParent,ci:1}},config,true).bundleOffset,150000);
+ assert.equal(mobileSaleOffsets({ri:7,ci:0,bundle2ndKeys:['b_AppleWatch']},config,true).bundleOffset,0); // historical behavior
+});
+
+test('previous-parent support sale credits the chosen team only with one child and no matrix count',()=>{
+ const day=api.mobileTeamCreditMetrics({ri:7,ci:0,secondOnlyBundle:true,bundle2ndKeys:['b_L335'],vasKeys:[]});
+ assert.equal(day.matrix.flat().reduce((a,b)=>a+b,0),0);assert.equal(day.groups.bundle2nd.b_L335,1);
+ assert.equal(api.mobileTeamCreditMetrics({ri:7,ci:0}).matrix[7][0],1);
 });

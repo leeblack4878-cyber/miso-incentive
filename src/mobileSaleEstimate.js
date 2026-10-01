@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle, secondParentCi } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION } from './octoberPolicy.js';
 import {chuseokSalePay} from './chuseokPolicy.js';
 import { summarizeStrategicProducts } from './strategicPoints.js';
@@ -18,7 +19,7 @@ export function mobileSaleOffsets(meta, config, september) {
     const type=meta.bundleSaleTypeMap?.[key]||'normal';
     if(september) bundleOffset+=calculateSeptemberBundleSale({rate,saleType:type,
       insuranceJoined:!(meta.bundleVasMap?.[key]||[]).includes('vasNone'),
-      parent115:Number(meta.ci)===0,isAppleWatch:key==='b_AppleWatch'}).offset;
+      parent115:Number(secondParentCi(meta))===0,isAppleWatch:key==='b_AppleWatch'}).offset;
     else if(type==='free') bundleOffset+=rate;
     else continue;
     if(!meta.bundleVasCommissionExcluded) for(const vas of meta.bundleVasMap?.[key]||[])
@@ -46,7 +47,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   }
   const next=structuredClone(base);
   const add=(obj,key,value=1)=>{obj[key]=Number(obj[key]||0)+value;};
-  add(next.matrix[meta.ri],meta.ci);
+  if(!isSecondOnlyBundle(meta))add(next.matrix[meta.ri],meta.ci);
   for(const key of meta.vasKeys||[])if(key!=='vasNone')add(next.groups.vas,key);
   if(!meta.bundleVasCommissionExcluded)for(const key of Object.values(meta.bundleVasMap||{}).flat())if(key!=='vasNone')add(next.groups.vas,key);
   for(const key of meta.bundle2ndKeys||[])add(next.groups.bundle2nd,key);

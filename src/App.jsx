@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { loadHomePolicyMetadata } from './homePolicyMetadata';
 import {chuseokPolicy} from './chuseokPolicy';
 import {getInstallState,subscribeInstall,requestAppInstall} from './pwaInstall';
@@ -3345,7 +3346,7 @@ function MyInputSummary({userId,month,config}){
         const rd=MATRIX_ROW_DEFS[ri];
         if(!rd)return;
         const label=rd.hasTiers?`${rd.dailyLabel||rd.label} · ${MATRIX_COLS[ci]||''}`:(rd.dailyLabel||rd.label);
-        inc(mobile,label);
+        if(!isSecondOnlyBundle(meta))inc(mobile,label);
         if(HS_PARTS.some(p=>p.idx===ri))totalHs++;
         if(meta.strategicPlan)totalStrategicPlan++;
         [...(meta.vasKeys||[]),...Object.values(meta.bundleVasMap||{}).flat()].forEach(k=>{
@@ -4769,7 +4770,7 @@ function SettlementReview({ month, rows, employees, config, authUserId }) {
         const meta=x.source_meta||{}, customer=x.customers?.customer_name||'이름 없음';
         if(x.source_type==='mobile'){
           const ri=Number(meta.ri),ci=Number(meta.ci);
-          const matrixRate=Number(config.matrix?.[ri]?.[ci]||0);
+          const matrixRate=isSecondOnlyBundle(meta)?0:Number(config.matrix?.[ri]?.[ci]||0);
           if(matrixRate)ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'요금제 유치 수수료',amount:matrixRate,note:`${MATRIX_ROW_DEFS[ri]?.dailyLabel||MATRIX_ROW_DEFS[ri]?.label||''}${MATRIX_ROW_DEFS[ri]?.hasTiers?` · ${MATRIX_COLS[ci]||''}`:''}`});
           const normalVas=[...(meta.vasKeys||[])];
           normalVas.forEach(k=>{if(k==='vasNone')return;const it=(config.vas||[]).find(v=>v.key===k);if(Number(it?.rate||0))ledger.push({date:x.sale_date,customer,type:x.metric_label||'모바일',item:'VAS 유치 수수료',amount:Number(it.rate),note:it.label||k});});

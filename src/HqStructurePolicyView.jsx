@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import React, { useEffect, useState } from 'react';
 import { Building2, Loader2 } from 'lucide-react';
 import { supabase } from './supabase';
@@ -123,7 +124,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
           else changeUnder95 += 1;
         }
         if (rowIndex === 5) simMnp += 1;
-        if (rowIndex === 7) second += 1;
+        if (rowIndex === 7 && !isSecondOnlyBundle(meta)) second += 1;
         second += Array.isArray(meta.bundle2ndKeys) ? meta.bundle2ndKeys.length : 0;
       });
 

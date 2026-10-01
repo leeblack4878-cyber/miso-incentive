@@ -91,3 +91,10 @@ test('대표 직원 8명의 월간 최종 예상 급여가 정답 원장과 일�
     assert.equal(result.total, total, name);
   });
 });
+
+test('previous-parent child snapshot has no parent activity or plan, preserves discounted fee',()=>{
+ const policy=createPolicySnapshot({version:'2026-10-v1',matrixRates:Array.from({length:8},()=>[50000]),bundleRates:[{key:'b_AppleWatch',rate:150000}]});
+ const meta={ri:7,ci:0,secondOnlyBundle:true,secondParent:{ci:0},policySnapshot:policy,bundle2ndKeys:['b_AppleWatch'],bundleSaleTypeMap:{b_AppleWatch:'discount'}};
+ const result=calculateMobileSale({source_meta:meta});
+ assert.equal(result.matrixRate,0);assert.equal(result.paid.second,20000);assert.equal(result.activityCount,1);assert.equal(result.performancePoints,.2);
+});
