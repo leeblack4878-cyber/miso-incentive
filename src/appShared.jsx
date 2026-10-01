@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION, octoberQuality } from './octoberPolicy.js';
 import { useState, useEffect } from 'react';
 import { Check, AlertTriangle, UploadCloud } from 'lucide-react';
@@ -345,9 +346,9 @@ function normalizeDay(raw) {
   };
 }
 
-function mobileTeamCreditMetrics({ri,ci,vasKeys=[],bundle2ndKeys=[],usedMnpBundle=false,specialMatrixOffset=0,specialVasOffset=0,specialReplacementPay=0,bundleFreeOffset=0,bundleFreeVasOffset=0}){
+function mobileTeamCreditMetrics({ri,ci,secondOnlyBundle=false,vasKeys=[],bundle2ndKeys=[],usedMnpBundle=false,specialMatrixOffset=0,specialVasOffset=0,specialReplacementPay=0,bundleFreeOffset=0,bundleFreeVasOffset=0}){
   const day=emptyDay();
-  day.matrix[ri][ci]=1;
+  if(!isSecondOnlyBundle({ri,secondOnlyBundle}))day.matrix[ri][ci]=1;
   vasKeys.filter(key=>key!=='vasNone').forEach(key=>{day.groups.vas[key]=Number(day.groups.vas[key]||0)+1});
   bundle2ndKeys.forEach(key=>{day.groups.bundle2nd[key]=Number(day.groups.bundle2nd[key]||0)+1});
   if(usedMnpBundle)day.groups.mnpBundle.usedMnpBundle=1;

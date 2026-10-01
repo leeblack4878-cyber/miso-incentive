@@ -1,5 +1,6 @@
+import { isSecondOnlyBundle, secondParentCi } from './secondParentPolicy.js';
 import { summarizeStrategicProducts } from './strategicPoints.js';
-import { calculateSeptember18WeekendHomeBonus } from './septemberPolicy.js';
+import { calculateSeptember18WeekendHomeBonus, calculateSeptemberBundleSale } from './septemberPolicy.js';
 
 export const SECOND_PERFORMANCE_POINT = 0.2;
 export const INSURANCE_QUALITY_POINT = 0.8;
@@ -110,16 +111,20 @@ export function resolveSalePolicySnapshot(sale = {}, currentPolicy = {}) {
 export function calculateMobileSale(sale = {}, currentPolicy = {}) {
   const meta = sale?.source_meta || sale?.meta || {};
   const policy = resolveSalePolicySnapshot(sale, currentPolicy);
-  const matrixRate = positive(policy.matrixRates?.[Number(meta.ri)]?.[Number(meta.ci)]);
+  const matrixRate = isSecondOnlyBundle(meta)?0:positive(policy.matrixRates?.[Number(meta.ri)]?.[Number(meta.ci)]);
   const directVasKeys = meta.vasKeys || [];
   const bundleKeys = meta.bundle2ndKeys || [];
   const bundleVasMap = meta.bundleVasMap || {};
   const bundleSaleTypeMap = meta.bundleSaleTypeMap || {};
   const directVasPay = directVasKeys.reduce((sum, key) => sum + positive(policy.vasRates?.[key]), 0);
-  const bundlePay = bundleKeys.reduce((sum, key) => (
-    sum + ((bundleSaleTypeMap?.[key] || 'normal') === 'free' ? 0 : positive(policy.bundleRates?.[key]))
-  ), 0);
+  const bundlePay = bundleKeys.reduce((sum, key) => {
+    const rate=positive(policy.bundleRates?.[key]),saleType=bundleSaleTypeMap?.[key]||'normal';
+    if(isSecondOnlyBundle(meta))return sum+calculateSeptemberBundleSale({rate,saleType,
+      insuranceJoined:!(bundleVasMap[key]||[]).includes('vasNone'),parent115:secondParentCi(meta)===0,isAppleWatch:key==='b_AppleWatch'}).paid;
+    return sum+(saleType==='free'?0:rate);
+  }, 0);
   const bundleVasPay = bundleKeys.reduce((sum, bundleKey) => {
+    if(isSecondOnlyBundle(meta)&&meta.bundleVasCommissionExcluded)return sum;
     if ((bundleSaleTypeMap?.[bundleKey] || 'normal') === 'free') return sum;
     return sum + (bundleVasMap?.[bundleKey] || [])
       .filter(key => SECOND_ALLOWED_VAS_KEYS.includes(key))
@@ -159,7 +164,7 @@ export function calculateMobileSale(sale = {}, currentPolicy = {}) {
     performancePoints: Number((secondCount * positive(policy.secondPointRate)).toFixed(10)),
     insuranceCount,
     insurancePoints: Number((insuranceCount * positive(policy.insurancePointRate)).toFixed(10)),
-    activityCount: 1 + secondCount,
+    activityCount: (isSecondOnlyBundle(meta)?0:1) + secondCount,
     freePhone,
     paid: specialOutcome.paid,
     excluded: specialOutcome.excluded,

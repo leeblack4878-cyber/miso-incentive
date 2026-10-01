@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle } from './secondParentPolicy.js';
 // Keep the established reversal amounts; persistence is handled by one RPC.
 export function dayAfterSaleDeletion(base, sale, free = {}) {
   const meta = sale.source_meta || {};
@@ -15,7 +16,7 @@ export function dayAfterSaleDeletion(base, sale, free = {}) {
     } else if (meta.extraType === 'customerReg') subtract(next, 'custRegCount', count);
     else throw new Error('SALE_UNSUPPORTED_SOURCE');
   } else if (sale.source_type === 'mobile' && Number.isInteger(meta.ri) && Number.isInteger(meta.ci) && next.matrix?.[meta.ri]?.[meta.ci] != null) {
-    subtract(next.matrix[meta.ri], meta.ci, 1);
+    if(!isSecondOnlyBundle(meta))subtract(next.matrix[meta.ri], meta.ci, 1);
     const vasKeys = meta.bundleVasCommissionExcluded ? (meta.vasKeys || []) : [...(meta.vasKeys || []), ...Object.values(meta.bundleVasMap || {}).flat()];
     next.groups.vas ||= {};
     next.groups.bundle2nd ||= {};

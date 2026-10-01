@@ -1,3 +1,4 @@
+import { isSecondOnlyBundle, secondParentCi, PREVIOUS_SECOND_PARENTS, previousMonthBounds, validatePreviousSecond } from '../secondParentPolicy';
 import { loadHomePolicyMetadata } from '../homePolicyMetadata';
 import { specialSalesForDate, calculateMonthlySpecialSale } from '../octoberPolicy';
 import { estimateMobileSale, changeStrategicMetric } from '../mobileSaleEstimate';
@@ -71,6 +72,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [householdRenewForm,setHouseholdRenewForm]=useState(()=>emptyHouseholdRenewForm());
   const [householdRenewEditIndex,setHouseholdRenewEditIndex]=useState(null);
   const [mobileSaleDraft,setMobileSaleDraft]=useState(null);
+  const [secondParent,setSecondParent]=useState(null);
+  const secondOnlyBundle=!!secondParent;
   const [planReminderOpen,setPlanReminderOpen]=useState(false);
   const [serviceReminder,setServiceReminder]=useState(null);
   const toggleMainService=(service)=>{
@@ -388,7 +391,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       showAppToast('일일 입력 저장이 끝난 뒤 삭제해주세요.',{tone:'info'});return;
     }
     try {
-      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{},true,meta.ci);
+      const free=bundleFreeAmounts(meta.bundle2ndKeys||[],meta.bundleVasMap||{},meta.bundleSaleTypeMap||{},true,secondParentCi(meta));
       const result=await deleteSaleAtomic(supabase,{userId:currentEmp?.id,sale,normalizeDay,free});
       if(result.daily_data){setDay(normalizeDay(result.daily_data));setSaveState('saved');}
       await onSalesChanged?.();
@@ -630,7 +633,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
     const beforeDay = normalizeDay(customerMeta.baseDayOverride || day);
     const nextMatrix = beforeDay.matrix.map((row) => [...row]);
-    nextMatrix[ri][ci] = (nextMatrix[ri][ci] || 0) + 1;
+    if(!isSecondOnlyBundle({ri,...customerMeta}))nextMatrix[ri][ci] = (nextMatrix[ri][ci] || 0) + 1;
     const vasKeys = Array.isArray(customerMeta.vasKeys) ? customerMeta.vasKeys : [];
     const nextVas = { ...(beforeDay.groups?.vas || {}) };
     vasKeys.forEach((key) => {
@@ -696,7 +699,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const bonusPayDelta = Math.max(0,payDelta-salePayDelta-activityPayDelta);
 
     const rowDef = MATRIX_ROW_DEFS[ri];
-    const label = rowDef.hasTiers
+    const label = customerMeta.secondOnlyBundle?'2ND · 전월 모단말':rowDef.hasTiers
       ? `${rowDef.dailyLabel || rowDef.label} · ${MATRIX_COLS[ci]}`
       : (rowDef.dailyLabel || rowDef.label);
 
@@ -807,7 +810,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if(ci===null || ci<0)ci=0;
 
     return {
-      ri,ci,
+      ri,ci,secondOnlyBundle:isSecondOnlyBundle(meta),secondParent:meta.secondParent,
       vasKeys:cleanArray(meta.vasKeys),
       bundle2ndKeys:cleanArray(meta.bundle2ndKeys),
       bundleVasMap:cleanObj(meta.bundleVasMap),
@@ -826,7 +829,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     (daySales||[]).forEach(sale=>{
       if(sale.source_type==='home_order' || sale.source_type==='extra')return;
       const meta=inferMobileMeta(sale);
-      if(!meta)return;
+      if(!meta||isSecondOnlyBundle(meta))return;
       if(matrix[meta.ri] && Number.isInteger(meta.ci)){
         matrix[meta.ri][meta.ci]=Number(matrix[meta.ri][meta.ci]||0)+1;
       }
@@ -1030,6 +1033,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileCalcOpen(false);
     const editableCi=isConfirmedMonthlyPolicy(month)&&Number(meta.ci)===3?5:meta.ci;
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
+    setSecondParent(isSecondOnlyBundle(meta)?meta.secondParent:null);
+    if(isSecondOnlyBundle(meta))setMobileSaleDraft({ri:7,ci:0,label:'2ND · 전월 모단말'});
     setMobileCustomerName(sale.customers?.customer_name||'');
     const editableVasKeys=(Array.isArray(meta.vasKeys)?meta.vasKeys:[]).map(k=>isConfirmedMonthlyPolicy(month)&&k==='vasVcolor'?'vasVcolorBundle':k);
     setMobileVasKeys([...new Set(editableVasKeys)]);
@@ -1062,6 +1067,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setEditingCompletedTaskCount(0);
     const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
     setMobileSaleDraft({ri,ci,label});
+    setSecondParent(null);
     setMobileDetailsOpen(false);
     setMobileCalcOpen(false);
     setMobileMoreVasOpen(false);
@@ -1085,7 +1091,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileExpenseMemo('');
   };
 
-  const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false, parentCi=mobileSaleDraft?.ci) => {
+  const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false, parentCi=secondOnlyBundle?secondParent.ci:mobileSaleDraft?.ci) => {
     const bundleTable=config.bundle2nd||DEFAULT_BUNDLE2ND;
     const vasTable=config.vas||DEFAULT_VAS;
     let bundleOffset=0, vasOffset=0;
@@ -1119,6 +1125,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         : '현재 적용 가능한 특가&지인정책이 없어요.');
     }
     const saleDate=`${month}-${selectedDay}`;
+    if(secondOnlyBundle){
+      const error=validatePreviousSecond({saleDate,parent:secondParent,bundleKeys:mobileBundle2ndKeys});
+      if(error)return showAppToast(error,{tone:'error'});
+    }
     const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
     if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)){
       const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
@@ -1159,7 +1169,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(editingSale){
         const oldMeta=inferMobileMeta(editingSale);
         if(!oldMeta)throw new Error('기존 판매정보를 확인할 수 없습니다.');
-        base=dayAfterSaleDeletion(base,{...editingSale,source_type:'mobile',source_meta:{...editingSale.source_meta,...oldMeta}},bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{},true));
+        base=dayAfterSaleDeletion(base,{...editingSale,source_type:'mobile',source_meta:{...editingSale.source_meta,...oldMeta}},bundleFreeAmounts(oldMeta.bundle2ndKeys||[],oldMeta.bundleVasMap||{},oldMeta.bundleSaleTypeMap||{},true,secondParentCi(oldMeta)));
       }else if(legacyConversion?.kind==='mobile'){
         base=structuredClone(base);
         base.matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(base.matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);
@@ -1174,13 +1184,14 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
+        secondOnlyBundle,secondParent:secondOnlyBundle?secondParent:null,
         reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
       }));
       const saleId=editingSale?.id||crypto.randomUUID();
       const tasks=buildReminderTasks({saleDate,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]});
       const expenses=mobileExpenseOpen?[{category:mobileExpenseCategory,amount:mobileExpenseAmount,memo:mobileExpenseMemo},...mobileExtraExpenses].filter(x=>Number(x.amount)>0).map(x=>({expense_date:saleDate,amount:Number(x.amount),category:x.category||'기타',customer_name:customer,memo:String(x.memo||'').trim()||null})):[];
       const free=bundleFreeAmounts();
-      const feedbackMeta={estimate:mobilePreview,saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
+      const feedbackMeta={secondOnlyBundle,estimate:mobilePreview,saleId,customerName:customer,promiseCount:tasks.length,strategicPlan:!!mobileStrategicPlan,vasKeys:[...mobileVasKeys],bundleVasMap:mobileBundleVasMap,bundle2ndKeys:mobileBundle2ndKeys,usedMnpBundle:meta.usedMnpBundle,calculationLines:mobilePreview?.calculationLines||[],specialMatrixOffset:specialPolicy?.normalMatrixFee||0,specialVasOffset:specialPolicy?.normalVasFee||0,specialReplacementPay:specialPolicy?.replacementAmount||0,bundleFreeOffset:free.bundleOffset||0,bundleFreeVasOffset:free.vasOffset||0,baseDayOverride:base};
       const next=activeTeamSupport?null:commitMobileOne(mobileSaleDraft.ri,mobileSaleDraft.ci,{...feedbackMeta,prepareOnly:true});
       const spot=editingSale?null:mobileSpotPolicyId?{policy_id:mobileSpotPolicyId}:!isConfirmedMonthlyPolicy(month)&&mobileSpotDirectOpen&&mobileSpotDirectTitle.trim()&&Number(mobileSpotDirectAmount)>0?{direct_title:mobileSpotDirectTitle.trim(),direct_amount:Number(mobileSpotDirectAmount),direct_memo:mobileSpotDirectMemo.trim()||null}:null;
       const credit=activeTeamSupport?{credited_store:teamSupportStore,metrics:mobileTeamCreditMetrics({ri:meta.ri,ci:meta.ci,...feedbackMeta}),note:`${loginEmp?.name||'담당'} 지원 판매`}:null;
@@ -1201,12 +1212,12 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(activeTeamSupport)await onTeamCreditSaved?.();
 
 
+      await loadDaySales();
       setMobileSaleDraft(null);
       setLegacyConversion(null);
       setMobileSaleKind('');
       setMobileSpecialPolicyId('');
       setMobileSpecialExceptionAmount('');
-      setTimeout(loadDaySales,150);
     }catch(e){
       showAppToast(friendlyError(e),{tone:'error',title:editingSale?'판매건 수정 실패':'고객/실적 등록 실패'});
     }finally{
@@ -1309,7 +1320,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
     const oldSp=editingSale?.source_meta?.specialPolicy||{};
-    const previewMeta={teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
+    const previewMeta={secondOnlyBundle,secondParent,teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
       bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,
       bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&Number(mobileSaleDraft.ci)<=3&&mobileUsedMnpBundle,
       specialPolicy:{normalMatrixFee:specialMatrix,normalVasFee:specialVas,replacementAmount:replacement,
@@ -1567,6 +1578,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             <span>{sale.metric_label}</span>
                             {legacySaleBadge(sale)&&<span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-100">구버전 데이터 · 수정 가능</span>}
                           </div>
+                          {isSecondOnlyBundle(meta)&&<div className="text-[11px] text-gray-400 mt-1">{PREVIOUS_SECOND_PARENTS.find(x=>x.key===meta.secondParent?.model)?.label} · {meta.secondParent?.date}</div>}
                           {vasLabels.length>0&&<div className="text-[11px] text-gray-400 mt-1">VAS · {vasLabels.join(' · ')}</div>}
                           {Object.entries(meta.bundleSaleTypeMap||{}).some(([,v])=>v==='free')&&<div className="text-[10px] text-amber-600 mt-1">2ND 무료판매 · 인센티브 제외</div>}
                           {meta.teamOnly&&<div className="text-[10px] font-semibold text-brand-600 mt-1">지원 판매 · {displayStoreName(meta.creditedStore)} 팀 실적 전용</div>}
@@ -1698,7 +1710,35 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               고객명·VAS·2ND 등 당시 저장되지 않은 값은 비워두었어요.
             </div>}
 
-            <div className="mt-4">
+            {month>='2026-10'&&!editingSale&&!legacyConversion&&<button type="button" aria-pressed={secondOnlyBundle} onClick={()=>{
+              const enabled=!secondOnlyBundle;
+              setSecondParent(enabled?{model:'',date:'',ci:null}:null);
+              setMobileSaleDraft(enabled?{ri:7,ci:0,label:'2ND · 전월 모단말'}:{ri:null,ci:null,label:''});
+              setMobileSaleKind('normal');setMobileSpecialPolicyId('');setMobileVasKeys([]);setMobileStrategicPlan(false);
+              setMobileReminders({plan:'keep',services:{}});setMobileUsedMnpBundle(false);
+              setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});setMobileDetailsOpen(enabled);
+            }} className={`mt-4 w-full rounded-xl border px-3 py-3 text-left text-xs font-semibold ${secondOnlyBundle?'bg-brand-50 border-brand-300 text-brand-700':'bg-white border-gray-200 text-gray-600'}`}>
+              {secondOnlyBundle?'✓ ':''}전월 모단말에 2ND 추가
+            </button>}
+            {secondOnlyBundle&&<div className="mt-3 rounded-xl bg-brand-50 p-3 space-y-3">
+              <div className="text-xs font-semibold text-brand-700">전월 모단말 · 이번 달 2ND만 반영</div>
+              <label className="block text-xs text-gray-600">모단말 모델
+                <select aria-label="전월 모단말 모델" value={secondParent.model} onChange={e=>{
+                  setSecondParent(v=>({...v,model:e.target.value}));setMobileBundle2ndKeys([]);setMobileBundleVasMap({});setMobileBundleSaleTypeMap({});
+                }} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white">
+                  <option value="">선택해주세요</option>{PREVIOUS_SECOND_PARENTS.map(x=><option key={x.key} value={x.key}>{x.label}</option>)}
+                </select>
+              </label>
+              <label className="block text-xs text-gray-600">모단말 판매일
+                <input aria-label="모단말 판매일" type="date" value={secondParent.date} min={previousMonthBounds(`${month}-${selectedDay}`)?.start} max={previousMonthBounds(`${month}-${selectedDay}`)?.end} onChange={e=>setSecondParent(v=>({...v,date:e.target.value}))} className="mt-1 w-full min-w-0 rounded-lg border p-2.5 bg-white"/>
+              </label>
+              <label className="block text-xs text-gray-600">모단말 요금제군
+                <select aria-label="모단말 요금제군" value={secondParent.ci??''} onChange={e=>setSecondParent(v=>({...v,ci:Number(e.target.value)}))} className="mt-1 w-full rounded-lg border p-2.5 bg-white">
+                  <option value="" disabled>선택해주세요</option>{activeMatrixOptions.map(({label,ci})=><option key={ci} value={ci}>{label}</option>)}
+                </select>
+              </label>
+            </div>}
+            {!secondOnlyBundle&&<div className="mt-4">
               <div className="text-xs font-semibold text-gray-600 mb-2">1. 판매 구분 *</div>
               <div className="grid grid-cols-3 gap-2">
                 <button type="button"
@@ -1763,12 +1803,13 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             <label className="block text-xs font-semibold text-gray-500 mt-4 mb-1.5">2. 고객명 *</label>
             <input value={mobileCustomerName} onChange={e=>setMobileCustomerName(e.target.value)}
               placeholder="고객명을 입력해주세요" className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm"/>
 
+            {!secondOnlyBundle&&<>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">3. 가입구분</label>
@@ -1876,6 +1917,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             )}
 
+            </>}
             <button type="button" onClick={()=>setMobileDetailsOpen(v=>!v)}
               className={`mt-4 w-full rounded-xl border px-3 py-3 text-left ${mobileDetailsOpen?'bg-brand-50 border-brand-200 text-brand-700':'bg-gray-50 border-gray-100 text-gray-700'}`}>
               <span className="text-xs font-bold">{mobileDetailsOpen?'추가 항목 접기':'2ND·고객약속·영업비용 추가'}</span>
@@ -1888,7 +1930,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="text-xs font-semibold text-gray-600 mb-2">5. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
               <input value={mobileBundleSearch} onChange={e=>setMobileBundleSearch(e.target.value)} placeholder="2ND 기기명 검색" className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2.5 text-xs"/>
               <div className="grid grid-cols-1 gap-1.5">
-                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
+                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!secondOnlyBundle||PREVIOUS_SECOND_PARENTS.some(p=>p.key===secondParent.model&&p.apple===(v.key==='b_AppleWatch'))).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
                   const bundleVasKeys=mobileBundleVasMap[v.key]||[];
                   return <div key={v.key} className={`rounded-xl border ${selected?'bg-brand-50 border-brand-200':'bg-white border-gray-100'}`}>
