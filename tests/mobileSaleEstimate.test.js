@@ -131,3 +131,12 @@ test('dual-number preview metric uses sale month consistently',()=>{
  assert.equal(changeStrategicMetric(metric,meta,1,'2026-09').strategicPointsWithoutDaemyung,10.4);
  assert.equal(changeStrategicMetric(changeStrategicMetric(metric,meta,1,'2026-10'),meta,-1,'2026-10').strategicPointsWithoutDaemyung,10);
 });
+
+test('October weekend unpaid payroll excludes base and VAS but keeps 115 share and strategic bonus',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');const config=octoberConfig(api.defaultConfig()),day=api.normalizeDay();
+ day.matrix[1][0]=1;day.groups.vas={vasKyobo:1,vasVcolorBundle:1,vasPhonePass:1};day.specialMatrixOffset=config.matrix[1][0];day.specialVasOffset=50000;
+ const draft=api.emptyDraft();draft.homePolicy={source:'orders',totalInternetCount:1,gradePay:0,homeFlatPay:0,homeAddonPay:0,total:0};
+ const pay=api.computePay(api.applyDailyToDraft(draft,{'02':day},'2026-10',config.categoryMap,config.gibyeonColumnMap),'사원','2020-01-01','2026-10',config,0,{strategicPointsWithoutDaemyung:2.8,daemyungCount:0});
+ assert.equal(pay.matrixTotal,config.matrix[1][0]);assert.equal(pay.adjustedMatrixTotal,0);assert.equal(pay.vasPay,0);assert.equal(pay.specialReplacementPay,0);assert.equal(pay.plan115Bonus,10000);assert.equal(pay.strategicAdjustment,10000);
+ assert.equal(pay.tenurePay,100000);
+});
