@@ -76,3 +76,12 @@ test('previous-parent support sale credits the chosen team only with one child a
  assert.equal(day.matrix.flat().reduce((a,b)=>a+b,0),0);assert.equal(day.groups.bundle2nd.b_L335,1);
  assert.equal(api.mobileTeamCreditMetrics({ri:7,ci:0}).matrix[7][0],1);
 });
+
+test('reporting plan detail never changes commission, KPI, strategy or stored matrix allocation',async()=>{
+ const {MOBILE_PLANS}=await import('../src/mobilePlans.js');
+ const args=fixture(),original=estimateMobileSale(args,api);
+ for(const planDetail of MOBILE_PLANS){
+  const value=estimateMobileSale({...args,meta:{...args.meta,planDetail}},api);
+  assert.deepEqual(value,original,planDetail.key);
+ }
+});

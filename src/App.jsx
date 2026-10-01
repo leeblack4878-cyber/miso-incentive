@@ -1,3 +1,4 @@
+import {mobilePlanLabel} from './mobilePlans';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { loadHomePolicyMetadata } from './homePolicyMetadata';
 import {chuseokPolicy} from './chuseokPolicy';
@@ -38,6 +39,7 @@ const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePoli
 const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
+const MobilePlanSummary=React.lazy(()=>import('./components/MobilePlanSummary'));
 const PolicyHistory=React.lazy(()=>import('./components/PolicyHistory'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
 import { summarizeVasQuality, homeOrdersForMonth, homeBundleCount, completedHomeCount, calculateMobileSale, specialPolicyLedgerRows, enrichHomeOrdersForPolicy, calculateHomePolicyFromOrders as calculateHomePolicyEngine } from './policyRules';
@@ -3345,7 +3347,7 @@ function MyInputSummary({userId,month,config}){
         const meta=x.source_meta||{}, ri=Number(meta.ri), ci=Number(meta.ci);
         const rd=MATRIX_ROW_DEFS[ri];
         if(!rd)return;
-        const label=rd.hasTiers?`${rd.dailyLabel||rd.label} · ${MATRIX_COLS[ci]||''}`:(rd.dailyLabel||rd.label);
+        const label=rd.hasTiers?`${rd.dailyLabel||rd.label} · ${mobilePlanLabel(meta.planDetail)||MATRIX_COLS[ci]||''}`:(rd.dailyLabel||rd.label);
         if(!isSecondOnlyBundle(meta))inc(mobile,label);
         if(HS_PARTS.some(p=>p.idx===ri))totalHs++;
         if(meta.strategicPlan)totalStrategicPlan++;
@@ -3754,6 +3756,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           <EmployeeHeadOfficeComparison userId={viewedUserId} month={month} mergedDraft={mergedDraft} pay={pay} config={config} />
 
           <MyInputSummary userId={currentEmp?.id||authUser?.id} month={month} config={config} />
+          <React.Suspense fallback={null}><MobilePlanSummary month={month} employees={[{id:currentEmp?.id||authUser?.id}]} personal scopeLabel="개인"/></React.Suspense>
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
             <RowKV label="영업 활동 지원 정책" value={won(pay.tenurePay)} />
@@ -5516,6 +5519,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             scopeRows={dashboardRows} branches={[...new Set(dashboardRows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))]}
             config={config} mode="admin" testPrefix="admin" loadStoreGoals onEditGoals={()=>setAdminTab('storeGoals')}
           ><span className="text-xs text-gray-500 shrink-0">{dashboardEmployees.length}명</span></PerformanceCard>
+
+          <React.Suspense fallback={null}><MobilePlanSummary month={month} employees={performanceEmployees} branches={dashboardBranches} scopeLabel={dashboardLabel}/></React.Suspense>
 
           <details data-testid="dashboard-calendar" className="bg-white rounded-xl border border-gray-100">
             <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-gray-800">날짜별 성과 달력</summary>
