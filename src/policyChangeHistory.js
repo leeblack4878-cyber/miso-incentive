@@ -1,6 +1,11 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-02-weekend',month:'2026-10',date:'2026-10-01',title:'10월 2~5일 주말 특가폰·홈 활성화',effective:'특가폰:10/2~5 개통 · 홈:10/2~5 청약+10월 내 설치 완료',changes:[
+    '대상 특가폰의 요금제·VAS·보험 및 모델별 추가금 미지급. 고객 지원금은 급여와 구분.',
+    '115군 비중60% 추가금,전략P 가감,활동지원과 성과/생산성/전략P 유지.',
+    '홈500MB 이상 인터넷+TV:개인1건10만원,2건 이상은 모든 인정건에 건당15만원 추가.소호 포함.',
+  ],details:['A176:일반55군/시니어·주니어47군 이상+교보sam 또는 V컬러링 패키지+보험.그 외115군(주니어85 인정)+전략2P.요금제6개월·전략상품93일 유지.','홈DPS는 인터넷+메인TV 묶음1건.기존TV요금제틀 유지,부셋탑 별도집계 없음.11월설치 제외.']},
   {id:'2026-10-01-owner-clarifications',month:'2026-10',date:'2026-10-01',title:'듀얼넘버·전략 요금제·2ND 명의 기준 확정',effective:'10월 정책에 적용',changes:[
     '듀얼넘버 매출 포인트:0.4P → 표 기준0.3P. 9월 이전0.4P 보존.',
     '부가서비스의 전략 요금제 선택 제거. 요금제 조건별 본사 전략요금제 체크로 통일.',

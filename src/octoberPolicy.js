@@ -1,3 +1,4 @@
+import {OCTOBER_WEEKEND_SPECIAL_SALES,calculateOctoberWeekendSale} from './octoberWeekendPolicy.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 import { septemberConfig, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale } from './septemberPolicy.js';
 
@@ -20,11 +21,12 @@ export const OCTOBER_SPECIAL_SALES = MODEL_RATES.flatMap(([model,mnp,change]) =>
   }))
 );
 export function specialSalesForDate(date) {
-  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?OCTOBER_SPECIAL_SALES:SEPTEMBER_SPECIAL_SALES;
+  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
   return policies.filter(p=>p.startDate<=date&&p.endDate>=date);
 }
 export function calculateMonthlySpecialSale(args={}) {
-  return calculateSeptemberSpecialSale(args,specialSalesForDate(args.saleDate||''));
+  const policies=specialSalesForDate(args.saleDate||''),policy=policies.find(p=>p.key===args.policyKey);
+  return policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
 }
 export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=false}={}) {
   const hs=matrix.slice(0,5).reduce((sum,row)=>sum+row.reduce((n,v)=>n+Number(v||0),0),0);
