@@ -149,3 +149,10 @@ test('10월 홈캠 Lite 선택과 9월 기본 입력 분리',async({page})=>{
  await expect(dialog.getByRole('button',{name:'홈캠 Lite · 5만원',exact:true})).toHaveClass(/bg-brand-50/);
  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
+
+for(const width of [320,390])test(`${width}px October weekend home retains plan fields and shows personal retroactive additional rate`,async({page})=>{
+ await page.setViewportSize({width,height:844});await openCalendar(page,{date:'2026-10-02',ready:['2026-10']});
+ await page.getByRole('button',{name:/홈 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'홈 실적 입력'});
+ await expect(dialog).toContainText('개인 1건 10만원, 2건 이상은 모든 인정 건에 건당 15만원 추가');await expect(dialog).toContainText('10월 내 설치 완료');await expect(dialog).toContainText('소호 포함');
+ await expect(dialog.getByRole('combobox',{name:/인터넷 요금제/})).toHaveCount(0);expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});

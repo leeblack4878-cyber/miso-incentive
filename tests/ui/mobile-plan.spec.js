@@ -5,8 +5,8 @@ async function choosePlan(page,dialog,key){
 }
 const employeeId='00000000-0000-4000-8000-000000000001';
 const stores=['대야동_롯데마트점','장곡동_장곡역점'];
-async function open(page,{actor='',sales=[],width=390}={}){
- const state={sales,day:null,writes:[]};await page.setViewportSize({width,height:844});await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
+async function open(page,{actor='',sales=[],width=390,date='2026-10-01'}={}){
+ const state={sales,day:null,writes:[]};await page.setViewportSize({width,height:844});await page.clock.setFixedTime(new Date(`${date}T03:00:00Z`));
  await page.route('https://placeholder.supabase.co/**',async route=>{
   const req=route.request(),u=new URL(req.url()),table=u.pathname.split('/').pop();
   if(table==='profiles')return route.fulfill({json:[{id:employeeId,name:'요금제검증',store_name:stores[0],position:'사원',role:'employee',active:true,hire_date:'2026-01-01'},{id:'second',name:'두번째직원',store_name:stores[1],position:'사원',role:'employee',active:true,hire_date:'2026-01-01'},...(actor==='admin'?[{id:'a50a0979-acef-40b1-98b7-f05074f1c835',name:'조회관리자',store_name:'운영진',position:'대표',role:'admin',active:true}]:[])]});
@@ -18,7 +18,7 @@ async function open(page,{actor='',sales=[],width=390}={}){
   }
   if(table==='delete_sale_atomic'){const p=req.postDataJSON();state.writes.push(p);state.day=p.p_next_day;state.sales=[];return route.fulfill({json:{sale_count:1,daily_data:state.day}});}
   if(table==='customer_sales')return route.fulfill({json:state.sales});
-  if(table==='daily_records')return route.fulfill({json:u.searchParams.get('work_date')?.startsWith('eq.')?(state.day?{data:state.day}:null):(state.day?[{user_id:employeeId,work_date:'2026-10-01',data:state.day}]:[])});
+  if(table==='daily_records')return route.fulfill({json:u.searchParams.get('work_date')?.startsWith('eq.')?(state.day?{data:state.day}:null):(state.day?[{user_id:employeeId,work_date:date,data:state.day}]:[])});
   return route.fulfill({json:[]});
  });
  await page.goto(`/tests/ui/calendar.html?actor=${actor}&open=daily`);
@@ -122,4 +122,19 @@ for(const width of [320,390])test(`${width}px 신규 부가서비스 0원·포�
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();if(await dialog.getByRole('button',{name:/기타 전략 항목 펼치기/}).count())await dialog.getByRole('button',{name:/기타 전략 항목 펼치기/}).click();await select('벨링모아A + AI보이스링 캐릭터플러스');
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[1].p_meta.vasKeys).toEqual(['vasCallConvenience','vasBellAiCharacter']);expect(state.day.groups.vas.vasVcolorBasic).toBe(0);expect(state.day.groups.vas.vasBellAiCharacter).toBe(1);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.groups.vas.vasCallConvenience).toBe(0);expect(state.day.groups.vas.vasBellAiCharacter).toBe(0);
+});
+
+for(const width of [320,390])test(`${width}px October weekend unpaid sale validates, preserves plan115 bonus inputs and edits/deletes`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-02'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'인센미지급 특가',exact:true}).click();
+ await dialog.getByRole('button',{name:/10\/2~5 주말 · S942-256\/512 · MNP/}).click();
+ await expect(dialog.getByText(/115군 비중 60% 추가금/)).toBeVisible();
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('주말 특가');await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_115');
+ await dialog.getByRole('button',{name:/교보문고 sam/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await dialog.getByRole('button',{name:/V컬러링 음악감상 플러스.*벨링/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(state.writes[0].p_meta.specialPolicy.customerDiscount).toBe(350000);expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(0);expect(state.writes[0].p_meta.specialPolicy.preorder).toBe(false);expect(state.writes[0].p_sale_date).toBe('2026-10-02');expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);expect(state.day.specialVasOffset).toBe(0);
 });

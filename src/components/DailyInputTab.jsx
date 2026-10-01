@@ -1155,9 +1155,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     }
     const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
     if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)){
-      const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
+      const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
       if(!selectedSpecial||!outcome.dateEligible||!outcome.typeEligible)return showAppToast('선택한 정책의 개통일과 가입 구분을 확인해주세요.',{tone:'error'});
-      if(mobileSaleKind==='incentive_unpaid'&&!outcome.eligible)return showAppToast('아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
+      if(mobileSaleKind==='incentive_unpaid'&&!outcome.eligible)return showAppToast(selectedSpecial.conditionLabel||'아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
     }
     const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
     const invalidSecondVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bundle,keys])=>(keys||[]).filter(k=>!allowedSecondKeys.has(k)).map(k=>({bundle,key:k})));
@@ -1203,9 +1203,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const oldSp=editingSale?.source_meta?.specialPolicy||{};
       const strategicPoints=mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
       const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)
-        ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
+        ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
         :{eligible:true,additionalAmount:Number(policy?.replacement_amount??oldSp.replacementAmount??0)};
-      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!!policy?.customerDiscount,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
+      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!policy?.weekend&&!!policy?.customerDiscount,weekend:!!policy?.weekend,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
         planDetail:!secondOnlyBundle&&mobileSaleDraft.ri!==7?getMobilePlan(planDetail):null,
@@ -1342,7 +1342,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
+    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
     const oldSp=editingSale?.source_meta?.specialPolicy||{};
     const previewMeta={secondOnlyBundle,secondParent,teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
@@ -1761,9 +1761,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 <div className="text-xs font-bold text-gray-700">적용할 인센미지급 정책</div>
                 <button type="button" onClick={()=>setMobileSpecialPolicyId('')} className={`w-full rounded-lg border p-2 text-left text-xs ${!mobileSpecialPolicyId?'border-red-300 bg-red-50':'border-gray-200'}`}>{!mobileSpecialPolicyId?'✓ ':''}일반 인센미지급 특가</button>
                 {specialPolicies.filter(p=>p.policy_type==='incentive_unpaid').map(p=><button type="button" key={p.id} onClick={()=>setMobileSpecialPolicyId(p.id)} className={`w-full rounded-lg border p-2 text-left text-xs ${mobileSpecialPolicyId===p.id?'border-red-300 bg-red-50':'border-gray-200'}`}>
-                  <div className="font-bold">{mobileSpecialPolicyId===p.id?'✓ ':''}{p.title}</div><div className="mt-1">고객 할인 {won(p.customerDiscount)} · 인센티브 미지급</div>
+                  <div className="font-bold">{mobileSpecialPolicyId===p.id?'✓ ':''}{p.title}</div><div className="mt-1">{p.customerZeroPrice?'공시 적용 후 기기값 0원':`고객 지원금 ${won(p.customerDiscount)}`} · 인센티브 미지급</div>{p.conditionLabel&&<div className="mt-1 text-[10px] text-gray-500">{p.conditionLabel}</div>}
                 </button>)}
-                <div className="text-[10px] text-gray-600">아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.</div>
+                <div className="text-[10px] text-gray-600">{month>='2026-10'?'주말 정책은 10/2~5 개통 기준이에요. 요금제 6개월·전략상품 93일 유지. 115군 비중 60% 추가금과 전략P 비중 가감은 유지돼요.':'아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.'}</div>
               </div>}
 
               {mobileSaleKind==='special'&&(
@@ -2197,6 +2197,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                   <button type="button" onClick={()=>{if(homeInternet){setHomeInternet(false);setHomeInternetSpeed('');setHomeMainTv(false);setHomeMainTvPlan('')}else setHomeInternet(true)}} className="w-full flex items-center justify-between text-sm font-bold"><span className={homeInternet?'text-brand-700':'text-gray-600'}>{homeInternet?'✓ ':''}인터넷</span>{homeInternetSpeed&&<span className="text-xs text-brand-600">{{100:'100MB',500:'500MB','1g':'1GB'}[homeInternetSpeed]}</span>}</button>
                   {homeInternet&&!homeInternetSpeed&&<div className="grid grid-cols-3 gap-2 mt-2">{[['100','100MB'],['500','500MB'],['1g','1GB']].map(([k,l])=><button key={k} type="button" onClick={()=>setHomeInternetSpeed(k)} className="py-2.5 rounded-lg border border-brand-200 bg-white text-xs font-bold text-brand-700">{l}</button>)}</div>}
                   {homeInternet&&september18HomeApplication(`${month}-${selectedDay}`)&&<div className="mt-2 text-[10px] leading-relaxed text-gray-500">9/18~9/21 청약·9월 설치 완료: 500MB 이상 + 방송패스(첫 달 유지). 소호는 프리미엄 이상 TV. 조건 충족 1~2건은 가정망 건당 10만원, 3건 이상은 전체 건당 15만원. 소호는 건수만 인정하며 MNP 동시판매 시 가정망 건당 10만원 추가.</div>}
+            {month==='2026-10'&&Number(selectedDay)>=2&&Number(selectedDay)<=5&&<div className="mt-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700">10/2~5 주말 홈 · 500MB 이상 인터넷+TV, 10월 내 설치 완료. 개인 1건 10만원, 2건 이상은 모든 인정 건에 건당 15만원 추가(소호 포함). 부셋탑은 별도 건수로 세지 않아요.</div>}
                   {homeInternet&&homeInternetSpeed&&<button type="button" onClick={()=>setHomeInternetSpeed('')} className="mt-1 text-[10px] font-semibold text-gray-400">속도 변경</button>}
                 </div>
                 <div className={`rounded-xl border p-2.5 ${homeMainTv?'border-brand-300 bg-brand-50/50':'border-gray-200 bg-white'}`}>
