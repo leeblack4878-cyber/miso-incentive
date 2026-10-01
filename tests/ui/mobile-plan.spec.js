@@ -24,6 +24,36 @@ async function open(page,{actor='',sales=[],width=390}={}){
  await page.goto(`/tests/ui/calendar.html?actor=${actor}&open=daily`);
  return state;
 }
+// PR #57 supersedes #56's duplicate vasStrategicPlan button: the plan checkbox
+// remains outside the collapsed VAS list and carries the existing 0.5P label.
+for(const width of [320,390])test(`${width}px 전략요금제 접기 밖 0.5P 표시와 V컬러링 첫 항목`,async({page})=>{
+ await open(page,{width});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();
+ await choosePlan(page,dialog,'general_115');
+
+ const collapsed=dialog.getByRole('button',{name:/기타 전략 항목 펼치기/});
+ const strategic=dialog.getByRole('button',{name:/본사 전략요금제/});
+ const vasSection=dialog.locator('div.mt-4').filter({has:page.getByText('5. 메인회선 전략 부가서비스(VAS)',{exact:false})});
+ const firstVas=vasSection.getByRole('button').first();
+ async function expectPrimaryDisplay(){
+  await expect(collapsed).toBeVisible();
+  await expect(dialog.getByRole('button',{name:/기타 전략 항목 접기/})).toHaveCount(0);
+  await expect(strategic).toBeVisible();
+  await expect(strategic.getByText('매출지표 +0.5P',{exact:true})).toBeVisible();
+  await expect(firstVas.locator('span.font-semibold')).toHaveText('V컬러링 음악감상 플러스 + 벨링 콘텐츠 팩');
+  await expect(firstVas).toBeVisible();
+  expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ }
+ await expectPrimaryDisplay();
+ // Reclosing the optional list must not hide either primary control.
+ await collapsed.click();
+ await dialog.getByRole('button',{name:/기타 전략 항목 접기/}).click();
+ await expectPrimaryDisplay();
+});
 for(const width of [320,390])test(`${width}px 실제 요금제 선택·수정·삭제와 지급 구간 보존`,async({page})=>{
  const state=await open(page,{width});await page.getByRole('button',{name:/모바일 실적 입력/}).click();
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
