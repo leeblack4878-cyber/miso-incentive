@@ -11,6 +11,41 @@ test('29 reporting choices retain all user types, low-tier variants and unique s
  assert.notEqual(mobilePlanLabel(plan('senior_47')),mobilePlanLabel(plan('general_47')));
  assert.equal(getMobilePlan({key:'general_95',type:'senior'}),null);
 });
+// Explicit expectations: do not derive these labels from the production catalog.
+test('all 29 mobile plan keys retain their exact approved labels',()=>{
+ const expected=[
+  ['general_130','130군'],
+  ['general_115','115군'],
+  ['general_105','105군'],
+  ['general_95','95군'],
+  ['general_85','85군(플랜MAX)'],
+  ['general_75','75군(플랜150GB)'],
+  ['general_70','70군(플랜125GB)'],
+  ['general_61','61군(플랜31GB/50GB/80GB)'],
+  ['general_55','55군(플랜14GB/24GB)'],
+  ['general_47','47군(플랜9GB)'],
+  ['general_37','37군(플랜5GB)'],
+  ['general_33','33군(플랜1.5GB)'],
+  ['general_28','28군(플랜750MB, 300MB)'],
+  ['senior_47','47군_시니어(플랜9GB)'],
+  ['senior_44','44군_시니어(라이트A)'],
+  ['senior_37','37군_시니어(플랜5GB, 라이트B~C)'],
+  ['senior_33','33군_시니어(플랜1.5GB)'],
+  ['senior_28','28군_시니어(플랜300MB, 750MB)'],
+  ['senior_under28','28군 미만_시니어(16.5)'],
+  ['junior_85','85군_주니어(플랜MAX 청소년)'],
+  ['junior_75','75군_주니어(150GB)'],
+  ['junior_70','70군_주니어(125GB)'],
+  ['junior_61','61군_주니어(플랜31GB/50GB/80GB)'],
+  ['junior_55','55군_주니어(플랜14GB/24GB)'],
+  ['junior_47','47군_주니어(플랜9GB)'],
+  ['junior_37','37군_주니어(플랜5GB)'],
+  ['junior_33','33군_주니어(플랜1.5GB)'],
+  ['junior_28','28군_주니어(플랜300MB, 750MB, 키즈29)'],
+  ['junior_under28','28군 미만_주니어(키즈22)'],
+ ];
+ assert.deepEqual(MOBILE_PLANS.map(({key,label})=>[key,label]),expected);
+});
 test('store/type counts separate HS, SIM, missing details; never count previous parent or 2ND',()=>{
  const sales=[sale('1','general_95'),sale('2','general_105'),sale('3','senior_47'),sale('4','junior_85',{ri:5}),sale('5',null),sale('second','general_115',{ri:7,secondOnlyBundle:true}),sale('standalone',null,{ri:7}),{...sale('cancel','general_95'),status:'cancelled'},sale('6','junior_28',{ri:6})];
  const opts={userIds:['a'],branches:['store'],employeeBranches:{a:'store'}};
