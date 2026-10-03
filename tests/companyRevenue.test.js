@@ -9,7 +9,7 @@ test('company plan rates independently match owner amounts across all subscripti
 });
 test('base fee includes every mobile type, pending rules are explicit',()=>{
  for(let ri=0;ri<=7;ri++){const r=summarizeCompanyRevenue([sale('x',115,ri)],'2026-10');assert.equal(r.base,22000);}
- for(const s of [sale('x',115,5),sale('x',47,1,'senior'),sale('x',85,1,'junior'),sale('x',null)]){const r=summarizeCompanyRevenue([s],'2026-10');assert.equal(r.total,22000);assert.equal(r.pending,1);}
+ for(const s of [sale('x',null)]){const r=summarizeCompanyRevenue([s],'2026-10');assert.equal(r.total,22000);assert.equal(r.pending,1);}
  assert.equal(summarizeCompanyRevenue([sale('x',115)],'2026-10').total,176000);
  assert.equal(summarizeCompanyRevenue([sale('x',61)],'2026-10').total,44000);
 });
@@ -29,4 +29,23 @@ test('source date, cancellation, deletion, dedup and editing control revenue wit
 test('only the confirmed representative account can open company revenue',()=>{
  assert.equal(canViewCompanyRevenue('a50a0979-acef-40b1-98b7-f05074f1c835'),true);
  for(const id of [null,'employee','f0329992-ced4-4407-b71d-ed58c5d74aaf'])assert.equal(canViewCompanyRevenue(id),false);
+});
+
+test('October normal junior/senior fees match the first notice block for every catalog plan',()=>{
+ const junior=[[85,143000],[75,66000],[70,66000],[61,66000],[55,66000],[47,66000],[37,22000],[33,22000],[28,22000],['under28',22000]];
+ for(const [tier,amount] of junior)for(const ri of [0,1,2,3,4,6])assert.deepEqual(companyPlanFee(sale('x',tier,ri,'junior').source_meta),{amount,pending:null});
+ for(const tier of [47,44,37,33,28,'under28'])for(const ri of [0,1,2,3,4,6])assert.equal(companyPlanFee(sale('x',tier,ri,'senior').source_meta).amount,[47,44].includes(tier)?66000:[37,33].includes(tier)&&ri===1?22000:0);
+ assert.equal(summarizeCompanyRevenue([sale('x',85,0,'junior')],'2026-10').total,165000);
+ assert.equal(summarizeCompanyRevenue([sale('x',47,2,'senior')],'2026-10').total,88000);
+});
+test('SIM MNP company fees replace normal plan fees and absent tiers pay only base',()=>{
+ for(const [type,rows] of [['general',[[130,198000],[115,198000],[105,198000],[95,198000],[85,198000],[75,143000],[70,143000],[61,143000],[55,99000],[47,99000],[37,99000],[33,99000],[28,0]]],['junior',[[85,198000],[75,143000],[70,143000],[61,143000],[55,99000],[47,99000],[37,99000],[33,99000],[28,99000],['under28',99000]]],['senior',[[47,99000],[44,0],[37,0],[33,0],[28,0],['under28',0]]]])for(const [tier,amount] of rows){
+  const r=summarizeCompanyRevenue([sale('x',tier,5,type)],'2026-10');assert.equal(r.sim,amount);assert.equal(r.plan,0);assert.equal(r.total,22000+amount);assert.equal(r.pending,0);
+ }
+ assert.equal(summarizeCompanyRevenue([sale('x',null,5)],'2026-10').pending,1);
+});
+test('company rules never apply before October and never reclassify old sales',()=>{
+ const older={...sale('old',115),sale_date:'2026-09-30'},copy=structuredClone(older);
+ const result=summarizeCompanyRevenue([older],'2026-09');assert.equal(result.supported,false);assert.equal(result.total,0);assert.deepEqual(older,copy);
+ assert.equal(summarizeCompanyRevenue([sale('new',115)],'2026-10').supported,true);
 });
