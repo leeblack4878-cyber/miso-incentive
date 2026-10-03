@@ -138,3 +138,20 @@ for(const width of [320,390])test(`${width}px October weekend unpaid sale valida
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);expect(state.day.specialVasOffset).toBe(0);
 });
+for(const width of [320,390])test(`${width}px 대표 회사수익은 전체 매장·기본/요금제·미설정·재조회 반영`,async({page})=>{
+ const mk=(id,ri,key,type='general',extra={})=>({id,user_id:employeeId,sale_date:'2026-10-03',source_type:'mobile',source_meta:{ri,planDetail:{key,type},...extra}});
+ const state=await open(page,{actor:'admin',width,sales:[mk('1',1,'general_115'),mk('2',5,'general_115'),mk('3',1,'senior_47','senior'),mk('4',7,null,'general',{secondOnlyBundle:true,bundle2ndKeys:['watch']})]});
+ await page.getByRole('button',{name:'관리자',exact:true}).click();
+ const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();
+ await expect(panel.getByTestId('company-revenue-total')).toHaveText('242,000원');await expect(panel.getByText('추가 수수료 확인 필요 3건')).toBeVisible();
+ await page.getByLabel('운영 현황 매장').selectOption(stores[1]);await expect(panel.getByTestId('company-revenue-total')).toHaveText('242,000원');
+ expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ state.sales=[mk('1',1,'general_105')];await panel.getByRole('button',{name:/회사 예상 수익/}).click();await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByTestId('company-revenue-total')).toHaveText('165,000원');
+ state.sales=[];await panel.getByRole('button',{name:/회사 예상 수익/}).click();await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByTestId('company-revenue-total')).toHaveText('0원');
+});
+test('일반 직원에게 회사 수익 화면이 없다',async({page})=>{await open(page);await expect(page.getByRole('region',{name:'회사 예상 수익'})).toHaveCount(0);});
+test('회사수익 조회 오류는 0원으로 표시하지 않는다',async({page})=>{
+ await open(page,{actor:'admin'});await page.getByRole('button',{name:'관리자',exact:true}).click();
+ await page.route('https://placeholder.supabase.co/**',async route=>{if(new URL(route.request().url()).pathname.endsWith('/customer_sales'))return route.fulfill({status:403,json:{message:'forbidden'}});return route.fallback();});
+ const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByRole('alert')).toContainText('회사 수익을 불러오지 못했어요');await expect(panel.getByTestId('company-revenue-total')).toHaveCount(0);
+});

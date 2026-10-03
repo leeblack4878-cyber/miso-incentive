@@ -39,6 +39,7 @@ const SpecialSalePolicyAdmin=React.lazy(()=>import('./components/SpecialSalePoli
 const HqStructurePolicyView=React.lazy(()=>import('./HqStructurePolicyView'));
 const PasswordResetAdmin=React.lazy(()=>import('./PasswordResetAdmin'));
 const PendingApprovals=React.lazy(()=>import('./PendingApprovals'));
+const CompanyRevenue=React.lazy(()=>import('./components/CompanyRevenue'));
 const MobilePlanSummary=React.lazy(()=>import('./components/MobilePlanSummary'));
 const PolicyHistory=React.lazy(()=>import('./components/PolicyHistory'));
 const ProfileEditRequests=React.lazy(()=>import('./ProfileEditRequests'));
@@ -5520,6 +5521,8 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             scopeRows={dashboardRows} branches={[...new Set(dashboardRows.map(row=>row.branch).filter(branch=>branch&&!NON_SALES_STORES.includes(branch)))]}
             config={config} mode="admin" testPrefix="admin" loadStoreGoals onEditGoals={()=>setAdminTab('storeGoals')}
           ><span className="text-xs text-gray-500 shrink-0">{dashboardEmployees.length}명</span></PerformanceCard>
+
+          <React.Suspense fallback={null}><CompanyRevenue month={month} authUserId={authUserId}/></React.Suspense>
 
           <React.Suspense fallback={null}><MobilePlanSummary month={month} employees={performanceEmployees} branches={dashboardBranches} scopeLabel={dashboardLabel}/></React.Suspense>
 
