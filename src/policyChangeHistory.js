@@ -1,6 +1,7 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-03-company-revenue',month:'2026-10',date:'2026-10-03',title:'회사 예상 수익 기준 1차 등록',effective:'현재 입력한 회사 수수료 기준 조회 · 적용기간 별도 확정 예정',changes:['회사 수익 집계 신설: 모든 모바일 기본 유치 수수료22,000원. 직원 지급액과 별도 계산.','일반130/115군154,000원부터61군22,000원까지 요금제 수수료 추가.33~55군은MNP만22,000원,33군 미만0원.','SIM MNP·시니어·주니어·2ND 추가금은 미설정 표시, 기본수수료만 반영.'],details:['대표 전용 회사 전체 예상액. 시상금·비용·환수는 아직 미포함. 기존 직원 지급정책 변경 없음.']},
   {id:'2026-10-02-weekend',month:'2026-10',date:'2026-10-01',title:'10월 2~5일 주말 특가폰·홈 활성화',effective:'특가폰:10/2~5 개통 · 홈:10/2~5 청약+10월 내 설치 완료',changes:[
     '대상 특가폰의 요금제·VAS·보험 및 모델별 추가금 미지급. 고객 지원금은 급여와 구분.',
     '115군 비중60% 추가금,전략P 가감,활동지원과 성과/생산성/전략P 유지.',
