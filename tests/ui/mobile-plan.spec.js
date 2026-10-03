@@ -143,8 +143,8 @@ for(const width of [320,390])test(`${width}px 대표 회사수익은 전체 매�
  const state=await open(page,{actor:'admin',width,sales:[mk('1',1,'general_115'),mk('2',5,'general_115'),mk('3',1,'senior_47','senior'),mk('4',7,null,'general',{secondOnlyBundle:true,bundle2ndKeys:['watch']})]});
  await page.getByRole('button',{name:'관리자',exact:true}).click();
  const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();
- await expect(panel.getByTestId('company-revenue-total')).toHaveText('242,000원');await expect(panel.getByText('추가 수수료 확인 필요 3건')).toBeVisible();
- await page.getByLabel('운영 현황 매장').selectOption(stores[1]);await expect(panel.getByTestId('company-revenue-total')).toHaveText('242,000원');
+ await expect(panel.getByTestId('company-revenue-total')).toHaveText('506,000원');await expect(panel.getByText('추가 수수료 확인 필요 1건')).toBeVisible();
+ await page.getByLabel('운영 현황 매장').selectOption(stores[1]);await expect(panel.getByTestId('company-revenue-total')).toHaveText('506,000원');
  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  state.sales=[mk('1',1,'general_105')];await panel.getByRole('button',{name:/회사 예상 수익/}).click();await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByTestId('company-revenue-total')).toHaveText('165,000원');
  state.sales=[];await panel.getByRole('button',{name:/회사 예상 수익/}).click();await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByTestId('company-revenue-total')).toHaveText('0원');
@@ -154,4 +154,10 @@ test('회사수익 조회 오류는 0원으로 표시하지 않는다',async({pa
  await open(page,{actor:'admin'});await page.getByRole('button',{name:'관리자',exact:true}).click();
  await page.route('https://placeholder.supabase.co/**',async route=>{if(new URL(route.request().url()).pathname.endsWith('/customer_sales'))return route.fulfill({status:403,json:{message:'forbidden'}});return route.fallback();});
  const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();await expect(panel.getByRole('alert')).toContainText('회사 수익을 불러오지 못했어요');await expect(panel.getByTestId('company-revenue-total')).toHaveCount(0);
+});
+test('회사수익 9월은 계산하지 않고 적용기간 미설정을 표시한다',async({page})=>{
+ await open(page,{actor:'admin'});await page.getByRole('button',{name:'관리자',exact:true}).click();
+ await page.locator('select').filter({has:page.locator('option[value="2026-09"]')}).first().selectOption('2026-09');
+ const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();
+ await expect(panel.getByText('회사 수익 기준은 2026년 10월 개통 건부터 적용해요. 이전 월 기준은 미설정입니다.')).toBeVisible();await expect(panel.getByTestId('company-revenue-total')).toHaveCount(0);
 });
