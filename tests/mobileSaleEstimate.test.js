@@ -140,3 +140,20 @@ test('October weekend unpaid payroll excludes base and VAS but keeps 115 share a
  assert.equal(pay.matrixTotal,config.matrix[1][0]);assert.equal(pay.adjustedMatrixTotal,0);assert.equal(pay.vasPay,0);assert.equal(pay.specialReplacementPay,0);assert.equal(pay.plan115Bonus,10000);assert.equal(pay.strategicAdjustment,10000);
  assert.equal(pay.tenurePay,100000);
 });
+
+test('R825 stock bundle with either insurance: normal 350k / free 100k, no extra pass fee; unchanged edit and delete restore',async()=>{
+ const {octoberConfig}=await import('../src/octoberPolicy.js');const {dayAfterSaleDeletion}=await import('../src/saleMutations.js');
+ const config=octoberConfig(api.defaultConfig()),draft=api.emptyDraft();draft.homeFlat.home1GBOnly=1;
+ for(const vas of ['vasPhonePass','vasSafePass'])for(const [type,paid] of [['normal',350000],['discount',100000]]){
+  const meta={ri:7,ci:0,secondOnlyBundle:true,secondParent:{ci:0},vasKeys:[],bundle2ndKeys:['b_R825FA'],bundleVasMap:{b_R825FA:[vas]},bundleSaleTypeMap:{b_R825FA:type},bundleVasCommissionExcluded:true};
+  const args={meta,dayKey:'05',dailyDays:{},draft,strategicMetric:{strategicPointsWithoutDaemyung:0,daemyungCount:0},month:'2026-10',config,employee:{position:'사원',hireDate:'2020-01-01'},september:true};
+  const estimate=estimateMobileSale(args,api);
+  assert.equal(estimate.rows.some(([label])=>label==='VAS·보험'),false);
+  assert.equal(estimate.rows.filter(([label])=>['2ND 기본금액','2ND 할인·조건 미충족 제외'].includes(label)).reduce((s,[,a])=>s+a,0),paid);
+  const day=api.normalizeDay();day.groups.bundle2nd.b_R825FA=1;day.bundleFreeOffset=350000-paid;
+  const sale={source_type:'mobile',source_meta:meta};
+  assert.deepEqual(estimateMobileSale({...args,existingSale:sale,dailyDays:{'05':day}},api).rows,estimate.rows);
+  const deleted=dayAfterSaleDeletion(day,sale,mobileSaleOffsets(meta,config,true));
+  assert.equal(deleted.groups.bundle2nd.b_R825FA,0);assert.equal(deleted.bundleFreeOffset,0);
+ }
+});

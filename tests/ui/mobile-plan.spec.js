@@ -161,3 +161,37 @@ test('회사수익 9월은 계산하지 않고 적용기간 미설정을 표시�
  const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();
  await expect(panel.getByText('회사 수익 기준은 2026년 10월 개통 건부터 적용해요. 이전 월 기준은 미설정입니다.')).toBeVisible();await expect(panel.getByTestId('company-revenue-total')).toHaveCount(0);
 });
+
+for(const width of [320,390])test(`${width}px 장기재고 추가금 저장 및 2ND 패스 지급액 표시`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-05'});
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await dialog.getByRole('button',{name:/^장기재고 · F946-256 정상 재고 \(블랙\) · MNP 기존 정책/}).click();
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('장기재고 고객');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();
+ await choosePlan(page,dialog,'general_85');
+ await dialog.getByRole('button',{name:/교보문고 sam/}).click();
+ await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await dialog.getByRole('button',{name:/폰안심패스/}).click();
+ await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await expect(dialog.getByText(/재고 소진까지/).first()).toBeVisible();
+ await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();
+ await expect(dialog).toHaveCount(0);
+ expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(700000);
+ expect(state.writes[0].p_meta.specialPolicy.normalMatrixFee).toBe(0);
+ expect(state.day.specialReplacementPay).toBe(700000);
+ await page.getByRole('button',{name:/모바일 실적 입력/}).click();
+ await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('2ND 고객');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_85');
+ await dialog.getByRole('button',{name:/2ND·고객약속/}).click();
+ await dialog.getByRole('button',{name:/R825FA 장기재고/}).click();
+ const card=dialog.getByRole('button',{name:/R825FA 장기재고/}).locator('..');
+ await card.getByRole('button',{name:/폰교체패스/}).click();
+ await expect(card.getByRole('button',{name:/폰교체패스/})).toContainText('별도 인센티브 없음');
+ await card.getByRole('button',{name:'무료판매',exact:true}).click();
+ await expect(card.getByRole('button',{name:/R825FA 장기재고/})).toContainText('100,000원');
+});

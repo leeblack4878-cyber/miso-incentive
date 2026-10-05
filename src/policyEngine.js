@@ -120,12 +120,12 @@ export function calculateMobileSale(sale = {}, currentPolicy = {}) {
   const directVasPay = directVasKeys.reduce((sum, key) => sum + positive(policy.vasRates?.[key]), 0);
   const bundlePay = bundleKeys.reduce((sum, key) => {
     const rate=positive(policy.bundleRates?.[key]),saleType=bundleSaleTypeMap?.[key]||'normal';
-    if(isSecondOnlyBundle(meta))return sum+calculateSeptemberBundleSale({rate,saleType,
-      insuranceJoined:!(bundleVasMap[key]||[]).includes('vasNone'),parent115:secondParentCi(meta)===0,isAppleWatch:key==='b_AppleWatch'}).paid;
+    if(isSecondOnlyBundle(meta)||key==='b_R825FA')return sum+calculateSeptemberBundleSale({rate,saleType,
+      bundleKey:key,insuranceJoined:key==='b_R825FA'?(bundleVasMap[key]||[]).some(k=>['vasPhonePass','vasSafePass'].includes(k)):!(bundleVasMap[key]||[]).includes('vasNone'),parent115:secondParentCi(meta)===0,isAppleWatch:key==='b_AppleWatch'}).paid;
     return sum+(saleType==='free'?0:rate);
   }, 0);
   const bundleVasPay = bundleKeys.reduce((sum, bundleKey) => {
-    if(isSecondOnlyBundle(meta)&&meta.bundleVasCommissionExcluded)return sum;
+    if((isSecondOnlyBundle(meta)||bundleKey==='b_R825FA')&&meta.bundleVasCommissionExcluded)return sum;
     if ((bundleSaleTypeMap?.[bundleKey] || 'normal') === 'free') return sum;
     return sum + (bundleVasMap?.[bundleKey] || [])
       .filter(key => SECOND_ALLOWED_VAS_KEYS.includes(key))
@@ -140,8 +140,8 @@ export function calculateMobileSale(sale = {}, currentPolicy = {}) {
     ? positive(special?.replacementAmount ?? special?.replacement_amount)
     : 0;
   const requested = {
-    plan: matrixRate,
-    vas: directVasPay + bundleVasPay,
+    plan: String(special.policyId||'').startsWith('stock_r825_')?Math.max(0,matrixRate-positive(special.normalMatrixFee)):matrixRate,
+    vas: String(special.policyId||'').startsWith('stock_r825_')?Math.max(0,directVasPay+bundleVasPay-positive(special.normalVasFee)):directVasPay+bundleVasPay,
     insurance: 0,
     second: bundlePay,
     spot: positive(meta.approvedSpotIncentive) + additionalSpecialPay,
@@ -184,12 +184,13 @@ export function specialPolicyLedgerRows(special={},matrixRate=0){
   if(!special.policyId&&!special.policyType&&!special.policy_type)return [];
   const additive=(special.policyType||special.policy_type)==='additive',unpaid=isIncentiveUnpaidPolicy(special),rows=[];
   const note=special.policyTitle||'특가·지인판매';
-  if(!additive){
+  const stockWatch=String(special.policyId||'').startsWith('stock_r825_');
+  if(!additive||stockWatch){
     if(matrixRate)rows.push({item:'특가 요금제 수수료 제외',amount:-Number(matrixRate),note});
     if(Number(special.normalVasFee||0))rows.push({item:'특가 VAS·보험 수수료 제외',amount:-Number(special.normalVasFee),note});
   }
   const amount=unpaid?0:Number(special.exceptionStatus==='approved'?special.exceptionApprovedAmount:special.replacementAmount||0);
-  if(amount)rows.push({item:additive?'모델별 추가 인센티브':'특가 대체 인센티브',amount,note});
+  if(amount)rows.push({item:additive&&!stockWatch?'모델별 추가 인센티브':'특가 대체 인센티브',amount,note});
   return rows;
 }
 

@@ -1,3 +1,4 @@
+import {r825Payout} from './longStockPolicy.js';
 export const SEPTEMBER_POLICY_VERSION = '2026-09-v1';
 export const SEPTEMBER_POLICY_MONTH = '2026-09';
 export const SEPTEMBER_TV_PLAN = '방송패스';
@@ -101,7 +102,7 @@ export const SEPTEMBER_SPECIAL_SALES = [
   ...SEPTEMBER_IPHONE18_SALES,
 ];
 export function septemberMobileSaleType(row){
-  return Number(row)===0?'010 신규':Number(row)===1?'MNP':[2,3,4].includes(Number(row))?'기기변경':null;
+  return Number(row)===7?'2ND':Number(row)===0?'010 신규':Number(row)===1?'MNP':[2,3,4].includes(Number(row))?'기기변경':null;
 }
 
 export function calculateSeptemberSpecialSale({ policyKey, planGroup, strategicPoints = 0, saleDate = '', saleType } = {}, policies = SEPTEMBER_SPECIAL_SALES) {
@@ -146,10 +147,10 @@ export function calculateSeptemberSono(count, baseRate, achievedRate) {
   return safeCount * (safeCount >= 5 ? achievedRate : baseRate);
 }
 
-export function calculateSeptemberBundleSale({ rate = 0, saleType = 'normal', insuranceJoined = true, parent115 = true, isAppleWatch = false } = {}) {
+export function calculateSeptemberBundleSale({ rate = 0, saleType = 'normal', insuranceJoined = true, parent115 = true, isAppleWatch = false, bundleKey = '' } = {}) {
   const normalRate = Math.max(0, Number(rate || 0));
   const eligible = isAppleWatch ? !!parent115 : !!insuranceJoined;
-  const paid = !eligible ? 0 : saleType === 'discount' ? Math.min(20000, normalRate) : normalRate;
+  const paid = bundleKey==='b_R825FA'?r825Payout({saleType,insuranceJoined}):!eligible ? 0 : saleType === 'discount' ? Math.min(20000, normalRate) : normalRate;
   return { eligible, paid, offset: Math.max(0, normalRate - paid), performanceCount: 1, activityCount: 1, performancePoints: 0.2 };
 }
 

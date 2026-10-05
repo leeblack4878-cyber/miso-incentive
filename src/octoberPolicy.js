@@ -1,3 +1,4 @@
+import {LONG_STOCK_SPECIAL_SALES,calculateLongStockSale} from './longStockPolicy.js';
 import {OCTOBER_WEEKEND_SPECIAL_SALES,calculateOctoberWeekendSale} from './octoberWeekendPolicy.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 import { septemberConfig, SEPTEMBER_SPECIAL_SALES, calculateSeptemberSpecialSale } from './septemberPolicy.js';
@@ -21,12 +22,12 @@ export const OCTOBER_SPECIAL_SALES = MODEL_RATES.flatMap(([model,mnp,change]) =>
   }))
 );
 export function specialSalesForDate(date) {
-  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
+  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES,...LONG_STOCK_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
   return policies.filter(p=>p.startDate<=date&&p.endDate>=date);
 }
 export function calculateMonthlySpecialSale(args={}) {
   const policies=specialSalesForDate(args.saleDate||''),policy=policies.find(p=>p.key===args.policyKey);
-  return policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
+  return policy?.stock?calculateLongStockSale(args,policy):policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
 }
 export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=false}={}) {
   const hs=matrix.slice(0,5).reduce((sum,row)=>sum+row.reduce((n,v)=>n+Number(v||0),0),0);
@@ -45,7 +46,7 @@ export function octoberConfig(base={}) {
   matrix[5][0]=90000;
   return {...september,matrix,
     vas:[...september.vas.map(item=>item.key==='vasDualNumber'?{...item,point:0.3}:item),...ADDITIONAL_STRATEGIC_SERVICES.map(item=>({...item}))],
-    bundle2nd:september.bundle2nd.map(item=>({...item,label:item.label.replace('14~17','14~18')})),
+    bundle2nd:[...september.bundle2nd.map(item=>({...item,label:item.label.replace('14~17','14~18')})),{key:'b_R825FA',label:'2ND · R825FA 장기재고',rate:350000}],
     smartHomeLiteRate:50000,
     homeAddon:(september.homeAddon||[]).map(item=>item.key==='smartHomeSimul'?{...item,rate:0}:item),
     policyVersion:OCTOBER_POLICY_VERSION,

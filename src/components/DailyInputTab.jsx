@@ -1120,7 +1120,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const noInsurance=(vasMap?.[k]||[]).includes('vasNone');
       const appleWithout115=k==='b_AppleWatch'&&Number(parentCi)!==0;
       if(isConfirmedMonthlyPolicy(month)){
-        bundleOffset+=calculateSeptemberBundleSale({rate,saleType,insuranceJoined:!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
+        bundleOffset+=calculateSeptemberBundleSale({rate,saleType,bundleKey:k,insuranceJoined:k==='b_R825FA'?(vasMap?.[k]||[]).some(v=>['vasPhonePass','vasSafePass'].includes(v)):!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
       }else if(saleType==='free')bundleOffset+=rate;
       else return;
       if(includeLegacyVasOffset)(vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
@@ -1154,10 +1154,11 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       if(nameError)return showAppToast(nameError,{tone:'error'});
     }
     const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
+    if(mobileSaleKind==='special'&&selectedSpecial?.stockRule==='watch'&&(secondOnlyBundle||mobileBundle2ndKeys.length))return showAppToast('R825FA 단독 장기재고는 2ND 단독으로 입력해주세요. 번들은 기기 목록의 R825FA 장기재고를 선택해주세요.',{tone:'error'});
     if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)){
       const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
       if(!selectedSpecial||!outcome.dateEligible||!outcome.typeEligible)return showAppToast('선택한 정책의 개통일과 가입 구분을 확인해주세요.',{tone:'error'});
-      if(mobileSaleKind==='incentive_unpaid'&&!outcome.eligible)return showAppToast(selectedSpecial.conditionLabel||'아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
+      if((mobileSaleKind==='incentive_unpaid'||selectedSpecial.stock)&&!outcome.eligible)return showAppToast(selectedSpecial.conditionLabel||'아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
     }
     const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
     const invalidSecondVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bundle,keys])=>(keys||[]).filter(k=>!allowedSecondKeys.has(k)).map(k=>({bundle,key:k})));
@@ -1205,7 +1206,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)
         ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
         :{eligible:true,additionalAmount:Number(policy?.replacement_amount??oldSp.replacementAmount??0)};
-      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!policy?.weekend&&!!policy?.customerDiscount,weekend:!!policy?.weekend,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
+      const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!policy?.weekend&&!!policy?.customerDiscount,weekend:!!policy?.weekend,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid||policy?.stockRule==='watch'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid||policy?.stockRule==='watch'?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
         planDetail:!secondOnlyBundle&&mobileSaleDraft.ri!==7?getMobilePlan(planDetail):null,
@@ -1339,8 +1340,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if(!mobileSaleDraft||!mobileSaleKind||!Number.isInteger(mobileSaleDraft.ri)||!Number.isInteger(mobileSaleDraft.ci))return null;
     const saleDate=`${month}-${selectedDay}`;
     const selectedPolicy=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
-    const specialMatrix=mobileSaleKind==='incentive_unpaid'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
-    const specialVas=mobileSaleKind==='incentive_unpaid'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
+    const specialMatrix=mobileSaleKind==='incentive_unpaid'||mobileSaleKind==='special'&&selectedPolicy?.stockRule==='watch'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
+    const specialVas=mobileSaleKind==='incentive_unpaid'||mobileSaleKind==='special'&&selectedPolicy?.stockRule==='watch'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
     const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
@@ -1779,16 +1780,16 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             className={`w-full text-left rounded-lg border px-3 py-2.5 text-xs ${selected?'bg-white border-amber-300 text-amber-800':'bg-white/80 border-gray-100 text-gray-600'}`}>
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
-                              <span className="text-[10px] text-amber-600">기존 정책 +{won(p.replacement_amount)}</span>
+                              <span className="text-[10px] text-amber-600">{p.stockRule==='watch'?'2ND 대체 ':'기존 정책 +'}{won(p.replacement_amount)}</span>
                             </div>
-                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.end_date||''}</div>}
+                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date||''}</div>}{p.stock&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
                           </button>
                         })}
                       </div>
                       {mobileSpecialPolicyId&&(
                         <div className="mt-2">
                           <div className="text-[10px] text-amber-700 leading-relaxed">
-                            기존 요금제·VAS·보험 인센티브에 조건 충족 시 모델별 추가 인센티브를 더해요.
+                            {specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.stockRule==='watch'?'R825FA는 기존 2ND 수수료와 보험 수수료를 제외하고 선택한 장기재고 금액으로 대체해요.':'기존 요금제·VAS·보험 인센티브에 조건 충족 시 모델별 추가 인센티브를 더해요.'}
                           </div>
                         </div>
                       )}
@@ -1974,6 +1975,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
             )}
 
             </>}
+            {!secondOnlyBundle&&mobileSaleDraft.ri===7&&specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.stockRule==='watch'&&<div className="mt-3 rounded-xl border p-3">
+              <div className="text-xs font-semibold mb-2">R825FA 보험 가입 · 별도 보험 인센티브 없음</div>
+              {(config.vas||DEFAULT_VAS).filter(v=>['vasPhonePass','vasSafePass'].includes(v.key)).map(v=><button key={v.key} type="button" onClick={()=>setMobileVasKeys(keys=>keys.includes(v.key)?keys.filter(k=>k!==v.key):[v.key])} className="w-full text-left rounded-lg border p-2 mt-1 text-xs">{mobileVasKeys.includes(v.key)?'✓ ':''}{v.label}</button>)}
+            </div>}
             <button type="button" onClick={()=>setMobileDetailsOpen(v=>!v)}
               className={`mt-4 w-full rounded-xl border px-3 py-3 text-left ${mobileDetailsOpen?'bg-brand-50 border-brand-200 text-brand-700':'bg-gray-50 border-gray-100 text-gray-700'}`}>
               <span className="text-xs font-bold">{mobileDetailsOpen?'추가 항목 접기':'2ND·고객약속·영업비용 추가'}</span>
@@ -2000,13 +2005,13 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       setMobileBundleSaleTypeMap(m=>({...m,[v.key]:m[v.key]||'normal'}));
                       return [...prev,v.key];
                     })} className={`w-full text-left px-3 py-2.5 text-xs ${selected?'text-brand-700':'text-gray-600'}`}>
-                      <span className="font-semibold">{selected?'✓ ':''}{v.label.replace('2ND · ','')}</span><span className="float-right text-[10px] text-gray-400">+{won(v.rate)}</span>
+                      <span className="font-semibold">{selected?'✓ ':''}{v.label.replace('2ND · ','')}</span><span className="float-right text-[10px] text-gray-400">+{won(v.key==='b_R825FA'?calculateSeptemberBundleSale({rate:v.rate,bundleKey:v.key,saleType:mobileBundleSaleTypeMap[v.key]||'normal',insuranceJoined:bundleVasKeys.some(k=>['vasPhonePass','vasSafePass'].includes(k))}).paid:v.rate)}</span>
                     </button>
                     {selected&&<div className="px-3 pb-3">
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {(isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
+                          {(v.key==='b_R825FA'?[['normal','일반판매'],['discount','무료판매']]:isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
                               className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-brand-50 border-brand-200 text-brand-700'):'bg-white border-gray-100 text-gray-500'}`}>
@@ -2014,9 +2019,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             </button>
                           })}
                         </div>
-                        {['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')&&
+                        {(v.key==='b_R825FA'||['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal'))&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
-                            {isConfirmedMonthlyPolicy(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
+                            {v.key==='b_R825FA'?'미소 보유 장기재고 · 보험 가입 시 무료판매 100,000원 / 일반판매 350,000원. 기존 2ND 수수료를 대체하며 임의 가입 고리표 발생 시 전액 환수. 기존 유지 조건 적용.':isConfirmedMonthlyPolicy(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}
                       </div>
                       {v.key==='b_AppleWatch'?<div className="text-[10px] text-gray-500">보험 가입 불가 상품 · 보험 미가입 차감 없음</div>:<><div className="text-[10px] font-semibold text-gray-500 mb-1.5">{v.label.replace('2ND · ','')} 전략 부가서비스 · 복수 선택 가능</div>
@@ -2033,7 +2038,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             }
                             return {...prev,[v.key]:next};
                           })} className={`text-left px-2.5 py-2 rounded-lg border text-[11px] ${vasSelected?'bg-white border-brand-200 text-brand-700':'bg-white/80 border-gray-100 text-gray-600'}`}>
-                            <span className="font-semibold">{vasSelected?'✓ ':''}{vas.label}</span>{vas.rate>0&&<span className="float-right text-[10px] text-gray-400">+{won(vas.rate)}</span>}
+                            <span className="font-semibold">{vasSelected?'✓ ':''}{vas.label}</span><span className="float-right text-[10px] text-gray-400">별도 인센티브 없음</span>
                           </button>
                         })}
                       </div></>}

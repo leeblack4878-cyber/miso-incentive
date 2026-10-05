@@ -18,7 +18,7 @@ export function mobileSaleOffsets(meta, config, september) {
     const rate=Number(config.bundle2nd?.find(x=>x.key===key)?.rate||0);
     const type=meta.bundleSaleTypeMap?.[key]||'normal';
     if(september) bundleOffset+=calculateSeptemberBundleSale({rate,saleType:type,
-      insuranceJoined:!(meta.bundleVasMap?.[key]||[]).includes('vasNone'),
+      bundleKey:key,insuranceJoined:key==='b_R825FA'?(meta.bundleVasMap?.[key]||[]).some(k=>['vasPhonePass','vasSafePass'].includes(k)):!(meta.bundleVasMap?.[key]||[]).includes('vasNone'),
       parent115:Number(secondParentCi(meta))===0,isAppleWatch:key==='b_AppleWatch'}).offset;
     else if(type==='free') bundleOffset+=rate;
     else continue;
