@@ -170,6 +170,7 @@ for(const width of [320,390])test(`${width}px 장기재고 추가금 저장 및 
  await dialog.getByRole('button',{name:/^장기재고 · F946-256 정상 재고 \(블랙\) · MNP 기존 정책/}).click();
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill('장기재고 고객');
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();
  await choosePlan(page,dialog,'general_85');
  await dialog.getByRole('button',{name:/교보문고 sam/}).click();
  await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
@@ -184,7 +185,8 @@ for(const width of [320,390])test(`${width}px 장기재고 추가금 저장 및 
  await page.getByRole('button',{name:/모바일 실적 입력/}).click();
  await dialog.getByRole('button',{name:'일반 판매',exact:true}).click();
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill('2ND 고객');
- await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');await choosePlan(page,dialog,'general_85');
+ await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_85');
  await dialog.getByRole('button',{name:/2ND·고객약속/}).click();
  await dialog.getByRole('button',{name:/R825FA 장기재고/}).click();
  const card=dialog.getByRole('button',{name:/R825FA 장기재고/}).locator('..');
