@@ -167,7 +167,7 @@ for(const width of [320,390])test(`${width}px 장기재고 추가금 저장 및 
  await page.getByRole('button',{name:/모바일 실적 입력/}).click();
  const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByRole('button',{name:'특가&지인정책',exact:true}).click();
- await dialog.getByRole('button',{name:/장기재고 · F946-256 정상 재고.*MNP/}).click();
+ await dialog.getByRole('button',{name:/^장기재고 · F946-256 정상 재고 \(블랙\) · MNP 기존 정책/}).click();
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill('장기재고 고객');
  await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
  await choosePlan(page,dialog,'general_85');
