@@ -2105,15 +2105,17 @@ function HallOfFame({rows,month}){
   const metric=(key)=>MONTHLY_RANK_METRICS.find(x=>x.key===key);
   const leader=(key)=>[...salesRows].sort((a,b)=>Number(metric(key).value(b)||0)-Number(metric(key).value(a)||0))[0];
   const rankSum=(r)=>['hs','home','productivity'].reduce((s,k)=>s+1+salesRows.filter(x=>Number(metric(k).value(x)||0)>Number(metric(k).value(r)||0)).length,0);
-  const mvp=[...salesRows].sort((a,b)=>rankSum(a)-rankSum(b)||hsCount(b.draft)-hsCount(a.draft))[0];
+  const mvp=[...salesRows].sort((a,b)=>rankSum(a)-rankSum(b)||metric('hs').value(b)-metric('hs').value(a))[0];
   const title=(r)=>badgeDefOf(titles[r?.id]);
   const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-brand-100 text-brand-700 flex items-center justify-center font-black shrink-0`}>{avatars[r?.id]?<img src={avatars[r.id]} alt="" className="w-full h-full object-cover"/>:String(r?.name||'?').slice(0,1)}</div>;
-  const profile=selected&&<div className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-brand-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',hsCount(selected.draft),'건'],['홈',metric('home').value(selected),'건'],['생산성',selected.pay?.kpiScore||0,'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
+  const profile=selected&&<div role="dialog" aria-modal="true" aria-label="직원 공개 프로필" className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-brand-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',metric('hs').value(selected),'건'],['홈',metric('home').value(selected),'건'],['생산성',metric('productivity').value(selected),'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
   const cards=[['HS KING',leader('hs')],['홈 KING',leader('home')],['생산성 KING',leader('productivity')]];
   return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이달의 우수 직원</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-brand-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-brand-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
 }
 
-function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
+function RecognitionRankingHub({month,userId,userName='',userBranch=''}){
+  const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+  useEffect(()=>{let alive=true;setLoading(true);setRows([]);setError('');supabase.functions.invoke('monthly-ranking',{body:{month}}).then(({data,error})=>{if(!alive)return;if(error||!Array.isArray(data?.rows)){setError('회사 전체 순위를 불러오지 못했어요.');}else setRows(data.rows);setLoading(false);}).catch(()=>{if(alive){setError('회사 전체 순위를 불러오지 못했어요.');setLoading(false);}});return()=>{alive=false};},[month,revision]);
   return <section className="rounded-3xl border border-brand-100 bg-gradient-to-b from-brand-50/80 to-white p-2.5 shadow-sm">
     <div className="px-2.5 pt-2 pb-3">
       <div className="flex items-start justify-between gap-3">
@@ -2129,6 +2131,7 @@ function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
       </div>
     </div>
     <div className="space-y-2">
+      {loading?<p className="p-4 text-sm text-gray-500">회사 전체 순위를 불러오는 중…</p>:error?<div role="alert" className="p-4 text-sm text-red-600">{error}<button className="ml-2 underline" onClick={()=>setRevision(v=>v+1)}>다시 시도</button></div>:rows.length===0?<p className="p-4 text-sm text-gray-500">조회할 직원이 없어요.</p>:<>
       <HallOfFame rows={rows} month={month} />
       <MonthlyPerformanceRankingCard
         rows={rows}
@@ -2137,6 +2140,7 @@ function RecognitionRankingHub({rows,month,userId,userName='',userBranch=''}){
         userBranch={userBranch}
         title={`${monthLabel(month)} 월 누적 순위`}
       />
+      </>}
     </div>
   </section>;
 }
@@ -3649,7 +3653,6 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <MyMonthlyPerformanceCard scopeRows={currentEmp?[currentEmp]:[]} draft={mergedDraft} pay={pay} personalGoals={personalGoals} dailyDays={dailyDays} month={month} config={config} onSaveGoals={savePersonalGoals} goalSaving={goalSaving} />
             <RecognitionRankingHub
-              rows={competitionRows}
               month={month}
               userId={currentEmp?.id||authUser?.id}
               userName={currentEmp?.name||authProfile?.name||''}
