@@ -2,12 +2,12 @@ import { hsCount, normalizeDay, NON_SALES_STORES } from './appShared';
 import { completedHomeCount } from './policyRules';
 import { getPersonalGoalActuals } from './components/MonthlyPerformance';
 export const MONTHLY_RANK_METRICS = [
-  { key:'hs', label:'HS', unit:'건', value:(r)=>hsCount(r.draft) },
-  { key:'home', label:'홈', unit:'건', value:(r)=>completedHomeCount(r.draft) },
-  { key:'free', label:'프리', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.tvFree||0) },
-  { key:'smart', label:'스홈', unit:'건', value:(r)=>Number(r.draft?.homeFlat?.smartHome||0) },
-  { key:'productivity', label:'생산성', unit:'P', value:(r)=>Number(r.pay?.kpiScore||0) },
-  { key:'upsell', label:'맞춤제안 업셀건', unit:'건', value:(r)=>Number(r.draft?.tailoredCount||0) },
+  { key:'hs', label:'HS', unit:'건', value:(r)=>r.publicMetrics?.hs??hsCount(r.draft) },
+  { key:'home', label:'홈', unit:'건', value:(r)=>r.publicMetrics?.home??completedHomeCount(r.draft) },
+  { key:'free', label:'프리', unit:'건', value:(r)=>r.publicMetrics?.free??Number(r.draft?.homeFlat?.tvFree||0) },
+  { key:'smart', label:'스홈', unit:'건', value:(r)=>r.publicMetrics?.smart??Number(r.draft?.homeFlat?.smartHome||0) },
+  { key:'productivity', label:'생산성', unit:'P', value:(r)=>r.publicMetrics?.productivity??Number(r.pay?.kpiScore||0) },
+  { key:'upsell', label:'맞춤제안 업셀건', unit:'건', value:(r)=>r.publicMetrics?.upsell??Number(r.draft?.tailoredCount||0) },
 ];
 
 export const BADGE_DEFS = [
