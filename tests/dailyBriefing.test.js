@@ -64,61 +64,34 @@ test('당월 브리핑의 미완료 경고는 당월 청약건만 포함한다',
   assert.equal(isBriefingMonthOverdueHome({ source_work_date: '2026-09-01', plannedDate: '2026-09-12' }, '2026-09', today), false);
 });
 
-test('매장별 복사 문구는 매장 단톡방에 바로 전달할 수 있는 대화형 피드백이다', () => {
-  const inputRows = [
-    { name: '직원A', status: 'input', summary: 'HS 1건' },
-    { name: '직원B', status: 'zero' },
-    { name: '직원C', status: 'missing' },
-    { name: '직원D', status: 'off' },
-  ];
+test('브리핑은 목표·실적·달성·진척 차이와 업무 건수만 전달한다', () => {
   const metrics = [
-    { label: 'HS', unit: 'count', ...projectMetric({ current: 5, target: 10, factor: 2 }) },
-    { label: '홈', unit: 'count', ...projectMetric({ current: 2, target: 10, factor: 2 }) },
+    {label:'HS',unit:'count',...projectMetric({current:25,target:100,factor:31/10,elapsedRate:10/31*100})},
+    {label:'홈',unit:'count',...projectMetric({current:4,target:10,factor:31/10,elapsedRate:10/31*100})},
+    {label:'소노',unit:'count',...projectMetric({current:2,target:0,factor:31/10,elapsedRate:10/31*100})},
   ];
-  const text = buildStoreBriefingText({ dateLabel: '9월 4일', storeName: '월곶점', inputRows, metrics,
-    todayTasks:[{customerName:'김고객',title:'제휴카드 확인'}],
-    todayInstalls:[{customerName:'이고객'}],
-    overdueInstalls:[{customerName:'박고객',plannedDate:'2026-09-03'}],
-  });
-  assert.match(text, /좋은 아침입니다 😊 9월 4일 월곶점 브리핑 공유드립니다/);
-  assert.match(text, /현재 근무 대상 3명 중 1명이 실적을 입력했습니다/);
-  assert.match(text, /1명은 실적 0건으로 확인했습니다/);
-  assert.match(text, /아직 입력이 확인되지 않은 직원은 직원C입니다/);
-  assert.match(text, /\[월말 예상 · 좋은 흐름\]\n- HS 10건 \(목표 대비 100%\)/);
-  assert.match(text, /\[월말 예상 · 보완 필요\]\n- 홈 4건 \(목표 대비 40%\)/);
-  assert.match(text, /\[오늘 함께 챙길 것\]\n- 고객 약속 1건을 확인해주세요\.\n- 오늘 홈 설치 1건을 확인해주세요\.\n- 직원C님의 입력 여부를 확인해주세요\.\n- 홈 실적을 우선 보완해주세요\./);
-  assert.match(text, /고객 약속 1건 · 김고객\(제휴카드 확인\)/);
-  assert.match(text, /홈 설치 예정 1건 · 이고객/);
-  assert.match(text, /예정일이 지난 홈 미완료 1건 · 박고객\(2026-09-03\)/);
-  assert.match(text, /월곶점 화이팅!/);
-  assert.match(buildAllBriefingText({ dateLabel: '9월 4일', stores: [{ storeName: '월곶점', inputRows, metrics }] }), /전체 근무 대상 3명 중 1명이 실적을 입력했고, 1명은 0건으로 확인했습니다/);
+  const inputRows=[{name:'직원A',status:'input'},{name:'직원B',status:'zero'},{name:'직원C',status:'missing'},{name:'직원D',status:'off'}];
+  const store={storeName:'월곶점',inputRows,metrics,todayTasks:[{customerName:'고객A'}],todayInstalls:[{}],overdueInstalls:[{}]};
+  const text=buildStoreBriefingText({dateLabel:'10월 10일',...store});
+  assert.match(text,/진척 기준 32.3%/);
+  assert.match(text,/HS \| 목표 100건 · 실적 25건 · 달성 25% \| 진척 대비 7.3%p 부족/);
+  assert.match(text,/홈 \| 목표 10건 · 실적 4건 · 달성 40% \| 진척 대비 7.7%p 초과/);
+  assert.match(text,/소노 \| 목표 미설정 · 실적 2건 · 달성 — \| 진척 비교 불가/);
+  assert.match(text,/입력 1명 · 0건 1명 · 미입력 1명 · 휴무 1명/);
+  assert.match(text,/미입력: 직원C/);
+  assert.match(text,/오늘 약속 1건 · 설치 1건 · 설치 지연 1건/);
+  assert.doesNotMatch(text,/화이팅|좋은 아침|예상|함께 챙길|고객A/);
+  assert.match(buildAllBriefingText({dateLabel:'10월 10일',stores:[store]}),/HS \| 목표 100건 · 실적 25건/);
 });
 
-test('마지막 응원 문구는 날짜와 당일 상황에 맞게 선택된다', () => {
-  const weak = [{ label: 'HS', unit: 'count', ...projectMetric({ current: 1, target: 10, factor: 1 }) }];
-  const missing = [{ name: '직원A', status: 'missing' }];
-  const weakText = buildStoreBriefingText({ dateLabel: '9월 7일', storeName: '주민센터점', metrics: weak });
-  const missingText = buildStoreBriefingText({ dateLabel: '9월 7일', storeName: '주민센터점', inputRows: missing, metrics: weak });
-  assert.match(weakText, /HS/);
-  assert.match(missingText, /입력/);
-  assert.notEqual(weakText.split('\n').at(-1), missingText.split('\n').at(-1));
-  assert.equal(
-    weakText.split('\n').at(-1),
-    buildStoreBriefingText({ dateLabel: '9월 7일', storeName: '주민센터점', metrics: weak }).split('\n').at(-1),
-  );
-});
-
-test('브리핑 건수형 예상마감은 정수로 표시하고 지표별로 줄을 나눈다', () => {
-  const metrics = [
-    { label: '스홈', unit: 'count', ...projectMetric({ current: 2, target: 4, factor: 30 / 7 }) },
-    { label: '업셀건', unit: 'count', ...projectMetric({ current: 16, target: 35, factor: 30 / 7 }) },
-    { label: 'HS', unit: 'count', ...projectMetric({ current: 9, target: 70, factor: 30 / 7 }) },
-    { label: '홈', unit: 'count', ...projectMetric({ current: 1, target: 7, factor: 30 / 7 }) },
-  ];
-  const text = buildStoreBriefingText({ dateLabel: '9월 7일', storeName: '주민센터점', metrics });
-  assert.match(text, /- 스홈 9건/);
-  assert.match(text, /- 업셀건 69건/);
-  assert.match(text, /- HS 39건/);
-  assert.match(text, /- 홈 4건/);
-  assert.doesNotMatch(text, /8\.6건|68\.6건|38\.6건|4\.3건/);
+test('진척 비교는 선택일 기준이며 월초·월말·과거월과 소수 실적을 정확히 표시한다', () => {
+  const text=(current,target,elapsedRate,unit='count')=>buildStoreBriefingText({metrics:[{label:'지표',unit,...projectMetric({current,target,factor:1,elapsedRate})}]});
+  assert.match(text(0,31,100/31),/진척 대비 3.2%p 부족/);
+  assert.match(text(31,31,100),/진척 대비 동일/);
+  assert.match(text(40,31,100),/진척 대비 29%p 초과/);
+  // Past-month forecasts may use factor=1; pace still uses the selected day.
+  assert.match(text(15,30,50),/달성 50% \| 진척 대비 동일/);
+  assert.match(text(2.4,10,20,'point'),/목표 10P · 실적 2.4P · 달성 24%/);
+  assert.match(text(123456,500000,20,'won'),/목표 500,000원 · 실적 123,456원/);
+  assert.match(text(0,10,50),/실적 0건 · 달성 0% \| 진척 대비 50%p 부족/);
 });
