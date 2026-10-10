@@ -63,6 +63,8 @@ import {
   buildBriefingPeriodRows,
   buildAllBriefingText,
   buildStoreBriefingText,
+  briefingMetricSummary,
+  briefingPaceText,
   canAccessDailyBriefing,
   dailyInputStatus,
   isBriefingMonthOverdueHome,
@@ -5011,7 +5013,6 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
     {key:'upsellAmount',label:'맞춤제안 매출액',unit:'won',goal:(g)=>g.tailoredAmount},
     {key:'upsell',label:'업셀건',unit:'count',goal:(g)=>g.tailoredCount||g.tailored},
   ];
-  const fmtBriefValue=(metric,value)=>metric.unit==='won'?won(Math.round(value)):metric.unit==='point'?`${fmtNum(value,1)}P`:`${fmtNum(value,Number(value)%1?1:0)}건`;
   const briefingStores=branches.map(branch=>{
     const members=(employees||[]).filter(emp=>emp.branch===branch);
     const storeRows=periodRows.filter(row=>row.branch===branch);
@@ -5025,7 +5026,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
     });
     const metrics=metricDefs.map(def=>({
       key:def.key,label:def.label,unit:def.unit,
-      ...projectMetric({current:storeMetricFromRows(storeRows,def.key),target:Number(def.goal(goal)||0),factor:forecastFactor}),
+      ...projectMetric({current:storeMetricFromRows(storeRows,def.key),target:Number(def.goal(goal)||0),factor:forecastFactor,elapsedRate:reportDay/daysInMonth(month)*100}),
     }));
     const memberIds=new Set(members.map(emp=>emp.id));
     const todayTasks=activeTasks.filter(task=>memberIds.has(task.user_id)&&task.due_date===today).map(task=>({
@@ -5092,32 +5093,30 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
     {loading?<div className="bg-white rounded-xl border p-8 text-center text-xs text-gray-400">브리핑을 만드는 중...</div>:visibleStores.map(store=>{
       const missing=store.inputRows.filter(row=>row.status==='missing');
       const zero=store.inputRows.filter(row=>row.status==='zero');
-      const setMetrics=store.metrics.filter(metric=>metric.state!=='unset');
-      const good=setMetrics.filter(metric=>metric.state==='good').sort((a,b)=>b.forecastRate-a.forecastRate);
-      const weak=setMetrics.filter(metric=>metric.state!=='good').sort((a,b)=>a.forecastRate-b.forecastRate);
-      const unset=store.metrics.filter(metric=>metric.state==='unset');
       return <div key={store.branch} className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-50 flex items-start justify-between gap-3">
-          <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">예상 달성 {good.length}/{setMetrics.length}개 · 미입력 {missing.length}명 · 0건 확인 {zero.length}명</div></div>
+          <div><div className="text-sm font-black text-gray-900">{store.storeName}</div><div className="text-[10px] text-gray-400 mt-1">진척 기준 {fmtNum(reportDay/daysInMonth(month)*100,1)}% · {reportDay}/{daysInMonth(month)}일</div></div>
           <div className="flex gap-1.5"><button type="button" onClick={()=>shareBriefing(buildStoreBriefingText({dateLabel,...store}),`${store.storeName} 브리핑`)} className="flex items-center gap-1 rounded-lg bg-brand-50 px-2.5 py-2 text-[10px] font-bold text-brand-700"><Share2 size={12}/>카카오 전달</button>{missing.length>0&&<button type="button" disabled={reminderSending} onClick={()=>sendInputReminders([store])} className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-2 text-[10px] font-bold text-red-600 disabled:opacity-50"><Send size={12}/>입력 알림</button>}</div>
         </div>
         {(missing.length>0||zero.length>0)&&<div className="px-4 py-3 bg-red-50/60 text-[10px] leading-5"><div className="text-red-600"><b>미입력</b> {missing.length?missing.map(row=>row.name).join(', '):'없음'}</div>{zero.length>0&&<div className="text-brand-600"><b>0건 확인</b> {zero.map(row=>row.name).join(', ')}</div>}</div>}
         <div className="border-b border-gray-50 px-4 py-3">
-          <div className="text-[10px] font-bold text-brand-700">오늘 할 일 · 일정</div>
+          <div className="text-[10px] font-bold text-brand-700">오늘 일정</div>
           <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
             {[['고객 약속',store.todayTasks.length,'text-brand-700'],['홈 설치',store.todayInstalls.length,'text-blue-700'],['설치 지연',store.overdueInstalls.length,store.overdueInstalls.length?'text-red-600':'text-gray-400']].map(([label,value,tone])=><div key={label} className="rounded-xl bg-gray-50 px-2 py-2"><div className={`text-base font-black ${tone}`}>{value}건</div><div className="text-[9px] text-gray-500">{label}</div></div>)}
           </div>
-          {(store.todayTasks.length>0||store.todayInstalls.length>0||store.overdueInstalls.length>0)&&<div className="mt-2 space-y-1 text-[10px] leading-relaxed text-gray-600">
+          {(store.todayTasks.length>0||store.todayInstalls.length>0||store.overdueInstalls.length>0)&&<details className="mt-2 text-[10px] leading-relaxed text-gray-600"><summary className="cursor-pointer">일정 상세</summary><div className="mt-1 space-y-1">
             {store.todayTasks.length>0&&<div><b>약속</b> · {store.todayTasks.map(row=>`${row.customerName}(${row.title}${row.employeeName?` · ${row.employeeName}`:''})`).join(', ')}</div>}
             {store.todayInstalls.length>0&&<div><b>오늘 설치</b> · {store.todayInstalls.map(row=>`${row.customerName}${row.employeeName?`(${row.employeeName})`:''}`).join(', ')}</div>}
             {store.overdueInstalls.length>0&&<div className="text-red-600"><b>예정일 경과·미완료</b> · {store.overdueInstalls.map(row=>`${row.customerName}(${row.plannedDate}${row.employeeName?` · ${row.employeeName}`:''})`).join(', ')}</div>}
-          </div>}
+          </div></details>}
         </div>
-        <div className="p-4 grid sm:grid-cols-2 gap-3">
-          <div className="rounded-xl bg-emerald-50 p-3"><div className="text-[10px] font-bold text-emerald-700">잘하고 있는 항목</div><div className="mt-2 space-y-1.5">{good.length?good.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className="font-bold text-emerald-700">예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">예상 달성 항목이 아직 없어요.</div>}</div></div>
-          <div className="rounded-xl bg-amber-50 p-3"><div className="text-[10px] font-bold text-amber-700">보완할 항목</div><div className="mt-2 space-y-1.5">{weak.length?weak.slice(0,3).map(metric=><div key={metric.key} className="flex justify-between gap-2 text-[10px]"><span className="font-semibold text-gray-700">{metric.label}</span><span className={`font-bold ${metric.state==='low'?'text-red-600':'text-amber-700'}`}>예상 {fmtBriefValue(metric,metric.forecast)} · {Math.round(metric.forecastRate)}%</span></div>):<div className="text-[10px] text-gray-400">목표 설정 항목은 모두 달성 흐름이에요.</div>}</div></div>
+        <div className="divide-y divide-gray-100 px-4" data-testid="briefing-metrics">
+          {store.metrics.map(metric=><div key={metric.key} data-testid={`briefing-metric-${metric.key}`} className="py-2.5 text-[10px] leading-5">
+            <div className="font-bold text-gray-800">{metric.label}</div>
+            <div className="text-gray-600 break-words">{briefingMetricSummary(metric)}</div>
+            <div className={`font-semibold ${metric.target<=0?'text-gray-400':metric.progressRate<metric.expectedRate?'text-red-600':'text-emerald-700'}`}>{briefingPaceText(metric)}</div>
+          </div>)}
         </div>
-        {unset.length>0&&<div className="px-4 pb-4 text-[10px] text-red-500"><b>목표 입력 필요:</b> {unset.map(metric=>metric.label).join(', ')}</div>}
       </div>;
     })}
   </div>;
