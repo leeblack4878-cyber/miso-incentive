@@ -49,6 +49,6 @@ test('홈 예상 마감과 내역 합계는 승인된 홈 스팟·영업비용�
  await expect(page.getByTestId('history-pay')).toHaveText(closing);
 });
 test('비용 조회 실패 시 합계를 0원 차감으로 표시하지 않는다',async({page})=>{
- await openApp(page,{failLedger:true});await expect(page.getByRole('alert')).toContainText('합계 표시를 보류');
+ await openApp(page,{failLedger:true});await expect(page.getByRole('alert').filter({hasText:'합계 표시를 보류'})).toContainText('합계 표시를 보류');
  await page.locator('.app-bottom-nav').getByRole('button',{name:'내역',exact:true}).click();await expect(page.getByTestId('history-pay')).toHaveText('—');
 });
