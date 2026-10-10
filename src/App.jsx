@@ -32,6 +32,7 @@ import { POSITIONS, ROLE_LABELS, MATRIX_ROW_DEFS, MATRIX_COLS, displayStoreName,
 const EvaluationTab=React.lazy(()=>import('./components/EvaluationViews').then(m=>({default:m.EvaluationTab})));
 const ManagerPayrollPanel=React.lazy(()=>import('./components/EvaluationViews').then(m=>({default:m.ManagerPayrollPanel})));
 const CustomerCareManager=React.lazy(()=>import('./components/CustomerCareManager'));
+const ObActivityPanel=React.lazy(()=>import('./components/ObActivityPanel'));
 const DailyInputTab=React.lazy(()=>import('./components/DailyInputTab'));
 const RatesManager=React.lazy(()=>import('./components/RatesManager'));
 const PermissionsManager=React.lazy(()=>import('./components/PermissionsManager'));
@@ -3489,7 +3490,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
   const [ledgerRevision,setLedgerRevision]=useState(0);
   useEffect(()=>{const refresh=()=>setLedgerRevision(v=>v+1);window.addEventListener('sales-data-changed',refresh);return()=>window.removeEventListener('sales-data-changed',refresh)},[]);
   const [careNavIntent,setCareNavIntent]=useState(null);
-  const goCustomerCare=(type)=>{setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
+  const [customerCareMode,setCustomerCareMode]=useState('promises');
+  const goCustomerCare=(type)=>{setCustomerCareMode('promises');setCareNavIntent({type,at:Date.now()});setTab('customerCare')};
   useEffect(() => {
     if (!viewedUserId) return;
     let alive=true;setLedgerReady(false);setLedgerError(false);
@@ -3724,7 +3726,10 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {months.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           </div>
-          <React.Suspense fallback={<DeferredAdminPanelFallback label="고객관리"/>}><CustomerCareManager
+          <div className="flex gap-2" role="group" aria-label="고객관리 화면">
+            {['promises','ob'].map(key=><button key={key} onClick={()=>setCustomerCareMode(key)} aria-pressed={customerCareMode===key} className={`rounded-xl px-4 py-2 text-sm font-semibold ${customerCareMode===key?'bg-brand-50 text-brand-700':'bg-white text-gray-500'}`}>{key==='ob'?'OB 활동':'고객 약속'}</button>)}
+          </div>
+          {customerCareMode==='ob'?<React.Suspense fallback={<DeferredAdminPanelFallback label="OB 활동"/>}><ObActivityPanel userId={authUser?.id}/></React.Suspense>:<React.Suspense fallback={<DeferredAdminPanelFallback label="고객관리"/>}><CustomerCareManager
             userId={viewedUserId}
             month={month}
             navIntent={careNavIntent}
@@ -3737,7 +3742,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               onTeamCreditSaved,
               onHomeOrdersChanged
             }}
-          /></React.Suspense>
+          /></React.Suspense>}
         </div>
       )}
 
@@ -5373,6 +5378,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
 
   const finalPerformances=useFinalStorePerformance(month);
   const [customerCareFilter,setCustomerCareFilter]=useState('todo');
+  const [adminCareMode,setAdminCareMode]=useState('promises');
   const TABS = [
     { key: 'dashboard', label: '운영 현황', icon: LayoutDashboard, section:'operations' },
     ...(canViewDailyBriefing ? [{ key: 'dailyBriefing', label: '일일 브리핑', icon: ClipboardList, section:'operations' }] : []),
@@ -5531,7 +5537,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             <AdminPerformanceCalendar month={month} employees={performanceEmployees} dailyRecords={dailyRecords} storeKey={dashboardStoreKey} scopeLabel={dashboardLabel}/>
           </details>
 
-          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin')setCustomerCareFilter('overdue');setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} canViewSpotAdmin={canViewDailyBriefing} />
+          <AdminManagementAlerts pendingCount={pendingCount} employees={employees} onGo={(tab)=>{if(tab==='customerCareAdmin'){setAdminCareMode('promises');setCustomerCareFilter('overdue');}setAdminTab(tab)}} month={month} rows={rows} dailyRecords={dailyRecords} isFullAdmin={isFullAdmin} config={config} canViewSpotAdmin={canViewDailyBriefing} />
 
           {!dashboardArea&&<StoreGoalDashboardCard key={`${month}:${dashboardStoreKey}`} branchOverride={dashboardStoreKey==='all'?undefined:dashboardStoreKey}
             rows={dashboardRows}
@@ -5577,14 +5583,14 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
             </div>
           </div>
 
-          <AdminCustomerCareOverview key={dashboardStoreKey} employees={dashboardEmployees} month={month} compact onOpen={()=>{setCustomerCareFilter('todo');setAdminTab('customerCareAdmin')}} />
+          <AdminCustomerCareOverview key={dashboardStoreKey} employees={dashboardEmployees} month={month} compact onOpen={()=>{setAdminCareMode('promises');setCustomerCareFilter('todo');setAdminTab('customerCareAdmin')}} />
         </div>
       )}
 
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
       {adminTab === 'evaluation' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
       {adminTab === 'managerPayroll' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
-      {adminTab === 'customerCareAdmin' && <AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}
+      {adminTab === 'customerCareAdmin' && <div className="space-y-3"><div className="flex gap-2" role="group" aria-label="관리자 고객관리 화면">{['promises','ob'].map(key=><button key={key} onClick={()=>setAdminCareMode(key)} aria-pressed={adminCareMode===key} className={`rounded-xl px-4 py-2 text-sm font-semibold ${adminCareMode===key?'bg-brand-50 text-brand-700':'bg-white text-gray-500'}`}>{key==='ob'?'OB 활동':'고객 약속'}</button>)}</div>{adminCareMode==='ob'?<React.Suspense fallback={<DeferredAdminPanelFallback label="OB 활동"/>}><ObActivityPanel admin userId={authUserId} employees={employees}/></React.Suspense>:<AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}</div>}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <div className="space-y-4"><PerformanceResetApprovals key={month} month={month} employees={employees} authUserId={authUserId} locked={monthLocked||policyInputBlocked}/><PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} /></div>}
       {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} config={config} />}
