@@ -66,15 +66,20 @@ export function briefingValue(metric, value) {
 }
 
 export function briefingMetricSummary(metric) {
-  const rate = metric.progressRate === null ? '—' : `${Math.round(metric.progressRate * 10) / 10}%`;
-  return `목표 ${metric.target > 0 ? briefingValue(metric, metric.target) : '미설정'} · 실적 ${briefingValue(metric, metric.current)} · 달성 ${rate}`;
+  const target = metric.target > 0 ? briefingValue(metric, metric.target) : '미설정';
+  const actual = briefingValue(metric, metric.current);
+  return metric.unit === 'won' ? `목표 ${target}\n실적 ${actual}` : `목표 ${target} → 실적 ${actual}`;
 }
 
 export function briefingPaceText(metric) {
   if (metric.target <= 0 || !Number.isFinite(metric.expectedRate)) return '진척 비교 불가';
   const gap = Math.round((metric.progressRate - metric.expectedRate) * 10) / 10;
-  if (gap === 0) return '진척 대비 동일';
-  return `진척 대비 ${Math.abs(gap)}%p ${gap > 0 ? '초과' : '부족'}`;
+  return `진척 ${gap > 0 ? '+' : ''}${gap}%p`;
+}
+
+export function briefingAchievementText(metric) {
+  const rate = metric.progressRate === null ? '—' : `${Math.round(metric.progressRate * 10) / 10}%`;
+  return `달성 ${rate} · ${briefingPaceText(metric)}`;
 }
 
 function inputSummary(inputRows) {
@@ -85,9 +90,10 @@ function inputSummary(inputRows) {
 export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], metrics = [], todayTasks = [], todayInstalls = [], overdueInstalls = [] } = {}) {
   const expectedRate = metrics.find(metric => Number.isFinite(metric.expectedRate))?.expectedRate;
   const lines = [
-    `[${storeName} | ${dateLabel}]`,
+    `${storeName} · ${dateLabel}`,
     ...(expectedRate === undefined ? [] : [`진척 기준 ${Math.round(expectedRate * 10) / 10}%`]),
-    ...metrics.map(metric => `${metric.label} | ${briefingMetricSummary(metric)} | ${briefingPaceText(metric)}`),
+    '',
+    ...metrics.flatMap(metric => [`■ ${metric.label}`, briefingMetricSummary(metric), briefingAchievementText(metric), '']),
     inputSummary(inputRows),
   ];
   const missingNames = inputRows.filter(row => row.status === 'missing').map(row => row.name);
@@ -98,7 +104,7 @@ export function buildStoreBriefingText({ dateLabel, storeName, inputRows = [], m
 
 export function buildAllBriefingText({ dateLabel, stores = [] } = {}) {
   return [
-    `[미소모바일 | ${dateLabel}]`,
+    `미소모바일 · ${dateLabel}`,
     inputSummary(stores.flatMap(store => store.inputRows || [])),
     ...stores.map(store => buildStoreBriefingText({ dateLabel, ...store })),
   ].join('\n\n');
