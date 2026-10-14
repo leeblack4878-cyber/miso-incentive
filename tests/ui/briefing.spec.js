@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 for(const width of [320,390]) test(`간결한 브리핑과 선택일 누적·복사 문구 ${width}px`,async({page})=>{
  await page.setViewportSize({width,height:844});
- await page.addInitScript(()=>{window.__briefingText='';Object.defineProperty(navigator,'share',{value:async({text})=>{window.__briefingText=text;},configurable:true});});
+ await page.addInitScript(()=>{window.__briefingText='';Object.defineProperty(navigator,'share',{value:async(payload)=>{window.__briefingText=payload.text;window.__briefingPayload=payload;},configurable:true});});
  await page.clock.setFixedTime(new Date('2026-09-19T03:00:00Z'));
  const id='00000000-0000-4000-8000-000000000001',store='광정동_산본점';
  const day=(sim,second,smart,bundle)=>{const matrix=Array.from({length:8},()=>[0,0,0,0,0,0]);matrix[5][0]=sim;matrix[7][0]=second;return {matrix,groups:{homeFlat:{smartHome:smart},bundle2nd:{b_AppleWatch:bundle}}};};
@@ -19,19 +19,20 @@ for(const width of [320,390]) test(`간결한 브리핑과 선택일 누적·복
  const sim=page.getByTestId('briefing-metric-simMnp');
  const second=page.getByTestId('briefing-metric-second');
  const smart=page.getByTestId('briefing-metric-smart');
- await expect(sim).toContainText('목표 12건 · 실적 5건 · 달성 41.7%');
- await expect(sim).toContainText('진척 대비 18.3%p 부족');
- await expect(second).toContainText('목표 10건 · 실적 5건 · 달성 50%');
- await expect(smart).toContainText('목표 6건 · 실적 1건 · 달성 16.7%');
+ await expect(sim).toContainText('목표 12건 → 실적 5건');
+ await expect(sim).toContainText('달성 41.7% · 진척 -18.3%p');
+ await expect(second).toContainText('목표 10건 → 실적 5건');
+ await expect(smart).toContainText('목표 6건 → 실적 1건');
  await expect(page.getByTestId('briefing-metrics')).not.toContainText('예상');
  await page.getByRole('button',{name:'카카오 전달',exact:true}).click();
- await expect.poll(()=>page.evaluate(()=>window.__briefingText)).toContain('SIM MNP | 목표 12건 · 실적 5건 · 달성 41.7% | 진척 대비 18.3%p 부족');
+ await expect.poll(()=>page.evaluate(()=>window.__briefingText)).toContain('■ SIM MNP\n목표 12건 → 실적 5건\n달성 41.7% · 진척 -18.3%p\n\n■ 2ND');
+ expect(await page.evaluate(()=>Object.keys(window.__briefingPayload))).toEqual(['text']);
  const daySelect=page.locator('select').filter({has:page.locator('option[value="18"]')});
  await daySelect.selectOption('17');
- await expect(sim).toContainText('목표 12건 · 실적 2건 · 달성 16.7%');
- await expect(sim).toContainText('진척 대비 40%p 부족');
- await expect(second).toContainText('목표 10건 · 실적 2건 · 달성 20%');
- await expect(smart).toContainText('목표 6건 · 실적 0건 · 달성 0%');
+ await expect(sim).toContainText('목표 12건 → 실적 2건');
+ await expect(sim).toContainText('진척 -40%p');
+ await expect(second).toContainText('목표 10건 → 실적 2건');
+ await expect(smart).toContainText('목표 6건 → 실적 0건');
  await expect(page.getByTestId('briefing-metric-hs')).toContainText('목표 미설정');
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:`/tmp/miso-briefing-${width}.png`,fullPage:true});

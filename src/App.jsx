@@ -64,7 +64,7 @@ import {
   buildAllBriefingText,
   buildStoreBriefingText,
   briefingMetricSummary,
-  briefingPaceText,
+  briefingAchievementText,
   canAccessDailyBriefing,
   dailyInputStatus,
   isBriefingMonthOverdueHome,
@@ -5051,7 +5051,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   };
   const shareBriefing=async(text,title)=>{
     try{
-      if(navigator.share){await navigator.share({title,text});return}
+      if(navigator.share){await navigator.share({text});return}
       await copyText(text,title);
       showAppToast('카카오톡 대화창에 붙여넣어 주세요.',{title:'브리핑 복사 완료',tone:'info'});
     }catch(e){if(e?.name!=='AbortError')showLegacyAlert(`공유 실패: ${friendlyError(e)}`)}
@@ -5113,8 +5113,8 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
         <div className="divide-y divide-gray-100 px-4" data-testid="briefing-metrics">
           {store.metrics.map(metric=><div key={metric.key} data-testid={`briefing-metric-${metric.key}`} className="py-2.5 text-[10px] leading-5">
             <div className="font-bold text-gray-800">{metric.label}</div>
-            <div className="text-gray-600 break-words">{briefingMetricSummary(metric)}</div>
-            <div className={`font-semibold ${metric.target<=0?'text-gray-400':metric.progressRate<metric.expectedRate?'text-red-600':'text-emerald-700'}`}>{briefingPaceText(metric)}</div>
+            <div className="text-gray-600 break-words whitespace-pre-line">{briefingMetricSummary(metric)}</div>
+            <div className={`font-semibold ${metric.target<=0?'text-gray-400':metric.progressRate<metric.expectedRate?'text-red-600':'text-emerald-700'}`}>{briefingAchievementText(metric)}</div>
           </div>)}
         </div>
       </div>;
