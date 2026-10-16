@@ -1052,7 +1052,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
     const editableCi=month>='2026-10'&&getMobilePlan(meta.planDetail)?mobilePlanCommissionColumn(meta.planDetail,meta.ri):isConfirmedMonthlyPolicy(month)&&month<'2026-10'&&Number(meta.ci)===3?5:meta.ci;
-    setPolicyEligibilityConfirmed(!!meta.policyEligibilityConfirmed);
+    setPolicyEligibilityConfirmed(!!sale.source_meta?.policyEligibilityConfirmed);
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setSecondParent(isSecondOnlyBundle(meta)?{...meta.secondParent,customerName:meta.secondParent?.customerName||sale.customers?.customer_name||''}:null);
     setPlanDetail(getMobilePlan(meta.planDetail));
