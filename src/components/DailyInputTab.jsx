@@ -1772,7 +1772,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 {specialPolicies.filter(p=>p.policy_type==='incentive_unpaid').map(p=><button type="button" key={p.id} onClick={()=>setMobileSpecialPolicyId(p.id)} className={`w-full rounded-lg border p-2 text-left text-xs ${mobileSpecialPolicyId===p.id?'border-red-300 bg-red-50':'border-gray-200'}`}>
                   <div className="font-bold">{mobileSpecialPolicyId===p.id?'✓ ':''}{p.title}</div><div className="mt-1">{p.customerZeroPrice?'공시 적용 후 기기값 0원':`고객 지원금 ${won(p.customerDiscount)}`} · 인센티브 미지급</div>{p.conditionLabel&&<div className="mt-1 text-[10px] text-gray-500">{p.conditionLabel}</div>}
                 </button>)}
-                <div className="text-[10px] text-gray-600">{month>='2026-10'?(`${month}-${selectedDay}`>='2026-10-09'&&`${month}-${selectedDay}`<='2026-10-12'?'10/9~12 특가: 고객 지원금과 직원 수수료는 별개예요. 요금제·VAS·보험·모델 추가금 미지급, 요금제6개월·전략상품/보험93일 유지.':revision16?'10/16~19 버디5: 55군↑·보험+전략VAS 1가지·1.8P↑·요금제6개월. 무료판매 수수료0원. 일반판매 정상수수료+추가금.':'주말 정책은 10/2~5 개통 기준이에요. 요금제 6개월·전략상품 93일 유지. 115군 비중 60% 추가금과 전략P 비중 가감은 유지돼요.'):'아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.'}</div>
+                <div className="text-[10px] text-gray-600">{month>='2026-10'?(`${month}-${selectedDay}`>='2026-10-09'&&`${month}-${selectedDay}`<='2026-10-12'?'10/9~12 특가: 고객 지원금과 직원 수수료는 별개예요. 요금제·VAS·보험·모델 추가금 미지급, 요금제6개월·전략상품/보험93일 유지.':revision16?'10/16~19 버디5: 일반판매 요금제 무관, 무료판매만55군↑·요금제6개월. 공통 보험0.8P+지정 전략VAS1P=1.8P. 무료 수수료0원, 일반 정상수수료+추가금.':'주말 정책은 10/2~5 개통 기준이에요. 요금제 6개월·전략상품 93일 유지. 115군 비중 60% 추가금과 전략P 비중 가감은 유지돼요.'):'아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.'}</div>
               </div>}
 
               {mobileSaleKind==='special'&&(
@@ -1790,7 +1790,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                               <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
                               <span className="text-[10px] text-amber-600">{p.stockRule==='watch'?'2ND 대체 ':'기존 정책 +'}{won(p.replacement_amount)}</span>
                             </div>
-                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date||''}</div>}{p.stock&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
+                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date||''}</div>}{p.conditionLabel&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
                           </button>
                         })}
                       </div>

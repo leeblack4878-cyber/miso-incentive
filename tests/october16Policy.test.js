@@ -16,6 +16,7 @@ test('10/16 all twenty rates, C deduction and day boundary preserve 10/15',()=>{
  for(const p of OCTOBER16_SPECIAL_SALES){const a={policyKey:p.key,saleDate:'2026-10-16',saleType:p.saleType,ri:p.saleType==='MNP'?1:2,planGroup:'115',strategicPoints:2};assert.equal(calculateMonthlySpecialSale(a).additionalAmount,p.additionalAmount);
   assert.equal(calculateMonthlySpecialSale({...a,saleDate:'2026-10-15'}).eligible,false);
   assert.equal(calculateMonthlySpecialSale({...a,planGroup:'85'}).additionalAmount,0);
+  for(const key of ['general_28','senior_47','junior_under28']){const low={...a,planDetail:{key,type:key.split('_')[0]}};assert.equal(calculateMonthlySpecialSale(low).eligible,p.policyType!=='incentive_unpaid');}
   if(p.saleType==='기기변경')assert.equal(calculateMonthlySpecialSale({...a,ri:4}).additionalAmount,p.additionalAmount-50000);
  }
  const old=specialSalesForDate('2026-10-15').find(p=>p.model==='F971-512'&&p.saleType==='기기변경');assert.equal(old.additionalAmount,30000);
@@ -55,9 +56,10 @@ test('10/16~19 home DPS bonus is additive, retroactive at2, SOHO included, Novem
  assert.equal(calculateHomePolicyFromOrders(orders('2026-10-02','old'),config).octoberWeekend.total,100000);
  const cancelled=both.filter(o=>o.customer_name!=='b');assert.equal(calculateHomePolicyFromOrders(cancelled,config).october16Weekend.total,100000);
 });
-test('Buddy free0 vs normal80/40, common55, insurance+VAS1.8, A/B only, ends19',()=>{
+test('Buddy free0 vs normal80/40, normal any plan/free55, insurance+VAS1.8, A/B only, ends19',()=>{
  for(const p of OCTOBER16_BUDDY_SALES){const a={policyKey:p.key,saleDate:'2026-10-16',saleType:p.saleType,ri:p.saleType==='MNP'?1:2,planDetail:{key:'general_55',type:'general'},strategicPoints:1.8,vasKeys:['vasKyobo','vasPhonePass']};assert.equal(calculateMonthlySpecialSale(a).additionalAmount,p.additionalAmount);
-  for(const overrides of [{saleDate:'2026-10-20'},{planDetail:{key:'senior_47',type:'senior'}},{strategicPoints:1.7},{vasKeys:['vasKyobo']}])assert.equal(calculateMonthlySpecialSale({...a,...overrides}).eligible,false);
+  for(const overrides of [{saleDate:'2026-10-20'},{strategicPoints:1.7},{vasKeys:['vasKyobo']}])assert.equal(calculateMonthlySpecialSale({...a,...overrides}).eligible,false);
+  for(const key of ['general_28','senior_47','junior_under28']){const low={...a,planDetail:{key,type:key.split('_')[0]}};assert.equal(calculateMonthlySpecialSale(low).eligible,p.policyType!=='incentive_unpaid');}
   if(p.saleType==='기기변경')assert.equal(calculateMonthlySpecialSale({...a,ri:4}).eligible,false);
  }
 });
