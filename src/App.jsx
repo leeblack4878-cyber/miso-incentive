@@ -3815,6 +3815,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.homePolicy?.subSetTopPay||0)!==0&&<RowKV label="└ 부셋탑" value={won(pay.homePolicy.subSetTopPay)} />}
               {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
               {Number(pay.homePolicy?.octoberWeekend?.total||0)!==0&&<RowKV label="└ 10월 주말 홈 추가 지급" value={won(pay.homePolicy.octoberWeekend.total)} />}
+              {Number(pay.homePolicy?.october9Weekend?.total||0)!==0&&<RowKV label="└ 10월 9~12일 주말 홈 추가 지급" value={won(pay.homePolicy.october9Weekend.total)} />}
+              {Number(pay.homePolicy?.october16Weekend?.total||0)!==0&&<RowKV label="└ 10월 16~19일 주말 홈 추가 지급" value={won(pay.homePolicy.october16Weekend.total)} />}
               {Number(pay.homePolicy?.weekendPolicy?.tvFreeBonus||0)!==0&&<RowKV label="└ 9월 주말 TV프리 추가 지급" value={won(pay.homePolicy.weekendPolicy.tvFreeBonus)} />}
               {Number(pay.renewPay||0)!==0&&<RowKV label="└ 인터넷 재약정" value={won(pay.renewPay)} />}
             </div>}

@@ -217,3 +217,18 @@ for(const width of [320,390])test(`${width}px 10/16 버디5 일반·미지급 �
  await d.getByRole('button',{name:'인센미지급 특가',exact:true}).click();await expect(d.getByRole('button',{name:/A176 버디5/})).toHaveCount(2);
  await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();await expect(d.getByRole('button',{name:/A176 버디5/})).toHaveCount(2);
 });
+
+for(const width of [320,390])test(`${width}px October 9 weekend unpaid sale validates, preserves plan115 bonus inputs and edits/deletes`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-09'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await dialog.getByRole('button',{name:'인센미지급 특가',exact:true}).click();
+ await dialog.getByRole('button',{name:/10\/9~12 주말 · S942-256\/512 · MNP/}).click();
+ await expect(dialog.getByText(/10\/9~12 특가: 고객 지원금/)).toBeVisible();
+ await dialog.getByPlaceholder('고객명을 입력해주세요').fill('주말 특가');await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
+ await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_115');
+ await dialog.getByRole('button',{name:/교보문고 sam/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await dialog.getByRole('button',{name:/V컬러링 음악감상 플러스.*벨링/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ expect(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await dialog.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(dialog).toHaveCount(0);
+ expect(state.writes[0].p_meta.specialPolicy.customerDiscount).toBe(500000);expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(0);expect(state.writes[0].p_meta.specialPolicy.preorder).toBe(false);expect(state.writes[0].p_sale_date).toBe('2026-10-09');expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);expect(state.day.specialVasOffset).toBe(0);
+});
