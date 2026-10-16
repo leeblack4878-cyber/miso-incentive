@@ -4,7 +4,7 @@ import {ManagerEvaluationPanel} from '../../src/components/EvaluationViews';
 import {emptyDraft} from '../../src/viewShared';
 import {feedbackBridge} from '../../src/feedback';
 import '../../src/index.css';
-const store='신천동_삼미시장점';
+const store=new URLSearchParams(location.search).get('suspended')==='1'?'신천동_삼미시장점':'신천동_삼미시장2호점';
 const draft=emptyDraft();draft.matrix[0][0]=20;
 function Fixture(){
  const [message,setMessage]=React.useState('');

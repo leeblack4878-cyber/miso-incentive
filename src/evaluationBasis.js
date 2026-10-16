@@ -62,3 +62,11 @@ export function reportedEvaluation(snapshot){
   if(metricNumber(report.core100)===null||metricNumber(report.aa100)===null)return null;
   return {...report,core100:Number(report.core100),aa100:Number(report.aa100)};
 }
+
+// Owner-confirmed operating suspension from September 2026; keep earlier evaluations.
+export function managerEvaluationExclusion(store, month) {
+  if (store === '신천동_삼미시장점' && /^\d{4}-\d{2}$/.test(month || '') && month >= '2026-09') {
+    return { fromMonth: '2026-09', reason: '매장 운영 중단' };
+  }
+  return null;
+}

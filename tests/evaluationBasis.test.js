@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PostgrestClient} from '@supabase/postgrest-js';
-import {evaluationBasis,evaluationMetric,companyMetricsForSave,validCompanyDate,reportedEvaluation} from '../src/evaluationBasis.js';
+import {evaluationBasis,evaluationMetric,companyMetricsForSave,validCompanyDate,reportedEvaluation,managerEvaluationExclusion} from '../src/evaluationBasis.js';
 import {saveEvaluationSnapshot} from '../src/evaluationSave.js';
 
 test('employee/company selection keeps 0 distinct from missing, without mixing sources',()=>{
@@ -45,4 +45,11 @@ test('stale update and denied save do not report success',async()=>{
   const client=new PostgrestClient('https://example.supabase.co/rest/v1',{fetch:async()=>new Response(JSON.stringify({code,message:'not saved'}),{status:code==='42501'?403:406,headers:{'Content-Type':'application/json'}})});
   await assert.rejects(saveEvaluationSnapshot(client,{previous:null,payload:{month:'2026-09',store_name:'test-store'}}));
  }
+});
+
+test('삼미 운영 중단은 9월 이후 평가 제외이며 과거·다른 매장은 보존한다',()=>{
+ assert.equal(managerEvaluationExclusion('신천동_삼미시장점','2026-08'),null);
+ for(const month of ['2026-09','2026-10','2027-01'])assert.equal(managerEvaluationExclusion('신천동_삼미시장점',month).reason,'매장 운영 중단');
+ assert.equal(managerEvaluationExclusion('신천동_삼미시장2호점','2026-09'),null);
+ assert.equal(managerEvaluationExclusion('신천동_삼미시장점',''),null);
 });
