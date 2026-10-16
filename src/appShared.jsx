@@ -496,6 +496,8 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     matrix: aggMatrix,
     mobilePoint: { ...draft.mobilePoint, ...autoMobilePoint },
     kpi: { ...draft.kpi, ...autoKpi },
+    plan115BeforeRevision:Object.entries(dailyDaysMap||{}).reduce((sum,[key,raw])=>sum+(month<'2026-10'||month==='2026-10'&&Number(key.slice(-2))<16?[0,1,2,3,4].reduce((n,i)=>n+Number(normalizeDay(raw).matrix[i]?.[0]||0),0):0),0),
+    plan115AfterRevision:Object.entries(dailyDaysMap||{}).reduce((sum,[key,raw])=>sum+(month>'2026-10'||month==='2026-10'&&Number(key.slice(-2))>=16?[0,1,2,3,4].reduce((n,i)=>n+Number(normalizeDay(raw).matrix[i]?.[0]||0),0):0),0),
     septemberWeekendSimMnpCount,
   };
 }
@@ -625,7 +627,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const strategicPoints = Number(strategicMetric?.strategicPointsWithoutDaemyung || 0)
     + Math.max(Number(strategicMetric?.daemyungCount || 0), sonoCount) * 2;
   const employeeStrategic = octoberPolicy
-    ? octoberQuality({matrix:draft.matrix,strategicPoints,homeNoPerformance})
+    ? octoberQuality({matrix:draft.matrix,strategicPoints,homeNoPerformance,plan115BeforeRevision:draft.plan115BeforeRevision,plan115AfterRevision:draft.plan115AfterRevision})
     : month >= SEPTEMBER_POLICY_MONTH
     ? calculateEmployeeStrategicAdjustment({hsCount:hsCount(draft),simMnpCount:Object.values(draft.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0),strategicPoints})
     : {ratio:null,amount:0,band:'not_applicable'};

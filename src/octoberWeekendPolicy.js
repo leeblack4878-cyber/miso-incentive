@@ -29,8 +29,8 @@ export function calculateOctoberWeekendSale(args={},policy){
 }
 // One internet + main TV bundle is one DPS. Both required installations must
 // finish in October. Helpers are called with one employee's completed orders.
-export function calculateOctoberWeekendHomeBonus(bundles=[]){
- const eligible=bundles.filter(b=>b.date>=OCTOBER_WEEKEND_START&&b.date<=OCTOBER_WEEKEND_END
+export function calculateOctoberWeekendHomeBonus(bundles=[],start=OCTOBER_WEEKEND_START,end=OCTOBER_WEEKEND_END){
+ const eligible=bundles.filter(b=>b.date>=start&&b.date<=end
   &&b.hasInternet&&['500','1g'].includes(b.speed)&&b.hasTv
   &&(b.networkType==='household'&&['broadcastPass','premium'].includes(b.mainTvPlan)||b.networkType==='soho'&&b.mainTvPlan==='premium')
   &&b.orders?.filter(o=>['internet500','internet1g','homeTv'].includes(o.product_type)).every(o=>{

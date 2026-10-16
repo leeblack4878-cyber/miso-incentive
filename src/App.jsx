@@ -3788,7 +3788,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
               {Number(pay.strategicAdjustment||0)!==0&&<RowKV label={pay.strategicAdjustment>0?'└ 전략P 200% 이상 보너스':`└ 전략P ${month>='2026-10'?'170':'160'}% 미만 디메리트`} value={won(pay.strategicAdjustment)} />}
-              {Number(pay.plan115Bonus||0)!==0&&<RowKV label="└ 115군 비중 60% 이상 보너스" value={won(pay.plan115Bonus)} />}
+              {Number(pay.plan115Bonus||0)!==0&&<RowKV label="└ 115군 비중 보너스 (10/16부터 70%)" value={won(pay.plan115Bonus)} />}
               {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
               {Number(pay.septemberWeekendSimMnpPolicy?.amount||0)!==0&&<RowKV label="└ 9월 주말 SIM MNP 추가 지급" value={won(pay.septemberWeekendSimMnpPolicy.amount)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}

@@ -1,3 +1,4 @@
+import {isOctober16Date,isOctober16Bundle,isAppleBundle,bundleAvailableForDate} from '../october16Policy';
 import {toggleStrategicService} from '../additionalStrategicServices';
 import {readAllPages} from '../performanceRoster';
 import MobilePlanFields from './MobilePlanFields';
@@ -33,6 +34,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     return monthKeyOf(now) === month ? String(now.getDate()).padStart(2, '0') : '01';
   })();
   const [selectedDay, setSelectedDay] = useState(todayKey);
+  const revision16=isOctober16Date(`${month}-${selectedDay}`);
+  const [policyEligibilityConfirmed,setPolicyEligibilityConfirmed]=useState(false);
   const [day, setDay] = useState(() => normalizeDay(dailyDays[todayKey]));
   const [pickedRow, setPickedRow] = useState(null); // 선택한 가입구분 index
   const [inputCategory, setInputCategory] = useState(null); // mobile | home | extra
@@ -1049,6 +1052,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileDetailsOpen(true);
     setMobileCalcOpen(false);
     const editableCi=month>='2026-10'&&getMobilePlan(meta.planDetail)?mobilePlanCommissionColumn(meta.planDetail,meta.ri):isConfirmedMonthlyPolicy(month)&&month<'2026-10'&&Number(meta.ci)===3?5:meta.ci;
+    setPolicyEligibilityConfirmed(!!sale.source_meta?.policyEligibilityConfirmed);
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setSecondParent(isSecondOnlyBundle(meta)?{...meta.secondParent,customerName:meta.secondParent?.customerName||sale.customers?.customer_name||''}:null);
     setPlanDetail(getMobilePlan(meta.planDetail));
@@ -1082,6 +1086,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setPlanReminderOpen(false);
     setServiceReminder(null);
     setEditingSale(null);
+    setPolicyEligibilityConfirmed(false);
     setEditingCompletedTaskCount(0);
     const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
     setMobileSaleDraft({ri,ci,label});
@@ -1118,9 +1123,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const saleType=saleTypeMap?.[k]||'normal';
       const rate=Number(bundleTable.find(x=>x.key===k)?.rate||0);
       const noInsurance=(vasMap?.[k]||[]).includes('vasNone');
-      const appleWithout115=k==='b_AppleWatch'&&Number(parentCi)!==0;
+      const appleWithout115=isAppleBundle(k)&&Number(parentCi)!==0;
       if(isConfirmedMonthlyPolicy(month)){
-        bundleOffset+=calculateSeptemberBundleSale({rate,saleType,bundleKey:k,insuranceJoined:k==='b_R825FA'?(vasMap?.[k]||[]).some(v=>['vasPhonePass','vasSafePass'].includes(v)):!noInsurance,parent115:!appleWithout115,isAppleWatch:k==='b_AppleWatch'}).offset;
+        bundleOffset+=calculateSeptemberBundleSale({rate,saleType,bundleKey:k,insuranceJoined:(isOctober16Bundle(k)||k==='b_R825FA')?(vasMap?.[k]||[]).some(v=>['vasPhonePass','vasSafePass'].includes(v)):!noInsurance,parent115:!appleWithout115,isAppleWatch:isAppleBundle(k)}).offset;
       }else if(saleType==='free')bundleOffset+=rate;
       else return;
       if(includeLegacyVasOffset)(vasMap?.[k]||[]).filter(v=>v!=='vasNone').forEach(v=>{
@@ -1145,6 +1150,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
         : '현재 적용 가능한 특가&지인정책이 없어요.');
     }
     const saleDate=`${month}-${selectedDay}`;
+    if(revision16&&([2,3,4].includes(mobileSaleDraft.ri)||mobileBundle2ndKeys.length)&&!policyEligibilityConfirmed)return showAppToast('단기기변 제외 및 약정·쉐어링 조건을 확인해주세요.',{tone:'error'});
+    if(revision16&&mobileBundle2ndKeys.some(k=>!bundleAvailableForDate(k,saleDate)||['discount','free'].includes(mobileBundleSaleTypeMap[k])))return showAppToast('10/16 정책의 일반판매 2ND 기기를 선택해주세요.',{tone:'error'});
+    if(revision16&&mobileBundle2ndKeys.some(k=>isOctober16Bundle(k)&&!(mobileBundleVasMap[k]||[]).length))return showAppToast('2ND별 보험 가입 또는 미유치를 선택해주세요.',{tone:'error'});
     if(!secondOnlyBundle&&mobileSaleDraft.ri!==7&&((month>='2026-10'&&!editingSale&&!legacyConversion)||planDetail)&&!getMobilePlan(planDetail))return showAppToast('요금제 유형과 세부 요금제를 선택해주세요.',{tone:'error'});
     if(secondOnlyBundle){
       if(secondParent.planDetail&&!getMobilePlan(secondParent.planDetail))return showAppToast('모단말의 세부 요금제를 선택해주세요.',{tone:'error'});
@@ -1156,9 +1164,9 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const selectedSpecial=specialPolicies.find(p=>p.id===mobileSpecialPolicyId);
     if(mobileSaleKind==='special'&&selectedSpecial?.stockRule==='watch'&&(secondOnlyBundle||mobileBundle2ndKeys.length))return showAppToast('R825FA 단독 장기재고는 2ND 단독으로 입력해주세요. 번들은 기기 목록의 R825FA 장기재고를 선택해주세요.',{tone:'error'});
     if(mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)){
-      const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)});
+      const outcome=calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints:mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap}),saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri),ri:mobileSaleDraft.ri});
       if(!selectedSpecial||!outcome.dateEligible||!outcome.typeEligible)return showAppToast('선택한 정책의 개통일과 가입 구분을 확인해주세요.',{tone:'error'});
-      if((mobileSaleKind==='incentive_unpaid'||selectedSpecial.stock)&&!outcome.eligible)return showAppToast(selectedSpecial.conditionLabel||'아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
+      if((mobileSaleKind==='incentive_unpaid'||selectedSpecial.stock||selectedSpecial.revision16)&&!outcome.eligible)return showAppToast(selectedSpecial.conditionLabel||'아이폰18 사전예약 특가는 115군 이상(청소년85 인정)·전략포인트 2P 이상이어야 해요.',{tone:'error'});
     }
     const allowedSecondKeys=new Set([...allowedSecondVas(config.vas||DEFAULT_VAS).map(x=>x.key),'vasNone']);
     const invalidSecondVas=Object.entries(mobileBundleVasMap||{}).flatMap(([bundle,keys])=>(keys||[]).filter(k=>!allowedSecondKeys.has(k)).map(k=>({bundle,key:k})));
@@ -1204,14 +1212,14 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
       const oldSp=editingSale?.source_meta?.specialPolicy||{};
       const strategicPoints=mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
       const outcome=mobileSaleKind!=='normal'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)
-        ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)})
+        ?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri),ri:mobileSaleDraft.ri})
         :{eligible:true,additionalAmount:Number(policy?.replacement_amount??oldSp.replacementAmount??0)};
       const specialPolicy=mobileSaleKind==='normal'?null:{policyId:mobileSpecialPolicyId||null,policyTitle:policy?.title||oldSp.policyTitle||(unpaid?'인센미지급 특가':''),customerDiscount:unpaid?Number(policy?.customerDiscount||0):0,preorder:unpaid&&!policy?.weekend&&!!policy?.customerDiscount,weekend:!!policy?.weekend,policyType:unpaid?'incentive_unpaid':'additive',replacementAmount:unpaid?0:Number(outcome.additionalAmount||0),normalMatrixFee:unpaid||policy?.stockRule==='watch'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0,normalVasFee:unpaid||policy?.stockRule==='watch'?mobileVasKeys.filter(k=>k!=='vasNone').reduce((sum,k)=>sum+Number((config.vas||[]).find(v=>v.key===k)?.rate||0),0):0,eligible:!!outcome.eligible,strategicPoints,policyVersion:policy?.policyVersion||config.policyVersion};
       const meta=withCurrentSaleSchema(mergeSaleMetaPreservingLegacy(editingSale?.source_meta||{},{
         ...(editingSale?{legacySchemaVersion:saleSchemaVersion(editingSale)}:{}),
         planDetail:!secondOnlyBundle&&mobileSaleDraft.ri!==7?getMobilePlan(planDetail):null,
         secondOnlyBundle,secondParent:secondOnlyBundle?secondParent:null,
-        reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&(month>='2026-10'?mobilePlanUsedMnpEligible(planDetail):Number(mobileSaleDraft.ci)<=3)?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
+        policyEligibilityConfirmed:revision16?policyEligibilityConfirmed:undefined,reminders:mobileReminders,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,policySnapshot:editingSale?.source_meta?.policySnapshot||currentPolicySnapshot(config),strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundle2ndKeys:mobileBundle2ndKeys,bundleVasMap:mobileBundleVasMap,bundleSaleTypeMap:mobileBundleSaleTypeMap,bundleVasCommissionExcluded:true,appleInsuranceRepair20260923:true,usedMnpBundle:Number(mobileSaleDraft.ri)===5&&(month>='2026-10'?mobilePlanUsedMnpEligible(planDetail):Number(mobileSaleDraft.ci)<=3)?mobileUsedMnpBundle:false,teamOnly:activeTeamSupport,creditedStore:activeTeamSupport?teamSupportStore:null,specialPolicy
       }));
       const saleId=editingSale?.id||crypto.randomUUID();
       const tasks=buildReminderTasks({saleDate,reminders:mobileReminders,services:reminderServices(mobileVasKeys,config.vas||DEFAULT_VAS),previous:editingSale?.children?.tasks||[]});
@@ -1343,7 +1351,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const specialMatrix=mobileSaleKind==='incentive_unpaid'||mobileSaleKind==='special'&&selectedPolicy?.stockRule==='watch'?Number(config.matrix?.[mobileSaleDraft.ri]?.[mobileSaleDraft.ci]||0):0;
     const specialVas=mobileSaleKind==='incentive_unpaid'||mobileSaleKind==='special'&&selectedPolicy?.stockRule==='watch'?(mobileVasKeys||[]).filter(k=>k!=='vasNone').reduce((s,k)=>s+Number((config.vas||DEFAULT_VAS).find(v=>v.key===k)?.rate||0),0):0;
     const strategicPoints=mobileStrategicPoint({month,strategicPlan:!!mobileStrategicPlan,vasKeys:mobileVasKeys,bundleVasMap:mobileBundleVasMap});
-    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri)}):null;
+    const specialOutcome=mobileSaleKind==='special'&&mobileSpecialPolicyId&&isConfirmedMonthlyPolicy(month)?calculateMonthlySpecialSale({policyKey:mobileSpecialPolicyId,planDetail,vasKeys:mobileVasKeys,planGroup:septemberPlanGroup(mobileSaleDraft.ci),strategicPoints,saleDate,saleType:septemberMobileSaleType(mobileSaleDraft.ri),ri:mobileSaleDraft.ri}):null;
     const replacement=mobileSaleKind==='special'&&mobileSpecialPolicyId?Number(specialOutcome?.additionalAmount??selectedPolicy?.replacement_amount??editingSale?.source_meta?.specialPolicy?.replacementAmount??0):0;
     const oldSp=editingSale?.source_meta?.specialPolicy||{};
     const previewMeta={secondOnlyBundle,secondParent,teamOnly:activeTeamSupport,ri:mobileSaleDraft.ri,ci:mobileSaleDraft.ci,strategicPlan:mobileStrategicPlan,vasKeys:mobileVasKeys,
@@ -1764,7 +1772,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 {specialPolicies.filter(p=>p.policy_type==='incentive_unpaid').map(p=><button type="button" key={p.id} onClick={()=>setMobileSpecialPolicyId(p.id)} className={`w-full rounded-lg border p-2 text-left text-xs ${mobileSpecialPolicyId===p.id?'border-red-300 bg-red-50':'border-gray-200'}`}>
                   <div className="font-bold">{mobileSpecialPolicyId===p.id?'✓ ':''}{p.title}</div><div className="mt-1">{p.customerZeroPrice?'공시 적용 후 기기값 0원':`고객 지원금 ${won(p.customerDiscount)}`} · 인센티브 미지급</div>{p.conditionLabel&&<div className="mt-1 text-[10px] text-gray-500">{p.conditionLabel}</div>}
                 </button>)}
-                <div className="text-[10px] text-gray-600">{month>='2026-10'?'주말 정책은 10/2~5 개통 기준이에요. 요금제 6개월·전략상품 93일 유지. 115군 비중 60% 추가금과 전략P 비중 가감은 유지돼요.':'아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.'}</div>
+                <div className="text-[10px] text-gray-600">{month>='2026-10'?(revision16?'10/16~19 버디5: 55군↑·보험+전략VAS 1가지·1.8P↑·요금제6개월. 무료판매 수수료0원. 일반판매 정상수수료+추가금.':'주말 정책은 10/2~5 개통 기준이에요. 요금제 6개월·전략상품 93일 유지. 115군 비중 60% 추가금과 전략P 비중 가감은 유지돼요.'):'아이폰18은 사전예약 후 9/18~9/21 개통 건에 적용해요. 115군 이상(청소년85 인정)·전략포인트 2P 이상. 선택 시 사전예약 판매로 기록됩니다.'}</div>
               </div>}
 
               {mobileSaleKind==='special'&&(
@@ -1991,7 +1999,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <div className="text-xs font-semibold text-gray-600 mb-2">5. 2ND 판매 <span className="font-normal text-gray-400">· 최대 2개 선택</span></div>
               <input value={mobileBundleSearch} onChange={e=>setMobileBundleSearch(e.target.value)} placeholder="2ND 기기명 검색" className="w-full mb-2 border border-gray-200 rounded-xl px-3 py-2.5 text-xs"/>
               <div className="grid grid-cols-1 gap-1.5">
-                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>!secondOnlyBundle||CURRENT_SECOND_PARENTS.some(p=>p.key===secondParent.model&&p.apple===(v.key==='b_AppleWatch'))).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
+                {(config.bundle2nd || DEFAULT_BUNDLE2ND).filter(v=>bundleAvailableForDate(v.key,`${month}-${selectedDay}`)||editingSale?.source_meta?.bundle2ndKeys?.includes(v.key)).filter(v=>!secondOnlyBundle||CURRENT_SECOND_PARENTS.some(p=>p.key===secondParent.model&&p.apple===isAppleBundle(v.key))).filter(v=>!mobileBundleSearch.trim()||String(v.label||'').toLowerCase().includes(mobileBundleSearch.trim().toLowerCase())).map(v=>{
                   const selected=mobileBundle2ndKeys.includes(v.key);
                   const bundleVasKeys=mobileBundleVasMap[v.key]||[];
                   return <div key={v.key} className={`rounded-xl border ${selected?'bg-brand-50 border-brand-200':'bg-white border-gray-100'}`}>
@@ -2008,10 +2016,11 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       <span className="font-semibold">{selected?'✓ ':''}{v.label.replace('2ND · ','')}</span><span className="float-right text-[10px] text-gray-400">+{won(v.key==='b_R825FA'?calculateSeptemberBundleSale({rate:v.rate,bundleKey:v.key,saleType:mobileBundleSaleTypeMap[v.key]||'normal',insuranceJoined:bundleVasKeys.some(k=>['vasPhonePass','vasSafePass'].includes(k))}).paid:v.rate)}</span>
                     </button>
                     {selected&&<div className="px-3 pb-3">
+                      {isOctober16Bundle(v.key)&&<div className="text-[10px] text-brand-700 mb-2">보험 미가입 50% · 홈 무실적 50% · 중복 시 25% 지급. 모자 약정·쉐어링 필수.</div>}
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {(v.key==='b_R825FA'?[['normal','일반판매'],['discount','무료판매']]:isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
+                          {(revision16?[['normal','일반판매']]:v.key==='b_R825FA'?[['normal','일반판매'],['discount','무료판매']]:isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
                               className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-brand-50 border-brand-200 text-brand-700'):'bg-white border-gray-100 text-gray-500'}`}>
@@ -2019,7 +2028,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             </button>
                           })}
                         </div>
-                        {(v.key==='b_R825FA'||['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal'))&&
+                        {(!revision16&&(v.key==='b_R825FA'||['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')))&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
                             {v.key==='b_R825FA'?'미소 보유 장기재고 · 보험 가입 시 무료판매 100,000원 / 일반판매 350,000원. 기존 2ND 수수료를 대체하며 임의 가입 고리표 발생 시 전액 환수. 기존 유지 조건 적용.':isConfirmedMonthlyPolicy(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}
@@ -2126,6 +2135,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               </div>
             )}
 
+            {revision16&&([2,3,4].includes(mobileSaleDraft.ri)||mobileBundle2ndKeys.length>0)&&<label className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[11px] text-amber-900"><input type="checkbox" aria-label="10/16 지급 조건 확인" checked={policyEligibilityConfirmed} onChange={e=>setPolicyEligibilityConfirmed(e.target.checked)}/><span>기변: 이전 단말 180일 초과·SIM MNP 개통 30일 초과 확인(단기기변은 입력 제외). 2ND: 모자 약정·쉐어링 및 183일/93일 유지 조건 확인.</span></label>}
             <div className="mt-5 -mx-5 px-5 pt-3 pb-5 bg-white border-t border-gray-100">
               {!mobilePreview&&mobileSaleKind&&<div className="mb-2 text-xs text-gray-500">월 누적 실적 확인 후 예상금액을 표시해요.</div>}
               {mobilePreview&&<div className="mb-2.5 rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5">
