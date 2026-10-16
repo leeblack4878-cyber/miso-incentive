@@ -1,3 +1,4 @@
+import {isAppleBundle} from './october16Policy.js';
 // October owner clarification: only the child sale belongs to this month.
 export const PREVIOUS_SECOND_PARENTS = [
   {key:'galaxy_s',label:'갤럭시 S 시리즈 (FE 제외)',apple:false},
@@ -24,7 +25,7 @@ export function validatePreviousSecond({saleDate,parent={},bundleKeys=[]}={}) {
   if(!bounds||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<bounds.start||date>saleDate||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)return '모단말 판매일은 전월 또는 이번 달 2ND 판매일 이전 날짜로 입력해주세요.';
   if(!Number.isInteger(parent.ci)||parent.ci<0||parent.ci>5)return '모단말 요금제군을 선택해주세요.';
   if(!bundleKeys.length||bundleKeys.length>2)return '2ND 기기를 1~2개 선택해주세요.';
-  if(bundleKeys.some(key=>(key==='b_AppleWatch')!==model.apple))return '모단말과 맞는 2ND 기기를 선택해주세요.';
+  if(bundleKeys.some(key=>isAppleBundle(key)!==model.apple))return '모단말과 맞는 2ND 기기를 선택해주세요.';
   if(model.apple&&parent.ci!==0)return '애플워치는 모단말 115군 이상 조건을 확인해주세요.';
   return '';
 }

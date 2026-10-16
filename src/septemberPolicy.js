@@ -1,3 +1,4 @@
+import {isOctober16Bundle,isAppleBundle} from './october16Policy.js';
 import {r825Payout} from './longStockPolicy.js';
 export const SEPTEMBER_POLICY_VERSION = '2026-09-v1';
 export const SEPTEMBER_POLICY_MONTH = '2026-09';
@@ -149,6 +150,11 @@ export function calculateSeptemberSono(count, baseRate, achievedRate) {
 
 export function calculateSeptemberBundleSale({ rate = 0, saleType = 'normal', insuranceJoined = true, parent115 = true, isAppleWatch = false, bundleKey = '' } = {}) {
   const normalRate = Math.max(0, Number(rate || 0));
+  if(isOctober16Bundle(bundleKey)){
+    const eligible=(!isAppleBundle(bundleKey)||!!parent115)&&saleType==='normal';
+    const paid=eligible?normalRate*(insuranceJoined?1:0.5):0;
+    return {eligible,paid,offset:normalRate-paid,performanceCount:1,activityCount:1,performancePoints:0.2};
+  }
   const eligible = isAppleWatch ? !!parent115 : !!insuranceJoined;
   const paid = bundleKey==='b_R825FA'?r825Payout({saleType,insuranceJoined}):!eligible ? 0 : saleType === 'discount' ? Math.min(20000, normalRate) : normalRate;
   return { eligible, paid, offset: Math.max(0, normalRate - paid), performanceCount: 1, activityCount: 1, performancePoints: 0.2 };

@@ -1,3 +1,4 @@
+import {isOctober16Bundle,isAppleBundle,plan115Threshold} from './october16Policy.js';
 import { isSecondOnlyBundle, secondParentCi } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION } from './octoberPolicy.js';
 import {chuseokSalePay} from './chuseokPolicy.js';
@@ -18,8 +19,8 @@ export function mobileSaleOffsets(meta, config, september) {
     const rate=Number(config.bundle2nd?.find(x=>x.key===key)?.rate||0);
     const type=meta.bundleSaleTypeMap?.[key]||'normal';
     if(september) bundleOffset+=calculateSeptemberBundleSale({rate,saleType:type,
-      bundleKey:key,insuranceJoined:key==='b_R825FA'?(meta.bundleVasMap?.[key]||[]).some(k=>['vasPhonePass','vasSafePass'].includes(k)):!(meta.bundleVasMap?.[key]||[]).includes('vasNone'),
-      parent115:Number(secondParentCi(meta))===0,isAppleWatch:key==='b_AppleWatch'}).offset;
+      bundleKey:key,insuranceJoined:(isOctober16Bundle(key)||key==='b_R825FA')?(meta.bundleVasMap?.[key]||[]).some(k=>['vasPhonePass','vasSafePass'].includes(k)):!(meta.bundleVasMap?.[key]||[]).includes('vasNone'),
+      parent115:Number(secondParentCi(meta))===0,isAppleWatch:isAppleBundle(key)}).offset;
     else if(type==='free') bundleOffset+=rate;
     else continue;
     if(!meta.bundleVasCommissionExcluded) for(const vas of meta.bundleVasMap?.[key]||[])
@@ -76,7 +77,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   line('2ND 할인·조건 미충족 제외',-offsets.bundleOffset-offsets.vasOffset);
   line('인센미지급 특가 제외',-Number(sp.normalMatrixFee||0)-Number(sp.normalVasFee||0));
   line('특가·지인 추가',replacement*factor);
-  line('115군 비중 · 해당 판매',october&&hs&&meta.ci===0&&after.plan115Ratio>=60?10000*factor:0);
+  line('115군 비중 · 해당 판매',october&&hs&&meta.ci===0&&after.plan115Ratio>=plan115Threshold(`${month}-${dayKey}`)?10000*factor:0);
   line('추석 판매 활성화',chuseokSalePay(draft.chuseokPolicy,{month,dayKey,meta,existingSale}));
   const incentive=rows.reduce((sum,[,value])=>sum+value,0);
   return {incentive,rows,points:delta('totalPoints'),productivity:delta('kpiScore'),beforeRatio:before.strategicRatio,afterRatio:after.strategicRatio};
