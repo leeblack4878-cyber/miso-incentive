@@ -1,8 +1,8 @@
 import {test,expect} from '@playwright/test';
 // UI with mocked API; actual wire guards are exercised in evaluationBasis.test.js.
-async function setup(page,{loadError=false,saveError=false}={}){
+async function setup(page,{loadError=false,saveError=false,suspended=false}={}){
  await page.clock.install({time:new Date('2026-09-18T03:00:00Z')});
- const row={month:'2026-09',store_name:'신천동_삼미시장점',verified_metrics:{hs:0},external_inputs:{companyAsOfDate:'2026-09-16'},verified_at:'2026-09-17T10:00:00Z'};
+ const row={month:'2026-09',store_name:suspended?'신천동_삼미시장점':'신천동_삼미시장2호점',verified_metrics:{hs:0},external_inputs:{companyAsOfDate:'2026-09-16'},verified_at:'2026-09-17T10:00:00Z'};
  await page.route('https://placeholder.supabase.co/**',async route=>{
   const req=route.request(),url=req.url();
   if(url.includes('manager_eval_monthly')){
@@ -13,7 +13,7 @@ async function setup(page,{loadError=false,saveError=false}={}){
   if(url.includes('aa_impact_monthly'))return route.fulfill({json:null});
   return route.fulfill({json:[]});
  });
- await page.goto('/tests/ui/evaluation.html');
+ await page.goto(`/tests/ui/evaluation.html${suspended?'?suspended=1':''}`);
 }
 test('basis switch preserves company zero, shows missing inputs, and persists selection',async({page})=>{
  await setup(page);
@@ -40,5 +40,14 @@ test('320px comparison and company input form fit without horizontal overflow',a
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.getByRole('button',{name:'목표·실적 최신화',exact:true}).click();
  await expect(page.getByLabel('회사 실적 기준일')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+for(const width of [320,390])test(`삼미 9월은 0점 대신 평가 제외 ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:844});await setup(page,{suspended:true});
+ await expect(page.getByText('평가 제외',{exact:true})).toBeVisible();
+ await expect(page.getByText('2026년 9월부터 매장 운영 중단',{exact:false})).toBeVisible();
+ await expect(page.getByText('확인 대기',{exact:true})).toHaveCount(0);
+ await expect(page.getByText('D등급',{exact:true})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
