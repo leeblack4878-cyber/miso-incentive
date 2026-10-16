@@ -16,7 +16,7 @@ export const OCTOBER_WEEKEND_SPECIAL_SALES=rows.map(([model,saleType,customerDis
 }));
 export function calculateOctoberWeekendSale(args={},policy){
  const plan=getMobilePlan(args.planDetail),level=Number(plan?.key.split('_')[1]||0);
- const dateEligible=args.saleDate>=OCTOBER_WEEKEND_START&&args.saleDate<=OCTOBER_WEEKEND_END;
+ const dateEligible=args.saleDate>=(policy.startDate||OCTOBER_WEEKEND_START)&&args.saleDate<=(policy.endDate||OCTOBER_WEEKEND_END);
  const typeEligible=args.saleType===policy.saleType;
  const a176=policy.deviceModel==='A176';
  const planEligible=!!plan&&(a176?level>=(plan.type==='general'?55:47):(plan.type==='general'&&level>=115||plan.type==='junior'&&level>=85));

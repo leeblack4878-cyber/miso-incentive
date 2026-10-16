@@ -1,3 +1,4 @@
+import {OCTOBER9_START,OCTOBER9_END} from './october9Policy.js';
 import {isOctober16Bundle,isAppleBundle,OCTOBER16_START,OCTOBER16_END} from './october16Policy.js';
 import {calculateOctoberWeekendHomeBonus} from './octoberWeekendPolicy.js';
 import { isSecondOnlyBundle, secondParentCi } from './secondParentPolicy.js';
@@ -413,6 +414,7 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const bundles = buildHomeBundlesFromOrders(orders);
   const weekendPolicy = calculateSeptemberWeekendHomeBonus(bundles);
   const octoberWeekend=calculateOctoberWeekendHomeBonus(bundles);
+  const october9Weekend=calculateOctoberWeekendHomeBonus(bundles,OCTOBER9_START,OCTOBER9_END);
   const october16Weekend=calculateOctoberWeekendHomeBonus(bundles,OCTOBER16_START,OCTOBER16_END);
   const internetBundles = bundles.filter(bundle => bundle.hasInternet);
   const totalInternetCount = internetBundles.length;
@@ -496,13 +498,14 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   if (weekendPolicy.tvFreeBonus) details.push({ date: '2026-09-04~07', customer: '개인 누적', type: '한시정책', item: '9월 주말 TV프리 활성화', amount: weekendPolicy.tvFreeBonus, note: `${weekendPolicy.tvFreeCount}건 × ${weekendPolicy.tvFreeRate.toLocaleString()}원` });
   weekendPolicy.september18.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'9월 18~21일 주말 홈 활성화',note:`그레이드 ${weekendPolicy.september18.gradeCount}건 · 가정망 건당 ${weekendPolicy.september18.rate.toLocaleString()}원${p.amount>weekendPolicy.september18.rate?' · MNP 동시판매 +100,000원':''}`}));
   octoberWeekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 2~5일 주말 홈 추가 지급',note:`개인 ${octoberWeekend.count}건 · 건당 ${octoberWeekend.rate.toLocaleString()}원 (소호 포함)`}));
+  october9Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 9~12일 주말 홈 추가 지급',note:`개인 ${october9Weekend.count}건 · 건당 ${october9Weekend.rate.toLocaleString()}원 (소호 포함)`}));
   october16Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 16~19일 주말 홈 추가 지급',note:`개인 ${october16Weekend.count}건 · 건당 ${october16Weekend.rate.toLocaleString()}원 (소호 포함)`}));
-  const limitedPolicyPay = weekendPolicy.total+octoberWeekend.total+october16Weekend.total;
+  const limitedPolicyPay = weekendPolicy.total+octoberWeekend.total+october9Weekend.total+october16Weekend.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {
     source: 'orders', totalInternetCount, tierMin, gradePay, soloPay, simulPay,
     tvFreePay, smartHomePay, smartHomeSimulPay, subSetTopPay,
-    limitedPolicyPay, weekendPolicy, octoberWeekend, october16Weekend,
+    limitedPolicyPay, weekendPolicy, octoberWeekend, october9Weekend, october16Weekend,
     homeFlatPay, homeAddonPay, total: gradePay + homeFlatPay + homeAddonPay, details,
   };
 }
