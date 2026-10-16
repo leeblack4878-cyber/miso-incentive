@@ -199,7 +199,7 @@ for(const width of [320,390])test(`${width}px 장기재고 추가금 저장 및 
 for(const width of [320,390])test(`${width}px 10/16 2ND 신규 단가·보험50%·수정·삭제`,async({page})=>{
  const state=await open(page,{width,date:'2026-10-16'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();
  const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
- await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('새정책 고객');await d.getByLabel('가입구분',{exact:true}).selectOption('1');await choosePlan(page,d,'general_115');
+ await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('새정책 고객');await d.getByLabel('가입구분',{exact:true}).selectOption('1');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_115');
  await d.getByRole('button',{name:'2ND·고객약속·영업비용 추가',exact:true}).click();
  const second=d.getByRole('button',{name:/^L335/});await expect(second).toContainText('250,000');await second.click();
  const box=d.getByRole('button',{name:/L335/}).locator('..');await box.getByRole('button',{name:'미유치',exact:true}).click();
@@ -215,5 +215,5 @@ for(const width of [320,390])test(`${width}px 10/16 2ND 신규 단가·보험50%
 for(const width of [320,390])test(`${width}px 10/16 버디5 일반·미지급 선택`,async({page})=>{
  const state=await open(page,{width,date:'2026-10-16'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await d.getByRole('button',{name:'인센미지급 특가',exact:true}).click();await expect(d.getByRole('button',{name:/A176 버디5/})).toHaveCount(2);
- await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();await expect(d.locator('select').filter({has:d.locator('option[value="oct16_buddy_0_normal"]')})).toBeVisible();
+ await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();await expect(d.getByRole('button',{name:/A176 버디5/})).toHaveCount(2);
 });
