@@ -232,3 +232,14 @@ for(const width of [320,390])test(`${width}px October 9 weekend unpaid sale vali
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.day.matrix[1][0]).toBe(1);expect(state.day.specialVasOffset).toBe(40000);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);expect(state.day.specialVasOffset).toBe(0);
 });
+
+for(const width of [320,390])test(`${width}px 버디 일반판매 저가요금제·보험VAS1.8P 등록 및 삭제`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-16'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();await d.getByRole('button',{name:/A176 버디5 · MNP/}).click();await expect(d.getByText(/요금제 무관/).first()).toBeVisible();
+ await d.getByPlaceholder('고객명을 입력해주세요').fill('버디 저가');await d.getByLabel('가입구분',{exact:true}).selectOption('1');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_28');
+ await d.getByRole('button',{name:/교보문고 sam/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();expect(state.writes).toHaveLength(0);
+ await d.getByRole('button',{name:/폰안심패스/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(80000);expect(state.day.specialReplacementPay).toBe(80000);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(2);expect(state.day.specialReplacementPay).toBe(0);
+});

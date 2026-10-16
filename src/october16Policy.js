@@ -11,12 +11,12 @@ export const OCTOBER16_BUNDLES=[
 export function bundleAvailableForDate(key,date){return isOctober16Bundle(key)?isOctober16Date(date):!isOctober16Date(date)||key==='b_R825FA';}
 const amounts=[['S942-256/512',250000,200000],['S947-256/512',200000,150000],['S948-256/512',200000,150000],['F776-256',200000,150000],['F776-512',350000,300000],['F971-256',300000,250000],['F971-512',130000,80000],['F976-256',200000,150000],['F976-512',350000,300000],['S741',200000,200000]];
 export const OCTOBER16_SPECIAL_SALES=amounts.flatMap(([model,mnp,change],i)=>[['MNP',mnp],['기기변경',change]].map(([saleType,additionalAmount],j)=>({key:`oct16_model_${i}_${j}`,model,saleType,additionalAmount,requiredStrategicPoints:2,startDate:OCTOBER16_START,endDate:'2099-12-31',policyVersion:'2026-10-16-v2',revision16:true,conditionLabel:'115군(청소년85 인정) · 전략2P · 기변C 추가금 -5만원 · 93일 유지'})));
-export const OCTOBER16_BUDDY_SALES=['MNP','기기변경'].flatMap((saleType,i)=>[false,true].map(unpaid=>({key:`oct16_buddy_${i}_${unpaid?'free':'normal'}`,model:'10/16~19 · A176 버디5',saleType,additionalAmount:unpaid?0:i?40000:80000,policyType:unpaid?'incentive_unpaid':'additive',customerZeroPrice:unpaid,buddy16:true,revision16:true,startDate:OCTOBER16_START,endDate:OCTOBER16_END,policyVersion:'2026-10-16-buddy',conditionLabel:'55군 이상(고객유형 공통) · 요금제6개월 · 보험+전략VAS 1가지 · 1.8P↑ · 기변A~B만'})));
+export const OCTOBER16_BUDDY_SALES=['MNP','기기변경'].flatMap((saleType,i)=>[false,true].map(unpaid=>({key:`oct16_buddy_${i}_${unpaid?'free':'normal'}`,model:'10/16~19 · A176 버디5',saleType,additionalAmount:unpaid?0:i?40000:80000,policyType:unpaid?'incentive_unpaid':'additive',customerZeroPrice:unpaid,buddy16:true,revision16:true,startDate:OCTOBER16_START,endDate:OCTOBER16_END,policyVersion:'2026-10-16-buddy',conditionLabel:`${unpaid?'55군 이상(고객유형 공통) · 요금제6개월':'요금제 무관'} · 보험0.8P+지정 전략VAS1P=1.8P · 기변A~B만`})));
 export function calculateOctober16Sale(args={},policy){
  const plan=getMobilePlan(args.planDetail),level=Number(plan?.key.split('_')[1]||0),keys=new Set(args.vasKeys||[]);
  const dateEligible=args.saleDate>=policy.startDate&&args.saleDate<=policy.endDate;
  const typeEligible=args.saleType===policy.saleType&&(!policy.buddy16||Number(args.ri)!==4);
- const planEligible=policy.buddy16?!!plan&&level>=55:args.planGroup==='115'||args.planGroup==='youth85';
+ const planEligible=policy.buddy16?!!plan&&(policy.policyType!=='incentive_unpaid'||level>=55):args.planGroup==='115'||args.planGroup==='youth85';
  const insuranceEligible=!policy.buddy16||keys.has('vasPhonePass')||keys.has('vasSafePass');
  const vasEligible=!policy.buddy16||keys.has('vasKyobo')||keys.has('vasVcolorBundle');
  const pointEligible=Number(args.strategicPoints||0)>=(policy.buddy16?1.8:2);
