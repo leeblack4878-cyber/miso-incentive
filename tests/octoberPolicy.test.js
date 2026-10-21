@@ -25,12 +25,12 @@ test('all 20 October model/type amounts, date boundary and eligibility',()=>{
  assert.equal(calculateMonthlySpecialSale({policyKey:old.key,saleDate:'2026-10-01',planGroup:'115',strategicPoints:2}).eligible,false);
 });
 test('October 170% boundary, all SIM MNP demerit, 115 ratio and no-home halves positive pay',()=>{
- const matrix=Array.from({length:8},()=>Array(6).fill(0));matrix[0][0]=6;matrix[1][2]=4;matrix[5][0]=2;
+ const matrix=Array.from({length:8},()=>Array(6).fill(0));matrix[0][0]=7;matrix[1][2]=3;matrix[5][0]=2;
  const q=p=>octoberQuality({matrix,strategicPoints:p});
  assert.equal(q(16.9).amount,-120000);assert.equal(q(17).amount,0);assert.equal(q(20).amount,100000);
- assert.equal(q(20).plan115Bonus,60000);
+ assert.equal(q(20).plan115Bonus,70000);
  const half=octoberQuality({matrix,strategicPoints:20,homeNoPerformance:true});
- assert.equal(half.amount,50000);assert.equal(half.plan115Bonus,30000);
+ assert.equal(half.amount,50000);assert.equal(half.plan115Bonus,35000);
  matrix[0][0]=5;matrix[1][2]=5;assert.equal(q(20).plan115Bonus,0);
 });
 test('Lite is still one smartHome order; 50k only in October, September normal 100k',()=>{

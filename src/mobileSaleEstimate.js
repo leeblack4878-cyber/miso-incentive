@@ -1,4 +1,5 @@
-import {isOctober16Bundle,isAppleBundle,plan115Threshold} from './october16Policy.js';
+import {getMobilePlan} from './mobilePlans.js';
+import {isOctober16Bundle,isAppleBundle} from './october16Policy.js';
 import { isSecondOnlyBundle, secondParentCi } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION } from './octoberPolicy.js';
 import {chuseokSalePay} from './chuseokPolicy.js';
@@ -9,8 +10,9 @@ import { dayAfterSaleDeletion } from './saleMutations.js';
 export function changeStrategicMetric(metric, meta, direction, month = metric?.month) {
   if (!metric) return null;
   const part = summarizeStrategicProducts([{source_meta:meta,sale_date:month}]);
-  return Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount'].map(key =>
-    [key, Math.max(0, Number((Number(metric[key]||0)+direction*Number(part[key]||0)).toFixed(10)))]));
+  const plan115Counts=Object.fromEntries(['general','high','known','missing'].map(key=>[key,Math.max(0,Number(metric.plan115Counts?.[key]||0)+direction*Number(part.plan115Counts?.[key]||0))]));
+  return {...Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount'].map(key =>
+    [key, Math.max(0, Number((Number(metric[key]||0)+direction*Number(part[key]||0)).toFixed(10)))])),plan115Counts};
 }
 
 export function mobileSaleOffsets(meta, config, september) {
@@ -77,7 +79,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   line('2ND 할인·조건 미충족 제외',-offsets.bundleOffset-offsets.vasOffset);
   line('인센미지급 특가 제외',-Number(sp.normalMatrixFee||0)-Number(sp.normalVasFee||0));
   line('특가·지인 추가',replacement*factor);
-  line('115군 비중 · 해당 판매',october&&hs&&meta.ci===0&&after.plan115Ratio>=plan115Threshold(`${month}-${dayKey}`)?10000*factor:0);
+  line('115군 비중 · 해당 판매',october&&hs&&getMobilePlan(meta.planDetail)?.type==='general'&&['general_115','general_130'].includes(meta.planDetail?.key)&&after.plan115Ratio>=70?10000*factor:0);
   line('추석 판매 활성화',chuseokSalePay(draft.chuseokPolicy,{month,dayKey,meta,existingSale}));
   const incentive=rows.reduce((sum,[,value])=>sum+value,0);
   return {incentive,rows,points:delta('totalPoints'),productivity:delta('kpiScore'),beforeRatio:before.strategicRatio,afterRatio:after.strategicRatio};

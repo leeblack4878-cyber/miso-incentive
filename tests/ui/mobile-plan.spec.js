@@ -128,7 +128,7 @@ for(const width of [320,390])test(`${width}px October weekend unpaid sale valida
  const state=await open(page,{width,date:'2026-10-02'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const dialog=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await dialog.getByRole('button',{name:'인센미지급 특가',exact:true}).click();
  await dialog.getByRole('button',{name:/10\/2~5 주말 · S942-256\/512 · MNP/}).click();
- await expect(dialog.getByText(/115군 비중 60% 추가금/)).toBeVisible();
+ await expect(dialog.getByText(/일반 115·130군 비중 70% 추가금/)).toBeVisible();
  await dialog.getByPlaceholder('고객명을 입력해주세요').fill('주말 특가');await dialog.getByLabel('가입구분',{exact:true}).selectOption('1');
  await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_115');
  await dialog.getByRole('button',{name:/교보문고 sam/}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();
