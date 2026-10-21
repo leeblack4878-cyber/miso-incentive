@@ -496,8 +496,6 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     matrix: aggMatrix,
     mobilePoint: { ...draft.mobilePoint, ...autoMobilePoint },
     kpi: { ...draft.kpi, ...autoKpi },
-    plan115BeforeRevision:Object.entries(dailyDaysMap||{}).reduce((sum,[key,raw])=>sum+(month<'2026-10'||month==='2026-10'&&Number(key.slice(-2))<16?[0,1,2,3,4].reduce((n,i)=>n+Number(normalizeDay(raw).matrix[i]?.[0]||0),0):0),0),
-    plan115AfterRevision:Object.entries(dailyDaysMap||{}).reduce((sum,[key,raw])=>sum+(month>'2026-10'||month==='2026-10'&&Number(key.slice(-2))>=16?[0,1,2,3,4].reduce((n,i)=>n+Number(normalizeDay(raw).matrix[i]?.[0]||0),0):0),0),
     septemberWeekendSimMnpCount,
   };
 }
@@ -627,7 +625,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const strategicPoints = Number(strategicMetric?.strategicPointsWithoutDaemyung || 0)
     + Math.max(Number(strategicMetric?.daemyungCount || 0), sonoCount) * 2;
   const employeeStrategic = octoberPolicy
-    ? octoberQuality({matrix:draft.matrix,strategicPoints,homeNoPerformance,plan115BeforeRevision:draft.plan115BeforeRevision,plan115AfterRevision:draft.plan115AfterRevision})
+    ? octoberQuality({matrix:draft.matrix,strategicPoints,homeNoPerformance,plan115Counts:strategicMetric?.plan115Counts||{general:0,high:0,known:0,missing:0}})
     : month >= SEPTEMBER_POLICY_MONTH
     ? calculateEmployeeStrategicAdjustment({hsCount:hsCount(draft),simMnpCount:Object.values(draft.mnpBundle||{}).reduce((s,v)=>s+Number(v||0),0),strategicPoints})
     : {ratio:null,amount:0,band:'not_applicable'};
@@ -663,7 +661,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
     mnpBundlePay, septemberWeekendSimMnpPolicy, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
-    plan115Bonus:Number(employeeStrategic.plan115Bonus||0),plan115Ratio:employeeStrategic.plan115Ratio??null,
+    plan115Missing:Number(employeeStrategic.plan115Missing||0),plan115GeneralCount:Number(employeeStrategic.plan115GeneralCount||0),plan115HighCount:Number(employeeStrategic.plan115HighCount||0),plan115Bonus:Number(employeeStrategic.plan115Bonus||0),plan115Ratio:employeeStrategic.plan115Ratio??null,
     strategicPoints, strategicRatio:employeeStrategic.ratio, strategicAdjustment:employeeStrategic.amount,
     strategicAdjustmentBand:employeeStrategic.band, total,
   };

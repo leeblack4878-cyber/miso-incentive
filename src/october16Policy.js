@@ -24,4 +24,4 @@ export function calculateOctober16Sale(args={},policy){
  const amount=Math.max(0,policy.additionalAmount-(!policy.buddy16&&args.saleType==='기기변경'&&Number(args.ri)===4?50000:0));
  return {policy,dateEligible,typeEligible,planEligible,insuranceEligible,vasEligible,pointEligible,eligible,additionalAmount:eligible?amount:0};
 }
-export function plan115Threshold(date){return isOctober16Date(date)?70:60;}
+export function plan115Threshold(date){return 70;}

@@ -31,16 +31,20 @@ export function calculateMonthlySpecialSale(args={}) {
   const policies=specialSalesForDate(args.saleDate||''),policy=policies.find(p=>p.key===args.policyKey);
   return policy?.revision16?calculateOctober16Sale(args,policy):policy?.stock?calculateLongStockSale(args,policy):policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
 }
-export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=false,plan115BeforeRevision,plan115AfterRevision}={}) {
+export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=false,plan115Counts}={}) {
   const hs=matrix.slice(0,5).reduce((sum,row)=>sum+row.reduce((n,v)=>n+Number(v||0),0),0);
   const sim=(matrix[5]||[]).reduce((n,v)=>n+Number(v||0),0);
   const plan115=matrix.slice(0,5).reduce((n,row)=>n+Number(row[0]||0),0);
   const factor=homeNoPerformance?.5:1;
   const ratio=hs>0?Number(strategicPoints||0)/hs*100:null;
-  const plan115Ratio=hs>0?plan115/hs*100:null;
+  // Callers with raw sale metadata pass exact customer types. Legacy direct
+  // callers may still supply a matrix; payroll explicitly passes missing counts.
+  const counts=plan115Counts||{general:hs,high:plan115,known:hs,missing:0};
+  const plan115Missing=Math.max(Number(counts.missing||0),Math.abs(hs-Number(counts.known||0)),0);
+  const plan115Ratio=plan115Missing===0&&counts.general>0?counts.high/counts.general*100:null;
   const band=ratio===null?'not_applicable':ratio>=200?'bonus':ratio<170?'demerit':'neutral';
   return {ratio,band,amount:band==='bonus'?hs*10000*factor:band==='demerit'?-(hs+sim)*10000:0,
-    plan115Ratio,plan115Bonus:((plan115Ratio>=60?Number(plan115BeforeRevision??plan115):0)+(plan115Ratio>=70?Number(plan115AfterRevision||0):0))*10000*factor};
+    plan115Ratio,plan115Missing,plan115GeneralCount:Number(counts.general||0),plan115HighCount:Number(counts.high||0),plan115Bonus:(plan115Ratio>=70?Number(counts.high||0):0)*10000*factor};
 }
 export function octoberConfig(base={}) {
   const september=septemberConfig(base);

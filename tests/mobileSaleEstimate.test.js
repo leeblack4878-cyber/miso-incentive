@@ -29,14 +29,14 @@ test('October actual payroll and per-sale estimate include quality bonus and hal
  const {octoberConfig}=await import('../src/octoberPolicy.js');
  const config=octoberConfig(api.defaultConfig()),day=api.normalizeDay();day.matrix[1][0]=1;day.specialReplacementPay=150000;
  const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
- const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0};
+ const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0,plan115Counts:{general:1,high:1,known:1,missing:0}};
  const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);
  assert.equal(pay.mobilePlanPay,45000);assert.equal(pay.specialReplacementPay,75000);
  assert.equal(pay.plan115Bonus,5000);assert.equal(pay.strategicAdjustment,5000);
  assert.equal(pay.mobileGuaranteeBasis-pay.tenurePay,130000);
  const withHome=api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric);
  assert.equal(withHome.specialReplacementPay,150000);assert.equal(withHome.plan115Bonus,10000);
- const meta={ri:1,ci:0,strategicPlan:true,vasKeys:['vasKyobo'],specialPolicy:{replacementAmount:150000}};
+ const meta={ri:1,ci:0,planDetail:{key:'general_115',type:'general'},strategicPlan:true,vasKeys:['vasKyobo'],specialPolicy:{replacementAmount:150000}};
  const estimate=estimateMobileSale({meta,existingSale:{source_type:'mobile',source_meta:meta},dayKey:'01',dailyDays:{'01':day},draft,strategicMetric:metric,month:'2026-10',config,employee:{position:'기타'},september:true},api);
  assert.equal(estimate.rows.find(r=>r[0]==='특가·지인 추가')[1],75000);
  assert.equal(estimate.rows.find(r=>r[0]==='115군 비중 · 해당 판매')[1],5000);
@@ -93,7 +93,7 @@ test('automatically classified October plans flow into real payroll including no
  for(const [key,ri,amount] of [['general_75',1,0],['general_33',5,0],['senior_33',1,40000],['senior_44',0,0],['junior_37',5,40000],['junior_75',1,40000],['general_105',1,50000],['junior_85',1,70000]]){
   const ci=mobilePlanCommissionColumn(MOBILE_PLANS.find(p=>p.key===key),ri),day=api.normalizeDay();day.matrix[ri][ci]=1;
   const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
-  const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0};
+  const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0,plan115Counts:{general:1,high:1,known:1,missing:0}};
   const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);
   assert.equal(pay.mobilePlanPay,amount/2,`${key} no-home`);
   assert.equal(api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric).mobilePlanPay,amount,`${key} home`);
@@ -136,7 +136,7 @@ test('October weekend unpaid payroll excludes base and VAS but keeps 115 share a
  const {octoberConfig}=await import('../src/octoberPolicy.js');const config=octoberConfig(api.defaultConfig()),day=api.normalizeDay();
  day.matrix[1][0]=1;day.groups.vas={vasKyobo:1,vasVcolorBundle:1,vasPhonePass:1};day.specialMatrixOffset=config.matrix[1][0];day.specialVasOffset=50000;
  const draft=api.emptyDraft();draft.homePolicy={source:'orders',totalInternetCount:1,gradePay:0,homeFlatPay:0,homeAddonPay:0,total:0};
- const pay=api.computePay(api.applyDailyToDraft(draft,{'02':day},'2026-10',config.categoryMap,config.gibyeonColumnMap),'사원','2020-01-01','2026-10',config,0,{strategicPointsWithoutDaemyung:2.8,daemyungCount:0});
+ const pay=api.computePay(api.applyDailyToDraft(draft,{'02':day},'2026-10',config.categoryMap,config.gibyeonColumnMap),'사원','2020-01-01','2026-10',config,0,{strategicPointsWithoutDaemyung:2.8,daemyungCount:0,plan115Counts:{general:1,high:1,known:1,missing:0}});
  assert.equal(pay.matrixTotal,config.matrix[1][0]);assert.equal(pay.adjustedMatrixTotal,0);assert.equal(pay.vasPay,0);assert.equal(pay.specialReplacementPay,0);assert.equal(pay.plan115Bonus,10000);assert.equal(pay.strategicAdjustment,10000);
  assert.equal(pay.tenurePay,100000);
 });

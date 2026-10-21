@@ -1,3 +1,5 @@
+import {summarizeStrategicProducts} from '../src/strategicPoints.js';
+import {changeStrategicMetric} from '../src/mobileSaleEstimate.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -23,13 +25,13 @@ test('10/16 all twenty rates, C deduction and day boundary preserve 10/15',()=>{
  assert(!specialSalesForDate('2026-10-16').some(p=>p.key===old.key));
  assert(specialSalesForDate('2026-10-20').some(p=>p.key===OCTOBER16_SPECIAL_SALES[0].key));
 });
-test('115 ratio uses 60% for pre16 eligible units and 70% for post16 units',()=>{
+test('October whole-month 115 ratio uses 70% including pre16 sales',()=>{
  const matrix=Array.from({length:8},()=>Array(6).fill(0));matrix[0][0]=13;matrix[0][2]=7;
- const q=octoberQuality({matrix,strategicPoints:40,plan115BeforeRevision:6,plan115AfterRevision:7});assert.equal(q.plan115Bonus,60000);
+ const q=octoberQuality({matrix,strategicPoints:40,plan115BeforeRevision:6,plan115AfterRevision:7});assert.equal(q.plan115Bonus,0);
  matrix[0][0]=14;matrix[0][2]=6;assert.equal(octoberQuality({matrix,strategicPoints:40,plan115BeforeRevision:6,plan115AfterRevision:8,homeNoPerformance:true}).plan115Bonus,70000);
  const d1=api.normalizeDay(),d2=api.normalizeDay();d1.matrix[0][0]=6;d1.matrix[0][2]=4;d2.matrix[0][0]=7;d2.matrix[0][2]=3;
  const draft=api.applyDailyToDraft(api.emptyDraft(),{'15':d1,'16':d2},'2026-10',config.categoryMap,config.gibyeonColumnMap);
- const pay=api.computePay(draft,'기타',null,'2026-10',config,0,{strategicPointsWithoutDaemyung:40});assert.equal(pay.plan115Bonus,30000);
+ const pay=api.computePay(draft,'기타',null,'2026-10',config,0,{strategicPointsWithoutDaemyung:40,plan115Counts:{general:20,high:13,known:20,missing:0}});assert.equal(pay.plan115Bonus,0);
 });
 test('all revised 2ND rates, insurance halves, normal-only and old Apple exemption',()=>{
  assert.deepEqual(OCTOBER16_BUNDLES.map(x=>x.rate),[250000,200000,200000,250000,300000,300000,300000,250000,200000,200000,200000,200000]);
@@ -62,4 +64,28 @@ test('Buddy free0 vs normal80/40, normal any plan/free55, insurance+VAS1.8, A/B 
   for(const key of ['general_28','senior_47','junior_under28']){const low={...a,planDetail:{key,type:key.split('_')[0]}};assert.equal(calculateMonthlySpecialSale(low).eligible,p.policyType!=='incentive_unpaid');}
   if(p.saleType==='기기변경')assert.equal(calculateMonthlySpecialSale({...a,ri:4}).eligible,false);
  }
+});
+
+const sale=(key,ri=1,extra={})=>({source_type:'mobile',sale_date:'2026-10-01',source_meta:{ri,ci:key==='junior_85'||key==='general_115'||key==='general_130'?0:5,planDetail:{key,type:key.split('_')[0]},...extra}});
+test('whole October general115+130 / generalHS; weak excluded from numerator denominator and payout',()=>{
+ const sales=[...Array.from({length:4},()=>sale('general_115')),...Array.from({length:3},()=>sale('general_130')),...Array.from({length:3},()=>sale('general_55')),...Array.from({length:4},()=>sale('junior_85')),...Array.from({length:6},()=>sale('senior_47'))];
+ const metric=summarizeStrategicProducts(sales);assert.deepEqual(metric.plan115Counts,{general:10,high:7,known:20,missing:0});
+ const matrix=Array.from({length:8},()=>Array(6).fill(0));matrix[1][0]=11;matrix[1][5]=9;
+ const result=octoberQuality({matrix,plan115Counts:metric.plan115Counts});assert.equal(result.plan115Ratio,70);assert.equal(result.plan115Bonus,70000);
+ const below=octoberQuality({matrix,plan115Counts:{general:11,high:7,known:20,missing:0}});assert.equal(below.plan115Bonus,0);
+ const zero=octoberQuality({matrix,plan115Counts:{general:0,high:0,known:20,missing:0}});assert.equal(zero.plan115Ratio,null);assert.equal(zero.plan115Bonus,0);
+ const pending=octoberQuality({matrix,plan115Counts:{general:10,high:7,known:19,missing:1}});assert.equal(pending.plan115Ratio,null);assert.equal(pending.plan115Missing,1);assert.equal(octoberQuality({matrix,plan115Counts:{general:10,high:7,known:21,missing:0}}).plan115Missing,1);
+ const d=api.normalizeDay();d.matrix=matrix;const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':d},'2026-10',config.categoryMap,config.gibyeonColumnMap);const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);assert.equal(pay.plan115Bonus,35000);
+ const withHome=api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric);assert.equal(withHome.plan115Bonus,70000);
+ const changed=changeStrategicMetric(metric,sale('general_130').source_meta,-1,'2026-10');assert.deepEqual(changed.plan115Counts,{general:9,high:6,known:19,missing:0});assert.deepEqual(changeStrategicMetric(changed,sale('general_130').source_meta,1,'2026-10').plan115Counts,metric.plan115Counts);
+ const excluded=summarizeStrategicProducts([sale('general_130',5),sale('general_130',7),sale('general_130',1,{teamOnly:true}),sale('general_130',1,{deleted:true})]);assert.equal(excluded.plan115Counts.general,0);
+});
+
+test('115 share preview uses same whole-month general denominator through edit/deletion; junior85 gets no share bonus',()=>{
+ const key='general_130',meta=sale(key).source_meta,day=api.normalizeDay();day.matrix[1][0]=11;day.matrix[1][5]=9;
+ const draft=api.emptyDraft(),metric={strategicPointsWithoutDaemyung:40,daemyungCount:0,plan115Counts:{general:10,high:7,known:20,missing:0}};
+ const args={meta,existingSale:{source_type:'mobile',source_meta:meta},dayKey:'01',dailyDays:{'01':day},draft,strategicMetric:metric,month:'2026-10',config,employee:{position:'기타'},september:true};
+ const value=estimateMobileSale(args,api);assert.equal(value.rows.find(r=>r[0]==='115군 비중 · 해당 판매')[1],5000);
+ const weak=estimateMobileSale({...args,meta:sale('junior_85').source_meta},api);assert(!weak.rows.some(r=>r[0]==='115군 비중 · 해당 판매'));
+ const missing=api.computePay(api.applyDailyToDraft(draft,{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap),'기타',null,'2026-10',config,0,null);assert.equal(missing.plan115Bonus,0);assert.equal(missing.plan115Missing,20);
 });

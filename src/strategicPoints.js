@@ -1,3 +1,4 @@
+import {getMobilePlan} from './mobilePlans.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 export const STRATEGIC_PRODUCT_POINTS = Object.freeze({
   vasStrategicPlan: 0.5, vasKyobo: 1, vasVcolor: 1, vasVcolorBundle: 1,
@@ -22,15 +23,22 @@ export function calculateSaleStrategicPoints(meta = {}, date = meta.saleDate) {
 }
 
 export function summarizeStrategicProducts(sales = []) {
+  const plan115Counts={general:0,high:0,known:0,missing:0};
   let strategicPoints = 0, daemyungCount = 0, insurance = 0, strategicVas = 0;
   (sales || []).forEach(sale => {
-    const keys = strategicProductKeys(sale?.source_meta || {});
+    const meta=sale?.source_meta||{};
+    if(!meta.teamOnly&&!meta.secondOnlyBundle&&!meta.cancelled&&!meta.deleted&&!['cancelled','deleted'].includes(sale.status)&&Number.isInteger(meta.ri)&&meta.ri>=0&&meta.ri<=4){
+      const plan=getMobilePlan(meta.planDetail);
+      if(!plan)plan115Counts.missing++;
+      else {plan115Counts.known++;if(plan.type==='general'){plan115Counts.general++;if(['general_115','general_130'].includes(plan.key))plan115Counts.high++;}}
+    }
+    const keys = strategicProductKeys(meta);
     strategicPoints += keys.reduce((sum, key) => sum + productPoint(key,sale.sale_date||sale.source_meta?.saleDate), 0);
     daemyungCount += keys.includes('vasDaemyung') ? 1 : 0;
     insurance += keys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
     strategicVas += keys.filter(key => ['vasKyobo', 'vasVcolor', 'vasVcolorBundle'].includes(key)).length;
   });
-  return { insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
+  return { plan115Counts, insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
     strategicPoints:Number(strategicPoints.toFixed(10)), strategicPointsWithoutDaemyung:Number((strategicPoints-daemyungCount*2).toFixed(10)) };
 }
 
