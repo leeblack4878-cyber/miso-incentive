@@ -40,7 +40,7 @@ export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=fa
   // Callers with raw sale metadata pass exact customer types. Legacy direct
   // callers may still supply a matrix; payroll explicitly passes missing counts.
   const counts=plan115Counts||{general:hs,high:plan115,known:hs,missing:0};
-  const plan115Missing=Math.max(Number(counts.missing||0),hs-Number(counts.known||0),0);
+  const plan115Missing=Math.max(Number(counts.missing||0),Math.abs(hs-Number(counts.known||0)),0);
   const plan115Ratio=plan115Missing===0&&counts.general>0?counts.high/counts.general*100:null;
   const band=ratio===null?'not_applicable':ratio>=200?'bonus':ratio<170?'demerit':'neutral';
   return {ratio,band,amount:band==='bonus'?hs*10000*factor:band==='demerit'?-(hs+sim)*10000:0,

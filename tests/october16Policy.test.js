@@ -74,7 +74,7 @@ test('whole October general115+130 / generalHS; weak excluded from numerator den
  const result=octoberQuality({matrix,plan115Counts:metric.plan115Counts});assert.equal(result.plan115Ratio,70);assert.equal(result.plan115Bonus,70000);
  const below=octoberQuality({matrix,plan115Counts:{general:11,high:7,known:20,missing:0}});assert.equal(below.plan115Bonus,0);
  const zero=octoberQuality({matrix,plan115Counts:{general:0,high:0,known:20,missing:0}});assert.equal(zero.plan115Ratio,null);assert.equal(zero.plan115Bonus,0);
- const pending=octoberQuality({matrix,plan115Counts:{general:10,high:7,known:19,missing:1}});assert.equal(pending.plan115Ratio,null);assert.equal(pending.plan115Missing,1);
+ const pending=octoberQuality({matrix,plan115Counts:{general:10,high:7,known:19,missing:1}});assert.equal(pending.plan115Ratio,null);assert.equal(pending.plan115Missing,1);assert.equal(octoberQuality({matrix,plan115Counts:{general:10,high:7,known:21,missing:0}}).plan115Missing,1);
  const d=api.normalizeDay();d.matrix=matrix;const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':d},'2026-10',config.categoryMap,config.gibyeonColumnMap);const pay=api.computePay(draft,'기타',null,'2026-10',config,0,metric);assert.equal(pay.plan115Bonus,35000);
  const withHome=api.computePay({...draft,homeFlat:{home1GBOnly:1}},'기타',null,'2026-10',config,0,metric);assert.equal(withHome.plan115Bonus,70000);
  const changed=changeStrategicMetric(metric,sale('general_130').source_meta,-1,'2026-10');assert.deepEqual(changed.plan115Counts,{general:9,high:6,known:19,missing:0});assert.deepEqual(changeStrategicMetric(changed,sale('general_130').source_meta,1,'2026-10').plan115Counts,metric.plan115Counts);
