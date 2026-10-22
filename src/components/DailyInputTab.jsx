@@ -115,7 +115,8 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [mobileExpenseAmount,setMobileExpenseAmount]=useState('');
   const [mobileExpenseMemo,setMobileExpenseMemo]=useState('');
   const [mobileExtraExpenses,setMobileExtraExpenses]=useState([]);
-  const [specialPolicies,setSpecialPolicies]=useState([]);
+  const [availableSpecialPolicies,setSpecialPolicies]=useState([]);
+  const specialPolicies=availableSpecialPolicies.filter(p=>(!p.start_date||p.start_date<=`${month}-${selectedDay}`)&&(!p.end_date||p.end_date>=`${month}-${selectedDay}`));
   // v21.25: 모바일 입력 최상단에서 일반판매 / 특판·지인판매를 먼저 선택
   const [mobileSaleKind,setMobileSaleKind]=useState(''); // '' | normal | special | incentive_unpaid
   const [mobileSpecialPolicyId,setMobileSpecialPolicyId]=useState('');
@@ -1777,7 +1778,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
               {mobileSaleKind==='special'&&(
                 <div className="mt-2 rounded-xl border border-amber-100 bg-amber-50/30 p-3">
-                  <div className="text-[11px] font-semibold text-gray-700">적용 정책 *</div>
+                  <div className="text-[11px] font-semibold text-gray-700">적용 정책 * · {month}-{selectedDay} 기준</div>
                   {specialPolicies.some(p=>p.policy_type!=='incentive_unpaid') ? (
                     <>
                       <div className="grid grid-cols-1 gap-1.5 mt-2">
@@ -1786,17 +1787,20 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                           return <button key={p.id} type="button"
                             onClick={()=>{setMobileSpecialPolicyId(p.id);setMobileSpecialExceptionAmount('')}}
                             className={`w-full text-left rounded-lg border px-3 py-2.5 text-xs ${selected?'bg-white border-amber-300 text-amber-800':'bg-white/80 border-gray-100 text-gray-600'}`}>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                              <span className="font-semibold break-words min-w-0">{selected?'✓ ':''}{p.title}</span>
                               <span className="text-[10px] text-amber-600">{p.stockRule==='watch'?'2ND 대체 ':'기존 정책 +'}{won(p.replacement_amount)}</span>
                             </div>
-                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date==='2099-12-31'?'별도 공지 시까지':p.end_date||''}</div>}{p.conditionLabel&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
+
                           </button>
                         })}
                       </div>
                       {mobileSpecialPolicyId&&(
-                        <div className="mt-2">
-                          <div className="text-[10px] text-amber-700 leading-relaxed">
+                        <div className="mt-2 rounded-lg bg-amber-50 p-3" aria-label="선택한 정책 조건">
+                          <div className="text-[11px] font-semibold text-amber-900">{specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.title}</div>
+                          <div className="mt-1 text-[10px] text-amber-700">{specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.start_date} ~ {specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.stock?'재고 소진까지':specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.end_date==='2099-12-31'?'별도 공지 시까지':specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.end_date}</div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-amber-900">{specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.conditionLabel}</div>
+                          <div className="mt-2 text-[10px] text-amber-700 leading-relaxed">
                             {specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.stockRule==='watch'?'R825FA는 기존 2ND 수수료와 보험 수수료를 제외하고 선택한 장기재고 금액으로 대체해요.':'기존 요금제·VAS·보험 인센티브에 조건 충족 시 모델별 추가 인센티브를 더해요.'}
                           </div>
                         </div>
