@@ -264,3 +264,18 @@ for(const width of [320,390])test(`${width}px 10/22 F971 rates and zero incentiv
  const saved=structuredClone(state.day);await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.day).toEqual(saved);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[2][0]).toBe(0);
 });
+
+
+for(const width of [320,390])test(`${width}px 10/21 stock updated list and F946 change85 saves edits deletes`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-21'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await expect(d.getByRole('button',{name:/장기재고.*크림/})).toHaveCount(0);await expect(d.getByRole('button',{name:/장기재고.*A346/})).toHaveCount(0);await expect(d.getByRole('button',{name:/장기재고.*아이폰15프로/})).toHaveCount(0);
+ await expect(d.getByRole('button',{name:/아이폰16플러스 데모폰 128GB · MNP/})).toContainText('300,000');await expect(d.getByRole('button',{name:/아이폰16플러스 데모폰 128GB · 기기변경/})).toContainText('200,000');
+ await expect(d.getByRole('button',{name:/장기재고.*R825FA 무료판매/})).toContainText('100,000');
+ await d.getByRole('button',{name:/장기재고.*F946.*기기변경/}).click();await expect(d.getByLabel('선택한 정책 조건')).toContainText('85군 이상');
+ await d.getByPlaceholder('고객명을 입력해주세요').fill('장기재고85');await d.getByLabel('가입구분',{exact:true}).selectOption('2');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_85');
+ for(const name of [/교보문고 sam/,/폰안심패스/]){await d.getByRole('button',{name}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();}
+ await d.getByLabel('10/16 지급 조건 확인').check();expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(700000);expect(state.writes[0].p_meta.specialPolicy.policyVersion).toBe('2026-10-21-stock');
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[1].p_meta.specialPolicy.replacementAmount).toBe(700000);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.specialReplacementPay).toBe(0);
+});

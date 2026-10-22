@@ -1152,7 +1152,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     }
     const saleDate=`${month}-${selectedDay}`;
     if(revision16&&([2,3,4].includes(mobileSaleDraft.ri)||mobileBundle2ndKeys.length)&&!policyEligibilityConfirmed)return showAppToast('단기기변 제외 및 약정·쉐어링 조건을 확인해주세요.',{tone:'error'});
-    if(revision16&&mobileBundle2ndKeys.some(k=>!bundleAvailableForDate(k,saleDate)||['discount','free'].includes(mobileBundleSaleTypeMap[k])))return showAppToast('10/16 정책의 일반판매 2ND 기기를 선택해주세요.',{tone:'error'});
+    if(revision16&&mobileBundle2ndKeys.some(k=>!bundleAvailableForDate(k,saleDate)||(['discount','free'].includes(mobileBundleSaleTypeMap[k])&&!(k==='b_R825FA'&&saleDate>='2026-10-21'))))return showAppToast('10/16 정책의 일반판매 2ND 기기를 선택해주세요.',{tone:'error'});
     if(revision16&&mobileBundle2ndKeys.some(k=>isOctober16Bundle(k)&&!(mobileBundleVasMap[k]||[]).length))return showAppToast('2ND별 보험 가입 또는 미유치를 선택해주세요.',{tone:'error'});
     if(!secondOnlyBundle&&mobileSaleDraft.ri!==7&&((month>='2026-10'&&!editingSale&&!legacyConversion)||planDetail)&&!getMobilePlan(planDetail))return showAppToast('요금제 유형과 세부 요금제를 선택해주세요.',{tone:'error'});
     if(secondOnlyBundle){
@@ -2024,7 +2024,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                       <div className="mb-2">
                         <div className="text-[10px] font-semibold text-gray-500 mb-1.5">판매 구분</div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {(revision16?[['normal','일반판매']]:v.key==='b_R825FA'?[['normal','일반판매'],['discount','무료판매']]:isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
+                          {(revision16&&!(v.key==='b_R825FA'&&`${month}-${selectedDay}`>='2026-10-21')?[['normal','일반판매']]:v.key==='b_R825FA'?[['normal','일반판매'],['discount','무료판매']]:isConfirmedMonthlyPolicy(month)?[['normal','일반판매'],['discount','할인판매']]:[['normal','일반판매'],['free','무료판매']]).map(([kind,label])=>{
                             const current=mobileBundleSaleTypeMap[v.key]||'normal';
                             return <button key={kind} type="button" onClick={()=>setMobileBundleSaleTypeMap(prev=>({...prev,[v.key]:kind}))}
                               className={`py-2 rounded-lg border text-[11px] font-semibold ${current===kind?(kind==='free'||kind==='discount'?'bg-amber-50 border-amber-300 text-amber-700':'bg-brand-50 border-brand-200 text-brand-700'):'bg-white border-gray-100 text-gray-500'}`}>
@@ -2032,7 +2032,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                             </button>
                           })}
                         </div>
-                        {(!revision16&&(v.key==='b_R825FA'||['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')))&&
+                        {((!revision16||v.key==='b_R825FA'&&`${month}-${selectedDay}`>='2026-10-21')&&(v.key==='b_R825FA'||['free','discount'].includes(mobileBundleSaleTypeMap[v.key]||'normal')))&&
                           <div className="mt-1.5 text-[10px] leading-relaxed text-amber-700 bg-amber-50 rounded-lg px-2.5 py-2">
                             {v.key==='b_R825FA'?'미소 보유 장기재고 · 보험 가입 시 무료판매 100,000원 / 일반판매 350,000원. 기존 2ND 수수료를 대체하며 임의 가입 고리표 발생 시 전액 환수. 기존 유지 조건 적용.':isConfirmedMonthlyPolicy(month)?(v.key==='b_AppleWatch'?'애플워치는 보험 조건 없이 주회선 115군 이상일 때 할인판매 20,000원을 지급해요.':'할인판매는 보험 가입 조건 충족 시 20,000원을 지급해요.'):'무료판매는 2ND 실적·KPI는 인정하지만 2ND 번들 및 이 회선의 VAS 인센티브는 지급되지 않아요.'}
                           </div>}

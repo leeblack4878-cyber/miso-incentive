@@ -16,11 +16,26 @@ export const LONG_STOCK_SPECIAL_SALES=rows.flatMap(([id,model,mnp,change,rule])=
  startDate:LONG_STOCK_START,endDate:'2099-12-31',policyVersion:'2026-10-stock',
  conditionLabel:`미소 보유 재고만 · ${rule==='high'?'MNP85군/기변95군 이상':rule==='kids'?'주니어28군 이상':'요금제 무관'} · 보험 + 교보 sam 또는 V컬러링 패키지 · 기존 유지 조건`})));
 LONG_STOCK_SPECIAL_SALES.push(...[['free',100000,'무료판매'],['normal',350000,'일반판매']].map(([kind,additionalAmount,label])=>({key:`stock_r825_${kind}`,model:`장기재고 · R825FA ${label}`,saleType:'2ND',additionalAmount,stock:true,stockRule:'watch',startDate:LONG_STOCK_START,endDate:'2099-12-31',policyVersion:'2026-10-stock',conditionLabel:'미소 보유 재고 · 보험 가입 · 기존 2ND 수수료 대체 · 임의 가입 고리표 발생 시 전액 환수 · 기존 유지 조건'})));
+export const LONG_STOCK21_START='2026-10-21';
+const currentRows=[
+ ['f946_black','F946-256 정상 재고 (블랙)',700000,700000,'high85'],
+ ['a165','A165N-UM',150000,null,'kids'],
+ ['iphone14pro','아이폰14프로 512 · 2890',900000,600000,'high85'],
+ ['iphone15plus','아이폰15플러스 256 · 3094',500000,300000,'high85'],
+ ['iphone16plus_demo','아이폰16플러스 데모폰 128GB',300000,200000,'high85'],
+];
+export const LONG_STOCK21_SPECIAL_SALES=currentRows.flatMap(([id,model,mnp,change,rule])=>
+ (rule==='kids'?[['010 신규',mnp]]:[['MNP',mnp],['기기변경',change]])
+ .map(([saleType,additionalAmount],i)=>({key:`stock_${id}_${i}_1021`,model:`장기재고 · ${model}`,saleType,additionalAmount,stock:true,stockRule:rule,
+ startDate:LONG_STOCK21_START,endDate:'2099-12-31',policyVersion:'2026-10-21-stock',
+ conditionLabel:`미소 보유 재고만 · ${rule==='kids'?'주니어28군 이상':'85군 이상'} · 보험 + 교보 sam 또는 V컬러링 패키지 · 기존 유지 조건`})));
+LONG_STOCK21_SPECIAL_SALES.push(...LONG_STOCK_SPECIAL_SALES.filter(p=>p.stockRule==='watch').map(p=>({...p,key:`${p.key}_1021`,startDate:LONG_STOCK21_START,policyVersion:'2026-10-21-stock'})));
+LONG_STOCK_SPECIAL_SALES.forEach(p=>{p.endDate='2026-10-20';});
 export function calculateLongStockSale(args,policy){
  const plan=getMobilePlan(args.planDetail),level=Number(plan?.key.split('_')[1]||0),keys=new Set(args.vasKeys||[]);
- const dateEligible=args.saleDate>=LONG_STOCK_START&&args.saleDate<=policy.endDate;
+ const dateEligible=args.saleDate>=policy.startDate&&args.saleDate<=policy.endDate;
  const typeEligible=args.saleType===policy.saleType;
- const planEligible=policy.stockRule==='watch'||!!plan&&(policy.stockRule==='any'||policy.stockRule==='kids'&&plan.type==='junior'&&level>=28||policy.stockRule==='high'&&level>=(args.saleType==='MNP'?85:95));
+ const planEligible=policy.stockRule==='watch'||!!plan&&(policy.stockRule==='any'||policy.stockRule==='kids'&&plan.type==='junior'&&level>=28||policy.stockRule==='high85'&&level>=85||policy.stockRule==='high'&&level>=(args.saleType==='MNP'?85:95));
  const insuranceEligible=keys.has('vasPhonePass')||keys.has('vasSafePass');
  const vasEligible=policy.stockRule==='watch'||keys.has('vasKyobo')||keys.has('vasVcolorBundle');
  const eligible=dateEligible&&typeEligible&&planEligible&&insuranceEligible&&vasEligible;
