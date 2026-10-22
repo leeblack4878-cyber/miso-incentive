@@ -1790,7 +1790,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                               <span className="font-semibold">{selected?'✓ ':''}{p.title}</span>
                               <span className="text-[10px] text-amber-600">{p.stockRule==='watch'?'2ND 대체 ':'기존 정책 +'}{won(p.replacement_amount)}</span>
                             </div>
-                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date||''}</div>}{p.conditionLabel&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
+                            {(p.start_date||p.end_date)&&<div className="text-[9px] text-gray-400 mt-1">{p.start_date||''} ~ {p.stock?'재고 소진까지':p.end_date==='2099-12-31'?'별도 공지 시까지':p.end_date||''}</div>}{p.conditionLabel&&<div className="text-[10px] mt-1 leading-relaxed">{p.conditionLabel}</div>}
                           </button>
                         })}
                       </div>
