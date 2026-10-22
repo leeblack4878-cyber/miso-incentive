@@ -247,10 +247,15 @@ for(const width of [320,390])test(`${width}px 버디 일반판매 저가요금�
 for(const width of [320,390])test(`${width}px 10/22 F971 rates and zero incentive survive save/edit/delete`,async({page})=>{
  const state=await open(page,{width,date:'2026-10-22'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
  await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await expect(d.getByText('적용 정책 * · 2026-10-22 기준',{exact:true})).toBeVisible();
+ await expect(d.getByRole('button',{name:/F971-256 · MNP/})).not.toContainText('93일');
+ await expect(d.getByRole('button',{name:/F971-256 · MNP/})).not.toContainText('2026-10');
  await expect(d.getByRole('button',{name:/F971-256 · MNP/})).toContainText('200,000');
  await expect(d.getByRole('button',{name:/F971-256 · 기기변경/})).toContainText('150,000');
  await expect(d.getByRole('button',{name:/F971-512 · MNP/})).toContainText('50,000');
  await d.getByRole('button',{name:/F971-512 · 기기변경/}).click();
+ await expect(d.getByLabel('선택한 정책 조건')).toContainText('2026-10-22 ~ 별도 공지 시까지');
+ await expect(d.getByLabel('선택한 정책 조건')).toContainText('93일 유지');
  await d.getByPlaceholder('고객명을 입력해주세요').fill('F971 변경 검증');await d.getByLabel('가입구분',{exact:true}).selectOption('2');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_115');
  for(const name of [/교보문고 sam/,/V컬러링 음악감상 플러스.*벨링/]){await d.getByRole('button',{name}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();}
  await d.getByLabel('10/16 지급 조건 확인').check();expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
