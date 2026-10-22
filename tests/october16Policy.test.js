@@ -89,3 +89,22 @@ test('115 share preview uses same whole-month general denominator through edit/d
  const weak=estimateMobileSale({...args,meta:sale('junior_85').source_meta},api);assert(!weak.rows.some(r=>r[0]==='115군 비중 · 해당 판매'));
  const missing=api.computePay(api.applyDailyToDraft(draft,{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap),'기타',null,'2026-10',config,0,null);assert.equal(missing.plan115Bonus,0);assert.equal(missing.plan115Missing,20);
 });
+
+test('10/22 F971 revision preserves pre22 history and other model rates',()=>{
+ for(const [model,oldRates,newRates] of [['F971-256',[300000,250000],[200000,150000]],['F971-512',[130000,80000],[50000,0]]]){
+  for(const [index,saleType] of ['MNP','기기변경'].entries()){
+   const before=specialSalesForDate('2026-10-21').find(p=>p.model===model&&p.saleType===saleType);
+   const after=specialSalesForDate('2026-10-22').filter(p=>p.model===model&&p.saleType===saleType);
+   assert.equal(before.additionalAmount,oldRates[index]);assert.equal(after.length,1);assert.notEqual(after[0].key,before.key);
+   const args={policyKey:after[0].key,saleDate:'2026-10-22',saleType,ri:index?2:1,planGroup:'115',strategicPoints:2};
+   assert.equal(calculateMonthlySpecialSale(args).additionalAmount,newRates[index]);
+   assert.equal(calculateMonthlySpecialSale({...args,saleDate:'2026-10-21'}).eligible,false);
+   assert.equal(calculateMonthlySpecialSale({...args,policyKey:before.key}).eligible,false);
+   assert.equal(calculateMonthlySpecialSale({...args,planGroup:'85'}).eligible,false);
+   assert.equal(calculateMonthlySpecialSale({...args,strategicPoints:1.9}).eligible,false);
+   if(index)assert.equal(calculateMonthlySpecialSale({...args,ri:4}).additionalAmount,Math.max(0,newRates[index]-50000));
+  }
+ }
+ const rates=date=>specialSalesForDate(date).filter(p=>p.revision16&&!p.buddy16&&!p.model.startsWith('F971')).map(p=>[p.key,p.additionalAmount]);
+ assert.deepEqual(rates('2026-10-21'),rates('2026-10-22'));
+});

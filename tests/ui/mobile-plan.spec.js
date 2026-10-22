@@ -243,3 +243,19 @@ for(const width of [320,390])test(`${width}px 버디 일반판매 저가요금�
  await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(80000);expect(state.day.specialReplacementPay).toBe(80000);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(2);expect(state.day.specialReplacementPay).toBe(0);
 });
+
+for(const width of [320,390])test(`${width}px 10/22 F971 rates and zero incentive survive save/edit/delete`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-22'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();
+ await expect(d.getByRole('button',{name:/F971-256 · MNP/})).toContainText('200,000');
+ await expect(d.getByRole('button',{name:/F971-256 · 기기변경/})).toContainText('150,000');
+ await expect(d.getByRole('button',{name:/F971-512 · MNP/})).toContainText('50,000');
+ await d.getByRole('button',{name:/F971-512 · 기기변경/}).click();
+ await d.getByPlaceholder('고객명을 입력해주세요').fill('F971 변경 검증');await d.getByLabel('가입구분',{exact:true}).selectOption('2');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_115');
+ for(const name of [/교보문고 sam/,/V컬러링 음악감상 플러스.*벨링/]){await d.getByRole('button',{name}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();}
+ await d.getByLabel('10/16 지급 조건 확인').check();expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);
+ expect(state.writes[0].p_meta.specialPolicy.replacementAmount).toBe(0);expect(state.writes[0].p_meta.specialPolicy.policyId).toContain('oct22_');
+ const saved=structuredClone(state.day);await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.day).toEqual(saved);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[2][0]).toBe(0);
+});

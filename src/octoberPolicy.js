@@ -1,5 +1,5 @@
 import {OCTOBER9_SPECIAL_SALES} from './october9Policy.js';
-import {OCTOBER16_BUNDLES,OCTOBER16_SPECIAL_SALES,OCTOBER16_BUDDY_SALES,calculateOctober16Sale} from './october16Policy.js';
+import {OCTOBER16_BUNDLES,OCTOBER22_SPECIAL_SALES,OCTOBER16_SPECIAL_SALES,OCTOBER16_BUDDY_SALES,calculateOctober16Sale} from './october16Policy.js';
 import {LONG_STOCK_SPECIAL_SALES,calculateLongStockSale} from './longStockPolicy.js';
 import {OCTOBER_WEEKEND_SPECIAL_SALES,calculateOctoberWeekendSale} from './octoberWeekendPolicy.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
@@ -24,7 +24,7 @@ export const OCTOBER_SPECIAL_SALES = MODEL_RATES.flatMap(([model,mnp,change]) =>
   }))
 );
 export function specialSalesForDate(date) {
-  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER16_SPECIAL_SALES,...OCTOBER16_BUDDY_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES,...OCTOBER9_SPECIAL_SALES,...LONG_STOCK_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
+  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER16_SPECIAL_SALES,...OCTOBER22_SPECIAL_SALES,...OCTOBER16_BUDDY_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES,...OCTOBER9_SPECIAL_SALES,...LONG_STOCK_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
   return policies.filter(p=>p.startDate<=date&&p.endDate>=date&&!(date>='2026-10-16'&&p.key==='stock_r825_free'));
 }
 export function calculateMonthlySpecialSale(args={}) {
