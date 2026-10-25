@@ -1,3 +1,4 @@
+import {OCTOBER23_MODEL_SALES,OCTOBER23_WEEKEND_SALES,calculateOctober23Sale} from './october23Policy.js';
 import {OCTOBER9_SPECIAL_SALES} from './october9Policy.js';
 import {OCTOBER16_BUNDLES,OCTOBER22_SPECIAL_SALES,OCTOBER16_SPECIAL_SALES,OCTOBER16_BUDDY_SALES,calculateOctober16Sale} from './october16Policy.js';
 import {LONG_STOCK21_SPECIAL_SALES,LONG_STOCK_SPECIAL_SALES,calculateLongStockSale} from './longStockPolicy.js';
@@ -24,12 +25,12 @@ export const OCTOBER_SPECIAL_SALES = MODEL_RATES.flatMap(([model,mnp,change]) =>
   }))
 );
 export function specialSalesForDate(date) {
-  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER16_SPECIAL_SALES,...OCTOBER22_SPECIAL_SALES,...OCTOBER16_BUDDY_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES,...OCTOBER9_SPECIAL_SALES,...LONG_STOCK_SPECIAL_SALES,...LONG_STOCK21_SPECIAL_SALES]:SEPTEMBER_SPECIAL_SALES;
-  return policies.filter(p=>p.startDate<=date&&p.endDate>=date&&!(date>='2026-10-16'&&p.key==='stock_r825_free'));
+  const policies=String(date).slice(0,7)>=OCTOBER_POLICY_MONTH?[...OCTOBER_SPECIAL_SALES,...OCTOBER16_SPECIAL_SALES,...OCTOBER22_SPECIAL_SALES,...OCTOBER16_BUDDY_SALES,...OCTOBER_WEEKEND_SPECIAL_SALES,...OCTOBER9_SPECIAL_SALES,...LONG_STOCK_SPECIAL_SALES,...LONG_STOCK21_SPECIAL_SALES,...OCTOBER23_MODEL_SALES,...OCTOBER23_WEEKEND_SALES]:SEPTEMBER_SPECIAL_SALES;
+  return policies.filter(p=>p.startDate<=date&&p.endDate>=date&&!(date>='2026-10-23'&&(p.key.startsWith('oct16_model_')||p.key.startsWith('oct22_model_')))&&!(date>='2026-10-16'&&p.key==='stock_r825_free'));
 }
 export function calculateMonthlySpecialSale(args={}) {
   const policies=specialSalesForDate(args.saleDate||''),policy=policies.find(p=>p.key===args.policyKey);
-  return policy?.revision16?calculateOctober16Sale(args,policy):policy?.stock?calculateLongStockSale(args,policy):policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
+  return policy?.revision23?calculateOctober23Sale(args,policy):policy?.revision16?calculateOctober16Sale(args,policy):policy?.stock?calculateLongStockSale(args,policy):policy?.weekend?calculateOctoberWeekendSale(args,policy):calculateSeptemberSpecialSale(args,policies);
 }
 export function octoberQuality({matrix=[],strategicPoints=0,homeNoPerformance=false,plan115Counts}={}) {
   const hs=matrix.slice(0,5).reduce((sum,row)=>sum+row.reduce((n,v)=>n+Number(v||0),0),0);

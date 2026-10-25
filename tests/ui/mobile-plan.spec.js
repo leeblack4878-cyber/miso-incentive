@@ -279,3 +279,21 @@ for(const width of [320,390])test(`${width}px 10/21 stock updated list and F946 
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[1].p_meta.specialPolicy.replacementAmount).toBe(700000);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.specialReplacementPay).toBe(0);
 });
+
+for(const width of [320,390])test(`${width}px 10/23 paid weekend customer support keeps normal fees saves edits deletes`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-23'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'특가&지인정책',exact:true}).click();const option=d.getByRole('button',{name:/10\/23~26 주말 · S942-256\/512 · MNP/});await expect(option).toContainText('고객 지원금 400,000');await option.click();
+ await d.getByPlaceholder('고객명을 입력해주세요').fill('주말 정상지급');await d.getByLabel('가입구분',{exact:true}).selectOption('1');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_115');
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();expect(state.writes).toHaveLength(0);
+ for(const name of [/교보문고 sam/,/V컬러링 음악감상 플러스.*벨링/]){await d.getByRole('button',{name}).click();await page.getByRole('dialog',{name:'부가서비스 삭제 안내',exact:true}).getByRole('button',{name:'유지',exact:true}).click();}
+ expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);
+ const sp=state.writes[0].p_meta.specialPolicy;expect(sp.customerDiscount).toBe(400000);expect(sp.replacementAmount).toBe(0);expect(sp.normalMatrixFee).toBe(0);expect(sp.normalVasFee).toBe(0);expect(sp.policyType).toBe('additive');expect(state.day.specialReplacementPay).toBe(0);
+ const saved=structuredClone(state.day);await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.day).toEqual(saved);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);
+});
+for(const width of [320,390])test(`${width}px 10/23 SIM policy eligibility is explicit and survives edit`,async({page})=>{
+ const state=await open(page,{width,date:'2026-10-23'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('주말SIM');await d.getByLabel('가입구분',{exact:true}).selectOption('5');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_55');
+ await expect(d.getByLabel('주말 SIM MNP 정책 대상 확인')).not.toBeChecked();await d.getByLabel('주말 SIM MNP 정책 대상 확인').check();await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.simMnpPolicyEligible).toBe(true);expect(state.writes[0].p_meta.saleDate).toBe('2026-10-23');
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await expect(d.getByLabel('주말 SIM MNP 정책 대상 확인')).toBeChecked();await d.getByLabel('주말 SIM MNP 정책 대상 확인').uncheck();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[1].p_meta.simMnpPolicyEligible).toBe(false);
+});

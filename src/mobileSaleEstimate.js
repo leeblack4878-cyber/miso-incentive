@@ -9,9 +9,9 @@ import { dayAfterSaleDeletion } from './saleMutations.js';
 
 export function changeStrategicMetric(metric, meta, direction, month = metric?.month) {
   if (!metric) return null;
-  const part = summarizeStrategicProducts([{source_meta:meta,sale_date:month}]);
+  const part = summarizeStrategicProducts([{source_meta:meta,sale_date:meta.saleDate||month}]);
   const plan115Counts=Object.fromEntries(['general','high','known','missing'].map(key=>[key,Math.max(0,Number(metric.plan115Counts?.[key]||0)+direction*Number(part.plan115Counts?.[key]||0))]));
-  return {...Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount'].map(key =>
+  return {...Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount','october23SimCount'].map(key =>
     [key, Math.max(0, Number((Number(metric[key]||0)+direction*Number(part[key]||0)).toFixed(10)))])),plan115Counts};
 }
 
@@ -43,7 +43,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   let beforeMetric=strategicMetric;
   if(existingSale&&!existingSale.source_meta?.teamOnly){
     base=dayAfterSaleDeletion(base,existingSale,mobileSaleOffsets(existingSale.source_meta,config,september));
-    beforeMetric=changeStrategicMetric(strategicMetric,existingSale.source_meta,-1,month);
+    beforeMetric=changeStrategicMetric(strategicMetric,{...existingSale.source_meta,saleDate:existingSale.sale_date||existingSale.source_meta?.saleDate||`${month}-${dayKey}`},-1,month);
   } else if(legacyConversion?.kind==='mobile') {
     base=structuredClone(base);
     base.matrix[legacyConversion.ri][legacyConversion.ci]=Math.max(0,Number(base.matrix[legacyConversion.ri][legacyConversion.ci]||0)-1);
@@ -80,6 +80,7 @@ export function estimateMobileSale({meta,existingSale,dayKey,dailyDays,draft,str
   line('인센미지급 특가 제외',-Number(sp.normalMatrixFee||0)-Number(sp.normalVasFee||0));
   line('특가·지인 추가',replacement*factor);
   line('115군 비중 · 해당 판매',october&&hs&&getMobilePlan(meta.planDetail)?.type==='general'&&['general_115','general_130'].includes(meta.planDetail?.key)&&after.plan115Ratio>=70?10000*factor:0);
+  line('주말 SIM MNP · 해당 판매',meta.ri===5&&meta.simMnpPolicyEligible&&`${month}-${dayKey}`>='2026-10-23'&&`${month}-${dayKey}`<='2026-10-26'?after.october23SimPolicy?.rate||0:0);
   line('추석 판매 활성화',chuseokSalePay(draft.chuseokPolicy,{month,dayKey,meta,existingSale}));
   const incentive=rows.reduce((sum,[,value])=>sum+value,0);
   return {incentive,rows,points:delta('totalPoints'),productivity:delta('kpiScore'),beforeRatio:before.strategicRatio,afterRatio:after.strategicRatio};

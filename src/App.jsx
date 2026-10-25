@@ -3783,7 +3783,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
               <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
+              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0)+Number(pay.october23SimPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
             </button>
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
@@ -3791,6 +3791,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.plan115Missing||0)>0&&<div className="px-4 py-2 text-xs text-amber-700">115·130군 비중 판정 대기: 고객유형·세부 요금제 확인이 필요한 HS {pay.plan115Missing}건</div>}
               {Number(pay.plan115Bonus||0)!==0&&<RowKV label="└ 일반 115·130군 비중 70% 보너스" value={won(pay.plan115Bonus)} />}
               {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
+              {Number(pay.october23SimPolicy?.amount||0)!==0&&<RowKV label="└ 10월 23~26일 SIM MNP 추가 지급" value={won(pay.october23SimPolicy.amount)} />}
+              {Number(pay.october23SimMissing||0)>0&&<div className="text-xs text-amber-700">주말 SIM MNP 정책 대상 여부 확인 필요 {pay.october23SimMissing}건 · 판매 수정에서 확인해주세요.</div>}
               {Number(pay.septemberWeekendSimMnpPolicy?.amount||0)!==0&&<RowKV label="└ 9월 주말 SIM MNP 추가 지급" value={won(pay.septemberWeekendSimMnpPolicy.amount)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
               {Number(pay.rawVasPay||0)!==0&&<RowKV label="└ VAS 유치 수수료" value={won(pay.rawVasPay)} />}
@@ -3817,6 +3819,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
               {Number(pay.homePolicy?.octoberWeekend?.total||0)!==0&&<RowKV label="└ 10월 주말 홈 추가 지급" value={won(pay.homePolicy.octoberWeekend.total)} />}
               {Number(pay.homePolicy?.october9Weekend?.total||0)!==0&&<RowKV label="└ 10월 9~12일 주말 홈 추가 지급" value={won(pay.homePolicy.october9Weekend.total)} />}
+              {Number(pay.homePolicy?.october23Weekend?.total||0)!==0&&<RowKV label="└ 10월 23~26일 홈·TV프리 추가 지급" value={won(pay.homePolicy.october23Weekend.total)} />}
               {Number(pay.homePolicy?.october16Weekend?.total||0)!==0&&<RowKV label="└ 10월 16~19일 주말 홈 추가 지급" value={won(pay.homePolicy.october16Weekend.total)} />}
               {Number(pay.homePolicy?.weekendPolicy?.tvFreeBonus||0)!==0&&<RowKV label="└ 9월 주말 TV프리 추가 지급" value={won(pay.homePolicy.weekendPolicy.tvFreeBonus)} />}
               {Number(pay.renewPay||0)!==0&&<RowKV label="└ 인터넷 재약정" value={won(pay.renewPay)} />}
