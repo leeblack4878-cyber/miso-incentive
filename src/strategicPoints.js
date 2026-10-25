@@ -1,3 +1,4 @@
+import {october23SimEligible} from './october23Policy.js';
 import {getMobilePlan} from './mobilePlans.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
 export const STRATEGIC_PRODUCT_POINTS = Object.freeze({
@@ -24,6 +25,7 @@ export function calculateSaleStrategicPoints(meta = {}, date = meta.saleDate) {
 
 export function summarizeStrategicProducts(sales = []) {
   const plan115Counts={general:0,high:0,known:0,missing:0};
+  let october23SimCount=0,october23SimMissing=0;
   let strategicPoints = 0, daemyungCount = 0, insurance = 0, strategicVas = 0;
   (sales || []).forEach(sale => {
     const meta=sale?.source_meta||{};
@@ -32,13 +34,15 @@ export function summarizeStrategicProducts(sales = []) {
       if(!plan)plan115Counts.missing++;
       else {plan115Counts.known++;if(plan.type==='general'){plan115Counts.general++;if(['general_115','general_130'].includes(plan.key))plan115Counts.high++;}}
     }
+    if(!['cancelled','deleted'].includes(sale.status)&&!sale.deleted&&october23SimEligible(meta,sale.sale_date||meta.saleDate))october23SimCount++;
+    if(!meta.teamOnly&&!meta.deleted&&!meta.cancelled&&!sale.deleted&&!['cancelled','deleted'].includes(sale.status)&&meta.ri===5&&(sale.sale_date||meta.saleDate)>='2026-10-23'&&(sale.sale_date||meta.saleDate)<='2026-10-26'&&meta.simMnpPolicyEligible===undefined)october23SimMissing++;
     const keys = strategicProductKeys(meta);
     strategicPoints += keys.reduce((sum, key) => sum + productPoint(key,sale.sale_date||sale.source_meta?.saleDate), 0);
     daemyungCount += keys.includes('vasDaemyung') ? 1 : 0;
     insurance += keys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
     strategicVas += keys.filter(key => ['vasKyobo', 'vasVcolor', 'vasVcolorBundle'].includes(key)).length;
   });
-  return { plan115Counts, insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
+  return { october23SimCount,october23SimMissing,plan115Counts, insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
     strategicPoints:Number(strategicPoints.toFixed(10)), strategicPointsWithoutDaemyung:Number((strategicPoints-daemyungCount*2).toFixed(10)) };
 }
 

@@ -1,3 +1,4 @@
+import {october23HomeBonus} from './october23Policy.js';
 import {OCTOBER9_START,OCTOBER9_END} from './october9Policy.js';
 import {isOctober16Bundle,isAppleBundle,OCTOBER16_START,OCTOBER16_END} from './october16Policy.js';
 import {calculateOctoberWeekendHomeBonus} from './octoberWeekendPolicy.js';
@@ -416,6 +417,7 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const octoberWeekend=calculateOctoberWeekendHomeBonus(bundles);
   const october9Weekend=calculateOctoberWeekendHomeBonus(bundles,OCTOBER9_START,OCTOBER9_END);
   const october16Weekend=calculateOctoberWeekendHomeBonus(bundles,OCTOBER16_START,OCTOBER16_END);
+  const october23Weekend=october23HomeBonus(bundles);
   const internetBundles = bundles.filter(bundle => bundle.hasInternet);
   const totalInternetCount = internetBundles.length;
   const gradeIndex = homeGradeIndex(totalInternetCount);
@@ -500,12 +502,13 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   octoberWeekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 2~5일 주말 홈 추가 지급',note:`개인 ${octoberWeekend.count}건 · 건당 ${octoberWeekend.rate.toLocaleString()}원 (소호 포함)`}));
   october9Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 9~12일 주말 홈 추가 지급',note:`개인 ${october9Weekend.count}건 · 건당 ${october9Weekend.rate.toLocaleString()}원 (소호 포함)`}));
   october16Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 16~19일 주말 홈 추가 지급',note:`개인 ${october16Weekend.count}건 · 건당 ${october16Weekend.rate.toLocaleString()}원 (소호 포함)`}));
-  const limitedPolicyPay = weekendPolicy.total+octoberWeekend.total+october9Weekend.total+october16Weekend.total;
+  october23Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 23~26일 홈·TV프리 추가 지급',note:'개인 누적 그레이드 · MNP 동시판매 +5만원'}));
+  const limitedPolicyPay = october23Weekend.total+weekendPolicy.total+octoberWeekend.total+october9Weekend.total+october16Weekend.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {
     source: 'orders', totalInternetCount, tierMin, gradePay, soloPay, simulPay,
     tvFreePay, smartHomePay, smartHomeSimulPay, subSetTopPay,
-    limitedPolicyPay, weekendPolicy, octoberWeekend, october9Weekend, october16Weekend,
+    limitedPolicyPay, weekendPolicy, octoberWeekend, october9Weekend, october16Weekend, october23Weekend,
     homeFlatPay, homeAddonPay, total: gradePay + homeFlatPay + homeAddonPay, details,
   };
 }

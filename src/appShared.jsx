@@ -1,3 +1,4 @@
+import {october23SimBonus} from './october23Policy.js';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION, octoberQuality } from './octoberPolicy.js';
 import { useState, useEffect } from 'react';
@@ -633,10 +634,11 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     month === '2026-09' ? draft.septemberWeekendSimMnpCount : 0
   );
 
+  const october23SimPolicy=october23SimBonus(month==='2026-10'?Number(strategicMetric?.october23SimCount||0):0);
   const settlement=calculatePayrollSettlement({
     minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
     specialReplacementPay,strategicAdjustment:employeeStrategic.amount+Number(employeeStrategic.plan115Bonus||0),positionAllowance,
-    extras:{chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
+    extras:{chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount+october23SimPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
   });
   const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
 
@@ -660,7 +662,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     currentPerformanceAmount, closingAmount, postGuaranteeExtras,
     homeAnyCount, homeNoPerformance,
     homeCaseCount, homeGradePay, homeFlatPay, tvFreePay, smartHomePay, homeAddonPay, homePolicy, renewPay,
-    mnpBundlePay, septemberWeekendSimMnpPolicy, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
+    mnpBundlePay, october23SimPolicy,october23SimMissing:Number(strategicMetric?.october23SimMissing||0),septemberWeekendSimMnpPolicy, sonoPay, custRegBonus, tailoredBonus, tailoredAmountBonus, kpiScore, bundle2ndKpiPoints,
     plan115Missing:Number(employeeStrategic.plan115Missing||0),plan115GeneralCount:Number(employeeStrategic.plan115GeneralCount||0),plan115HighCount:Number(employeeStrategic.plan115HighCount||0),plan115Bonus:Number(employeeStrategic.plan115Bonus||0),plan115Ratio:employeeStrategic.plan115Ratio??null,
     strategicPoints, strategicRatio:employeeStrategic.ratio, strategicAdjustment:employeeStrategic.amount,
     strategicAdjustmentBand:employeeStrategic.band, total,
