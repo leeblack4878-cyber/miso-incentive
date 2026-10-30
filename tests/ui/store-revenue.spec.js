@@ -12,7 +12,7 @@ for(const actor of ['admin','owner'])for(const width of [320,390])test(`${actor}
  const panel=page.getByRole('region',{name:'매장별 수익 현황'});
  await expect(panel.getByTestId('store-revenue-total')).toContainText('원');
  await expect(panel.getByRole('heading',{name:'A',exact:true})).toBeVisible();await expect(panel.getByRole('heading',{name:'B',exact:true})).toBeVisible();
- const card=panel.locator('details').filter({has:page.getByRole('heading',{name:'A',exact:true})});await card.locator('summary').click();await expect(card.getByText('홈 월간 시상',{exact:true})).toBeVisible();
+ const card=panel.locator('article').filter({has:page.getByRole('heading',{name:'A',exact:true})});await expect(card.getByText('홈 월간 시상',{exact:true})).toBeVisible();
  await expect(panel.getByText('회사 공통 수익 · 매장 미배분',{exact:true})).toBeVisible();
  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
