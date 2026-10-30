@@ -61,7 +61,7 @@ function BenefitGuide({ text, increase = 0, assumption = '' }) {
 const nextAbove = (value, thresholds) => thresholds.find(threshold => threshold > Number(value || 0));
 const positiveIncrease = (nextAmount, currentAmount) => Math.max(0, Number(nextAmount || 0) - Number(currentAmount || 0));
 
-export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '', stores = [] }) {
+export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '', stores = [], payrollRows = [], payrollError = false }) {
   const emptyProjection = calculateHqStructureProjection({ month });
   const [state, setState] = useState({
     loading: true,
@@ -271,7 +271,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       ].map(([key, label, count]) => <button key={key} type="button" onClick={() => setPolicyTab(key)} className={`rounded-xl px-3 py-3 text-xs font-bold transition ${policyTab === key ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}><span>{label}</span><span className={`ml-1.5 text-[9px] ${policyTab === key ? 'text-brand-400' : 'text-gray-400'}`}>{count}</span></button>)}
     </div>
 
-    {policyTab === 'revenue' && canViewStoreRevenue(authUserId) && <StoreRevenue month={month} authUserId={authUserId} stores={stores}/>}
+    {policyTab === 'revenue' && canViewStoreRevenue(authUserId) && <StoreRevenue month={month} authUserId={authUserId} stores={stores} payrollRows={payrollRows} payrollError={payrollError}/>}
 
     {policyTab === 'home' && <>
 

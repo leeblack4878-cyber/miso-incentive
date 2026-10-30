@@ -39,3 +39,7 @@ test('home categories keep internet, TV and combined-sale fees separate without 
  const row=summarizeStoreRevenue({sales,orders,profiles,stores:['A'],month}).rows.find(r=>r.store==='A');
  assert.equal(row.homeBreakdown.internet,33000);assert.equal(row.homeBreakdown.tv,220000);assert.equal(row.homeBreakdown.combined,330000);assert.equal(row.home,583000);
 });
+test('store 2ND count includes standalone and follow-up bundle once and ignores previous-month parent',()=>{
+ const sales=[mobile('main','a',{bundle2ndKeys:['watch','tablet']}),mobile('solo','a',{ri:7,bundle2ndKeys:[]}),mobile('later','a',{ri:7,secondOnlyBundle:true,bundle2ndKeys:['watch'],secondParent:{date:'2026-09-10'}}),{...mobile('prior','a',{bundle2ndKeys:['watch']}),sale_date:'2026-09-10'}];
+ const r=summarizeStoreRevenue({sales,profiles,stores:['A'],month});assert.equal(r.rows.find(x=>x.store==='A').second,4);
+});
