@@ -1,6 +1,8 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-10-store-revenue',month:'2026-10',date:'2026-10-30',title:'두 대표 전용 매장별 예상 수익',effective:'2026년10월부터',changes:['회사 건별 모바일·홈 수수료와 기존 월간보상을 매장별 표시.','회사전체 구간별 단가를 매장 인정수량에 적용,운영비지원·월간판매량은 회사공통 미배분.'],details:['이강진·김진문 계정만 조회. 지원판매 지정매장/그외 현재소속 기준. 비용·환수차감 전 예상액. 직원 지급액/정책/DB권한 변경 없음.']},
+  {id:'2026-10-company-home',month:'2026-10',date:'2026-10-30',title:'회사 홈 건별 수수료',effective:'2026년10월 회사 예상 수익',changes:['부셋탑33,000원+프리부77,000원,속도500메가33,000원/1기가99,000원.','TV동시MNP330,000원/신규기변110,000원+부셋탑110,000원,인터넷단독동시50,000원.','SIM61군 이상은 모바일기본+SIM수수료 포함330,000원 차액만 홈반영,속도/부셋탑 별도.'],details:['직원 인센티브 유지. 설치완료월 반영. 월간시상/IPTV그레이드는 미설정.']},
   {id:'2026-10-company-confirmed',month:'2026-10',date:'2026-10-30',title:'회사 수익 집계 기준 대표 확인',effective:'2026년10월 회사 예상 수익',changes:['정상 입력 실적은 지급 조건 충족 간주, 회사 수수료는 VAT포함 전액.','갤럭시 S 시리즈 모단말은 S26으로 해석. 직원 인센티브 변경 없음.'],details:['실제 정산·환수는 후속 대조. 기존 원본 변경 없음.']},
   {id:'2026-10-company-bundle',month:'2026-10',date:'2026-10-30',title:'회사 워치·패드 번들 수수료',effective:'2026년10월1일~별도공지',changes:['직원 입력에 있는 갤럭시8개·애플워치3개 키의 회사 단가 추가(VAT포함).','대상 모단말115군 L335·L505·X216은44,000원 추가. 직원 지급액 유지.'],details:['모단말 모델·요금제 미확인은 확인필요. 아이패드 단가 추정 없음. 동일명의·결합·유지·개통점·단기기변 제외는 정산 전 확인.']},
   {id:'2026-10-company-vas',month:'2026-10',date:'2026-10-30',title:'회사 전략 VAS 예상 수수료',effective:'2026년10월1일~별도공지',changes:['직원 입력에 있는 11개 VAS 회사수수료 추가(VAT포함). 직원 지급액 유지.','HS만 집계, SIM·중고·2ND 제외. 패키지 구성품 중복 제외.'],details:['기존가입·무료·개통점일치·180일 유지·환수는 정산 전 확인. 11월 재편표 미확인.']},

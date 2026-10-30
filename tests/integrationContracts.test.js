@@ -571,9 +571,11 @@ test('본사 구조정책은 현재 기준액과 월말 예상액을 정책별�
   assert.match(view, /예상 증가/);
   assert.match(view, /<BenefitGuide \{\.\.\.homeGradeGuide\}/);
   assert.match(view, /<BenefitGuide \{\.\.\.selfGuide\}/);
-  assert.match(view, /row\.main_tv_plan === 'broadcastPass'/);
+  assert.match(view, /structureProjectionFromRecords/);
+  const aggregation=await readFile(new URL('../src/companyStructureProjection.js',import.meta.url),'utf8');
+  assert.match(aggregation, /row\.main_tv_plan === 'broadcastPass'/);
   assert.match(view, /인터넷 100M 단독은 지표에는 포함하되 지급 인터넷에서는 제외/);
-  assert.match(view, /\['subSetTop', 'tvFree'\]\.includes\(row\.product_type\)/);
+  assert.match(aggregation, /\['subSetTop', 'tvFree'\]\.includes\(row\.product_type\)/);
   assert.match(policy, /calculateHqStructureProjection/);
   assert.match(policy, /runRate\.isCurrentMonth \? runRate\.factor : 1/);
 });

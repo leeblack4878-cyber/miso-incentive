@@ -1,8 +1,9 @@
-import { isSecondOnlyBundle } from './secondParentPolicy.js';
+import {structureProjectionFromRecords} from './companyStructureProjection';
+import StoreRevenue from './components/StoreRevenue';
+import {canViewStoreRevenue} from './storeRevenue';
 import React, { useEffect, useState } from 'react';
 import { Building2, Loader2 } from 'lucide-react';
 import { supabase } from './supabase';
-import { summarizeVasQuality } from './policyRules';
 import {
   SELF_STORE_BASELINE,
   SELF_STORE_WEIGHTS,
@@ -60,7 +61,7 @@ function BenefitGuide({ text, increase = 0, assumption = '' }) {
 const nextAbove = (value, thresholds) => thresholds.find(threshold => threshold > Number(value || 0));
 const positiveIncrease = (nextAmount, currentAmount) => Math.max(0, Number(nextAmount || 0) - Number(currentAmount || 0));
 
-export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '' }) {
+export default function HqStructurePolicyView({ month, employeeIds = [], authUserId = '', stores = [] }) {
   const emptyProjection = calculateHqStructureProjection({ month });
   const [state, setState] = useState({
     loading: true,
@@ -108,70 +109,8 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       ]);
       if (salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error) throw salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error;
 
-      let hs = 0, mnp = 0, new010 = 0, change95Plus = 0, changeUnder95 = 0, simMnp = 0, plan115Hs = 0;
-      let second = 0;
-      (salesResult.data || []).filter(row => row.source_type === 'mobile').forEach(row => {
-        const meta = row.source_meta || {};
-        const rowIndex = Number(meta.ri);
-        if ([0, 1, 2, 3, 4].includes(rowIndex)) {
-          hs += 1;
-          if (Number(meta.ci) === 0) plan115Hs += 1;
-        }
-        if (rowIndex === 0) new010 += 1;
-        if (rowIndex === 1) mnp += 1;
-        if ([2, 3, 4].includes(rowIndex)) {
-          if ([0, 1].includes(Number(meta.ci))) change95Plus += 1;
-          else changeUnder95 += 1;
-        }
-        if (rowIndex === 5) simMnp += 1;
-        if (rowIndex === 7 && !isSecondOnlyBundle(meta)) second += 1;
-        second += Array.isArray(meta.bundle2ndKeys) ? meta.bundle2ndKeys.length : 0;
-      });
-
-      const completed = homeResult.data || [];
-      const bundleKey = row => `${String(row.actual_install_date || '').slice(0, 10)}|${row.customer_id || row.customer_name || row.id}`;
-      const householdCompleted = completed.filter(row => row.network_type === 'household' || !row.network_type);
-      const internet = new Set(completed
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey)).size;
-      const householdInternet = new Set(householdCompleted
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey)).size;
-      const householdInternetKeys = new Set(householdCompleted
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey));
-      const householdMainTvKeys = new Set(householdCompleted.filter(row => row.product_type === 'homeTv').map(bundleKey));
-      const household100Keys = new Set(householdCompleted.filter(row => row.product_type === 'internet100').map(bundleKey));
-      const homeAwardPayableInternet = [...householdInternetKeys]
-        .filter(key => !household100Keys.has(key) || householdMainTvKeys.has(key)).length;
-      const smartHome = completed.filter(row => row.product_type === 'smartHome').length;
-      const extraSetTop = completed.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
-      const mainTv = householdCompleted.filter(row => row.product_type === 'homeTv').length;
-      const householdExtraSetTop = householdCompleted.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
-      const householdTvFree = householdCompleted.filter(row => row.product_type === 'tvFree').length;
-      const householdSmartHome = householdCompleted.filter(row => row.product_type === 'smartHome').length;
-      const householdInternet1g = new Set(householdCompleted.filter(row => row.product_type === 'internet1g').map(bundleKey)).size;
-      const iptv17Plus = new Set(householdCompleted
-        .filter(row => row.product_type === 'homeTv' && row.main_tv_plan === 'broadcastPass')
-        .map(bundleKey)).size;
-      const renewalRecognized = (dailyResult.data || []).reduce((sum, row) => sum
-        + (row.data?.householdRenewals || []).reduce((itemSum, item) => itemSum + (item?.speedUp ? 1 : 0.3), 0), 0);
-      const mobileSales = (salesResult.data || []).filter(row => row.source_type === 'mobile');
-      const { strategicPointsWithoutDaemyung, daemyungCount } = summarizeVasQuality(mobileSales);
-      const sono = (dailyResult.data || []).reduce((sum, row) => sum + Object.values(row.data?.groups?.sono || {}).reduce((a, value) => a + Number(value || 0), 0), 0);
-      const salesMetricPoints = Number(strategicPointsWithoutDaemyung || 0) + Math.max(Number(daemyungCount || 0), sono) * 2;
-      const savedChangeSupportRatio = awardInputResult.data?.change_support_ratio;
-      const projection = calculateHqStructureProjection({
-        month,
-        selfStoreInput: { hs, second, internet, smartHome, extraSetTop },
-        retailInput: { hs, plan115Hs, mnp, new010, change95Plus, changeUnder95, second, simMnp },
-        salesMetricInput: { hs, salesMetricPoints },
-        awardInput: { hs, mnp, new010, change:change95Plus+changeUnder95, simMnp, internet, salesMetricPoints, changeSupportRatio:savedChangeSupportRatio },
-        homeGradeInput: { hs, internet: householdInternet, renewalRecognized, mainTv, extraSetTop: householdExtraSetTop },
-        homeInternetRatioInput: { hs, internet: householdInternet, mainTv, extraSetTop: householdExtraSetTop },
-        homeAwardInput: { hs, internet: householdInternet, payableInternet: homeAwardPayableInternet, mainTv, iptv17Plus, extraSetTop: householdExtraSetTop, tvFree: householdTvFree, internet1g: householdInternet1g, smartHome: householdSmartHome },
-        iptvGradeInput: { mainTv, extraSetTop: householdExtraSetTop },
-      });
+      const savedChangeSupportRatio=awardInputResult.data?.change_support_ratio;
+      const projection=structureProjectionFromRecords({sales:salesResult.data||[],orders:homeResult.data||[],daily:dailyResult.data||[],changeSupportRatio:savedChangeSupportRatio,month});
       if (alive) {
         setChangeSupportRatio(savedChangeSupportRatio??'');
         setState({
@@ -328,8 +267,11 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       {[
         ['base', '기존 구조정책', '4개'],
         ['home', '홈 구조정책', '4개'],
+        ...(canViewStoreRevenue(authUserId)?[['revenue','매장별 수익','']]:[]),
       ].map(([key, label, count]) => <button key={key} type="button" onClick={() => setPolicyTab(key)} className={`rounded-xl px-3 py-3 text-xs font-bold transition ${policyTab === key ? 'bg-white text-brand-700 shadow-sm' : 'text-gray-500'}`}><span>{label}</span><span className={`ml-1.5 text-[9px] ${policyTab === key ? 'text-brand-400' : 'text-gray-400'}`}>{count}</span></button>)}
     </div>
+
+    {policyTab === 'revenue' && canViewStoreRevenue(authUserId) && <StoreRevenue month={month} authUserId={authUserId} stores={stores}/>}
 
     {policyTab === 'home' && <>
 
