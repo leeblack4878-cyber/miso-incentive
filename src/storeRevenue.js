@@ -1,3 +1,4 @@
+import {summarizeCompanyRenewals} from './companyRenewalRevenue.js';
 import {companySohoGradeRate,companySohoInternetCount} from './companySohoRevenue.js';
 import {COMPANY_SCOPE_VIEWERS} from './permissionScopes.js';
 import {summarizeCompanyRevenue} from './companyRevenue.js';
@@ -31,10 +32,12 @@ export function summarizeStoreRevenue({sales=[],orders=[],daily=[],profiles=[],s
    homeAward:local.homeAward.payableInternet*policy.homeAward.pointRate,
    iptvGrade:local.iptvGrade.points*policy.iptvGrade.pointRate,
   };
+  const renewal=summarizeCompanyRenewals(data.daily,month);
+  const homeTotal=home.total+renewal.total;
   const monthly=Object.values(awards).reduce((a,b)=>a+b,0);
   const mobileBreakdown={base:mobile.base-mobile.secondBase,plan:mobile.plan+mobile.sim,second:mobile.secondBase+mobile.bundle,vas:mobile.vas};
-  const homeBreakdown={internet:home.internet+home.simTopup,tv:home.equipment+home.premium+home.subBonus+home.sohoTv,combined:home.simultaneous+home.sohoBundle};
-  rows.push({store,mobileBreakdown,homeBreakdown,mobile:mobile.total,home:home.total,monthly,awards,total:mobile.total+home.total+monthly,pending:mobile.pending+home.pending+mobile.unclassified,hs:local.retail.hs,second:local.selfStore.counts.second,internet:local.homeGrade.internet,sohoInternet:companySohoInternetCount(data.orders,month)});
+  const homeBreakdown={internet:home.internet+home.simTopup+renewal.internet,tv:home.equipment+home.premium+home.subBonus+home.sohoTv+renewal.tv,combined:home.simultaneous+home.sohoBundle};
+  rows.push({store,mobileBreakdown,homeBreakdown,mobile:mobile.total,home:homeTotal,monthly,awards,total:mobile.total+homeTotal+monthly,pending:mobile.pending+home.pending+mobile.unclassified+renewal.pending,hs:local.retail.hs,second:local.selfStore.counts.second,internet:local.homeGrade.internet,sohoInternet:companySohoInternetCount(data.orders,month)});
  }
  const assignedMonthly=rows.reduce((n,r)=>n+r.monthly,0);
  const companyMonthly=sohoCount*sohoRate+['award','salesMetric','homeGrade','homeInternetRatio','homeAward','iptvGrade'].reduce((n,k)=>n+policy[k].totalAmount,0);
