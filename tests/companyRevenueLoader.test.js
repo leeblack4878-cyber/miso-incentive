@@ -10,3 +10,7 @@ test('company query failure rejects the entire result instead of displaying a pa
  await assert.rejects(loadCompanyRevenue(client({},'home_orders'),'2026-10'),/denied/);
  await assert.rejects(loadCompanyRevenue(client({},'customer_sales'),'2026-10'),/denied/);
 });
+test('installed order without an application date remains visible for pending review',async()=>{
+ const tables={home_orders:[{id:'missing-date',status:'completed',actual_install_date:'2026-10-03',source_work_date:null}],customer_sales:[]};
+ const r=await loadCompanyRevenue(client(tables),'2026-10');assert.equal(r.orders.length,1);assert.equal(r.orders[0].id,'missing-date');
+});

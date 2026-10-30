@@ -1,3 +1,4 @@
+import {readAllPages} from './performanceRoster';
 import {structureProjectionFromRecords} from './companyStructureProjection';
 import StoreRevenue from './components/StoreRevenue';
 import {canViewStoreRevenue} from './storeRevenue';
@@ -96,15 +97,14 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       const next = new Date(year, monthNumber, 1);
       const to = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
       const [salesResult, homeResult, dailyResult, awardInputResult] = await Promise.all([
-        supabase.from('customer_sales')
+        readAllPages(()=>supabase.from('customer_sales')
           .select('id,user_id,source_type,source_meta,sale_date')
-          .in('user_id', employeeIds).gte('sale_date', `${month}-01`).lt('sale_date', to),
-        supabase.from('home_orders')
-          .select('id,user_id,customer_id,customer_name,product_type,network_type,main_tv_plan,status,actual_install_date')
-          .in('user_id', employeeIds).eq('status', 'completed')
-          .gte('actual_install_date', `${month}-01`).lt('actual_install_date', to),
-        supabase.from('daily_records').select('user_id,data').in('user_id', employeeIds)
-          .gte('work_date', `${month}-01`).lt('work_date', to),
+          .in('user_id', employeeIds).gte('sale_date', `${month}-01`).lt('sale_date', to).order('id')),
+        readAllPages(()=>supabase.from('home_orders')
+          .select('id,user_id,customer_id,customer_name,product_type,network_type,main_tv_plan,status,actual_install_date,source_work_date')
+          .in('user_id', employeeIds).or(`source_work_date.lt.${to},and(actual_install_date.gte.${month}-01,actual_install_date.lt.${to})`).order('id')),
+        readAllPages(()=>supabase.from('daily_records').select('user_id,work_date,data').in('user_id', employeeIds)
+          .gte('work_date', `${month}-01`).lt('work_date', to).order('user_id').order('work_date')),
         supabase.from('hq_structure_monthly_inputs').select('change_support_ratio').eq('month',month).maybeSingle(),
       ]);
       if (salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error) throw salesResult.error || homeResult.error || dailyResult.error || awardInputResult.error;

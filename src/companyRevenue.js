@@ -44,7 +44,7 @@ export function summarizeCompanyRevenue(sales=[],month){
  result.supported=typeof month==='string'&&/^\d{4}-\d{2}$/.test(month)&&month>=COMPANY_REVENUE_START_MONTH;
  if(!result.supported)return result;
  for(const sale of sales){
-  if(!['mobile','daily'].includes(sale.source_type)||sale.deleted||['cancelled','deleted'].includes(sale.status)||!sale.sale_date?.startsWith(`${month}-`))continue;
+  if(!['mobile','daily'].includes(sale.source_type)||sale.deleted||sale.source_meta?.deleted||sale.source_meta?.cancelled||['cancelled','deleted'].includes(sale.status)||!sale.sale_date?.startsWith(`${month}-`))continue;
   if(sale.id&&seen.has(sale.id))continue;
   const meta=sale.source_meta||{};
   if(!Number.isInteger(meta.ri)||meta.ri<0||meta.ri>7){result.unclassified++;continue;}

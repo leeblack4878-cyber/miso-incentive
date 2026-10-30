@@ -6,7 +6,8 @@ export async function loadCompanyRevenue(client,month){
  const installed=await rows(()=>client.from('home_orders').select('*').eq('status','completed').gte('actual_install_date',start).lt('actual_install_date',end).order('id'));
  const dates=[...new Set(installed.map(o=>o.source_work_date).filter(Boolean))];
  // Include pending/cancelled siblings to avoid treating an unfinished TV bundle as internet-only.
- const orders=dates.length?await chunks(dates,part=>rows(()=>client.from('home_orders').select('*').in('source_work_date',part).order('id'))):[];
+ const siblings=dates.length?await chunks(dates,part=>rows(()=>client.from('home_orders').select('*').in('source_work_date',part).order('id'))):[];
+ const orders=[...new Map([...installed,...siblings].map(o=>[o.id,o])).values()];
  const ids=[...new Set(orders.map(o=>o.id))];
  const homeSales=ids.length?await chunks(ids,part=>rows(()=>client.from('customer_sales').select('id,user_id,customer_id,source_type,source_ref,source_meta,sale_date').eq('source_type','home_order').in('source_ref',part).order('id'))):[];
  const earliest=[start,...dates].sort()[0];

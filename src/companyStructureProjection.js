@@ -1,14 +1,33 @@
 import {isSecondOnlyBundle} from './secondParentPolicy.js';
 import {summarizeVasQuality} from './policyRules.js';
 import {calculateHqStructureProjection} from './hqStructurePolicy.js';
+const active=s=>!s.deleted&&!s.source_meta?.deleted&&!s.source_meta?.cancelled&&!['cancelled','deleted'].includes(s.status);
+const unique=rows=>{const seen=new Set();return rows.filter(r=>{if(!r.id)return true;if(seen.has(r.id))return false;seen.add(r.id);return true;});};
+// Legacy Sono totals overlap mobile entries only for the same employee and date.
+export function companySalesMetricPoints(sales=[],daily=[],overlapSales=sales){
+ const mobile=sales.filter(s=>s.source_type==='mobile'&&active(s));
+ const metric=summarizeVasQuality(mobile),overlap=new Map();
+ for(const sale of overlapSales.filter(s=>s.source_type==='mobile'&&active(s))){
+  const key=`${sale.user_id}:${sale.sale_date}`;
+  overlap.set(key,(overlap.get(key)||0)+summarizeVasQuality([sale]).daemyungCount);
+ }
+ let excess=0;const seen=new Set();
+ for(const row of daily){const key=`${row.user_id}:${row.work_date}`;if(seen.has(key))continue;seen.add(key);
+  const count=Object.values(row.data?.groups?.sono||{}).reduce((n,v)=>n+Number(v||0),0);
+  excess+=Math.max(0,count-(overlap.get(key)||0));
+ }
+ return Number(metric.strategicPoints||0)+excess*2;
+}
 // Same source aggregation and policy engine as the existing HQ monthly-award view.
 export function structureProjectionFromRecords({sales=[],orders=[],daily=[],changeSupportRatio,month}={}){
-      sales=sales.filter(s=>!s.deleted&&!s.source_meta?.deleted&&!s.source_meta?.cancelled&&!['cancelled','deleted'].includes(s.status));
+      sales=unique(sales.filter(s=>active(s)&&(!s.sale_date||s.sale_date.startsWith(`${month}-`))));
+      orders=unique(orders);
+      const seenDays=new Set();daily=daily.filter(r=>{if(r.work_date&&!r.work_date.startsWith(`${month}-`))return false;const k=`${r.user_id}:${r.work_date}`;if(seenDays.has(k))return false;seenDays.add(k);return true;});
       let hs = 0, mnp = 0, new010 = 0, change95Plus = 0, changeUnder95 = 0, simMnp = 0, plan115Hs = 0;
       let second = 0;
       sales.filter(row => row.source_type === 'mobile').forEach(row => {
         const meta = row.source_meta || {};
-        const rowIndex = Number(meta.ri);
+        const rowIndex = Number.isInteger(meta.ri)?meta.ri:-1;
         if ([0, 1, 2, 3, 4].includes(rowIndex)) {
           hs += 1;
           if (Number(meta.ci) === 0) plan115Hs += 1;
@@ -24,38 +43,27 @@ export function structureProjectionFromRecords({sales=[],orders=[],daily=[],chan
         second += Array.isArray(meta.bundle2ndKeys) ? meta.bundle2ndKeys.length : 0;
       });
 
-      const completed = orders;
-      const bundleKey = row => `${row.user_id || ''}|${String(row.actual_install_date || '').slice(0, 10)}|${row.customer_id || row.id}`;
-      const householdCompleted = completed.filter(row => row.network_type === 'household' || !row.network_type);
-      const internet = new Set(completed
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey)).size;
-      const householdInternet = new Set(householdCompleted
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey)).size;
-      const householdInternetKeys = new Set(householdCompleted
-        .filter(row => ['internet1g', 'internet500', 'internet100', 'homeOnly', 'homeTv'].includes(row.product_type))
-        .map(bundleKey));
-      const householdMainTvKeys = new Set(householdCompleted.filter(row => row.product_type === 'homeTv').map(bundleKey));
-      const household100Keys = new Set(householdCompleted.filter(row => row.product_type === 'internet100').map(bundleKey));
-      const homeAwardPayableInternet = [...householdInternetKeys]
-        .filter(key => !household100Keys.has(key) || householdMainTvKeys.has(key)).length;
-      const smartHome = completed.filter(row => row.product_type === 'smartHome').length;
-      const extraSetTop = completed.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
-      const mainTv = householdCompleted.filter(row => row.product_type === 'homeTv').length;
-      const householdExtraSetTop = householdCompleted.filter(row => ['subSetTop', 'tvFree'].includes(row.product_type)).length;
-      const householdTvFree = householdCompleted.filter(row => row.product_type === 'tvFree').length;
-      const householdSmartHome = householdCompleted.filter(row => row.product_type === 'smartHome').length;
-      const householdInternet1g = new Set(householdCompleted.filter(row => row.product_type === 'internet1g').map(bundleKey)).size;
-      const iptv17Plus = new Set(householdCompleted
-        .filter(row => row.product_type === 'homeTv' && row.main_tv_plan === 'broadcastPass')
-        .map(bundleKey)).size;
-      const renewalRecognized = daily.reduce((sum, row) => sum
-        + (row.data?.householdRenewals || []).reduce((itemSum, item) => itemSum + (item?.speedUp ? 1 : 0.3), 0), 0);
-      const mobileSales = sales.filter(row => row.source_type === 'mobile');
-      const { strategicPointsWithoutDaemyung, daemyungCount } = summarizeVasQuality(mobileSales);
-      const sono = daily.reduce((sum, row) => sum + Object.values(row.data?.groups?.sono || {}).reduce((a, value) => a + Number(value || 0), 0), 0);
-      const salesMetricPoints = Number(strategicPointsWithoutDaemyung || 0) + Math.max(Number(daemyungCount || 0), sono) * 2;
+      const completed = orders.filter(o=>o.status==='completed'&&o.actual_install_date?.startsWith(`${month}-`));
+      const bundleKey = row => `${row.user_id || ''}|${row.customer_id || row.id}|${row.source_work_date || ''}|${row.network_type||'household'}`;
+      const physicalTypes=['internet1g','internet500','internet100'];
+      const physicalBundles=new Set(orders.filter(o=>physicalTypes.includes(o.product_type)).map(bundleKey));
+      // Count an installed internet order once. TV installation is never another internet.
+      const internetRows=completed.filter(o=>physicalTypes.includes(o.product_type)||(o.product_type==='homeOnly'&&!physicalBundles.has(bundleKey(o))));
+      const householdCompleted=completed.filter(row=>row.network_type==='household'||!row.network_type);
+      const householdInternetRows=internetRows.filter(row=>row.network_type==='household'||!row.network_type);
+      const internet=internetRows.length,householdInternet=householdInternetRows.length;
+      const householdMainTvKeys=new Set(orders.filter(o=>o.status==='completed'&&o.actual_install_date&&o.actual_install_date.slice(0,7)<=month&&(o.network_type==='household'||!o.network_type)&&o.product_type==='homeTv').map(bundleKey));
+      const homeAwardPayableInternet=householdInternetRows.filter(o=>o.product_type!=='internet100'||householdMainTvKeys.has(bundleKey(o))).length;
+      const smartHome=completed.filter(row=>row.product_type==='smartHome').length;
+      const extraSetTop=completed.filter(row=>['subSetTop','tvFree'].includes(row.product_type)).length;
+      const mainTv=householdCompleted.filter(row=>row.product_type==='homeTv').length;
+      const householdExtraSetTop=householdCompleted.filter(row=>['subSetTop','tvFree'].includes(row.product_type)).length;
+      const householdTvFree=householdCompleted.filter(row=>row.product_type==='tvFree').length;
+      const householdSmartHome=householdCompleted.filter(row=>row.product_type==='smartHome').length;
+      const householdInternet1g=householdInternetRows.filter(row=>row.product_type==='internet1g').length;
+      const iptv17Plus=householdCompleted.filter(row=>row.product_type==='homeTv'&&row.main_tv_plan === 'broadcastPass').length;
+      const renewalRecognized=daily.reduce((sum,row)=>sum+(row.data?.householdRenewals||[]).filter(item=>!item.deleted&&!item.downSpeed&&!['cancelled','deleted'].includes(item.status)).reduce((n,item)=>n+(item.speedUp?1:0.3),0),0);
+      const salesMetricPoints=companySalesMetricPoints(sales,daily);
       const savedChangeSupportRatio = changeSupportRatio;
       return calculateHqStructureProjection({
         month,
