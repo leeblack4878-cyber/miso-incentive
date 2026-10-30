@@ -49,3 +49,17 @@ test('company rules never apply before October and never reclassify old sales',(
  const result=summarizeCompanyRevenue([older],'2026-09');assert.equal(result.supported,false);assert.equal(result.total,0);assert.deepEqual(older,copy);
  assert.equal(summarizeCompanyRevenue([sale('new',115)],'2026-10').supported,true);
 });
+
+test('company VAS notice applies staff products once, separately from employee pay',()=>{
+ const fees={vasKyobo:19800,vasCallConvenience:6600,vasDualNumber:3850,vasDesignatedNumber:2200,vasBellMoya:2200,vasBellAiGreeting:2750,vasBellAiCharacter:4700,vasVcolorBasic:3300,vasVcolorMusic:8800,vasVcolorBundle:19800,vasVprofile:3300};
+ for(const [key,fee] of Object.entries(fees)){
+  const s=sale(key,115,1,'general',{vasKeys:[key,key]}),before=structuredClone(s);
+  const r=summarizeCompanyRevenue([s],'2026-10');assert.equal(r.vas,fee);assert.equal(r.total,176000+fee);assert.equal(r.rows[0].total,r.total);assert.deepEqual(s,before);
+ }
+ const r=summarizeCompanyRevenue([sale('x',115,2,'general',{vasKeys:['vasVcolor','vasVcolorBundle','vasVcolorMusic','vasBellMoya','vasCallConvenience','vasDualNumber','vasDesignatedNumber','vasPhonePass','vasCallFeatureGuide']})],'2026-10');
+ assert.equal(r.vas,26400);assert.equal(r.total,202400);
+ for(const ri of [5,6,7])assert.equal(summarizeCompanyRevenue([sale('x',115,ri,'general',{vasKeys:['vasKyobo']})],'2026-10').vas,0);
+ assert.equal(summarizeCompanyRevenue([sale('x',115,1,'general',{vasKeys:['vasKyobo'],secondOnlyBundle:true})],'2026-10').vas,0);
+ assert.equal(summarizeCompanyRevenue([{...sale('x',115,1,'general',{vasKeys:['vasKyobo']}),status:'cancelled'}],'2026-10').vas,0);
+ assert.equal(summarizeCompanyRevenue([],'2026-10').vas,0);
+});

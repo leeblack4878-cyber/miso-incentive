@@ -297,3 +297,13 @@ for(const width of [320,390])test(`${width}px 10/23 SIM policy eligibility is ex
  await expect(d.getByLabel('주말 SIM MNP 정책 대상 확인')).not.toBeChecked();await d.getByLabel('주말 SIM MNP 정책 대상 확인').check();await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.simMnpPolicyEligible).toBe(true);expect(state.writes[0].p_meta.saleDate).toBe('2026-10-23');
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await expect(d.getByLabel('주말 SIM MNP 정책 대상 확인')).toBeChecked();await d.getByLabel('주말 SIM MNP 정책 대상 확인').uncheck();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[1].p_meta.simMnpPolicyEligible).toBe(false);
 });
+for(const width of [320,390])test(`${width}px 회사수익 VAS와 번들은 별도 합산하고 긴 조건을 표시한다`,async({page})=>{
+ await open(page,{actor:'admin',width,sales:[{id:'bundle-company',user_id:employeeId,sale_date:'2026-10-03',source_type:'mobile',source_meta:{ri:1,planDetail:{key:'general_115',type:'general'},vasKeys:['vasKyobo'],bundle2ndKeys:['b_L335'],specialPolicy:{policyId:'oct_s942_256_512_mnp'}}}]});
+ await page.getByRole('button',{name:'관리자',exact:true}).click();
+ const panel=page.getByRole('region',{name:'회사 예상 수익'});await panel.getByRole('button',{name:/회사 예상 수익/}).click();
+ await expect(panel.getByTestId('company-revenue-total')).toHaveText('503,800원');
+ await expect(panel.getByText('워치·패드 번들 수수료 (VAT 포함)',{exact:true})).toBeVisible();
+ await panel.getByText('수익 계산 기준 보기',{exact:true}).click();
+ await expect(panel.getByText(/아이패드 단가와 모단말 세부 모델/)).toBeVisible();
+ expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
