@@ -2,7 +2,7 @@ import {COMPANY_BASE_FEE,companyPlanFee} from './companyRevenue.js';
 import {getMobilePlan} from './mobilePlans.js';
 // Owner-confirmed company income only; never used by employee payroll.
 export function summarizeCompanyHomeRevenue(orders=[],sales=[],month){
- const out={total:0,equipment:0,premium:0,internet:0,simultaneous:0,subBonus:0,simTopup:0,pending:0,reasons:{},rows:[]};
+ const out={total:0,equipment:0,premium:0,internet:0,simultaneous:0,subBonus:0,simTopup:0,sohoTv:0,sohoBundle:0,pending:0,reasons:{},rows:[]};
  if(!/^\d{4}-\d{2}$/.test(month||'')||month<'2026-10')return out;
  const pending=reason=>{out.pending++;out.reasons[reason]=(out.reasons[reason]||0)+1;};
  const active=s=>!s.deleted&&!['cancelled','deleted'].includes(s.status)&&!s.source_meta?.deleted&&!s.source_meta?.cancelled;
@@ -21,18 +21,29 @@ export function summarizeCompanyHomeRevenue(orders=[],sales=[],month){
   const done=items.filter(({o})=>o.status==='completed'&&/^\d{4}-\d{2}-\d{2}$/.test(o.actual_install_date||''));
   const inMonth=done.filter(({o})=>o.actual_install_date.startsWith(`${month}-`));
   if(!inMonth.length)continue;
-  const row={key,equipment:0,premium:0,internet:0,simultaneous:0,subBonus:0,simTopup:0};
+  const row={key,equipment:0,premium:0,internet:0,simultaneous:0,subBonus:0,simTopup:0,sohoTv:0,sohoBundle:0};
+  const soho=items[0].o.network_type==='soho';
+  if(items.some(({o})=>(o.network_type==='soho')!==soho)){pending('홈 망 구분 확인 필요');continue;}
   for(const {o} of inMonth){
    if(['subSetTop','tvFree'].includes(o.product_type))row.equipment+=33000;
    if(o.product_type==='tvFree')row.premium+=77000;
-   if(o.product_type==='internet500')row.internet+=33000;
-   if(o.product_type==='internet1g')row.internet+=99000;
-   if(o.product_type==='internet100')pending('인터넷100메가 회사 단가 미설정');
+   if(o.product_type==='internet500')row.internet+=soho?55000:33000;
+   if(o.product_type==='internet1g')row.internet+=soho?66000:99000;
+   if(o.product_type==='internet100'){if(soho)row.internet+=33000;else pending('인터넷100메가 회사 단가 미설정');}
+   if(soho&&o.product_type==='homeTv')row.sohoTv+=44000;
    if(o.product_type==='smartHome')pending('스마트홈 회사 단가 미설정');
   }
   const internet=items.filter(({o})=>['internet100','internet500','internet1g'].includes(o.product_type));
   const tv=items.filter(({o})=>o.product_type==='homeTv');
   const markers=items.filter(({o})=>['simulMnp','simulNewChange','simulUsedMnp'].includes(o.product_type));
+  if(soho&&internet.length===1&&tv.length===1&&[...internet,...tv].every(({o})=>o.status==='completed'&&o.actual_install_date)){
+   const date=[...internet,...tv].map(({o})=>o.actual_install_date).sort().at(-1);
+   if(date.startsWith(`${month}-`)){
+    if(internet[0].o.product_type==='internet500')row.sohoBundle=242000;
+    else if(internet[0].o.product_type==='internet1g')row.sohoBundle=319000;
+    else pending('소호100메가 TV 동시유치 단가 미설정');
+   }
+  }
   if(internet.length>1||markers.length>1||tv.length>1){pending('홈 동시판매 묶음 중복 확인 필요');}
   else if(internet.length===1&&markers.length===1){
    const required=[...internet,...markers,...tv];
@@ -42,7 +53,10 @@ export function summarizeCompanyHomeRevenue(orders=[],sales=[],month){
     const date=required.map(({o})=>o.actual_install_date).sort().at(-1);
     const kind=markers[0].o.product_type;
     if(date.startsWith(`${month}-`)){
-     if(kind==='simulUsedMnp'){
+     if(soho){
+      if(kind==='simulUsedMnp')pending('소호 SIM 동시판매 단가 미설정');
+      else row.simultaneous=tv.length?(kind==='simulMnp'?275000:110000):(kind==='simulMnp'?220000:154000);
+     }else if(kind==='simulUsedMnp'){
       const first=internet[0];
       const matches=sales.filter(s=>active(s)&&['mobile','daily'].includes(s.source_type)&&s.user_id===first.o.user_id&&s.customer_id===(first.o.customer_id||first.sale.customer_id)&&s.sale_date===first.o.source_work_date&&s.source_meta?.ri===5);
       if(matches.length!==1)pending('SIM MNP 동시판매 모바일 연결 확인 필요');
@@ -57,14 +71,14 @@ export function summarizeCompanyHomeRevenue(orders=[],sales=[],month){
      }else row.simultaneous=tv.length?(kind==='simulMnp'?330000:110000):50000;
     }
     // Sub-TV bonus belongs to the month the bundle and that sub-TV are both complete.
-    if(tv.length)for(const {o} of done.filter(({o})=>['subSetTop','tvFree'].includes(o.product_type))){
+    if(!soho&&tv.length)for(const {o} of done.filter(({o})=>['subSetTop','tvFree'].includes(o.product_type))){
      const bonusDate=[date,o.actual_install_date].sort().at(-1);
      if(bonusDate.startsWith(`${month}-`))row.subBonus+=110000;
     }
    }
   }
-  for(const field of ['equipment','premium','internet','simultaneous','subBonus','simTopup'])out[field]+=row[field];
+  for(const field of ['equipment','premium','internet','simultaneous','subBonus','simTopup','sohoTv','sohoBundle'])out[field]+=row[field];
   row.total=Object.entries(row).filter(([k])=>k!=='key').reduce((n,[,v])=>n+v,0);out.rows.push(row);
  }
- out.total=out.equipment+out.premium+out.internet+out.simultaneous+out.subBonus+out.simTopup;return out;
+ out.total=out.equipment+out.premium+out.internet+out.simultaneous+out.subBonus+out.simTopup+out.sohoTv+out.sohoBundle;return out;
 }
