@@ -32,7 +32,9 @@ export function summarizeStoreRevenue({sales=[],orders=[],daily=[],profiles=[],s
    iptvGrade:local.iptvGrade.points*policy.iptvGrade.pointRate,
   };
   const monthly=Object.values(awards).reduce((a,b)=>a+b,0);
-  rows.push({store,mobile:mobile.total,home:home.total,monthly,awards,total:mobile.total+home.total+monthly,pending:mobile.pending+home.pending+mobile.unclassified,hs:local.retail.hs,internet:local.homeGrade.internet,sohoInternet:companySohoInternetCount(data.orders,month)});
+  const mobileBreakdown={base:mobile.base-mobile.secondBase,plan:mobile.plan+mobile.sim,second:mobile.secondBase+mobile.bundle,vas:mobile.vas};
+  const homeBreakdown={internet:home.internet+home.simTopup,tv:home.equipment+home.premium+home.subBonus+home.sohoTv,combined:home.simultaneous+home.sohoBundle};
+  rows.push({store,mobileBreakdown,homeBreakdown,mobile:mobile.total,home:home.total,monthly,awards,total:mobile.total+home.total+monthly,pending:mobile.pending+home.pending+mobile.unclassified,hs:local.retail.hs,internet:local.homeGrade.internet,sohoInternet:companySohoInternetCount(data.orders,month)});
  }
  const assignedMonthly=rows.reduce((n,r)=>n+r.monthly,0);
  const companyMonthly=sohoCount*sohoRate+['award','salesMetric','homeGrade','homeInternetRatio','homeAward','iptvGrade'].reduce((n,k)=>n+policy[k].totalAmount,0);

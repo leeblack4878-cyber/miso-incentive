@@ -25,3 +25,17 @@ test('home basic income and existing monthly policies are additive and reconcile
  const r=summarizeStoreRevenue({sales,orders,profiles,stores:['A','B'],month});assert.equal(r.rows.find(x=>x.store==='A').home,990000);assert.ok(r.rows[0].monthly>0);
  const awards=['award','salesMetric','homeGrade','homeInternetRatio','homeAward','iptvGrade'].reduce((n,k)=>n+r.policy[k].totalAmount,0);assert.equal(r.rows.reduce((n,row)=>n+row.monthly,0)+r.common.monthlyReconciliation,awards);
 });
+test('category subtotals reconcile: child-line base belongs to 2ND, household/Soho fees appear once',()=>{
+ const s=mobile('hs','a',{vasKeys:['vasKyobo'],bundle2ndKeys:['b_L335'],specialPolicy:{policyId:'oct_s942_256_512_mnp'}});
+ const r=summarizeStoreRevenue({sales:[s],profiles,stores:['A'],month});const row=r.rows[0];
+ assert.equal(row.mobileBreakdown.base,22000);assert.equal(row.mobileBreakdown.plan,154000);assert.equal(row.mobileBreakdown.second,308000);assert.equal(row.mobileBreakdown.vas,19800);
+ assert.equal(Object.values(row.mobileBreakdown).reduce((a,b)=>a+b,0),row.mobile);
+ assert.equal(Object.values(row.homeBreakdown).reduce((a,b)=>a+b,0),row.home);
+ assert.equal(row.mobile+row.home+row.monthly,row.total);
+});
+test('home categories keep internet, TV and combined-sale fees separate without double counting',()=>{
+ const orders=['internet500','homeTv','simulMnp','tvFree'].map((product_type,i)=>({id:`o${i}`,user_id:'a',customer_id:'c',source_work_date:'2026-10-03',status:'completed',actual_install_date:'2026-10-05',network_type:'household',product_type}));
+ const sales=orders.map(o=>({id:`s${o.id}`,source_type:'home_order',source_ref:o.id,user_id:'a',customer_id:'c',sale_date:'2026-10-03',source_meta:{}}));
+ const row=summarizeStoreRevenue({sales,orders,profiles,stores:['A'],month}).rows.find(r=>r.store==='A');
+ assert.equal(row.homeBreakdown.internet,33000);assert.equal(row.homeBreakdown.tv,220000);assert.equal(row.homeBreakdown.combined,330000);assert.equal(row.home,583000);
+});

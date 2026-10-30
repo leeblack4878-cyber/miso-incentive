@@ -5,6 +5,12 @@ import {loadCompanyRevenue} from '../companyRevenueLoader';
 import {canViewStoreRevenue,summarizeStoreRevenue} from '../storeRevenue';
 const won=n=>`${Math.round(n||0).toLocaleString('ko-KR')}원`;
 const awardLabels={sohoGrade:'소호 Grade',retailAward:'소매 월간 시상',salesMetric:'매출지표',homeGrade:'홈 Grade',homeInternetRatio:'HS 대비 인터넷',homeAward:'홈 월간 시상',iptvGrade:'IPTV Grade'};
+function RevenueGroup({title,total,items}){
+ return <section className="mt-4 border-t border-gray-100 pt-3">
+  <div className="flex flex-wrap justify-between gap-2 text-sm font-bold"><h4>{title}</h4><span className="text-brand-700">{won(total)}</span></div>
+  <div className="mt-2 space-y-2 text-xs text-gray-500">{items.map(([label,value])=><div key={label} className="flex flex-wrap justify-between gap-2"><span>{label}</span><span className="font-medium text-gray-700">{won(value)}</span></div>)}</div>
+ </section>;
+}
 export default function StoreRevenue({month,authUserId,stores=[]}){
  const allowed=canViewStoreRevenue(authUserId),key=`${authUserId}:${month}`;
  const [retry,setRetry]=useState(0),[state,setState]=useState({key:'',loading:true,error:false,data:null});
@@ -32,7 +38,17 @@ export default function StoreRevenue({month,authUserId,stores=[]}){
   {state.key!==key||state.loading?<p role="status" className="p-4 text-sm">수익을 계산하는 중...</p>:state.error?<div role="alert" className="p-4 text-sm text-red-600">수익 자료를 불러오지 못했어요. <button className="underline" onClick={()=>setRetry(v=>v+1)}>다시 확인</button></div>:<>
    <div className="rounded-2xl bg-white border p-4"><div className="text-xs text-gray-500">전체 예상 수익</div><div data-testid="store-revenue-total" className="mt-2 break-all text-2xl font-bold">{won(state.data.total)}</div></div>
    {state.data.ratioMissing&&<p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">기변지원금 활용 비중 미입력</p>}
-   <div className="space-y-3">{state.data.rows.map(row=><article key={row.store} className="rounded-2xl border bg-white p-4"><div><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-bold">{row.store}</h3><p className="mt-1 text-[11px] text-gray-500">HS {row.hs}건 · 인터넷 가정망 {row.internet}건 / 소호 {row.sohoInternet}건</p></div><b className="break-all text-lg text-brand-700">{won(row.total)}</b></div><div className="mt-3 grid grid-cols-1 gap-1 text-xs text-gray-500"><span>모바일 예상 총 수수료 {won(row.mobile)}</span><span>홈 예상 총 수수료 {won(row.home)}</span></div>{row.pending>0&&<p className="mt-2 text-xs text-amber-700">확인 필요 {row.pending}건</p>}</div><div className="mt-3 border-t pt-3 space-y-2 text-xs">{Object.entries(row.awards).map(([key,value])=><div key={key} className="flex flex-wrap justify-between gap-2"><span>{awardLabels[key]}</span><b>{won(value)}</b></div>)}</div></article>)}</div>
+   <div className="space-y-3">{state.data.rows.map(row=><article key={row.store} className="rounded-2xl border bg-white p-4">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-sm font-bold">{row.store}</h3><p className="mt-1 text-[11px] text-gray-500">HS {row.hs}건 · 인터넷 가정망 {row.internet}건 / 소호 {row.sohoInternet}건</p></div><b className="break-all text-lg text-brand-700">{won(row.total)}</b></div>
+    <RevenueGroup title="모바일 예상 총 수수료" total={row.mobile} items={[
+     ['기본 유치 수수료',row.mobileBreakdown.base],['요금제',row.mobileBreakdown.plan],['2ND',row.mobileBreakdown.second],['VAS',row.mobileBreakdown.vas],
+    ]}/>
+    <RevenueGroup title="홈 예상 총 수수료" total={row.home} items={[
+     ['인터넷',row.homeBreakdown.internet],['TV',row.homeBreakdown.tv],['결합·동시판매',row.homeBreakdown.combined],
+    ]}/>
+    <RevenueGroup title="구조 및 월간 시상 관련 총 수수료" total={row.monthly} items={Object.entries(row.awards).map(([key,value])=>[awardLabels[key],value])}/>
+    {row.pending>0&&<p className="mt-3 text-xs text-amber-700">확인 필요 {row.pending}건</p>}
+   </article>)}</div>
    <div className="rounded-2xl border bg-gray-50 p-4"><h3 className="text-sm font-bold">회사 공통 수익 · 매장 미배분</h3><div className="mt-2 text-xs">자가매장 운영비 지원 {won(state.data.common.selfStore)}</div><div className="mt-1 text-xs">월간판매량 정책 {won(state.data.common.retail)}</div>{Math.abs(state.data.common.monthlyReconciliation)>0.01&&<div className="mt-2 text-xs text-amber-700">월간 보상 집계 차이 {won(state.data.common.monthlyReconciliation)} · 원본 대조 필요</div>}</div>
   </>}
  </section>;

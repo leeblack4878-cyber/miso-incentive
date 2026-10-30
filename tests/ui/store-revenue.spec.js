@@ -13,6 +13,8 @@ for(const actor of ['admin','owner'])for(const width of [320,390])test(`${actor}
  await expect(panel.getByTestId('store-revenue-total')).toContainText('원');
  await expect(panel.getByRole('heading',{name:'A',exact:true})).toBeVisible();await expect(panel.getByRole('heading',{name:'B',exact:true})).toBeVisible();
  const card=panel.locator('article').filter({has:page.getByRole('heading',{name:'A',exact:true})});await expect(card.getByText('홈 월간 시상',{exact:true})).toBeVisible();
+ for(const title of ['모바일 예상 총 수수료','홈 예상 총 수수료','구조 및 월간 시상 관련 총 수수료'])await expect(card.getByRole('heading',{name:title,exact:true})).toBeVisible();
+ for(const label of ['요금제','2ND','VAS','인터넷','TV'])await expect(card.getByText(label,{exact:true})).toBeVisible();
  await expect(panel.getByText('회사 공통 수익 · 매장 미배분',{exact:true})).toBeVisible();
  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });

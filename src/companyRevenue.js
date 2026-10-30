@@ -40,7 +40,7 @@ export function companyPlanFee(meta={}){
  return {amount:tier>=33&&meta.ri===1?22000:0,pending:null};
 }
 export function summarizeCompanyRevenue(sales=[],month){
- const result={count:0,base:0,plan:0,sim:0,vas:0,bundle:0,total:0,pending:0,reasons:{},rows:[],unclassified:0},seen=new Set();
+ const result={count:0,base:0,secondBase:0,plan:0,sim:0,vas:0,bundle:0,total:0,pending:0,reasons:{},rows:[],unclassified:0},seen=new Set();
  result.supported=typeof month==='string'&&/^\d{4}-\d{2}$/.test(month)&&month>=COMPANY_REVENUE_START_MONTH;
  if(!result.supported)return result;
  for(const sale of sales){
@@ -53,6 +53,7 @@ export function summarizeCompanyRevenue(sales=[],month){
   // Standalone/follow-up bundle has one selected child represented by bundle keys.
   const second=meta.ri===7||meta.secondOnlyBundle;
   const count=second?Math.max(1,bundles):1+bundles;
+  result.secondBase+=(second?count:bundles)*COMPANY_BASE_FEE;
   const vas=companyVasFee(meta);result.vas+=vas;
   const bundle=companyBundleRevenue(sale,sales);result.bundle+=bundle.amount;
   const fee=second?{amount:0,pending:null}:companyPlanFee(meta),pendingCount=(fee.pending?1:0)+bundle.pending;
