@@ -25,7 +25,7 @@ export function summarizeStoreRevenue({sales=[],orders=[],daily=[],profiles=[],s
   const awards={
    sohoGrade:companySohoInternetCount(data.orders,month)*sohoRate,
    retailAward:local.award.mnp*policy.award.rates.mnp+local.award.new010*policy.award.rates.new010+local.award.change*policy.award.rates.change,
-   salesMetric:companySalesMetricPoints(data.sales.filter(s=>monthSales.includes(s)),data.daily,monthSales)*policy.salesMetric.pointRate,
+   salesMetric:companySalesMetricPoints(data.sales.filter(s=>monthSales.includes(s)),data.daily.filter(d=>d.work_date?.startsWith(`${month}-`)),monthSales)*policy.salesMetric.pointRate,
    homeGrade:local.homeGrade.internet*policy.homeGrade.pointRate*policy.homeGrade.paymentRate,
    homeInternetRatio:local.homeInternetRatio.internet*policy.homeInternetRatio.pointRate*policy.homeInternetRatio.paymentRate,
    homeAward:local.homeAward.payableInternet*policy.homeAward.pointRate,
