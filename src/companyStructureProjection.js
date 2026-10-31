@@ -5,9 +5,9 @@ const active=s=>!s.deleted&&!s.source_meta?.deleted&&!s.source_meta?.cancelled&&
 const unique=rows=>{const seen=new Set();return rows.filter(r=>{if(!r.id)return true;if(seen.has(r.id))return false;seen.add(r.id);return true;});};
 // Legacy Sono totals overlap mobile entries only for the same employee and date.
 export function companySalesMetricPoints(sales=[],daily=[],overlapSales=sales){
- const mobile=sales.filter(s=>s.source_type==='mobile'&&active(s));
+ const mobile=unique(sales.filter(s=>s.source_type==='mobile'&&active(s)));
  const metric=summarizeVasQuality(mobile),overlap=new Map();
- for(const sale of overlapSales.filter(s=>s.source_type==='mobile'&&active(s))){
+ for(const sale of unique(overlapSales.filter(s=>s.source_type==='mobile'&&active(s)))){
   const key=`${sale.user_id}:${sale.sale_date}`;
   overlap.set(key,(overlap.get(key)||0)+summarizeVasQuality([sale]).daemyungCount);
  }
