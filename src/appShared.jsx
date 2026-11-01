@@ -1,4 +1,4 @@
-import {NOVEMBER_POLICY_VERSION} from './novemberPolicy.js';
+import {NOVEMBER_POLICY_VERSION,NOVEMBER_RENEWAL_RATES} from './novemberPolicy.js';
 import {october23SimBonus} from './october23Policy.js';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION, octoberQuality } from './octoberPolicy.js';
@@ -77,7 +77,7 @@ function compatHomeRows(homeSales=[], orders=[]){
   })).filter(x=>x.product_type);
 }
 
-const NON_SALES_STORES = ['운영진', '영업지원팀'];
+const NON_SALES_STORES = ['운영진', '영업지원팀', '휴직'];
 
 const HOME_GATE_MIN = 3;
 
@@ -165,8 +165,8 @@ function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).fin
 function calculateHouseholdRenew(item,config){
   const speed=item?.speed||'1g';
   if([SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION,NOVEMBER_POLICY_VERSION].includes(config?.policyVersion)){
-    const invalid=!!item?.downSpeed;
-    const premiumSafe=item?.plan==='premiumSafe'||config?.policyVersion===NOVEMBER_POLICY_VERSION&&item?.plan==='premium';
+    const invalid=!!item?.downSpeed||config?.policyVersion===NOVEMBER_POLICY_VERSION&&(!!item?.deleted||['cancelled','deleted'].includes(item?.status));
+    const premiumSafe=item?.plan==='premiumSafe';
     const baseKey=premiumSafe
       ? `renewPremiumSafe${speed==='1g'?'1G':speed==='500'?'500':'100'}`
       : `renewOther${speed==='1g'?'1G':speed==='500'?'500':'100'}`;
@@ -174,7 +174,7 @@ function calculateHouseholdRenew(item,config){
     const speedUpPay=!invalid&&item?.speedUp?renewRate(config,'renewSpeedUp'):0;
     const hsKey=speed==='1g'?'renewSimul1G':speed==='500'?'renewSimul500':'';
     const hsPay=!invalid&&item?.hsSimul&&hsKey?renewRate(config,hsKey):0;
-    const tvPay=!invalid&&item?.tvUpsell?renewRate(config,'renewTvUpsell'):0;
+    const tvPay=!invalid&&item?.tvUpsell&&(config?.policyVersion!==NOVEMBER_POLICY_VERSION||!item?.homeOnly)?renewRate(config,'renewTvUpsell'):0;
     return {invalid,baseKey,base,soloDiscount:0,hsKey,hsPay,tvPay,speedUpPay,amount:Math.max(0,base+speedUpPay+hsPay+tvPay)};
   }
   const invalid=speed==='100'||!!item?.downSpeed||!!item?.temporaryUpgradeSame;
@@ -414,6 +414,12 @@ function aggregateDaily(daysMap, monthKey) {
     const raw = daysMap && daysMap[String(i).padStart(2, '0')];
     if (!raw) continue;
     const d = normalizeDay(raw);
+    if(monthKey>='2026-11'&&d.householdRenewals.length){
+      const source=aggregateHouseholdRenewals(d.householdRenewals,{policyVersion:NOVEMBER_POLICY_VERSION,renew:NOVEMBER_RENEWAL_RATES});
+      d.groups.renew={...(d.householdRenewLegacyCounts||{})};
+      for(const [key,count] of Object.entries(source.counts))d.groups.renew[key]=Number(d.groups.renew[key]||0)+count;
+      d.renewSoloDiscountAmount=source.soloDiscount;
+    }
     d.matrix.forEach((row, ri) => row.forEach((v, ci) => { agg.matrix[ri][ci] += v || 0; }));
     DAILY_GROUP_KEYS.forEach((gk) => {
       Object.entries(d.groups[gk] || {}).forEach(([k, v]) => { agg.groups[gk][k] = (agg.groups[gk][k] || 0) + (v || 0); });

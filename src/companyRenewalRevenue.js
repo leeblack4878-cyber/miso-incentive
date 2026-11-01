@@ -12,7 +12,7 @@ export function summarizeCompanyRenewals(daily=[],month){
    if(item.deleted||['cancelled','deleted'].includes(item.status)||item.downSpeed)continue;
    if(!['premiumSafe','premium','smart'].includes(item.plan)||!['100','200','500','1g'].includes(item.speed)){result.pending++;continue;}
    result.count++;
-   result.internet+=['premiumSafe','premium'].includes(item.plan)?99000:77000;
+   result.internet+=(item.plan==='premiumSafe'||month<'2026-11'&&item.plan==='premium')?99000:77000;
    // 100M -> 200M has no speed-up bonus under the supplied notice.
    if(item.speedUp&&['500','1g'].includes(item.speed))result.internet+=33000;
    if(item.homeOnly===false){result.tv+=11000;if(item.tvUpsell)result.tv+=22000;}

@@ -26,6 +26,7 @@ test('운영진은 매장 추가 없이 직원 소속으로 저장·재편집·�
   const picker=page.getByLabel('직원 소속 수정');
   await expect(picker.locator('optgroup[label="소속 그룹"] option[value="운영진"]')).toHaveCount(1);
   await expect(picker.locator('optgroup[label="매장"] option[value="운영진"]')).toHaveCount(0);
+  await expect(picker.locator('optgroup[label="소속 그룹"] option[value="휴직"]')).toHaveCount(1);
   await picker.selectOption('운영진');await page.getByRole('button',{name:'저장',exact:true}).click();
   await expect(employee()).toContainText('운영진');
   expect(writes.filter(r=>r.table==='profiles')).toEqual([{table:'profiles',id:`eq.${id}`,body:{name:'소속검증직원',store_name:'운영진',position:'사원',hire_date:'2026-08'}}]);
@@ -35,4 +36,12 @@ test('운영진은 매장 추가 없이 직원 소속으로 저장·재편집·�
   await page.getByRole('button',{name:'취소',exact:true}).click();
   await page.getByLabel('직원 소속 필터').selectOption(branch);await expect(employee()).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('휴직 직원은 기본 명단과 분리된 그룹으로 관리하고 매장으로 등록하지 않는다',async({page})=>{
+ const profiles=[{id:'leave',name:'휴직검증',store_name:'휴직',position:'점장',role:'manager',active:true,hire_date:'2026-01'},{id:'a50a0979-acef-40b1-98b7-f05074f1c835',name:'조회관리자',store_name:'운영진',position:'대표',role:'admin',active:true}];
+ await page.clock.setFixedTime(new Date('2026-11-01T03:00:00Z'));
+ await page.route('https://placeholder.supabase.co/**',r=>{const table=new URL(r.request().url()).pathname.split('/').pop();return r.fulfill({json:table==='profiles'?profiles:[]});});
+ await page.goto('/tests/ui/calendar.html?actor=admin');await page.getByRole('button',{name:'관리자',exact:true}).click();await page.getByRole('button',{name:'관리 설정',exact:true}).click();await page.getByRole('button',{name:'직원 관리',exact:true}).click();
+ const group=page.getByRole('region',{name:'휴직 직원 그룹'});await expect(group).toContainText('휴직검증 · 점장');await group.getByRole('button',{name:'관리',exact:true}).click();await expect(page.getByLabel('직원 소속 필터')).toHaveValue('휴직');await expect(group).toHaveCount(0);await expect(page.getByText('휴직검증 · 점장',{exact:true})).toBeVisible();
 });

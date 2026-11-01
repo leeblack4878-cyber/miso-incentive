@@ -6003,6 +6003,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
   };
 
   const visibleEmployees = employees
+    .filter(e=>e.branch!=='휴직'||filterBranch==='휴직')
     .filter((e) => filterBranch === '전체' || e.branch === filterBranch)
     .filter((e) => !nameQuery.trim() || e.name.includes(nameQuery.trim()))
     .slice()
@@ -6119,6 +6120,10 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
         {visibleEmployees.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">해당 소속에 등록된 직원이 없습니다.</div>}
       </div>
 
+      {filterBranch!=='휴직'&&employees.some(e=>e.branch==='휴직')&&<section aria-label="휴직 직원 그룹" className="rounded-xl border bg-gray-50 p-4">
+        <h3 className="text-sm font-bold text-gray-600">휴직 그룹</h3>
+        {employees.filter(e=>e.branch==='휴직').map(e=><div key={e.id} className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{e.name} · {e.position}</span><button type="button" className="text-brand-600" onClick={()=>setFilterBranch('휴직')}>관리</button></div>)}
+      </section>}
       <button onClick={toggleShowInactive} className="text-xs text-gray-400 underline">
         {showInactive ? '비활성 직원 숨기기' : '비활성화된 직원 보기'}
       </button>

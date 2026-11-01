@@ -22,3 +22,8 @@ test('daily record pagination includes rows beyond the API cap and refuses parti
  const error={message:'offline'};
  assert.deepEqual(await readAllPages(()=>({range:async(a,b)=>a?{error}:{data:all.slice(a,b+1)}})),{data:null,error});
 });
+
+test('휴직 그룹은 활동 명단에서 제외해도 과거 원장 소유는 유지한다',()=>{
+ const staff=[{id:'leave',active:true,branch:'휴직'},{id:'store',active:true,branch:'장곡동_장곡역점'}];
+ assert.deepEqual(activeRoster(staff).map(e=>e.id),['store']);assert.equal(hasMonthHistory(staff[0],{dailyRecords:{leave:{'01':{}}}}),true);
+});
