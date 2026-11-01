@@ -17,7 +17,7 @@ export function companyBundleRevenue(sale,sales=[]){
  const plan=getMobilePlan(pm.planDetail||meta.secondParent?.planDetail);
  const high=plan?.type==='general'&&Number(plan.key.split('_')[1])>=115;
  for(const key of keys){
-  const product=key.replace(/^b_/,'').replace(/_1016$/,'');
+  const product=key.replace(/^b_/,'').replace(/_(1016|1101)$/,'');
   const amount=COMPANY_BUNDLE_FEES[product];
   let reason='';let value=0;
   if(amount===undefined)reason='번들 회사 단가 미설정';

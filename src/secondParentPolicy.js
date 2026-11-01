@@ -6,7 +6,8 @@ export const PREVIOUS_SECOND_PARENTS = [
   {key:'iphone18_pro',label:'아이폰18 프로',apple:true},
   {key:'iphone18_pro_max',label:'아이폰18 프로맥스',apple:true},
 ];
-export const CURRENT_SECOND_PARENTS = [...PREVIOUS_SECOND_PARENTS,{key:'iphone_other',label:'아이폰14~18 기타 모델 (에어 포함)',apple:true}];
+export const NOVEMBER_PREVIOUS_PARENTS=[...PREVIOUS_SECOND_PARENTS,{key:'iphone18_other',label:'아이폰18 기타 (에어 포함)',apple:true}];
+export const CURRENT_SECOND_PARENTS = [...NOVEMBER_PREVIOUS_PARENTS,{key:'iphone_other',label:'아이폰14~18 기타 모델 (에어 포함)',apple:true}];
 export const isSecondOnlyBundle = (meta={}) => meta.secondOnlyBundle===true && meta.ri===7;
 export const secondParentCi = (meta={}) => isSecondOnlyBundle(meta)?meta.secondParent?.ci:meta.ci;
 export function previousMonthBounds(saleDate) {
@@ -19,7 +20,8 @@ export function previousMonthBounds(saleDate) {
 export function validatePreviousSecond({saleDate,parent={},bundleKeys=[]}={}) {
   if(String(saleDate).slice(0,7)<'2026-10')return '전월 모단말 2ND는 10월 정책부터 적용해요.';
   const sameMonth=String(parent.date).slice(0,7)===String(saleDate).slice(0,7);
-  const model=(sameMonth?CURRENT_SECOND_PARENTS:PREVIOUS_SECOND_PARENTS).find(x=>x.key===parent.model);
+  const models=saleDate>='2026-11-01'?(sameMonth?CURRENT_SECOND_PARENTS:NOVEMBER_PREVIOUS_PARENTS):(sameMonth?CURRENT_SECOND_PARENTS.filter(p=>p.key!=='iphone18_other'):PREVIOUS_SECOND_PARENTS);
+  const model=models.find(x=>x.key===parent.model);
   if(!model)return '판매월에 인정되는 모단말 모델을 선택해주세요.';
   const bounds=previousMonthBounds(saleDate),date=parent.date||'';
   if(!bounds||!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<bounds.start||date>saleDate||!Number.isFinite(Date.parse(date+'T00:00:00Z'))||new Date(date+'T00:00:00Z').toISOString().slice(0,10)!==date)return '모단말 판매일은 전월 또는 이번 달 2ND 판매일 이전 날짜로 입력해주세요.';
