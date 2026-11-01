@@ -1,3 +1,4 @@
+import {NOVEMBER_POLICY_VERSION,novemberBaseAdjustment} from './novemberPolicy.js';
 import {october23HomeBonus} from './october23Policy.js';
 import {OCTOBER9_START,OCTOBER9_END} from './october9Policy.js';
 import {isOctober16Bundle,isAppleBundle,OCTOBER16_START,OCTOBER16_END} from './october16Policy.js';
@@ -70,10 +71,10 @@ export function calculateMobileCommissionParts({
   matrix = [], matrixRates = [], specialMatrixOffset = 0,
   vasCounts = {}, vasRates = [], specialVasOffset = 0, bundleFreeVasOffset = 0,
   bundleCounts = {}, bundleRates = [], bundleFreeOffset = 0,
-  penaltyFactor = 1,
+  penaltyFactor = 1,baseAdjustment=0,
 } = {}) {
   const matrixTotal = calculateMatrixIncentive(matrix, matrixRates);
-  const adjustedMatrixTotal = Math.max(0, matrixTotal - Number(specialMatrixOffset || 0));
+  const adjustedMatrixTotal = Math.max(0, matrixTotal + Number(baseAdjustment||0) - Number(specialMatrixOffset || 0));
   const rawVasPay = calculateFlatIncentive(vasCounts, vasRates);
   const vasPay = Math.max(0, rawVasPay - Number(specialVasOffset || 0) - Number(bundleFreeVasOffset || 0));
   const rawBundle2ndTotal = calculateFlatIncentive(bundleCounts, bundleRates);
@@ -115,7 +116,8 @@ export function resolveSalePolicySnapshot(sale = {}, currentPolicy = {}) {
 export function calculateMobileSale(sale = {}, currentPolicy = {}) {
   const meta = sale?.source_meta || sale?.meta || {};
   const policy = resolveSalePolicySnapshot(sale, currentPolicy);
-  const matrixRate = isSecondOnlyBundle(meta)?0:positive(policy.matrixRates?.[Number(meta.ri)]?.[Number(meta.ci)]);
+  const rawMatrixRate = isSecondOnlyBundle(meta)?0:positive(policy.matrixRates?.[Number(meta.ri)]?.[Number(meta.ci)]);
+  const matrixRate=rawMatrixRate+(policy.version===NOVEMBER_POLICY_VERSION?novemberBaseAdjustment(meta,rawMatrixRate):0);
   const directVasKeys = meta.vasKeys || [];
   const bundleKeys = meta.bundle2ndKeys || [];
   const bundleVasMap = meta.bundleVasMap || {};

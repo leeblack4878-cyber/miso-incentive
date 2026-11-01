@@ -25,6 +25,11 @@ export function dayAfterSaleDeletion(base, sale, free = {}) {
     (meta.bundle2ndKeys || []).forEach(key => subtract(next.groups.bundle2nd, key, 1));
     if (meta.usedMnpBundle) subtract(next.groups.mnpBundle, 'usedMnpBundle', 1);
     const sp = meta.specialPolicy || {};
+    if((sale.sale_date||meta.saleDate)>='2026-11-01'){
+      next.mobileBaseAdjustment=Number(next.mobileBaseAdjustment||0)-Number(meta.mobileBaseAdjustment||0);
+      subtract(next,'novemberStockPay',sp.homePenaltyExempt?(sp.replacementAmount||0):0);
+      subtract(next,'novemberStockBundlePay',meta.novemberStockBundlePay||0);
+    }
     subtract(next, 'bundleFreeOffset', free.bundleOffset);
     subtract(next, 'bundleFreeVasOffset', free.vasOffset);
     subtract(next, 'specialMatrixOffset', sp.normalMatrixFee);

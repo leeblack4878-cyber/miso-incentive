@@ -1,3 +1,4 @@
+import {NOVEMBER_POLICY_VERSION} from './novemberPolicy.js';
 import {october23SimBonus} from './october23Policy.js';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { OCTOBER_POLICY_VERSION, octoberQuality } from './octoberPolicy.js';
@@ -163,9 +164,9 @@ function renewRate(config,key){ return Number((config?.renew||DEFAULT_RENEW).fin
 
 function calculateHouseholdRenew(item,config){
   const speed=item?.speed||'1g';
-  if([SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION].includes(config?.policyVersion)){
+  if([SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION,NOVEMBER_POLICY_VERSION].includes(config?.policyVersion)){
     const invalid=!!item?.downSpeed;
-    const premiumSafe=item?.plan==='premiumSafe';
+    const premiumSafe=item?.plan==='premiumSafe'||config?.policyVersion===NOVEMBER_POLICY_VERSION&&item?.plan==='premium';
     const baseKey=premiumSafe
       ? `renewPremiumSafe${speed==='1g'?'1G':speed==='500'?'500':'100'}`
       : `renewOther${speed==='1g'?'1G':speed==='500'?'500':'100'}`;
@@ -301,7 +302,7 @@ const DAILY_GROUP_DEFS = [
 
 const DAILY_GROUP_KEYS = DAILY_GROUP_DEFS.map((g) => g.key);
 
-const DAILY_NUMERIC_KEYS = ['custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset', 'renewSoloDiscountAmount'];
+const DAILY_NUMERIC_KEYS = ['mobileBaseAdjustment', 'novemberStockPay', 'novemberStockBundlePay', 'custRegCount', 'tailoredCount', 'tailoredAmount', 'specialMatrixOffset', 'specialVasOffset', 'specialReplacementPay', 'bundleFreeOffset', 'bundleFreeVasOffset', 'renewSoloDiscountAmount'];
 
 const HOME_KPI_MAP = [
   { kpiKey: 'kpiHome', sources: ['homeBase.homeOnly', 'homeBase.homeTv'] },
@@ -316,7 +317,7 @@ function emptyDay() {
   return {
     matrix: emptyDayMatrix(),
     groups: Object.fromEntries(DAILY_GROUP_KEYS.map((k) => [k, {}])),
-    custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0, renewSoloDiscountAmount: 0,
+    mobileBaseAdjustment:0, novemberStockPay:0, novemberStockBundlePay:0, custRegCount: 0, tailoredCount: 0, tailoredAmount: 0, specialMatrixOffset: 0, specialVasOffset: 0, specialReplacementPay: 0, bundleFreeOffset: 0, bundleFreeVasOffset: 0, renewSoloDiscountAmount: 0,
     householdRenewals: [], householdRenewLegacyCounts: {},
     dayOff: false, inputConfirmed: false, inputConfirmedAt: null,
   };
@@ -330,6 +331,7 @@ function normalizeDay(raw) {
     ...base,
     matrix: raw.matrix || base.matrix,
     groups: { ...base.groups, ...(raw.groups || {}) },
+    mobileBaseAdjustment:raw.mobileBaseAdjustment||0, novemberStockPay:raw.novemberStockPay||0, novemberStockBundlePay:raw.novemberStockBundlePay||0,
     custRegCount: raw.custRegCount || 0,
     tailoredCount: raw.tailoredCount || 0,
     tailoredAmount: raw.tailoredAmount || 0,
@@ -347,13 +349,13 @@ function normalizeDay(raw) {
   };
 }
 
-function mobileTeamCreditMetrics({ri,ci,secondOnlyBundle=false,vasKeys=[],bundle2ndKeys=[],usedMnpBundle=false,specialMatrixOffset=0,specialVasOffset=0,specialReplacementPay=0,bundleFreeOffset=0,bundleFreeVasOffset=0}){
+function mobileTeamCreditMetrics({mobileBaseAdjustment=0,novemberStockPay=0,novemberStockBundlePay=0,ri,ci,secondOnlyBundle=false,vasKeys=[],bundle2ndKeys=[],usedMnpBundle=false,specialMatrixOffset=0,specialVasOffset=0,specialReplacementPay=0,bundleFreeOffset=0,bundleFreeVasOffset=0}){
   const day=emptyDay();
   if(!isSecondOnlyBundle({ri,secondOnlyBundle}))day.matrix[ri][ci]=1;
   vasKeys.filter(key=>key!=='vasNone').forEach(key=>{day.groups.vas[key]=Number(day.groups.vas[key]||0)+1});
   bundle2ndKeys.forEach(key=>{day.groups.bundle2nd[key]=Number(day.groups.bundle2nd[key]||0)+1});
   if(usedMnpBundle)day.groups.mnpBundle.usedMnpBundle=1;
-  return {...day,specialMatrixOffset,specialVasOffset,specialReplacementPay,bundleFreeOffset,bundleFreeVasOffset};
+  return {...day,mobileBaseAdjustment,novemberStockPay,novemberStockBundlePay,specialMatrixOffset,specialVasOffset,specialReplacementPay,bundleFreeOffset,bundleFreeVasOffset};
 }
 
 function homeTeamCreditMetrics(products=[]){
@@ -573,15 +575,21 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     : legacyHomeAnyCount;
   const homeNoPerformance = homeAnyCount === 0;
   const penaltyFactor = homeNoPerformance ? 0.5 : 1;
-  const octoberPolicy=config.policyVersion===OCTOBER_POLICY_VERSION;
-  const specialReplacementPay=rawSpecialReplacementPay*(octoberPolicy?penaltyFactor:1);
+  const novemberPolicy=config.policyVersion===NOVEMBER_POLICY_VERSION;
+  const octoberPolicy=config.policyVersion===OCTOBER_POLICY_VERSION||novemberPolicy;
+  const stockExempt=novemberPolicy?Math.min(rawSpecialReplacementPay,Number(draft.novemberStockPay||0)):0;
+  const specialReplacementPay=(rawSpecialReplacementPay-stockExempt)*(octoberPolicy?penaltyFactor:1)+stockExempt;
 
   const commissionParts = calculateMobileCommissionParts({
     matrix:draft.matrix||[],matrixRates:config.matrix||[],specialMatrixOffset,
     vasCounts:draft.vas||{},vasRates:config.vas||[],specialVasOffset,bundleFreeVasOffset,
     bundleCounts:draft.bundle2nd||{},bundleRates:config.bundle2nd||[],bundleFreeOffset,
-    penaltyFactor,
+    penaltyFactor,baseAdjustment:novemberPolicy?Number(draft.mobileBaseAdjustment||0):0,
   });
+  if(novemberPolicy){
+    commissionParts.bundle2ndPay+=Number(draft.novemberStockBundlePay||0)*(1-penaltyFactor);
+    commissionParts.mobileMatrixPay=commissionParts.mobilePlanPay+commissionParts.bundle2ndPay;
+  }
   const {matrixTotal,adjustedMatrixTotal,rawBundle2ndTotal,bundle2ndTotal,rawVasPay,vasPay,mobilePlanPay,bundle2ndPay,mobileMatrixPay}=commissionParts;
 
   const positionAllowance = Number(config.positionAllowance?.[position] || 0);
@@ -613,7 +621,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     : homeAnyCount>0 ? calculateFlatIncentive(draft.homeAddon || {}, config.homeAddon || []) : 0;
   const renewPay = Math.max(0, calculateFlatIncentive(draft.renew || {}, config.renew || []) - Number(draft.renewSoloDiscountAmount || 0));
   const mnpBundlePay = calculateFlatIncentive(draft.mnpBundle || {}, config.mnpBundle || []);
-  const septemberPolicy=[SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION].includes(config.policyVersion);
+  const septemberPolicy=[SEPTEMBER_POLICY_VERSION,OCTOBER_POLICY_VERSION,NOVEMBER_POLICY_VERSION].includes(config.policyVersion);
   const sonoPay = septemberPolicy
     ? (config.sono||[]).reduce((sum,item)=>sum+calculateSeptemberSono(Number(draft.sono?.[item.key]||0),Number(item.rate||0),Number(item.achievedRate||item.rate||0)),0)
     : calculateFlatIncentive(draft.sono || {}, config.sono || []);
@@ -654,6 +662,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
     months, bucket, activityCount, baseActivityCount, bundle2ndActivityCount, tenurePay,
     mobilePoints, bundle2ndPoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,
     gradeEligible, grade: gradeHit.grade, gradeBonus, nextGrade, gradeProgress, currentTierMin,
+    mobileBaseAdjustment:novemberPolicy?Number(draft.mobileBaseAdjustment||0):0,
     matrixTotal, adjustedMatrixTotal, specialMatrixOffset, specialVasOffset, specialReplacementPay,
     rawBundle2ndTotal, bundleFreeOffset, bundleFreeVasOffset, bundle2ndTotal,
     rawVasPay, vasPay, approvedMobileSpotPay, mobileMatrixPay, mobilePlanPay, bundle2ndPay,

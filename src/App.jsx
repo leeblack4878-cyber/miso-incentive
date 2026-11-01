@@ -3784,7 +3784,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
               <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0)+Number(pay.october23SimPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
+              <span className="flex items-center gap-2 font-bold text-gray-800">{won(month>='2026-11'?Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.mnpBundlePay||0):Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0)+Number(pay.october23SimPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
             </button>
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
@@ -3800,7 +3800,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.bundleFreeOffset||0)!==0&&<RowKV label="└ 2ND 할인·조건 미충족 제외" value={`-${won(pay.bundleFreeOffset)}`} />}
               {Number(pay.specialMatrixOffset||0)!==0&&<RowKV label="└ 특판 요금제 제외" value={`-${won(pay.specialMatrixOffset)}`} />}
               {Number(pay.specialVasOffset||0)!==0&&<RowKV label="└ 특판 VAS 제외" value={`-${won(pay.specialVasOffset)}`} />}
-              {Number(pay.specialReplacementPay||0)!==0&&<RowKV label="└ 특판 대체 인센티브" value={won(pay.specialReplacementPay)} />}
+              {Number(pay.mobileBaseAdjustment||0)!==0&&<RowKV label="└ 모델·외국인 기본금 조정" value={won(pay.mobileBaseAdjustment)} />}
+              {Number(pay.specialReplacementPay||0)!==0&&<RowKV label={month>='2026-11'?"└ 모델·장기재고 추가 인센티브":"└ 특판 대체 인센티브"} value={won(pay.specialReplacementPay)} />}
               {Number(pay.approvedMobileSpotPay||0)!==0&&<RowKV label="└ 승인 모바일 스팟" value={won(pay.approvedMobileSpotPay)} />}
             </div>}
 
