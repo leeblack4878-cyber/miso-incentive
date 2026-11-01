@@ -35,3 +35,9 @@ test('지원판매는 기존 지정계정 또는 담당 직급만 유지한다',
  assert.equal(teamSupportEligibleFor({id:'other',position:'점장'}),false);
  assert.equal(teamSupportEligibleFor(null),false);
 });
+
+test('김솔이 점장 전환 시 장곡점 범위만 선택하고 과거 담당 예외를 적용하지 않는다',()=>{
+ const me={id:'9d1db3e4-1292-49bf-89f7-6d04a439a7e2',position:'점장',role:'manager',branch:'장곡점'};
+ const rows=[me,{id:'staff',branch:'장곡점'},{id:'other',branch:'다른점'}];
+ assert.deepEqual(scopedEmployeesFor({viewer:me,authUserId:me.id,isStoreLeader:true,employees:rows}).map(e=>e.id),[me.id,'staff']);assert.equal(teamSupportEligibleFor(me),false);
+});

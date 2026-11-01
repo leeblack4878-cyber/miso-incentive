@@ -42,5 +42,5 @@ export function summarizeStoreRevenue({sales=[],orders=[],daily=[],profiles=[],s
  const companyMonthly=sohoCount*sohoRate+['award','salesMetric','homeGrade','homeInternetRatio','homeAward','iptvGrade'].reduce((n,k)=>n+policy[k].totalAmount,0);
  const common={selfStore:policy.selfStore.totalAmount,retail:policy.retail.totalAmount,monthlyReconciliation:companyMonthly-assignedMonthly};
  const commonTotal=common.selfStore+common.retail+common.monthlyReconciliation;
- return {ratioMissing:changeSupportRatio===null||changeSupportRatio===undefined,rows:rows.filter(row=>row.total!==0||row.pending>0||!['운영진','영업지원팀'].includes(row.store)).sort((a,b)=>b.total-a.total||a.store.localeCompare(b.store,'ko')),common,commonTotal,policy,projection,total:rows.reduce((n,r)=>n+r.total,0)+commonTotal};
+ return {ratioMissing:changeSupportRatio===null||changeSupportRatio===undefined,rows:rows.filter(row=>row.total!==0||row.pending>0||!['운영진','영업지원팀','휴직'].includes(row.store)).sort((a,b)=>b.total-a.total||a.store.localeCompare(b.store,'ko')),common,commonTotal,policy,projection,total:rows.reduce((n,r)=>n+r.total,0)+commonTotal};
 }

@@ -38,3 +38,7 @@ export function novemberStockBundlePay(meta={}){
  const insured=(meta.bundleVasMap?.b_R825FA||[]).some(k=>['vasPhonePass','vasSafePass'].includes(k));
  return insured?(['free','discount'].includes(meta.bundleSaleTypeMap?.b_R825FA)?100000:350000):0;
 }
+
+// UI persists premiumSafe for the combined premium/safe category, premium for other plans.
+export const NOVEMBER_RENEWAL_OPTIONS=[{key:'premiumSafe',label:'프리미엄 안심(보상) · 80,000원'},{key:'premium',label:'동일 또는 그 외 요금제 · 60,000원'}];
+export const NOVEMBER_RENEWAL_RATES=[...['1G','500','100'].flatMap(speed=>[{key:`renewPremiumSafe${speed}`,rate:80000},{key:`renewOther${speed}`,rate:60000}]),{key:'renewSpeedUp',rate:30000},{key:'renewSimul1G',rate:80000},{key:'renewSimul500',rate:50000},{key:'renewTvUpsell',rate:20000}];

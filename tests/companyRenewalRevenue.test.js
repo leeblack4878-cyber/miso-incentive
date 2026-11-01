@@ -22,3 +22,9 @@ test('renewal company revenue is included in home internet/TV categories without
  const r=summarizeStoreRevenue({daily:[day([item({speedUp:true,homeOnly:false,tvUpsell:true})])],profiles:[{id:'a',store_name:'A'}],stores:['A'],month:'2026-10'}).rows[0];
  assert.equal(r.home,165000);assert.equal(r.homeBreakdown.internet,132000);assert.equal(r.homeBreakdown.tv,33000);assert.equal(r.total,r.home+r.monthly+r.mobile);
 });
+
+test('November other-plan UI key retains company 77000 while premiumSafe remains 99000; October is preserved',()=>{
+ const daily=[{...day([item({plan:'premium'})]),work_date:'2026-11-01'}];assert.equal(calc(daily,'2026-11').internet,77000);
+ daily[0].data.householdRenewals[0].plan='premiumSafe';assert.equal(calc(daily,'2026-11').internet,99000);
+ assert.equal(calc([day([item({plan:'premium'})])],'2026-10').internet,99000);
+});

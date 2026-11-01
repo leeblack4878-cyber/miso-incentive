@@ -1,6 +1,6 @@
 // Activity controls today's roster, never ownership of historical sales.
 export function activeRoster(employees = []) {
-  return employees.filter(employee => employee.active !== false);
+  return employees.filter(employee => employee.active !== false && (employee.branch||employee.store_name)!=='휴직');
 }
 
 export function hasMonthHistory(employee, {dailyRecords = {}, monthRecords = {}, homePolicyMap = {}, shadowLedgerMap = {}, approvedMobileSpotMap = {}} = {}) {

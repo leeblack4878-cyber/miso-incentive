@@ -1563,7 +1563,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
           rows={scopedSalesRows} rankingRows={personalSalesRows} dailyRecords={effectiveDailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve} rejectApproval={rejectApproval}
           config={config} persistConfig={persistConfig}
-          employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
+          employees={scopedEmployees} managementEmployees={scopedPerformanceEmployees.filter(e=>e.active!==false)} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={isFullAdmin}
           canManagePermissions={authUser?.id===PRIMARY_PERMISSION_ADMIN_ID}
@@ -5359,7 +5359,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals, payrollError=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, managementEmployees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals, payrollError=false }) {
   const [dashboardStore,setDashboardStore]=useState('all');
   const [headerHeight,setHeaderHeight]=useState(72);
   const scopeScrollRef=useRef(null);
@@ -5614,7 +5614,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'hqStructure' && canViewHqStructure && <React.Suspense fallback={<DeferredAdminPanelFallback label="본사 구조정책"/>}><HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} stores={stores} payrollRows={rankingRows||rows} payrollError={payrollError} /></React.Suspense>}
 
       {adminTab === 'employees' && (
-        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
+        <EmployeeManager employees={managementEmployees||employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
       )}
 
       {adminTab === 'policyHistory' && isFullAdmin && (
@@ -6003,6 +6003,7 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
   };
 
   const visibleEmployees = employees
+    .filter(e=>e.branch!=='휴직'||filterBranch==='휴직')
     .filter((e) => filterBranch === '전체' || e.branch === filterBranch)
     .filter((e) => !nameQuery.trim() || e.name.includes(nameQuery.trim()))
     .slice()
@@ -6119,6 +6120,10 @@ function EmployeeManager({ employees, addEmployee, updateEmployee, removeEmploye
         {visibleEmployees.length === 0 && <div className="text-xs text-gray-400 px-4 py-6 text-center">해당 소속에 등록된 직원이 없습니다.</div>}
       </div>
 
+      {filterBranch!=='휴직'&&employees.some(e=>e.branch==='휴직')&&<section aria-label="휴직 직원 그룹" className="rounded-xl border bg-gray-50 p-4">
+        <h3 className="text-sm font-bold text-gray-600">휴직 그룹</h3>
+        {employees.filter(e=>e.branch==='휴직').map(e=><div key={e.id} className="mt-2 flex items-center justify-between gap-2 text-xs text-gray-500"><span>{e.name} · {e.position}</span><button type="button" className="text-brand-600" onClick={()=>setFilterBranch('휴직')}>관리</button></div>)}
+      </section>}
       <button onClick={toggleShowInactive} className="text-xs text-gray-400 underline">
         {showInactive ? '비활성 직원 숨기기' : '비활성화된 직원 보기'}
       </button>

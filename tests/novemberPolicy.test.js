@@ -12,7 +12,7 @@ import {mobileSaleOffsets,estimateMobileSale} from '../src/mobileSaleEstimate.js
 import {dayAfterSaleDeletion} from '../src/saleMutations.js';
 import {companyBundleRevenue} from '../src/companyBundleRevenue.js';
 import {validatePreviousSecond} from '../src/secondParentPolicy.js';
-const output=await build({stdin:{contents:"export {normalizeDay,applyDailyToDraft,computePay,calculateHouseholdRenew} from './src/appShared.jsx';export {defaultConfig} from './src/policyDefaults.js';export {emptyDraft} from './src/viewShared.js';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'stub',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'db',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export const supabase={};'}));}}]});
+const output=await build({stdin:{contents:"export {normalizeDay,applyDailyToDraft,computePay,calculateHouseholdRenew,aggregateHouseholdRenewals} from './src/appShared.jsx';export {defaultConfig} from './src/policyDefaults.js';export {emptyDraft} from './src/viewShared.js';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'cjs',plugins:[{name:'stub',setup(b){b.onResolve({filter:/\/supabase$/},()=>({path:'db',namespace:'stub'}));b.onLoad({filter:/.*/,namespace:'stub'},()=>({contents:'export const supabase={};'}));}}]});
 const mod={exports:{}};new Function('require','module','exports',output.outputFiles[0].text)(createRequire(import.meta.url),mod,mod.exports);const api=mod.exports;
 const month='2026-11',config=resolvePolicyConfigForMonth(month,api.defaultConfig());
 const plan=(key='general_115')=>({key,type:key.split('_')[0]});
@@ -72,7 +72,7 @@ test('strategy uses existing company product point map; demerit remains 10000 wi
  assert.equal(calculateSaleStrategicPoints({vasKeys:['vasPhonePass','vasKyobo','vasDualNumber'],strategicPlan:true},'2026-11-01'),2.6);
  const d=api.emptyDraft();d.matrix[1][0]=1;d.matrix[5][0]=1;
  const result=api.computePay(d,'기타',null,month,config,0,{strategicPointsWithoutDaemyung:0,plan115Counts:{general:1,high:1,known:1,missing:0}});assert.equal(result.strategicAdjustment,-20000);
- assert.equal(api.calculateHouseholdRenew({speed:'500',plan:'premium',speedUp:true,hsSimul:true,tvUpsell:true},config).amount,180000);
+ assert.equal(api.calculateHouseholdRenew({speed:'500',plan:'premium',speedUp:true,hsSimul:true,tvUpsell:true},config).amount,160000);
  const oct=resolvePolicyConfigForMonth('2026-10',api.defaultConfig());assert.equal(api.calculateHouseholdRenew({speed:'500',plan:'premium'},oct).amount,60000);
  assert.equal(config.mnpBundle[0].rate,100000);
 });
@@ -81,4 +81,16 @@ test('new employee bundle key preserves existing company rate, previous iPhone18
  assert.equal(companyBundleRevenue(sale).amount,286000);
  const parent={model:'iphone18_other',date:'2026-10-20',ci:0};assert.equal(validatePreviousSecond({saleDate:'2026-11-01',parent,bundleKeys:['b_AppleWatch_1101']}),'');
  assert.notEqual(validatePreviousSecond({saleDate:'2026-10-31',parent:{...parent,date:'2026-09-20'},bundleKeys:['b_AppleWatch_1016']}),'');
+});
+
+test('November renewal UI other-plan key pays 60000, all posted rates and stale aggregate are reconciled from source',()=>{
+ for(const speed of ['100','500','1g'])for(const [plan,base] of [['premiumSafe',80000],['premium',60000],['smart',60000]]){
+ const item={id:'renew',plan,speed,homeOnly:false};assert.equal(api.calculateHouseholdRenew(item,config).amount,base);
+ const options={...item,speedUp:true,hsSimul:true,tvUpsell:true};assert.equal(api.calculateHouseholdRenew(options,config).amount,base+30000+(speed==='1g'?80000:speed==='500'?50000:0)+20000);
+ }
+ const raw={...api.normalizeDay(),householdRenewals:[{id:'r',plan:'premium',speed:'1g',homeOnly:false}],groups:{renew:{renewPremiumSafe1G:1}}};const before=structuredClone(raw);
+ const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':raw},'2026-11',config.categoryMap,config.gibyeonColumnMap);
+ assert.equal(api.computePay(draft,'기타',null,'2026-11',config).renewPay,60000);assert.deepEqual(raw,before);
+ const oct=resolvePolicyConfigForMonth('2026-10',api.defaultConfig());const historical=api.applyDailyToDraft(api.emptyDraft(),{'01':raw},'2026-10',oct.categoryMap,oct.gibyeonColumnMap);assert.equal(api.computePay(historical,'기타',null,'2026-10',oct).renewPay,80000);
+ const mixed={...raw,householdRenewLegacyCounts:{renewOther500:1}};const merged=api.applyDailyToDraft(api.emptyDraft(),{'01':mixed},'2026-11',config.categoryMap,config.gibyeonColumnMap);assert.equal(api.computePay(merged,'기타',null,'2026-11',config).renewPay,120000);
 });
