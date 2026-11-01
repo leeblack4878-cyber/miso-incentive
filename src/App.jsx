@@ -1563,7 +1563,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
           adminTab={adminTab} setAdminTab={setAdminTab} months={months} month={month} setMonth={setMonth}
           rows={scopedSalesRows} rankingRows={personalSalesRows} dailyRecords={effectiveDailyRecords} totalPay={totalPay} pendingCount={pendingCount} approve={approve} rejectApproval={rejectApproval}
           config={config} persistConfig={persistConfig}
-          employees={scopedEmployees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
+          employees={scopedEmployees} managementEmployees={scopedPerformanceEmployees.filter(e=>e.active!==false)} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee}
           stores={stores} addStore={addStore} removeStore={removeStore}
           isFullAdmin={isFullAdmin}
           canManagePermissions={authUser?.id===PRIMARY_PERMISSION_ADMIN_ID}
@@ -5359,7 +5359,7 @@ function HeadOfficeDataPanel({month,employees,rows,config,authUserId}){
   </div>;
 }
 
-function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals, payrollError=false }) {
+function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, rankingRows, dailyRecords, totalPay, pendingCount, approve, rejectApproval, config, persistConfig, employees, managementEmployees, addEmployee, updateEmployee, removeEmployee, stores, addStore, removeStore, isFullAdmin, canManagePermissions=false, monthLocked, toggleMonthLock, policyInputBlocked=false, togglePolicyInputBlock, authUserId, loginPosition='', loginBranch='', canSwitchStores=false, canViewHqStructure=false, canViewDailyBriefing=false, employeeGoalMap={}, employeeGoalsLoading=false, refreshEmployeeGoals, payrollError=false }) {
   const [dashboardStore,setDashboardStore]=useState('all');
   const [headerHeight,setHeaderHeight]=useState(72);
   const scopeScrollRef=useRef(null);
@@ -5614,7 +5614,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'hqStructure' && canViewHqStructure && <React.Suspense fallback={<DeferredAdminPanelFallback label="본사 구조정책"/>}><HqStructurePolicyView month={month} employeeIds={(rankingRows||rows).map(row=>row.id)} authUserId={authUserId} stores={stores} payrollRows={rankingRows||rows} payrollError={payrollError} /></React.Suspense>}
 
       {adminTab === 'employees' && (
-        <EmployeeManager employees={employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
+        <EmployeeManager employees={managementEmployees||employees} addEmployee={addEmployee} updateEmployee={updateEmployee} removeEmployee={removeEmployee} stores={stores} addStore={addStore} removeStore={removeStore} authUserId={authUserId} month={month} employeeGoalMap={employeeGoalMap} employeeGoalsLoading={employeeGoalsLoading} refreshEmployeeGoals={refreshEmployeeGoals} />
       )}
 
       {adminTab === 'policyHistory' && isFullAdmin && (
