@@ -51,3 +51,28 @@ for(const width of [320,390])test(`삼미 9월은 0점 대신 평가 제외 ${wi
  await expect(page.getByText('D등급',{exact:true})).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+for(const width of [320,390])test(`November manager edits own-store metrics without company controls ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:844});await page.clock.install({time:new Date('2026-11-02T03:00:00Z')});
+ let saved;
+ const row={month:'2026-11',store_name:'신천동_삼미시장2호점',verified_metrics:{},external_inputs:{}};
+ await page.route('https://placeholder.supabase.co/**',async route=>{
+  if(route.request().url().includes('manager_eval_monthly')){
+   if(route.request().method()!=='GET'){saved=route.request().postDataJSON();Object.assign(row,saved);}
+   return route.fulfill({json:row});
+  }
+  return route.fulfill({json:route.request().url().includes('aa_impact_monthly')?null:[]});
+ });
+ await page.goto('/tests/ui/evaluation.html?manager=1');
+ await page.getByRole('button',{name:'목표·실적 최신화',exact:true}).click();
+ await expect(page.getByLabel('평가 매장')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'목표 저장',exact:true})).toHaveCount(0);
+ await expect(page.getByText('회사 AA 점수',{exact:true})).toHaveCount(0);
+ await page.getByLabel('회사 실적 기준일',{exact:true}).fill('2026-11-01');
+ await page.getByLabel('회사 HS(SIM 제외)',{exact:true}).fill('55');
+ await page.getByLabel('회사 개인 판매 제외 2ND 번들',{exact:true}).fill('2');
+ await page.getByRole('button',{name:'회사입력값 저장',exact:true}).click();
+ await expect.poll(()=>saved?.verified_metrics?.hs).toBe(55);
+ expect(saved.store_name).toBe(row.store_name);expect(saved.verified_metrics.managerBundleCount).toBe(2);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
