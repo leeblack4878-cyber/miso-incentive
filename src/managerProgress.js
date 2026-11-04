@@ -64,8 +64,8 @@ export function progressMetricText(metric) {
   };
 }
 
-export function progressRowStatus(row, rankDate) {
+export function progressRowStatus(row, rankDate, basis = 'company') {
   if (row.excluded) return row.status;
   const date = row.asOfDate || '기준일 미입력';
-  return `${date} · ${row.status}${row.confirmed && row.asOfDate !== rankDate ? ' · 순위 제외' : ''}`;
+  return `${date} · ${basis === 'employee' && row.status === '확인 저장' ? '직원입력' : row.status}${row.confirmed && row.asOfDate !== rankDate ? ' · 순위 제외' : ''}`;
 }

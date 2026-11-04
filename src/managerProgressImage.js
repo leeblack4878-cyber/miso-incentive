@@ -1,7 +1,7 @@
 import { PROGRESS_LABELS, PROGRESS_NOTE, RANK_NOTE, TIER_NOTE, progressMetricText, progressRowStatus } from './managerProgress.js';
 import { displayStoreName } from './uiDefinitions.js';
 
-export async function createManagerProgressImage(report) {
+export async function createManagerProgressImage(report, basisLabel = '회사입력 기준', slot = '') {
   await document.fonts.ready;
   const width = 390;
   const cardHeight = 182;
@@ -26,13 +26,13 @@ export async function createManagerProgressImage(report) {
   rect(0, 0, width, 129, '#133b76');
   text('미소모바일  |  2026년 11월', 16, 24, 12, '#c6dafc', 700);
   text('점장정책 중간 진척도', 16, 52, 23, '#ffffff', 800);
-  text(`회사입력 기준 · 순위 기준일 ${report.rankDate ?? '확인 대기'}`, 16, 72, 12, '#ffffff');
+  text(`${basisLabel} · ${slot || report.rankDate || '확인 대기'} 기준`, 16, 72, 12, '#ffffff');
   [PROGRESS_NOTE, RANK_NOTE, TIER_NOTE].forEach((note, index) => text(note, 16, 90 + index * 14, 10, '#e0ecff'));
   let y = 138;
   for (const row of report.rows) {
     rect(10, y, 370, row.excluded ? 47 : cardHeight - 8, '#ffffff');
     text(displayStoreName(row.store), 20, y + 21, 15, '#172b48', 800);
-    text(progressRowStatus(row, report.rankDate), 20, y + 37, 10, '#516580');
+    text(progressRowStatus(row, report.rankDate, basisLabel === '직원입력 집계' ? 'employee' : 'company'), 20, y + 37, 10, '#516580');
     if (!row.excluded) {
       Object.entries(PROGRESS_LABELS).forEach(([key, label], index) => {
         const x = 20 + (index % 2) * 179;
