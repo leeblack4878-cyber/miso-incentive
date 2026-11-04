@@ -13,6 +13,7 @@ import { managerCompanyGoalShare, managerOperatorForStore, calculateSeptemberMan
 import { calculateSalesManagerPayroll, SALES_MANAGER_POLICY_VERSION } from '../salesManagerPolicyEngine';
 import { COMPANY_SCOPE_VIEWERS, SALES_MANAGER_AREAS } from '../permissionScopes';
 import { emptyDraft, sortStoresByOpenOrder, companyGoalDefaults, COMPANY_STORE_GOAL_BASE, useFinalStorePerformance, finalStoreMetric } from '../viewShared';
+import {calculateNovemberManagerIncentive,novemberManagerGoals,NOVEMBER_MANAGER_GOALS,NOVEMBER_MANAGER_POLICY_VERSION} from '../novemberManagerPolicy';
 const CAREER_PASS_SCORE = 90;
 const MANAGER_GRADE = (score) => score >= 100 ? 'S' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : 'D';
 
@@ -162,13 +163,14 @@ function managerActualFromDraft(d,key){
 }
 
 function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='', payrollOnly=false }){
+  const november=month>='2026-11';
   const quarter=quarterInfoFromMonth(month);
   const stores=sortStoresByOpenOrder([...new Set((employees||[]).map(e=>e.branch).filter(b=>b&&!NON_SALES_STORES.includes(b)))]);
   const [store,setStore]=useState(canSwitchStores?'':(loginBranch||stores[0]||''));
   const activeStore=store||stores[0]||'';
   const [aaConfig,setAaConfig]=useState(DEFAULT_AA_METRICS),[snap,setSnap]=useState({verified_metrics:{},external_inputs:{}}),[allGoals,setAllGoals]=useState([]),[saving,setSaving]=useState(false);
   const [managerMode,setManagerMode]=useState('dashboard');
-  const activeManagerMode=payrollOnly?'incentive':managerMode;
+  const activeManagerMode=managerMode==='settings'?'settings':payrollOnly?'incentive':managerMode;
   useEffect(()=>{if(!canSwitchStores&&loginBranch)setStore(loginBranch)},[canSwitchStores,loginBranch]);
   const scopeKey=`${month}|${activeStore}`;
   const scopeRef=useRef(scopeKey);scopeRef.current=scopeKey;
@@ -200,28 +202,29 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   live.productivity=storeRows.reduce((s,r)=>s+Number(r.pay?.kpiScore||0),0);
   live.strategicPoints=storeRows.reduce((s,r)=>s+Number(r.pay?.strategicPoints||0),0);
   live.hsWithSim=live.hs+live.simMnp;
+  live.secondTotal=storeRows.reduce((sum,r)=>sum+Number(r.draft.mobilePoint?.secondOnly||0)+managerActualFromDraft(r.draft,'second'),0);
   const verified=snap?.verified_metrics||{};
-  const actual=(key)=>evaluationMetric({basis,live,verified},key);
+  const actual=(key)=>november&&['managerBundleCount','strategyModelCount'].includes(key)?evaluationMetric({basis:'company',verified},key):evaluationMetric({basis,live,verified},key);
   const savedBasis=evaluationBasis(savedSnap,month);
   const companyReport=basis==='company'?reportedEvaluation(snap):null;
-  const coreHsKey=snap?.external_inputs?.coreHsIncludesSim?'hsWithSim':'hs';
+  const coreHsKey=november||snap?.external_inputs?.coreHsIncludesSim?'hsWithSim':'hs';
   const missingCore=[coreHsKey,'home','productivity'].filter(key=>actual(key)===null);
   const missingAa=aaConfig.filter(metric=>actual(metric.key)===null).map(metric=>metric.key);
   const coreReady=!!companyReport||missingCore.length===0;
   const aaReady=!!companyReport||missingAa.length===0;
   const scoreReady=coreReady&&aaReady;
-  const payrollReady=['hs','home','tvFree','smartHome','strategicPoints','plan115','second','tailoredCount','subTvHousehold'].every(key=>actual(key)!==null);
+  const payrollReady=(!november||['managerBundleCount','strategyModelCount','secondTotal','mnp','simMnp'].every(key=>actual(key)!==null))&&['hs','home','tvFree','smartHome','strategicPoints','plan115','second','tailoredCount','subTvHousehold'].every(key=>actual(key)!==null);
 
   // 관리자 > 회사 목표 > 회사 기준수량을 평가의 단일 기준으로 사용합니다.
   // DB에 해당 월 저장값이 있으면 우선하고, 아직 저장 전인 매장은 회사 기본 기준수량을 보완값으로 사용합니다.
   const goalMap=Object.fromEntries(stores.map(storeName=>{
     const saved=(allGoals||[]).find(g=>g.store_name===storeName);
-    return [storeName,{...companyGoalDefaults(storeName),...(saved?.company_goals||{})}];
+    return [storeName,november?novemberManagerGoals(storeName):{...companyGoalDefaults(storeName),...(saved?.company_goals||{})}];
   }));
   const storeHsTarget=Number(goalMap[activeStore]?.hs||0);
   // 현장 관리자는 권한상 자기 매장 직원만 조회하므로 `stores`에는 한 매장만 들어옵니다.
   // AA 회사 목표 배분의 분모는 조회 범위가 아니라 정책서의 전체 매장 HS 기준수량이어야 합니다.
-  const allStoreHsTargets=COMPANY_STORE_GOAL_BASE.map(row=>Number(row.hs||0));
+  const allStoreHsTargets=(november?NOVEMBER_MANAGER_GOALS:COMPANY_STORE_GOAL_BASE).map(row=>Number(row.hs||0));
   const totalHsTarget=allStoreHsTargets.reduce((sum,value)=>sum+value,0);
   const share=managerCompanyGoalShare(storeHsTarget,allStoreHsTargets);
   const coreTargets={
@@ -241,14 +244,21 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const computedAdj=aaAdjustments({...ext,internetRatio,daemyungAchieved:daemyungTarget>0&&actual('daemyung')>=daemyungTarget,prospectMnpAchieved:prospectTarget>0&&actual('prospectMnp')>=prospectTarget});
   const adj=companyReport?.adjustments?{...computedAdj,...companyReport.adjustments}:computedAdj;
   const aaBase=aaRows.reduce((s,x)=>s+x.score,0),aa100=companyReport?.aa100??Math.max(0,Math.min(100,aaBase+adj.total)),aa50=aa100*0.5,total=core50+aa50,grade=MANAGER_GRADE(total);
-  const operator=managerOperatorForStore(activeStore);
+  const operator=november?(employees||[]).find(e=>e.branch===activeStore&&['점장','부점장'].includes(e.position)&&e.active!==false):managerOperatorForStore(activeStore);
   const viewer=(employees||[]).find(e=>e.id===authUserId);
-  const canViewManagerIncentive=canSwitchStores||!!(operator?.name&&viewer?.name===operator.name&&viewer?.branch===activeStore);
+  const canEditStore=canSwitchStores||!!(viewer?.role==='manager'&&['점장','부점장'].includes(viewer?.position)&&viewer?.branch===activeStore&&!NON_SALES_STORES.includes(activeStore));
+  const canViewManagerIncentive=canSwitchStores||(november?!!(viewer&&viewer.branch===activeStore&&['점장','부점장'].includes(viewer.position)):!!(operator?.name&&viewer?.name===operator.name&&viewer?.branch===activeStore));
+  const calculateManager=november?calculateNovemberManagerIncentive:calculateSeptemberManagerIncentive;
+  const novemberArgs={simMnpCount:actual('simMnp'),hsMnpCount:Math.max(0,Number(actual('mnp')||0)-Number(actual('simMnp')||0)),secondCount:actual('secondTotal'),
+    strategyModelCount:actual('strategyModelCount'),bundledSecondCount:actual('managerBundleCount'),
+    companyNoExperienceRate:ext.companyNoExperienceRate,companyAixioRate:ext.companyAixioRate,aixioRate:ext.aixioRate,
+    tailTagCount:ext.tailTagCount,companyTailTagCount:ext.companyTailTagCount,strongNegativeCount:ext.strongNegativeCount,companyNpsScore:ext.companyNpsScore,auditScore:ext.auditScore,
+    impactRate:aa100/100,companyAaScore:ext.companyAaScore,closing:!!ext.closing,deputy:operator?.position==='부점장'};
   const strategicPoints=actual('strategicPoints');
   const strategicRatio=hsActual>0?strategicPoints/hsActual*100:0;
   const plan115Count=actual('plan115'),plan115Ratio=hsActual>0?plan115Count/hsActual*100:0;
   const subTvSmartRatio=hsActual>0?(actual('subTvHousehold')+actual('smartHome'))/hsActual*100:null;
-  const managerEstimate=calculateSeptemberManagerIncentive({
+  const managerEstimate=calculateManager({
     actual:{hs:hsActual,home:actual('home'),tvFree:actual('tvFree'),smartHome:actual('smartHome')},
     targets:{hs:coreTargets.hs,home:coreTargets.home,tvFree:Number(goalMap[activeStore]?.tvFree||0),smartHome:Number(goalMap[activeStore]?.smartHome||0)},
     managerScore:total,strategicRatio,homeRatio:internetRatio,plan115Count,plan115Ratio,
@@ -256,6 +266,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
     complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
     npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
+    ...(november?novemberArgs:{}),
   });
   const today=koreaToday(),companyDate=ext.companyAsOfDate;
   const forecastDay=basis==='company'&&validCompanyDate(companyDate,month)?Number(companyDate.slice(8,10)):Number(today.slice(8,10));
@@ -275,7 +286,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const forecastStrategicPoints=Number(strategicPoints||0)*managerForecastFactor;
   const forecastPlan115Count=Math.round(Number(plan115Count||0)*managerForecastFactor);
   const forecastSubTvHousehold=forecastActual('subTvHousehold'),forecastSmartHome=forecastActual('smartHome');
-  const forecastManagerEstimate=calculateSeptemberManagerIncentive({
+  const forecastManagerEstimate=calculateManager({
     actual:{hs:forecastHs,home:forecastHome,tvFree:forecastActual('tvFree'),smartHome:forecastSmartHome},
     targets:{hs:coreTargets.hs,home:coreTargets.home,tvFree:Number(goalMap[activeStore]?.tvFree||0),smartHome:Number(goalMap[activeStore]?.smartHome||0)},
     managerScore:forecastManagerScore,
@@ -286,11 +297,12 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
     complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
     npsScore:ext.npsScore??null,privacyViolation:!!ext.privacyViolation,
+    ...(november?{...novemberArgs,simMnpCount:forecastActual('simMnp'),hsMnpCount:Math.max(0,forecastActual('mnp')-forecastActual('simMnp')),secondCount:forecastActual('secondTotal'),strategyModelCount:forecastActual('strategyModelCount'),bundledSecondCount:forecastActual('managerBundleCount')}:{}),
   });
   const setVerified=(key,val)=>setSnap(v=>({...v,verified_metrics:{...(v.verified_metrics||{}),[key]:val}}));
   const setExt=(key,val)=>setSnap(v=>({...v,external_inputs:{...(v.external_inputs||{}),[key]:val}}));
   const persistSnapshot=async(payload,success)=>{
-    if(!canSwitchStores||loadState.key!==scopeKey||loadState.status!=='ready'||saveGuard.current)return;
+    if(!canEditStore||loadState.key!==scopeKey||loadState.status!=='ready'||saveGuard.current)return;
     const saveScope=scopeKey;saveGuard.current=true;setSaving(true);
     try{
       const record=await saveEvaluationSnapshot(supabase,{previous:savedSnap,payload});
@@ -310,6 +322,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
       const metrics=companyMetricsForSave(snap.verified_metrics);
       if(!validCompanyDate(ext.companyAsOfDate,month))return showLegacyAlert('회사 실적 기준일을 해당 월의 오늘 이전 날짜로 입력해주세요.');
       const external={...ext};
+      for(const [key,value] of Object.entries(external)){if(value==='')external[key]=null;}
       const cleanSnapshot={...snap,verified_metrics:metrics,external_inputs:external};
       if(!reportedEvaluation(cleanSnapshot))delete external.companyEvaluationReport;
       await persistSnapshot({month,store_name:activeStore,verified_metrics:metrics,external_inputs:external,
@@ -326,9 +339,9 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const storePicker=canSwitchStores&&<select aria-label="평가 매장" value={activeStore} disabled={saving} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>;
   if(loadState.key!==scopeKey||loadState.status!=='ready')return <div className="space-y-3">{storePicker}<div className="bg-white border rounded-xl p-4 text-sm" role={loadState.status==='error'?'alert':'status'}>{loadState.status==='error'?<>평가 자료를 불러오지 못했어요. 점수 계산을 보류합니다.<button type="button" onClick={()=>setReload(v=>v+1)} className="block mt-3 text-brand-700 font-bold">다시 불러오기</button></>:loadState.status==='empty'?'평가할 매장이 없어요.':'평가 자료를 확인하고 있어요.'}</div></div>;
   return <div className="space-y-3">
-    {!payrollOnly&&<div className={`grid gap-2 ${canSwitchStores?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canSwitchStores&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
+    {<div className={`grid gap-2 ${canEditStore?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canEditStore&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
     {storePicker}
-    {activeManagerMode!=='settings'&&<EvaluationBasisPanel basis={basis} savedBasis={savedBasis} onChange={setBasis} onSave={saveBasis} canSave={canSwitchStores} saving={saving} live={live} verified={verified} asOfDate={ext.companyAsOfDate} verifiedAt={snap.verified_at} report={companyReport} month={month}/>}
+    {activeManagerMode!=='settings'&&<EvaluationBasisPanel basis={basis} savedBasis={savedBasis} onChange={setBasis} onSave={saveBasis} canSave={canEditStore} saving={saving} live={live} verified={verified} asOfDate={ext.companyAsOfDate} verifiedAt={snap.verified_at} report={companyReport} month={month}/>}
     {activeManagerMode==='dashboard'&&!exclusion&&!scoreReady&&<p role="status" className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">회사 미입력 항목이 있어 종합 점수·등급을 보류합니다. 직원입력기준으로 현재 진행 상황을 확인할 수 있어요.</p>}
     {activeManagerMode==='dashboard'?exclusion?<div role="status" className="bg-gray-50 border rounded-2xl p-5"><div className="font-bold text-gray-800">평가 제외</div><p className="mt-2 text-sm text-gray-600">{displayStoreName(activeStore)} · 2026년 9월부터 {exclusion.reason}</p><p className="mt-1 text-xs text-gray-500">평가 제외 월은 점수·등급을 표시하지 않습니다. 8월까지의 평가와 기존 실적은 보존합니다.</p></div>:<>
       <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between gap-3"><div><div className="text-xs text-brand-600 font-semibold">{quarter.label} 관리자 평가 · {monthLabel(month)} 현재 기준</div><div className="text-lg font-bold mt-1">{displayStoreName(activeStore)}</div></div><div className="text-right"><div className="text-3xl font-black text-brand-700">{scoreReady?total.toFixed(1):'—'}</div><div className="text-xs font-bold">{scoreReady?`${grade}등급`:'확인 대기'}</div></div></div><div className="grid grid-cols-2 gap-2 mt-4"><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">핵심성과 50%</div><div className="text-xl font-bold mt-1">{coreReady?core50.toFixed(1):'—'} / 50</div><div className="text-[10px] text-gray-400 mt-1">HS 30% · 홈 30% · 생산성 40%</div></div><div className="bg-gray-50 rounded-xl p-3"><div className="text-[10px] text-gray-400">AA임팩트 50%</div><div className="text-xl font-bold mt-1">{aaReady?aa50.toFixed(1):'—'} / 50</div><div className="text-[10px] text-gray-400 mt-1">AA 원점수 {aaReady?aa100.toFixed(1):'—'}점</div></div></div><div className="mt-3 text-[10px] text-gray-400">{EVALUATION_BASIS_LABELS[basis]} · {basis==='company'?(ext.companyAsOfDate?`${ext.companyAsOfDate}까지 기준`:'실적 기준일 미등록'):'현재 입력 누적'}{companyReport?' · 회사 평가표 점수':''}</div></div>
@@ -360,33 +373,34 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
         </div>
       </div>
     </>:activeManagerMode==='incentive'&&canViewManagerIncentive?<>
-      {!payrollReady||!forecastReady||!scoreReady?<div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">선택한 기준의 실적·기준일이 부족해 관리자 예상액을 보류합니다. 직원입력기준을 선택하거나 회사입력값을 확인해주세요.</div>:month!=='2026-09'?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">9월 관리자 정책이에요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월을 선택하면 정책과 예상액을 확인할 수 있어요.</div></div>:
+      {!payrollReady||!forecastReady||!scoreReady?<div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-sm text-amber-800">선택한 기준의 실적·기준일이 부족해 관리자 예상액을 보류합니다. 직원입력기준을 선택하거나 회사입력값을 확인해주세요.</div>:month!=='2026-09'&&!november?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">9월 관리자 정책이에요</div><div className="text-xs text-gray-400 mt-1">상단에서 2026년 9월을 선택하면 정책과 예상액을 확인할 수 있어요.</div></div>:
        !operator?.name?<div className="bg-white rounded-2xl border p-5 text-center"><div className="text-sm font-bold text-gray-700">지정된 운영 관리자가 없어요</div><div className="text-xs text-gray-400 mt-1">{displayStoreName(activeStore)}은 9월 관리자 인센티브 지급 대상자가 없습니다.</div></div>:<>
         <div className="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 text-white p-4 shadow-sm">
-          <div><div className="text-[10px] text-brand-100">{SEPTEMBER_MANAGER_POLICY_VERSION} · 월중 예상</div><div className="text-lg font-black mt-1">{operator.name} {operator.position}</div><div className="text-xs text-brand-100 mt-0.5">{displayStoreName(activeStore)} 운영 관리자</div></div>
+          <div><div className="text-[10px] text-brand-100">{november?NOVEMBER_MANAGER_POLICY_VERSION:SEPTEMBER_MANAGER_POLICY_VERSION} · 월중 예상</div><div className="text-lg font-black mt-1">{operator.name} {operator.position}</div><div className="text-xs text-brand-100 mt-0.5">{displayStoreName(activeStore)} 운영 관리자</div></div>
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 mt-4 rounded-xl bg-white/10 px-3 py-3"><div><div className="text-[10px] text-brand-100">현재 기준액</div><div className="text-xl font-black mt-1">{won(managerEstimate.finalAmount)}</div></div><div className="text-brand-200 text-xl">→</div><div className="text-right"><div className="text-[10px] text-brand-100">월말 예상액</div><div className="text-xl font-black mt-1">{won(forecastManagerEstimate.finalAmount)}</div></div></div>
           <div className="mt-2 text-[10px] text-brand-100 text-right">현재 {Math.round(managerForecastFactor===1?100:100/managerForecastFactor)}% 경과 기준 예상</div>
-          <div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-relaxed">임팩트 평가 지급률은 월중 금액에 적용하지 않고 월 마감 시 최종 반영해요.</div>
+          <div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-relaxed">{november?`부점장 최종50% · ${ext.closing?'마감 AA 지급률 반영':'월중 AA 지급률 미반영'}`:'임팩트 평가 지급률은 월중 금액에 적용하지 않고 월 마감 시 최종 반영해요.'}</div>
         </div>
         <div className="grid grid-cols-2 gap-2"><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">전략P 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{fmtNum(strategicRatio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">전략P {fmtNum(strategicPoints,1)}P ÷ HS {fmtCount(hsActual)}건</div></div><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">115군 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{fmtNum(plan115Ratio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">115군 {fmtCount(plan115Count)}건 ÷ HS {fmtCount(hsActual)}건</div></div></div>
-        <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">성과 인센티브</div><div className="text-[10px] text-gray-400 mt-0.5">달성 구간의 건당 금액 × 실제 완료 건수 · 보라색은 월말 예상</div></div>{managerEstimate.metrics.map((m,index)=>{const forecast=forecastManagerEstimate.metrics[index];return <div key={m.key} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold">{{hs:'HS',home:'홈(소호 포함)',tvFree:'TV프리(부)',smartHome:'스마트홈'}[m.key]}</div><div className="text-[10px] text-gray-400 mt-1">현재 {fmtNum(m.actual,1)} / {fmtNum(m.target,1)}건 · {m.achievement.toFixed(0)}% · {m.tier}</div><div className="text-[10px] font-semibold text-brand-600 mt-1">예상 {fmtNum(forecast.actual,1)}건 · {forecast.achievement.toFixed(0)}% · {forecast.tier}</div></div><div className="text-right"><div className="text-sm font-black text-gray-800">{won(m.amount)}</div><div className="text-[10px] font-bold text-brand-700 mt-1">예상 {won(forecast.amount)}</div><div className="text-[9px] text-gray-400">{forecast.rate?`예상 건당 ${won(forecast.rate)}`:'예상도 지급 전'}</div></div></div>{m.key==='hs'&&<div className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] ${m.withheld?'bg-red-50 text-red-600':'bg-gray-50 text-gray-500'}`}>{m.homeBonus>0?`가정망 홈 12% 이상 · HS +20% ${won(m.homeBonus)}`:'가정망 홈 12% 추가 조건 미달'} · {m.strategicKnown?(m.withheld?'전략P 160% 미만으로 HS 미지급':`전략P ${fmtNum(Number(strategicRatio),1)}%`):'전략P 비중 확인 전'}</div>}</div>})}</div>
+        <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">성과 인센티브</div><div className="text-[10px] text-gray-400 mt-0.5">달성 구간의 건당 금액 × 실제 완료 건수 · 보라색은 월말 예상</div></div>{managerEstimate.metrics.map((m,index)=>{const forecast=forecastManagerEstimate.metrics[index];return <div key={m.key} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold">{{hs:'HS',home:'홈(소호 포함)',tvFree:'TV프리(부)',smartHome:'스마트홈'}[m.key]}</div><div className="text-[10px] text-gray-400 mt-1">현재 {fmtNum(november?m.recognized:m.actual,1)} / {fmtNum(m.target,1)}건 · {m.achievement.toFixed(0)}% · {m.tier}</div><div className="text-[10px] font-semibold text-brand-600 mt-1">예상 {fmtNum(forecast.actual,1)}건 · {forecast.achievement.toFixed(0)}% · {forecast.tier}</div></div><div className="text-right"><div className="text-sm font-black text-gray-800">{won(m.amount)}</div><div className="text-[10px] font-bold text-brand-700 mt-1">예상 {won(forecast.amount)}</div><div className="text-[9px] text-gray-400">{forecast.rate?`예상 건당 ${won(forecast.rate)}`:'예상도 지급 전'}</div></div></div>{m.key==='hs'&&<div className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] ${m.withheld?'bg-red-50 text-red-600':'bg-gray-50 text-gray-500'}`}>{november?(m.halved?'전략P 180% 미만 · HS 50% 지급':'전략P 180% 기준'):<>{m.homeBonus>0?`가정망 홈 12% 이상 · HS +20% ${won(m.homeBonus)}`:'가정망 홈 12% 추가 조건 미달'} · {m.strategicKnown?(m.withheld?'전략P 160% 미만으로 HS 미지급':`전략P ${fmtNum(Number(strategicRatio),1)}%`):'전략P 비중 확인 전'}</>}</div>}</div>})}</div>
         <div className="space-y-3">
           <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b flex items-center justify-between gap-3"><div><div className="text-xs text-gray-400">추가 정책</div><div className="text-lg font-black text-gray-800 mt-0.5">현재 +{won(managerEstimate.bonusTotal)}</div></div><div className="text-right shrink-0"><div className="text-[10px] text-brand-500">월말 예상</div><div className="text-base font-black text-brand-700">+{won(forecastManagerEstimate.bonusTotal)}</div></div></div><div className="divide-y divide-gray-100">{managerEstimate.bonuses.map((x,index)=>{const forecast=forecastManagerEstimate.bonuses[index];return <div key={x.key} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-xs"><span className={x.achieved?'font-semibold text-gray-700':'text-gray-500'}>{x.label}</span><b className={`whitespace-nowrap ${x.amount?'text-gray-700':'text-gray-300'}`}>{x.amount?`+${won(x.amount)}`:'현재 —'}</b><b className={`min-w-[88px] text-right whitespace-nowrap ${forecast?.amount?'text-brand-700':'text-gray-300'}`}>{forecast?.amount?`예상 +${won(forecast.amount)}`:'예상 —'}</b></div>})}</div></div>
           <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b flex items-center justify-between gap-3"><div className="text-xs text-gray-400">현재 확인된 차감</div><div className="text-lg font-black text-red-500 whitespace-nowrap">-{won(managerEstimate.deductionTotal)}</div></div><div className="divide-y divide-gray-100">{managerEstimate.deductions.length?managerEstimate.deductions.map(x=><div key={x.key} className="flex items-center justify-between gap-3 px-4 py-3 text-xs"><span className="text-gray-600">{x.label}</span><b className="text-red-500 whitespace-nowrap">-{won(x.amount)}</b></div>):<div className="px-4 py-4 text-xs text-gray-300">현재 확인된 차감 없음</div>}</div></div>
         </div>
-        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[10px] text-amber-700 leading-relaxed">현재 입력·확인된 실적 기준 예상액이에요. 전략P·115군과 월말 임팩트 값이 확정되면 금액이 달라질 수 있습니다. · 2ND 기준 {septemberManagerStoreType(activeStore)==='consignment'?'위탁 20건':'자가 10건'}</div>
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-[10px] text-amber-700 leading-relaxed">{november?'150% 구간은 맞춤제안 위탁80/자가40건 필수. HS 인정은 HS+SIM+2ND×0.5, 지급은 HS만. 개인판매 제외 2ND·전략모델은 확인 입력값을 사용합니다.':<>현재 입력·확인된 실적 기준 예상액이에요. 전략P·115군과 월말 임팩트 값이 확정되면 금액이 달라질 수 있습니다. · 2ND 기준 {septemberManagerStoreType(activeStore)==='consignment'?'위탁 20건':'자가 10건'}</>}</div>
       </>}
     </>:<>
       <section className="bg-white rounded-2xl border p-4 space-y-3" aria-label="회사입력값 편집">
-        <h3 className="text-sm font-bold">회사입력값 관리</h3>
-        <p className="text-xs text-gray-500">입력한 회사값만 저장합니다. 빈칸은 미입력, 0은 확인된 0건입니다. 직원 입력값을 회사값으로 자동 복사하지 않아요.</p>
+        <h3 className="text-sm font-bold">매장 실적 입력·수정</h3>
+        <p className="text-xs text-gray-500">입력한 매장 확인값만 저장합니다. 빈칸은 미입력, 0은 확인된 0건입니다. 직원 원본은 변경하지 않아요. 개인판매 제외 2ND·전략모델은 확인값을 두 기준에 공통 적용합니다.</p>
         <label className="block text-xs text-gray-600">회사 실적 기준일<input aria-label="회사 실적 기준일" type="date" min={`${month}-01`} max={month===koreaToday().slice(0,7)?koreaToday():`${month}-${String(daysInMonth(month)).padStart(2,'0')}`} value={ext.companyAsOfDate||''} onChange={e=>setExt('companyAsOfDate',e.target.value)} className="block mt-1 w-full min-w-0 border rounded-lg p-2"/></label>
-        <div className="space-y-3">{EVALUATION_METRICS.map(([label,key,unit])=><label key={key} className="block text-xs text-gray-600"><span className="font-semibold">{label}</span><span className="ml-2 text-[10px] text-gray-400">직원 {key==='prospectMnp'?'회사 확인 항목':evaluationValue(live[key],unit)}</span><input aria-label={`회사 ${label}`} type="number" min="0" step={unit==='point'?'0.1':'1'} value={verified[key]??(key==='plan115'?verified.plan115Count:'')??''} placeholder="미입력" onChange={e=>setVerified(key,e.target.value)} className="block w-full min-w-0 mt-1 border rounded-lg px-3 py-2 text-sm text-right"/></label>)}</div>
+        <div className="space-y-3">{[...EVALUATION_METRICS,...(november? [['전체 2ND(단독+번들)','secondTotal','count'],['개인 판매 제외 2ND 번들','managerBundleCount','count'],['개인 판매 제외 S26·폴더블8','strategyModelCount','count']]:[])].map(([label,key,unit])=><label key={key} className="block text-xs text-gray-600"><span className="font-semibold">{label}</span><span className="ml-2 text-[10px] text-gray-400">직원 {key==='prospectMnp'?'회사 확인 항목':evaluationValue(live[key],unit)}</span><input aria-label={`회사 ${label}`} type="number" min="0" step={unit==='point'?'0.1':'1'} value={verified[key]??(key==='plan115'?verified.plan115Count:'')??''} placeholder="미입력" onChange={e=>setVerified(key,e.target.value)} className="block w-full min-w-0 mt-1 border rounded-lg px-3 py-2 text-sm text-right"/></label>)}</div>
         {ext.companyEvaluationReport&&<p className="text-xs text-amber-700">회사 실적이나 외부 평가값을 수정하면 제공된 평가표 점수는 해제되고 앱 계산식으로 다시 계산합니다.</p>}
         <button type="button" onClick={saveSnapshot} disabled={saving} className="w-full py-3 rounded-xl bg-brand-600 text-white text-sm font-bold disabled:opacity-50">{saving?'저장 중':'회사입력값 저장'}</button>
       </section>
-      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate']].map(([l,k])=><label key={k} className="min-w-0 text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full min-w-0 mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full min-w-0 mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">소노 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(35건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
-      <div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="shrink-0 px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-2 gap-2 items-center rounded-xl bg-gray-50 p-2"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="col-span-2 w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>
+      <div className="bg-white rounded-2xl border p-4"><div className="text-sm font-bold">AA임팩트 외부 평가값</div><div className="grid grid-cols-2 gap-2 mt-3">{[['NPS 점수','npsScore'],['불친절 건수','unkindCount'],['대외민원 건수','complaintCount'],['정보보호 점수','securityScore'],['U+one 무체험률(%)','noExperienceRate'],...(november?[['익시오 활성화율(%)','aixioRate'],['인정 꼬리표 건수(면제 제외)','tailTagCount'],['강비추 건수','strongNegativeCount'],['오딧 점수','auditScore'],...(canSwitchStores?[['회사 U+ONE 무체험률(%)','companyNoExperienceRate'],['회사 익시오 활성화율(%)','companyAixioRate'],['회사 꼬리표 건수','companyTailTagCount'],['회사 NPS 점수','companyNpsScore'],['회사 AA 점수','companyAaScore']]:[])]:[])].map(([l,k])=><label key={k} className="min-w-0 text-[10px] text-gray-500">{l}<input type="number" value={ext[k]??''} onChange={e=>setExt(k,e.target.value)} className="w-full min-w-0 mt-1 border rounded-lg px-2 py-2 text-xs"/></label>)}<label className="text-[10px] text-gray-500">매장 레벨링<select value={ext.leveling||''} onChange={e=>setExt('leveling',e.target.value)} className="w-full min-w-0 mt-1 border rounded-lg px-2 py-2 text-xs"><option value="">미입력</option><option value="4">Lv4</option><option value="below4">Lv4 미만</option></select></label><label className="text-[10px] text-gray-500 flex items-center gap-2 mt-4"><input type="checkbox" checked={!!ext.privacyViolation} onChange={e=>setExt('privacyViolation',e.target.checked)}/> 개인정보보호위원회 적발</label><div className="col-span-2 text-[10px] text-gray-400 bg-gray-50 rounded-lg p-2">소노 목표 {daemyungTarget}건 · MNP 타사 가망 목표 {prospectTarget}건은 회사 목표(35건/21건)를 HS 기준수량 비중으로 자동 배분해 달성 여부를 판단합니다.</div></div></div>
+      {november&&canSwitchStores&&<label className="flex gap-2 text-xs p-3"><input type="checkbox" checked={!!ext.closing} onChange={e=>setExt('closing',e.target.checked)}/>월 마감 AA 지급률 적용 (회사입력값 저장으로 반영)</label>}
+      {canSwitchStores&&<div className="bg-white rounded-2xl border p-4"><div className="flex justify-between"><div><div className="text-sm font-bold">{monthLabel(month)} AA임팩트 회사 목표</div><div className="text-[10px] text-gray-400">회사 목표 입력 후 관리자 → 회사 목표의 매장별 HS 기준수량 비중으로 자동 배분합니다. 반영비중 합계는 100점으로 환산하고 항목별 110%까지 인정합니다.</div></div><button onClick={saveAa} className="shrink-0 px-3 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold h-fit">목표 저장</button></div><div className="space-y-2 mt-3">{aaConfig.map((x,i)=><div key={x.key} className="grid grid-cols-2 gap-2 items-center rounded-xl bg-gray-50 p-2"><input value={x.label} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,label:e.target.value}:a))} className="col-span-2 w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs"/><input type="number" value={x.weight} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,weight:Number(e.target.value||0)}:a))} className="w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs text-right"/><input type="number" value={x.target} onChange={e=>setAaConfig(v=>v.map((a,j)=>j===i?{...a,target:Number(e.target.value||0)}:a))} className="w-full min-w-0 border rounded-lg px-2 py-1.5 text-xs text-right"/></div>)}</div></div>}
     </>}
   </div>;
 }

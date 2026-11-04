@@ -1,6 +1,7 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+  {id:'2026-11-manager',month:'2026-11',date:'2026-11-01',title:'11월 관리자 지급정책',effective:'11월1일부터',changes:['4구간90/100/120/150%,전략P180%미만HS50%.','2ND번들5만원·MNP20%이상HS MNP3만원·S26/폴더블8 3만원.'],details:['150%는맞춤제안위탁80/자가40건필수.부점장최종50%.','점장본인매장실적수정허용,회사공통면제/마감설정은전체관리자만수정.이전월계산보존.']},
   {id:'2026-11-renewal-category-fix',month:'2026-11',date:'2026-11-01',title:'재약정 동일·기타 분류 정정',effective:'11월1일부터',changes:['동일·기타 선택을8만원으로오인하던오류를6만원으로정정.','안심(보상)8만원과속도/HS/TV추가금유지.'],details:['기존11월은구조화원본으로재계산,10월보존.','회사단가는기존99,000/77,000원유지·분류만정정.']},
   {id:'2026-11-employee',month:'2026-11',date:'2026-11-01',title:'11월 직원 지급정책',effective:'11월1일~별도공지',changes:['판매활성화11월단가·C추가금감액없음,일반85~105군50%.','2ND보험/홈중복25%,장기재고추가금은홈/C감액제외.'],details:['전략P점수동일,170%미만건당1만원차감.','홈기본금기존유지,익시오/U+ONE신규차감제외.10월보존.']},
   {id:'2026-10-company-audit',month:'2026-10',date:'2026-10-30',title:'매장별 회사 수익 집계 검토·정정',effective:'회사 수익 원본 집계',changes:['인터넷설치원본ID로계수,TV설치일중복/동일고객복수회선병합정정.','소노중복은직원·날짜별,지원매장중복방지. 취소삭제·하향제외 및 조회전페이지처리.'],details:['단가·구간·직원지급정책·권한변경없음. 의심중복원본삭제없음.']},
