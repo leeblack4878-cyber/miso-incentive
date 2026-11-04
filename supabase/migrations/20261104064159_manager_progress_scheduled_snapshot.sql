@@ -22,7 +22,28 @@ grant execute on function public.save_manager_progress_latest(text,timestamptz,j
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
--- KST 10:00, 15:00, 21:00. The credentials are provisioned separately in Vault.
+-- Dedicated token authorizes only the scheduled capture, with no database permissions.
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name='manager_progress_capture_token') then
+    perform vault.create_secret(
+      replace(gen_random_uuid()::text||gen_random_uuid()::text,'-',''),
+      'manager_progress_capture_token'
+    );
+  end if;
+end $$;
+
+create function public.authorize_manager_progress_capture(p_token text)
+returns boolean language sql stable security definer set search_path='' as $$
+  select exists (
+    select 1 from vault.decrypted_secrets
+    where name='manager_progress_capture_token' and decrypted_secret=p_token
+  );
+$$;
+revoke all on function public.authorize_manager_progress_capture(text) from public, anon, authenticated;
+grant execute on function public.authorize_manager_progress_capture(text) to service_role;
+
+-- KST 10:00, 15:00, 21:00. Provision the target project's URL in Vault before deployment.
 select cron.schedule('manager-progress-2026-11', '0 1,6,12 * 11 *', $job$
   select net.http_post(
     url := project.decrypted_secret || '/functions/v1/monthly-ranking',
@@ -32,7 +53,7 @@ select cron.schedule('manager-progress-2026-11', '0 1,6,12 * 11 *', $job$
   from vault.decrypted_secrets project
   cross join vault.decrypted_secrets credential
   where project.name='manager_progress_project_url'
-    and credential.name='manager_progress_service_role_key'
+    and credential.name='manager_progress_capture_token'
     and to_char(now() at time zone 'Asia/Seoul','YYYY-MM')='2026-11'
 $job$);
 

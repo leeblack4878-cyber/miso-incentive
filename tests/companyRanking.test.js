@@ -52,8 +52,14 @@ test('scheduled report serves only the latest saved snapshot and limits amount f
  assert.equal('amounts' in leader.data.rows[1],false);
  const executive=await call({...employee,id:'a50a0979-acef-40b1-98b7-f05074f1c835',role:'admin'});
  assert.equal(executive.data.rows[1].amounts.current,400000);
- const unauthorizedCapture=await monthlyRankingRequest(req({view:'capture-manager-progress'}),client(),calculateCompanyMonthlyRanking,undefined,'cron-only');
- assert.equal(unauthorizedCapture.status,400);
+ const captureClient=client();
+ captureClient.rpc=async (name,args)=>{
+  assert.equal(name,'authorize_manager_progress_capture');
+  assert.equal(args.p_token,'valid');
+  return {data:false};
+ };
+ const unauthorizedCapture=await monthlyRankingRequest(req({view:'capture-manager-progress'}),captureClient,calculateCompanyMonthlyRanking);
+ assert.equal(unauthorizedCapture.status,401);
 });
 
 test('employee projection uses daily input and keeps missing manager-confirmed counts distinct from zero', async () => {

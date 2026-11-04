@@ -1,18 +1,19 @@
 import { captureManagerProgress, latestManagerProgress } from './manager-progress.js';
 
-export async function monthlyRankingRequest(req,admin,calculate,calculateProgress,cronKey){
+export async function monthlyRankingRequest(req,admin,calculate,calculateProgress){
  const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,x-client-info,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS'}});
  if(req.method==='OPTIONS')return reply(null);
  if(req.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
  try{
   const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');if(!token)return reply({error:'UNAUTHORIZED'},401);
-  if(cronKey&&token===cronKey){
-   const body=await req.json();
-   if(body?.view!=='capture-manager-progress')return reply({error:'INVALID_VIEW'},400);
+  const body=await req.json();
+  if(body?.view==='capture-manager-progress'){
+   const {data:allowed,error}=await admin.rpc('authorize_manager_progress_capture',{p_token:token});
+   if(error||allowed!==true)return reply({error:'UNAUTHORIZED'},401);
    return reply(await captureManagerProgress(admin,calculateProgress));
   }
   const {data:{user},error}=await admin.auth.getUser(token);if(error||!user)return reply({error:'UNAUTHORIZED'},401);
-  const body=await req.json();if(!body||Object.keys(body).some(k=>k!=='month'&&k!=='view')||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.month))return reply({error:'INVALID_MONTH'},400);
+  if(!body||Object.keys(body).some(k=>k!=='month'&&k!=='view')||!/^20\d{2}-(0[1-9]|1[0-2])$/.test(body.month))return reply({error:'INVALID_MONTH'},400);
   const progress=body.view==='manager-progress';
   if(body.view!==undefined&&(!progress||body.month!=='2026-11'))return reply({error:'INVALID_VIEW'},400);
   const {data:profile,error:pe}=await admin.from('profiles').select(progress?'id,active,status,role,position,store_name':'id,active,status').eq('id',user.id).maybeSingle();
