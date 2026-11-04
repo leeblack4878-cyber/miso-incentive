@@ -5,7 +5,7 @@ import { displayStoreName, fmtNum, won } from '../uiDefinitions';
 import { buildManagerProgress, PROGRESS_LABELS, PROGRESS_NOTE, RANK_NOTE, TIER_NOTE, progressMetricText, progressRowStatus } from '../managerProgress';
 import { createManagerProgressImage } from '../managerProgressImage';
 
-export default function ManagerProgressPanel({ month, onBack }) {
+export default function ManagerProgressPanel({ month, backLabel, onBack }) {
   const [basis, setBasis] = useState('employee');
   const [pending, setPending] = useState(false);
   const [slotLabel, setSlotLabel] = useState('');
@@ -88,7 +88,7 @@ export default function ManagerProgressPanel({ month, onBack }) {
     ['월말 예상 수혜액', amountRows.reduce((sum, row) => sum + row.amounts.forecast, 0)],
   ];
   return <section aria-label="점장정책 중간 진척도" className="space-y-3">
-    <button type="button" onClick={onBack} className="rounded-lg border bg-white px-3 py-2 text-xs font-bold">평가 화면으로</button>
+    <button type="button" onClick={onBack} className="rounded-lg border bg-white px-3 py-2 text-xs font-bold">{backLabel}</button>
     <header className="rounded-2xl bg-brand-700 p-4 text-white">
       <p className="text-xs text-brand-100">미소모바일 · 2026년 11월</p>
       <h2 className="mt-1 text-lg font-black">점장정책 중간 진척도</h2>

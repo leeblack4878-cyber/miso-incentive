@@ -5,13 +5,13 @@ const snapshot = (store_name, metrics) => ({
   store_name, as_of_date: '2026-11-04', confirmed: true, has_input: true, metrics,
 });
 
-async function openProgress(page, response) {
+async function openProgress(page, response, screen = '') {
   await page.clock.setFixedTime(new Date('2026-11-04T07:00:00Z'));
   await page.route('https://placeholder.supabase.co/**', route => route.fulfill({
     json: route.request().url().includes('store_goals') ? [] : null,
   }));
   await page.route(reportUrl, response);
-  await page.goto('/tests/ui/evaluation.html?manager');
+  await page.goto(`/tests/ui/evaluation.html?manager${screen}`);
   await page.getByRole('button', { name: '점장정책 진척도 비교' }).click();
 }
 
@@ -35,7 +35,7 @@ for (const width of [320, 390]) {
     await openProgress(page, route => route.fulfill({ json: { slotAt: '2026-11-04T15:00:00+09:00', rows: [
       snapshot('신천동_삼미시장2호점', { hs: 58, simMnp: 4, secondTotal: 3, home: 0 }),
       { ...snapshot('광정동_산본점', { hs: 100, simMnp: 0, secondTotal: 0, home: 10 }), amounts: { current: 1234567, forecast: 2456789 } },
-    ] } }));
+    ] } }), '&payroll');
     await expect(page.getByText('2026-11-04 15:00 기준 (한국시간)', { exact: false })).toBeVisible();
     await expect(page.locator('tbody tr')).toHaveCount(13);
     await expect(page.locator('tbody')).toContainText('1,234,567원');
@@ -67,6 +67,8 @@ for (const width of [320, 390]) {
     await page.evaluate(() => Object.defineProperty(navigator, 'canShare', { value: () => false }));
     await page.getByRole('button', { name: '이미지 공유' }).click();
     await expect(page.getByRole('status').filter({ hasText: '카카오톡' })).toBeVisible();
+    await page.getByRole('button', { name: '관리자 급여로' }).click();
+    await expect(page.getByRole('button', { name: '월 급여 예상' })).toBeVisible();
   });
 }
 

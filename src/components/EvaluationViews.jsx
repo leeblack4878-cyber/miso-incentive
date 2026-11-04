@@ -318,12 +318,12 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
       if(error)throw error;showLegacyAlert('AA임팩트 월 목표를 저장했어요.');
     }catch(error){showLegacyAlert(friendlyError(error));}finally{saveGuard.current=false;setSaving(false);}
   };
-  const canCompare=month==='2026-11'&&!payrollOnly&&canEditStore;
-  if(canCompare&&managerMode==='progress')return <ManagerProgressPanel key={month} month={month} onBack={()=>setManagerMode('dashboard')}/>;
+  const canCompare=month==='2026-11'&&canEditStore;
+  if(canCompare&&managerMode==='progress')return <ManagerProgressPanel key={month} month={month} backLabel={payrollOnly?'관리자 급여로':'평가 화면으로'} onBack={()=>setManagerMode('dashboard')}/>;
   const storePicker=canSwitchStores&&<select aria-label="평가 매장" value={activeStore} disabled={saving} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>;
   if(loadState.key!==scopeKey||loadState.status!=='ready')return <div className="space-y-3">{storePicker}<div className="bg-white border rounded-xl p-4 text-sm" role={loadState.status==='error'?'alert':'status'}>{loadState.status==='error'?<>평가 자료를 불러오지 못했어요. 점수 계산을 보류합니다.<button type="button" onClick={()=>setReload(v=>v+1)} className="block mt-3 text-brand-700 font-bold">다시 불러오기</button></>:loadState.status==='empty'?'평가할 매장이 없어요.':'평가 자료를 확인하고 있어요.'}</div></div>;
   return <div className="space-y-3">
-    {<div className={`grid gap-2 ${canEditStore?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canEditStore&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
+    {<div className={`grid gap-2 ${canEditStore?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${(activeManagerMode==='dashboard'||activeManagerMode==='incentive')?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>{payrollOnly?'월 급여 예상':'평가 현황'}</button>{canEditStore&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
     {storePicker}
     {canCompare&&<button type="button" onClick={()=>setManagerMode('progress')} className="w-full rounded-xl border border-brand-200 bg-brand-50 py-3 text-sm font-bold text-brand-700">점장정책 진척도 비교</button>}
     {activeManagerMode!=='settings'&&<EvaluationBasisPanel basis={basis} savedBasis={savedBasis} onChange={setBasis} onSave={saveBasis} canSave={canEditStore} saving={saving} live={live} verified={verified} asOfDate={ext.companyAsOfDate} verifiedAt={snap.verified_at} report={companyReport} month={month}/>}
