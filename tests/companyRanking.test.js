@@ -21,3 +21,59 @@ test('company ranking returns safe full company rows and explicit unavailable er
  const r=await monthlyRankingRequest(req(),client(),calculateCompanyMonthlyRanking);assert.equal(r.status,200);assert.equal((await r.json()).rows.length,2);
  const failed=await monthlyRankingRequest(req(),client({fail:true}),calculateCompanyMonthlyRanking);assert.equal(failed.status,503);assert.deepEqual(await failed.json(),{error:'RANKING_UNAVAILABLE'});
 });
+
+test('scheduled report serves only the latest saved snapshot and limits amount fields', async () => {
+ const {progressSlot}=await import('../supabase/functions/monthly-ranking/manager-progress.js');
+ for(const [utc,kst] of [['01','10'],['06','15'],['12','21']]) {
+  assert.deepEqual(progressSlot(new Date(`2026-11-04T${utc}:00:00Z`)),{month:'2026-11',slotAt:`2026-11-04T${kst}:00:00+09:00`});
+ }
+ assert.equal(progressSlot(new Date('2026-11-04T06:11:00Z')),null);
+ const snapshot={slot_at:'2026-11-04T06:00:00Z',rows:[
+  {store_name:'A',metrics:{hs:2},amounts:{current:50000,forecast:100000}},
+  {store_name:'B',metrics:{hs:5},amounts:{current:400000,forecast:600000}},
+ ]};
+ const reportRequest=req({month:'2026-11',view:'manager-progress'});
+ const call=async profile=>{
+  const admin=client();
+  admin.from=table=>{
+   const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:table==='profiles'?profile:snapshot})};
+   return q;
+  };
+  const r=await monthlyRankingRequest(reportRequest.clone(),admin,calculateCompanyMonthlyRanking);
+  assert.equal(admin.calls,0);
+  return {status:r.status,data:await r.json()};
+ };
+ const employee={id:'me',active:true,status:'approved',role:'employee',store_name:'A'};
+ assert.equal((await call(employee)).status,403);
+ const leader=await call({...employee,role:'manager',position:'점장'});
+ assert.equal(leader.status,200);
+ assert.equal(leader.data.slotAt,snapshot.slot_at);
+ assert.deepEqual(leader.data.rows[0].amounts,snapshot.rows[0].amounts);
+ assert.equal('amounts' in leader.data.rows[1],false);
+ const executive=await call({...employee,id:'a50a0979-acef-40b1-98b7-f05074f1c835',role:'admin'});
+ assert.equal(executive.data.rows[1].amounts.current,400000);
+ const captureClient=client();
+ captureClient.rpc=async (name,args)=>{
+  assert.equal(name,'authorize_manager_progress_capture');
+  assert.equal(args.p_token,'valid');
+  return {data:false};
+ };
+ const unauthorizedCapture=await monthlyRankingRequest(req({view:'capture-manager-progress'}),captureClient,calculateCompanyMonthlyRanking);
+ assert.equal(unauthorizedCapture.status,401);
+});
+
+test('employee projection uses daily input and keeps missing manager-confirmed counts distinct from zero', async () => {
+ const {calculateEmployeeManagerProgress}=await import('../supabase/functions/monthly-ranking/calculator.js');
+ const input=source();
+ input.daily.forEach(row=>{row.work_date="2026-11-01"});
+ input.profiles[0].store_name='신천동_삼미시장2호점';
+ input.profiles[1].store_name='신천동_삼미시장점';
+ const rows=calculateEmployeeManagerProgress(input,'2026-11',[],new Date('2026-11-04T06:00:00Z'));
+ assert.equal(rows.length,1);
+ assert.equal(rows[0].metrics.hs,15);
+ assert.equal(rows[0].quality.managerBundleCount,null);
+ assert.equal(rows[0].quality.strategyModelCount,null);
+ assert.equal(rows[0].quality.mnpRatio,0);
+ assert.ok(rows[0].amounts.forecast>rows[0].amounts.current);
+ assert.equal(JSON.stringify(rows).includes('customer private'),false);
+});

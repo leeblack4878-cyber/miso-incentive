@@ -1,12 +1,15 @@
+import { managerActualFromDraft } from './managerActual';
+import { companyMetric, koreaToday, managerEvaluationExclusion } from './evaluationBasis';
+import { novemberManagerGoals, calculateNovemberManagerIncentive } from './novemberManagerPolicy';
+import { septemberManagerStoreType } from './managerPolicyEngine';
 import {defaultConfig,mergeDefaultVas} from './policyDefaults';
 import {MONTHLY_RANK_METRICS} from './badgeRules';
-import {emptyDraft} from './viewShared';
+import {emptyDraft,DEFAULT_STORES} from './viewShared';
 import {normalizeDay,applyDailyToDraft,computePay,NON_SALES_STORES} from './appShared';
 import {homeOrdersForMonth,calculateHomePolicyFromOrders} from './policyRules';
 import {resolvePolicyConfigForMonth} from './policyCalendar';
 
-// Server-only source snapshot; return public monthly metrics, never raw ledgers/pay.
-export function calculateCompanyMonthlyRanking(source,month,names){
+function monthlyRankingRows(source,month){
   const values=Object.fromEntries(source.config.map(x=>[x.key,x.value]));
   const saved=values.config||{};
   const legacy={...defaultConfig(),...saved,vas:mergeDefaultVas(saved.vas)};
@@ -33,6 +36,55 @@ export function calculateCompanyMonthlyRanking(source,month,names){
     const pay=computePay(mergedDraft,p.position,p.hire_date,month,config,0,null);
     return {id:p.id,branch:p.store_name,draft:mergedDraft,pay,dailyDays};
   });
+  return rows;
+}
+
+// Server-only source snapshot; return public monthly metrics, never raw ledgers/pay.
+export function calculateCompanyMonthlyRanking(source,month,names){
+  const rows=monthlyRankingRows(source,month);
   const directory=new Map(names.map(p=>[p.id,p]));
   return rows.filter(r=>!NON_SALES_STORES.includes(r.branch)).map(r=>({id:r.id,name:directory.get(r.id)?.name||'이름 미설정',branch:r.branch,position:directory.get(r.id)?.position||'직원',publicMetrics:Object.fromEntries(MONTHLY_RANK_METRICS.map(m=>[m.key,Number(m.value(r)||0)]))}));
+}
+
+export function calculateEmployeeManagerProgress(source, month, verifiedRows, now = new Date()) {
+  const today = koreaToday(now);
+  const currentMonth = today.slice(0, 7) === month;
+  const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 0)).getUTCDate();
+  const factor = currentMonth ? days / Number(today.slice(8)) : 1;
+  const rows = monthlyRankingRows(source, month);
+  const entered = new Set([...source.daily, ...source.monthly].map(row => row.user_id));
+  const completed = new Set(homeOrdersForMonth(source.home_orders, month, 'completed').map(row => row.user_id));
+  return DEFAULT_STORES.filter(store => novemberManagerGoals(store).hs && !managerEvaluationExclusion(store, month)).flatMap(store => {
+    const storeRows = rows.filter(row => row.branch === store);
+    if (!storeRows.some(row => entered.has(row.id) || completed.has(row.id))) return [];
+    const metrics = Object.fromEntries(['hs', 'simMnp', 'second', 'home', 'tvFree', 'smartHome', 'mnp', 'tailoredCount']
+      .map(key => [key, storeRows.reduce((total, row) => total + managerActualFromDraft(row.draft, key), 0)]));
+    metrics.secondTotal = metrics.second + storeRows.reduce((total, row) => total + Number(row.draft.mobilePoint?.secondOnly || 0), 0);
+    const verified = verifiedRows.find(row => row.store_name === store && row.verified_at)?.verified_metrics || {};
+    const managerBundleCount = companyMetric(verified, 'managerBundleCount');
+    const strategyModelCount = companyMetric(verified, 'strategyModelCount');
+    const mnpBase = metrics.hs + metrics.simMnp;
+    const quality = { mnpRatio: mnpBase ? metrics.mnp / mnpBase * 100 : null, managerBundleCount, strategyModelCount, tailoredCount: metrics.tailoredCount };
+    const result = { store_name: store, as_of_date: currentMonth ? today : `${month}-${days}`, confirmed: true, has_input: true, metrics, quality };
+    const strategicPoints = storeRows.reduce((total, row) => total + Number(row.pay?.strategicPoints || 0), 0);
+    const estimate = scale => {
+      const project = count => Math.round(count * scale);
+      const hs = project(metrics.hs);
+      const estimate = calculateNovemberManagerIncentive({
+        actual: { hs, home: project(metrics.home), tvFree: project(metrics.tvFree), smartHome: project(metrics.smartHome) },
+        targets: novemberManagerGoals(store),
+        simMnpCount: project(metrics.simMnp),
+        secondCount: project(metrics.secondTotal),
+        hsMnpCount: project(Math.max(0, metrics.mnp - metrics.simMnp)),
+        strategicRatio: hs > 0 ? strategicPoints * scale / hs * 100 : 0,
+        tailoredCount: project(metrics.tailoredCount),
+        storeType: septemberManagerStoreType(store),
+        bundledSecondCount: managerBundleCount === null ? 0 : project(managerBundleCount),
+        strategyModelCount: strategyModelCount === null ? 0 : project(strategyModelCount),
+      });
+      return estimate.performanceTotal + estimate.bonusTotal;
+    };
+    result.amounts = { current: estimate(1), forecast: estimate(factor) };
+    return [result];
+  });
 }

@@ -1,5 +1,7 @@
+import { managerActualFromDraft } from '../managerActual';
+import ManagerProgressPanel from './ManagerProgressPanel';
 import React from 'react';
-import { monthsSince, applyDailyToDraft, DEFAULT_KPI_ITEMS, hsCount, HS_PARTS, matrixRowCount, MATRIX_ROWS, NON_SALES_STORES, monthKeyOf, daysInMonth, monthLabel, fmtCount } from '../appShared';
+import { monthsSince, applyDailyToDraft, DEFAULT_KPI_ITEMS, hsCount, HS_PARTS, MATRIX_ROWS, NON_SALES_STORES, monthKeyOf, daysInMonth, monthLabel, fmtCount } from '../appShared';
 import { supabase } from '../supabase';
 import { useState, useEffect, useRef } from 'react';
 import { EVALUATION_BASIS_LABELS, EVALUATION_METRICS, evaluationBasis, evaluationMetric, companyMetricsForSave, validCompanyDate, koreaToday, reportedEvaluation, managerEvaluationExclusion } from '../evaluationBasis';
@@ -141,26 +143,6 @@ function CareerEvaluationPanel({ employee, month, config, canManage=false, canFi
   </div>;
 }
 
-function managerActualFromDraft(d,key){
-  if(key==='hs')return hsCount(d);
-  if(key==='plan115')return HS_PARTS.reduce((sum,part)=>sum+Number(d.matrix?.[part.idx]?.[0]||0),0);
-  const hsMnp=matrixRowCount(d,MATRIX_ROWS.indexOf('일반모델 MNP'));
-  const simMnp=(d.matrix?.[5]||[]).reduce((s,v)=>s+Number(v||0),0);
-  // AA 임팩트의 MNP 항목은 일반 MNP와 SIM MNP를 합산한다.
-  if(key==='mnp')return hsMnp+simMnp;
-  if(key==='simMnp')return simMnp;
-  if(key==='subTvHousehold')return Number(d.homeAddon?.addSetTop||0)+Number(d.homeFlat?.tvFree||0);
-  if(key==='tvFree')return Number(d.homeFlat?.tvFree||0);
-  if(key==='smartHome')return Number(d.homeFlat?.smartHome||0);
-  if(key==='second')return Object.values(d.bundle2nd||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='tailoredCount')return Number(d.tailoredCount||0);
-  if(key==='otherCustomer')return Number(d.custRegCount||0);
-  if(key==='tailoredAmount')return Number(d.tailoredAmount||0);
-  if(key==='daemyung')return Object.values(d.sono||{}).reduce((s,v)=>s+Number(v||0),0);
-  if(key==='prospectMnp')return 0;
-  if(key==='home')return completedHomeCount(d);
-  return 0;
-}
 
 function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchStores=false, loginBranch='', payrollOnly=false }){
   const november=month>='2026-11';
@@ -336,11 +318,14 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
       if(error)throw error;showLegacyAlert('AA임팩트 월 목표를 저장했어요.');
     }catch(error){showLegacyAlert(friendlyError(error));}finally{saveGuard.current=false;setSaving(false);}
   };
+  const canCompare=month==='2026-11'&&!payrollOnly&&canEditStore;
+  if(canCompare&&managerMode==='progress')return <ManagerProgressPanel key={month} month={month} onBack={()=>setManagerMode('dashboard')}/>;
   const storePicker=canSwitchStores&&<select aria-label="평가 매장" value={activeStore} disabled={saving} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>;
   if(loadState.key!==scopeKey||loadState.status!=='ready')return <div className="space-y-3">{storePicker}<div className="bg-white border rounded-xl p-4 text-sm" role={loadState.status==='error'?'alert':'status'}>{loadState.status==='error'?<>평가 자료를 불러오지 못했어요. 점수 계산을 보류합니다.<button type="button" onClick={()=>setReload(v=>v+1)} className="block mt-3 text-brand-700 font-bold">다시 불러오기</button></>:loadState.status==='empty'?'평가할 매장이 없어요.':'평가 자료를 확인하고 있어요.'}</div></div>;
   return <div className="space-y-3">
     {<div className={`grid gap-2 ${canEditStore?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='dashboard'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>평가 현황</button>{canEditStore&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
     {storePicker}
+    {canCompare&&<button type="button" onClick={()=>setManagerMode('progress')} className="w-full rounded-xl border border-brand-200 bg-brand-50 py-3 text-sm font-bold text-brand-700">점장정책 진척도 비교</button>}
     {activeManagerMode!=='settings'&&<EvaluationBasisPanel basis={basis} savedBasis={savedBasis} onChange={setBasis} onSave={saveBasis} canSave={canEditStore} saving={saving} live={live} verified={verified} asOfDate={ext.companyAsOfDate} verifiedAt={snap.verified_at} report={companyReport} month={month}/>}
     {activeManagerMode==='dashboard'&&!exclusion&&!scoreReady&&<p role="status" className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">회사 미입력 항목이 있어 종합 점수·등급을 보류합니다. 직원입력기준으로 현재 진행 상황을 확인할 수 있어요.</p>}
     {activeManagerMode==='dashboard'?exclusion?<div role="status" className="bg-gray-50 border rounded-2xl p-5"><div className="font-bold text-gray-800">평가 제외</div><p className="mt-2 text-sm text-gray-600">{displayStoreName(activeStore)} · 2026년 9월부터 {exclusion.reason}</p><p className="mt-1 text-xs text-gray-500">평가 제외 월은 점수·등급을 표시하지 않습니다. 8월까지의 평가와 기존 실적은 보존합니다.</p></div>:<>
