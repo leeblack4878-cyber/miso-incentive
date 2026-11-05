@@ -1,14 +1,16 @@
 import {test,expect} from '@playwright/test';
 async function open(page,{width=390,fail=false,manager=false}={}){
  await page.clock.setFixedTime(new Date('2026-11-05T03:00:00Z'));await page.setViewportSize({width,height:844});
- const writes=[],reads=[];let failSave=false;
+ const writes=[],reads=[],obWrites=[];let failSave=false;
  const base={store_name:'대야점',is_store_manager:manager,can_create:true,today:'2026-11-05',roster:[{id:'employee-one',name:'김미소'},{id:'employee-two',name:'이소원'}],today_ob:[{user_id:'employee-one',name:'김미소',activity:2,connected:1,interested:1,visits:0},{user_id:'employee-two',name:'이소원',activity:0,connected:0,interested:0,visits:0}],events:[{id:'schedule:1',source:'schedule',source_id:'1',kind:'recare',event_date:'2026-11-05',event_time:'19:00:00',title:'재케어 고객 연락 약속',note:'연락 전에 지난 상담 확인',assignee_id:'employee-one',assignee_name:'김미소',status:'pending',can_edit:true,updated_at:'2026-11-05T01:00:00Z'},{id:'schedule:2',source:'schedule',source_id:'2',kind:'visit',event_date:'2026-11-05',title:'다른 직원 방문 약속',note:null,assignee_id:'employee-two',assignee_name:'이소원',status:'pending',can_edit:manager,updated_at:'2026-11-05T01:00:00Z'},{id:'home:3',source:'home_order',source_id:'3',kind:'installation',event_date:'2026-11-05',title:'인터넷 설치',customer_name:'고*객',assignee_name:'김미소',status:'unconfirmed',can_edit:false},{id:'ob:4',source:'ob_contact',source_id:'4',kind:'ob_call',event_date:'2026-11-05',title:'고객 케어',call_result:'부재',assignee_name:'김미소',status:'recorded',can_edit:false},{id:'ob-follow:4',source:'ob_contact',source_id:'4',kind:'ob_followup',event_date:'2026-11-06',title:'재연락 예정',assignee_name:'김미소',status:'unconfirmed',can_edit:manager,updated_at:'2026-11-05T03:00:00Z'}]};
  await page.route('https://placeholder.supabase.co/**',async route=>{const req=route.request(),url=new URL(req.url()),body=req.postDataJSON();
   if(url.pathname.endsWith('/rpc/read_store_calendar')){reads.push(body);if(fail)return route.fulfill({status:500,json:{message:'fixture load failed'}});return route.fulfill({json:{...base,events:base.events.filter(e=>e.event_date>=body.p_from&&e.event_date<=body.p_to)}});}
+  if(url.pathname.endsWith('/rest/v1/ob_contact_logs'))return route.fulfill({json:[]});
+  if(url.pathname.endsWith('/rpc/append_ob_contact')){obWrites.push(body);return route.fulfill({json:'ob-id'});}
   if(url.pathname.endsWith('/rpc/read_store_calendar_history'))return route.fulfill({json:[{id:'h1',actor_name:'점장',acted_at:'2026-11-05T02:00:00Z',action:'update',after:{title:'재케어 고객 연락 약속',status:'pending',event_date:'2026-11-05'}}]});
   if(url.pathname.endsWith('/rpc/save_store_schedule')||url.pathname.endsWith('/rpc/update_calendar_ob')){writes.push(body);if(failSave)return route.fulfill({status:409,json:{message:'fixture conflict'}});return route.fulfill({json:'saved-id'});}
   return route.fulfill({status:400,json:{message:'unexpected request'}});
- });await page.goto('/tests/ui/store-calendar.html');await expect(page.getByRole('heading',{name:'매장 공용 달력'})).toBeVisible();return {writes,reads,setFailSave:v=>failSave=v};
+ });await page.goto('/tests/ui/store-calendar.html');await expect(page.getByRole('heading',{name:'매장 공용 달력'})).toBeVisible();return {writes,reads,obWrites,setFailSave:v=>failSave=v};
 }
 for(const width of [320,390,768])test(`${width}px shared calendar keeps selected day, source date distinctions and zero-call staff`,async({page})=>{
  const state=await open(page,{width});await expect(page.getByRole('tab',{name:'고객약속&설치일정'})).toHaveAttribute('aria-selected','true');await expect(page.getByRole('heading',{name:'2026-11-05 · 3건'})).toBeVisible();
@@ -16,6 +18,12 @@ for(const width of [320,390,768])test(`${width}px shared calendar keeps selected
  await page.getByRole('tab',{name:'OB콜',exact:true}).click();await expect(page.getByText('오늘 직원별 OB콜')).toBeVisible();await expect(page.getByText('이소원',{exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'2026-11-05 · 1건'})).toBeVisible();await expect(page.getByRole('article').getByText('부재',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'2026-11-06 일정 1건',exact:true}).click();await expect(page.getByRole('article').getByText('재연락 예정',{exact:true}).first()).toBeVisible();await expect(page.getByRole('article').getByText('확인 필요',{exact:true})).toBeVisible();await page.getByRole('tab',{name:'고객약속&설치일정'}).click();await expect(page.getByRole('heading',{name:'2026-11-06 · 0건'})).toBeVisible();
  await page.getByRole('button',{name:'다음 달'}).click();await expect(page.getByLabel('달력 월')).toHaveValue('2026-12');await page.getByRole('button',{name:'오늘',exact:true}).click();await expect(page.getByRole('heading',{name:'2026-11-05 · 3건'})).toBeVisible();expect(await page.locator('main').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);expect(state.writes).toHaveLength(0);
+});
+test('OB calendar quick entry opens the activity form without opening detailed management first',async({page})=>{
+ const state=await open(page);await page.getByRole('tab',{name:'OB콜',exact:true}).click();
+ await page.getByRole('button',{name:'＋ OB 활동 바로 입력'}).click();
+ await expect(page.getByRole('dialog',{name:'OB 활동 기록'})).toBeVisible();
+ expect(state.obWrites).toHaveLength(0);
 });
 test('manager can process other schedule with immutable assignee and show actor history',async({page})=>{
  const state=await open(page,{manager:true});const card=page.getByRole('article').filter({hasText:'다른 직원 방문 약속'});await card.getByRole('button',{name:'일정 처리'}).click();const dialog=page.getByRole('dialog',{name:'일정 처리'});await expect(dialog.getByText('담당 이소원 · 담당자는 변경되지 않아요.')).toBeVisible();await dialog.getByLabel('처리 상태').selectOption('completed');await dialog.getByRole('button',{name:'일정 저장'}).evaluate(button=>{button.click();button.click();});await expect(dialog).toHaveCount(0);expect(state.writes).toHaveLength(1);expect(state.writes[0].p_id).toBe('2');expect(state.writes[0].p_expected_updated_at).toBe('2026-11-05T01:00:00Z');expect(state.writes[0]).not.toHaveProperty('assignee_id');await card.getByRole('button',{name:'변경 이력'}).click();await expect(page.getByRole('dialog',{name:'일정 변경 이력'}).getByText('점장',{exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
