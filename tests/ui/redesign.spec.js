@@ -9,6 +9,7 @@ async function openApp(page,{admin=false,failLedger=false}={}){
   if(table==='profiles')return route.fulfill({json:req.headers().accept?.includes('vnd.pgrst.object')?profile:[profile]});
   if(table==='sales_expenses')return route.fulfill(failLedger?{status:403,json:{message:'unavailable'}}:{json:[{id:'expense',amount:10000,expense_date:'2026-09-16',category:'케이스'}]});
   if(table==='spot_claims')return route.fulfill({json:u.searchParams.get('status')==='eq.approved'?[{id:'spot',source_context:'home',status:'approved',final_amount:30000,claim_date:'2026-09-16'}]:[]});
+  if(table==='read_store_calendar')return route.fulfill({json:{store_name:profile.store_name,today:'2026-09-16',can_create:true,roster:[],events:[],today_ob:[]}});
   return route.fulfill({json:[]});
  });
  await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),async b=>{await b.click()});
@@ -24,6 +25,7 @@ for(const width of [320,390,768])test(`${width}px 직원 홈·고객관리·평�
   await page.locator('.app-bottom-nav').getByRole('button',{name:tab,exact:true}).click();
   if(tab==='평가')await expect(page.getByRole('button',{name:'개인 커리어 등급',exact:true})).toBeVisible();
   if(tab==='OB/고객관리'){
+   await page.getByRole('button',{name:'기존 고객 약속·설치 관리 열기',exact:true}).click();
    await expect(page.getByRole('button',{name:'완료·취소',exact:true})).toBeVisible();
    const nav=page.locator('.app-bottom-nav').getByRole('button',{name:tab,exact:true});
    await expect(nav).toHaveAttribute('aria-current','page');
@@ -33,9 +35,9 @@ for(const width of [320,390,768])test(`${width}px 직원 홈·고객관리·평�
     const bounds=button.getBoundingClientRect(),rects=[...range.getClientRects()];
     return rects.length===1&&rects[0].left>=bounds.left&&rects[0].right<=bounds.right;
    }),'navigation label fits on one line').toBe(true);
-   await page.getByRole('button',{name:'OB 활동',exact:true}).click();
-   await expect(page.getByRole('button',{name:'OB 활동',exact:true})).toHaveAttribute('aria-pressed','true');
-   await page.getByRole('button',{name:'고객 약속',exact:true}).click();
+   await page.getByRole('tab',{name:'OB콜',exact:true}).click();
+   await expect(page.getByRole('tab',{name:'OB콜',exact:true})).toHaveAttribute('aria-selected','true');
+   await page.getByRole('tab',{name:'고객약속&설치일정',exact:true}).click();
   }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tab} horizontal overflow`).toBe(true);
   if(tab==='홈'){await expect(page.locator('.performance-tile')).toHaveCount(10);expect(await page.locator('.performance-tile').evaluateAll(rows=>rows.every(row=>row.scrollWidth<=row.clientWidth))).toBe(true);}
@@ -53,10 +55,10 @@ for(const width of [320,390])test(`${width}px 관리자 주요 메뉴와 평가�
  const customerNav=page.getByRole('button',{name:'고객 관리',exact:true});
  await expect(customerNav).toBeVisible();
  await customerNav.click();
- await expect(page.getByRole('group',{name:'관리자 고객관리 화면',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'OB 활동',exact:true}).click();
- await expect(page.getByRole('button',{name:'OB 활동',exact:true})).toHaveAttribute('aria-pressed','true');
- await page.getByRole('button',{name:'고객 약속',exact:true}).click();
+ await expect(page.getByRole('tablist',{name:'매장 일정 종류',exact:true})).toBeVisible();
+ await page.getByRole('tab',{name:'OB콜',exact:true}).click();
+ await expect(page.getByRole('tab',{name:'OB콜',exact:true})).toHaveAttribute('aria-selected','true');
+ await page.getByRole('tab',{name:'고객약속&설치일정',exact:true}).click();
  expect(await customerNav.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  if(width===390)await page.screenshot({path:info.outputPath('admin-ob-navigation.png'),fullPage:true});
