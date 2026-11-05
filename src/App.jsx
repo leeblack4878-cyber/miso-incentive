@@ -2103,16 +2103,16 @@ function RecognitionSpotlight({ rows, dailyRecords, month, config, specialFeed }
 }
 
 function HallOfFame({rows,month}){
-  const [profiles,setProfiles]=useState({}),[titles,setTitles]=useState({}),[avatars,setAvatars]=useState({}),[selected,setSelected]=useState(null),[showAll,setShowAll]=useState(false);
+  const [profiles,setProfiles]=useState({}),[titles,setTitles]=useState({}),[selected,setSelected]=useState(null),[showAll,setShowAll]=useState(false);
   const salesRows=useMemo(()=>[...(rows||[])].filter(r=>!NON_SALES_STORES.includes(r.branch)),[rows]);
-  useEffect(()=>{let alive=true;const urls=[];(async()=>{const ids=salesRows.map(r=>r.id).filter(Boolean);if(!ids.length)return;const [{data:p},{data:t}]=await Promise.all([supabase.from('employee_public_profiles').select('user_id,avatar_path,status_message').in('user_id',ids),supabase.from('user_titles').select('user_id,badge_key').in('user_id',ids)]);if(!alive)return;setProfiles(Object.fromEntries((p||[]).map(x=>[x.user_id,x])));setTitles(Object.fromEntries((t||[]).map(x=>[x.user_id,x.badge_key])));const pairs=await Promise.all((p||[]).filter(x=>x.avatar_path).map(async x=>{const {data}=await supabase.storage.from('profile-avatars').download(x.avatar_path);if(!data)return null;const url=URL.createObjectURL(data);urls.push(url);return [x.user_id,url]}));if(alive)setAvatars(Object.fromEntries(pairs.filter(Boolean)))})();return()=>{alive=false;urls.forEach(URL.revokeObjectURL)}},[salesRows]);
+  useEffect(()=>{let alive=true;(async()=>{const ids=salesRows.map(r=>r.id).filter(Boolean);if(!ids.length)return;const [{data:p},{data:t}]=await Promise.all([supabase.from('employee_public_profiles').select('user_id,status_message').in('user_id',ids),supabase.from('user_titles').select('user_id,badge_key').in('user_id',ids)]);if(!alive)return;setProfiles(Object.fromEntries((p||[]).map(x=>[x.user_id,x])));setTitles(Object.fromEntries((t||[]).map(x=>[x.user_id,x.badge_key])));})();return()=>{alive=false}},[salesRows]);
   if(!salesRows.length)return null;
   const metric=(key)=>MONTHLY_RANK_METRICS.find(x=>x.key===key);
   const leader=(key)=>[...salesRows].sort((a,b)=>Number(metric(key).value(b)||0)-Number(metric(key).value(a)||0))[0];
   const rankSum=(r)=>['hs','home','productivity'].reduce((s,k)=>s+1+salesRows.filter(x=>Number(metric(k).value(x)||0)>Number(metric(k).value(r)||0)).length,0);
   const mvp=[...salesRows].sort((a,b)=>rankSum(a)-rankSum(b)||metric('hs').value(b)-metric('hs').value(a))[0];
   const title=(r)=>badgeDefOf(titles[r?.id]);
-  const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-brand-100 text-brand-700 flex items-center justify-center font-black shrink-0`}>{avatars[r?.id]?<img src={avatars[r.id]} alt="" className="w-full h-full object-cover"/>:String(r?.name||'?').slice(0,1)}</div>;
+  const avatar=(r,cls='w-11 h-11')=><div className={`${cls} rounded-2xl overflow-hidden bg-brand-100 text-brand-700 flex items-center justify-center font-black shrink-0`}>{String(r?.name||'?').slice(0,1)}</div>;
   const profile=selected&&<div role="dialog" aria-modal="true" aria-label="직원 공개 프로필" className="fixed inset-0 z-[119] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setSelected(null)}><div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl bg-white p-5" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div className="flex gap-3">{avatar(selected,'w-16 h-16')}<div><div className="text-lg font-black">{selected.name}</div><div className="text-xs text-gray-400">{displayStoreName(selected.branch)} · {selected.position||'직원'}</div><div className="mt-1 text-xs font-bold text-brand-700">{title(selected)?`${title(selected).icon} ${title(selected).name}`:'🏅 대표 배지 없음'}</div></div></div><button onClick={()=>setSelected(null)}>✕</button></div>{profiles[selected.id]?.status_message&&<div className="mt-4 rounded-2xl bg-brand-50 px-4 py-3 text-sm text-brand-800">“{profiles[selected.id].status_message}”</div>}<div className="grid grid-cols-3 gap-2 mt-4">{[['HS',metric('hs').value(selected),'건'],['홈',metric('home').value(selected),'건'],['생산성',metric('productivity').value(selected),'P']].map(([l,v,u])=><div key={l} className="rounded-xl bg-gray-50 p-2 text-center"><div className="text-[9px] text-gray-400">{l}</div><div className="text-sm font-bold">{u==='P'?fmtNum(v,1):fmtCount(v)}{u}</div></div>)}</div></div></div>;
   const cards=[['HS KING',leader('hs')],['홈 KING',leader('home')],['생산성 KING',leader('productivity')]];
   return <><div className="rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white overflow-hidden"><button onClick={()=>setSelected(mvp)} className="w-full p-4 text-left"><div className="flex justify-between"><div><div className="text-[10px] font-bold text-amber-600">🏛️ 미소 명예의 전당 · {monthLabel(month)}</div><div className="text-base font-black mt-1">이달의 우수 직원</div></div><span className="text-xs text-amber-700">프로필 ›</span></div><div className="mt-4 flex gap-3 items-center">{avatar(mvp,'w-14 h-14')}<div><div className="text-[10px] font-bold text-amber-600">미소 MVP</div><div className="font-black">{mvp.name}</div><div className="text-xs text-brand-700">{title(mvp)?`${title(mvp).icon} ${title(mvp).name}`:'🏅 대표 배지 준비 중'}</div>{profiles[mvp.id]?.status_message&&<div className="text-[10px] text-gray-500 mt-1">“{profiles[mvp.id].status_message}”</div>}</div></div></button><div className="grid grid-cols-3 border-t border-amber-100">{cards.map(([l,r])=><button key={l} onClick={()=>setSelected(r)} className="p-3 border-r last:border-0 border-amber-100">{avatar(r,'w-9 h-9 mx-auto')}<div className="text-[9px] font-bold text-amber-600 mt-1">{l}</div><div className="text-[10px] font-semibold truncate">{r.name}</div></button>)}</div><button onClick={()=>setShowAll(true)} className="w-full border-t border-amber-100 py-3 text-xs font-bold text-amber-700">전체 직원 프로필 보기 ›</button></div>{showAll&&<div className="fixed inset-0 z-[118] bg-black/45 flex items-end sm:items-center justify-center" onClick={()=>setShowAll(false)}><div className="w-full max-w-lg max-h-[86vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-gray-50 p-4" onClick={e=>e.stopPropagation()}><div className="flex justify-between"><div><div className="text-lg font-black">전체 직원 프로필</div><div className="text-xs text-gray-400">직원을 누르면 공개 프로필이 열려요.</div></div><button onClick={()=>setShowAll(false)}>✕</button></div><div className="grid grid-cols-2 gap-2 mt-4">{salesRows.map(r=><button key={r.id} onClick={()=>{setShowAll(false);setSelected(r)}} className="rounded-2xl bg-white border p-3 text-left flex gap-2">{avatar(r)}<div className="min-w-0"><div className="text-xs font-bold truncate">{r.name}</div><div className="text-[9px] text-gray-400 truncate">{displayStoreName(r.branch)}</div><div className="text-[9px] text-brand-600 truncate mt-1">{title(r)?`${title(r).icon} ${title(r).name}`:'대표 배지 없음'}</div>{profiles[r.id]?.status_message&&<div className="text-[9px] text-gray-500 truncate mt-1">{profiles[r.id].status_message}</div>}</div></button>)}</div></div></div>}{profile}</>;
@@ -2156,8 +2156,6 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
   const [loadingBadges,setLoadingBadges]=useState(true);
   const [showCollection,setShowCollection]=useState(false);
   const [filter,setFilter]=useState('all');
-  const [avatarUrl,setAvatarUrl]=useState('');
-  const [avatarBusy,setAvatarBusy]=useState(false);
   const [statusMessage,setStatusMessage]=useState('');
   const [statusEditing,setStatusEditing]=useState(false);
   const [statusBusy,setStatusBusy]=useState(false);
@@ -2247,42 +2245,17 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
 
   useEffect(()=>{
     if(!userId)return;
-    let alive=true,objectUrl='';
+    let alive=true;
     (async()=>{
-      const [{data},{data:publicProfile}]=await Promise.all([
-        supabase.from('profiles').select('avatar_path').eq('id',userId).maybeSingle(),
-        supabase.from('employee_public_profiles').select('avatar_path,status_message').eq('user_id',userId).maybeSingle()
-      ]);
-      const path=publicProfile?.avatar_path||data?.avatar_path||'';
-      setStatusMessage(publicProfile?.status_message||'');
-      if(!alive)return;
-      if(path){const {data:file}=await supabase.storage.from('profile-avatars').download(path);if(file&&alive){objectUrl=URL.createObjectURL(file);setAvatarUrl(objectUrl)}}
+      const {data:publicProfile}=await supabase.from('employee_public_profiles').select('status_message').eq('user_id',userId).maybeSingle();
+      if(alive)setStatusMessage(publicProfile?.status_message||'');
     })();
-    return()=>{alive=false;if(objectUrl)URL.revokeObjectURL(objectUrl)};
+    return()=>{alive=false};
   },[userId]);
 
-  const uploadAvatar=async(event)=>{
-    const file=event.target.files?.[0];event.target.value='';
-    if(!file)return;
-    if(!['image/jpeg','image/png','image/webp'].includes(file.type))return showAppToast('JPG, PNG, WEBP 사진만 등록할 수 있어요.',{tone:'error'});
-    if(file.size>3*1024*1024)return showAppToast('프로필 사진은 3MB 이하로 선택해주세요.',{tone:'error'});
-    setAvatarBusy(true);
-    const path=`${userId}/avatar`;
-    const {error:uploadError}=await supabase.storage.from('profile-avatars').upload(path,file,{upsert:true,contentType:file.type,cacheControl:'3600'});
-    if(uploadError){setAvatarBusy(false);return showAppToast(friendlyError(uploadError),{tone:'error',title:'사진 등록 실패'})}
-    const {error:updateError}=await supabase.from('profiles').update({avatar_path:path,updated_at:new Date().toISOString()}).eq('id',userId).select('id').single();
-    if(updateError){setAvatarBusy(false);return showAppToast(friendlyError(updateError),{tone:'error',title:'프로필 저장 실패'})}
-    const {error:publicError}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:path,status_message:statusMessage||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
-    if(publicError){setAvatarBusy(false);return showAppToast(friendlyError(publicError),{tone:'error',title:'공개 프로필 저장 실패'})}
-    const {data:downloaded}=await supabase.storage.from('profile-avatars').download(path);
-    if(downloaded){if(avatarUrl)URL.revokeObjectURL(avatarUrl);setAvatarUrl(URL.createObjectURL(downloaded))}
-    setAvatarBusy(false);showAppToast('프로필 사진을 등록했어요.');
-  };
   const saveStatus=async()=>{
     const clean=String(statusMessage||'').trim().slice(0,40);setStatusBusy(true);
-    const {data:existing,error:readError}=await supabase.from('employee_public_profiles').select('avatar_path').eq('user_id',userId).maybeSingle();
-    if(readError){setStatusBusy(false);return showAppToast(friendlyError(readError),{tone:'error',title:'프로필 조회 실패'})}
-    const {error}=await supabase.from('employee_public_profiles').upsert({user_id:userId,avatar_path:existing?.avatar_path||null,status_message:clean||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    const {error}=await supabase.from('employee_public_profiles').upsert({user_id:userId,status_message:clean||null,updated_at:new Date().toISOString()},{onConflict:'user_id'});
     setStatusBusy(false);if(error)return showAppToast(friendlyError(error),{tone:'error'});setStatusMessage(clean);setStatusEditing(false);showAppToast('공개 한줄 상태를 저장했어요.');
   };
 
@@ -2298,11 +2271,9 @@ function GamificationHub({dailyDays,month,personalGoals,mergedDraft,pay,competit
     <div className="summary-hero w-full">
       <div className="summary-profile flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-        <label className="relative w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" aria-label="프로필 사진 등록">
-          {avatarUrl?<img src={avatarUrl} alt="내 프로필" className="w-full h-full object-cover"/>:<span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>}
-          <span className="absolute inset-x-0 bottom-0 py-0.5 bg-black/45 text-white text-[8px] text-center">{avatarBusy?'저장 중':'사진'}</span>
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadAvatar} disabled={avatarBusy} className="hidden"/>
-        </label>
+        <div className="w-12 h-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+          <span className="text-xl font-bold">{String(currentEmp?.name||'나').slice(0,1)}</span>
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 min-w-0"><span className="text-sm font-bold break-words">{currentEmp?.name||'직원'}</span><span className="text-[9px] text-gray-500 shrink-0">근무 {fmtCount(pay?.months||0)}개월</span></div>
           <div className="text-[10px] text-gray-500 mt-0.5 break-words">{displayStoreName(currentEmp?.branch||'')} · {currentEmp?.position||'사원'}</div>
