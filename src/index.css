@@ -121,3 +121,8 @@ input, select, textarea { accent-color: var(--app-accent); }
 button.bg-brand-600, button.bg-brand-500 { border-radius: 16px; }
 [data-testid="dashboard-scope-bar"] { border-radius: 18px; border-color: #dff1ff; }
 .performance-tile .metric-value { color: #174786; }
+
+/* Keep the longer customer menu readable within one narrow navigation cell. */
+@media (max-width: 359px) {
+ .app-bottom-nav .customer-care-nav { font-size: 10px !important; }
+}
