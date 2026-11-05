@@ -3858,7 +3858,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             { key: 'evaluation', label: '평가', icon: ClipboardCheck },
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
-            <button key={n.key} aria-current={tab===n.key?'page':undefined} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-brand-700' : 'text-gray-400'}`}>
+            <button key={n.key} aria-current={tab===n.key?'page':undefined} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${n.key === 'customerCare' ? 'max-[359px]:text-[10px] whitespace-nowrap' : ''} ${tab === n.key ? 'text-brand-700' : 'text-gray-400'}`}>
               <n.icon size={18} />{n.label}
             </button>
           ))}
