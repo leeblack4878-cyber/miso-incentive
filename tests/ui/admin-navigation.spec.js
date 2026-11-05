@@ -26,7 +26,8 @@ for(const width of [320,390,768])for(const actor of ['admin','manager','area'])t
   })).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
- await expect(page.getByRole('button',{name:'직원 관리',exact:true})).toBeVisible();
+ // A section with one permitted tab opens its content without a redundant subtab button.
+ await expect(page.getByLabel('새 직원 소속',{exact:true})).toBeVisible();
  if(actor!=='admin'){
   await expect(page.getByRole('button',{name:'지급기준 관리',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'권한 관리',exact:true})).toHaveCount(0);
