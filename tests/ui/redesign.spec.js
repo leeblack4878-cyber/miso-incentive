@@ -49,8 +49,8 @@ for(const width of [320,390])test(`${width}px 관리자 주요 메뉴와 평가�
  await expect(page.getByText('핵심 성과',{exact:false})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  if(width===390)await page.screenshot({path:info.outputPath('admin.png'),fullPage:true});
- await page.getByRole('button',{name:'고객·설치',exact:true}).click();
- const customerNav=page.getByRole('button',{name:'OB/고객관리',exact:true});
+ await page.getByRole('button',{name:'OB/고객관리',exact:true}).click();
+ const customerNav=page.getByRole('button',{name:'고객 관리',exact:true});
  await expect(customerNav).toBeVisible();
  await customerNav.click();
  await expect(page.getByRole('group',{name:'관리자 고객관리 화면',exact:true})).toBeVisible();
