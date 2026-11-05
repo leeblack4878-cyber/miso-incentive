@@ -122,7 +122,24 @@ button.bg-brand-600, button.bg-brand-500 { border-radius: 16px; }
 [data-testid="dashboard-scope-bar"] { border-radius: 18px; border-color: #dff1ff; }
 .performance-tile .metric-value { color: #174786; }
 
+
 /* Keep the longer customer menu readable within one narrow navigation cell. */
 @media (max-width: 359px) {
  .app-bottom-nav .customer-care-nav { font-size: 10px !important; }
+}
+
+/* Admin keeps all six sections visible, with room for safe-area and long labels. */
+.admin-content { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.admin-bottom-nav-items { display: grid; padding: 4px 8px; }
+.admin-bottom-nav .admin-bottom-nav-button {
+ display: flex; min-width: 0; min-height: 72px; flex-direction: column;
+ align-items: center; justify-content: center; gap: 3px; padding: 6px 1px;
+ font-size: 11px; line-height: 1.25; overflow-wrap: normal; word-break: keep-all;
+}
+.admin-bottom-nav-compact { display: flex; min-height: 28px; flex-direction: column; justify-content: center; white-space: nowrap; }
+.admin-bottom-nav-wide { display: none; white-space: nowrap; }
+@media (min-width: 640px) {
+ .admin-bottom-nav .admin-bottom-nav-button { min-height: 64px; font-size: 12px; }
+ .admin-bottom-nav-compact { display: none; }
+ .admin-bottom-nav-wide { display: block; }
 }

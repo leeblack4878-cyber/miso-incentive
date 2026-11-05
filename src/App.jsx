@@ -1,3 +1,4 @@
+import AdminBottomNavigation from './components/AdminBottomNavigation';
 import {mobilePlanLabel} from './mobilePlans';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
 import { loadHomePolicyMetadata } from './homePolicyMetadata';
@@ -5395,7 +5396,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'performance', label: '실적 순위', icon: Trophy, section:'performance' },
     { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, section:'performance' },
     { key: 'storeGoals', label: '매장 목표', icon: Target, section:'performance' },
-    { key: 'customerCareAdmin', label: 'OB/고객관리', icon: ClipboardList, section:'customer' },
+    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, section:'customer' },
     { key: 'homeCare', label: '홈 케어', icon: Home, section:'customer' },
     { key: 'evaluation', label: '평가', icon: ClipboardCheck, section:'settlement' },
     { key: 'managerPayroll', label: '관리자 급여', icon: Wallet, section:'settlement' },
@@ -5416,7 +5417,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
   const ADMIN_SECTIONS=[
     {key:'operations',label:'오늘의 운영',icon:LayoutDashboard},
     {key:'performance',label:'실적',icon:Trophy},
-    {key:'customer',label:'고객·설치',icon:ClipboardList},
+    {key:'customer',label:'OB/고객관리',icon:ClipboardList},
     {key:'settlement',label:'평가·급여',icon:Wallet},
     {key:'cost',label:'비용·승인',icon:Zap},
     {key:'settings',label:'관리 설정',icon:Settings},
@@ -5474,12 +5475,9 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-5">
+    <div className="admin-content max-w-5xl mx-auto px-4 py-5">
       <div className="mb-4 space-y-3">
         <div className="bg-white border border-gray-200 rounded-2xl p-2 space-y-2">
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-            {ADMIN_SECTIONS.map(section=><button key={section.key} type="button" onClick={()=>setAdminTab(TABS.find(tab=>tab.section===section.key)?.key||'dashboard')} className={`flex min-h-11 flex-col sm:flex-row items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl text-[11px] font-bold transition ${activeAdminSection===section.key?'bg-brand-600 text-white shadow-sm ring-1 ring-brand-500':'bg-gray-50 text-gray-500 hover:bg-brand-50'}`}><section.icon size={14}/>{section.label}</button>)}
-          </div>
           {favoriteTabs.length>0&&<div className="rounded-xl border border-amber-100 bg-amber-50/60 p-1.5"><div className="flex items-center gap-1 px-1.5 pb-1.5 text-[9px] font-bold tracking-wide text-amber-700"><Star size={10} fill="currentColor"/>내 바로가기</div><div className="flex gap-1.5 overflow-x-auto">{favoriteTabs.map(tab=><button key={tab.key} type="button" onClick={()=>setAdminTab(tab.key)} className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold ${adminTab===tab.key?'border-brand-300 bg-white text-brand-700 shadow-sm':'border-amber-100 bg-white/80 text-gray-600'}`}><tab.icon size={13}/>{tab.label}</button>)}</div></div>}
           {activeSectionTabs.length>1&&<div className="rounded-xl border border-gray-100 bg-gray-50 p-1.5">
 
@@ -5628,6 +5626,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'permissions' && canManagePermissions && (
         <React.Suspense fallback={<DeferredAdminPanelFallback label="권한 관리"/>}><PermissionsManager employees={employees} /></React.Suspense>
       )}
+      <AdminBottomNavigation sections={ADMIN_SECTIONS} activeSection={activeAdminSection} onSelect={key=>setAdminTab(TABS.find(tab=>tab.section===key)?.key||'dashboard')} />
     </div>
   );
 }
