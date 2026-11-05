@@ -80,6 +80,8 @@ export const test = base.extend({
       for(const actor of actors) {
         for(const table of ['customer_tasks','sales_expenses','customer_sales','home_orders','daily_records','monthly_status','customers'])
           await result(admin.from(table).delete().eq('user_id',actor.id));
+        await result(admin.from('store_schedules').delete().eq('assignee_id',actor.id));
+        await result(admin.from('store_calendar_history').delete().eq('assignee_id',actor.id));
         await result(admin.from('user_titles').delete().eq('user_id',actor.id));
         await result(admin.from('user_achievements').delete().eq('user_id',actor.id));
         if(actor.achievements.length)await result(admin.from('user_achievements').insert(actor.achievements));
