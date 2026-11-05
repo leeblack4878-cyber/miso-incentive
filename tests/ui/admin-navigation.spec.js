@@ -7,6 +7,7 @@ async function open(page,actor='admin'){
  await page.clock.setFixedTime(new Date('2026-11-05T03:00:00Z'));
  await page.route('https://placeholder.supabase.co/**',route=>{
   const request=route.request(),table=new URL(request.url()).pathname.split('/').pop();
+  if(table==='read_store_calendar')return route.fulfill({json:{store_name:profile.store_name,today:'2026-11-05',can_create:true,roster:[],events:[],today_ob:[]}});
   return route.fulfill({json:table==='profiles'?(request.headers().accept?.includes('vnd.pgrst.object')?profile:[profile]):[]});
  });
  await page.addLocatorHandler(page.getByRole('button',{name:'좋아요!',exact:true}),b=>b.click());
@@ -35,8 +36,8 @@ for(const width of [320,390,768])for(const actor of ['admin','manager','area'])t
  await nav.getByRole('button',{name:'OB/고객관리',exact:true}).click();
  await expect(page.getByRole('button',{name:'고객 관리',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'홈 케어',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'OB 활동',exact:true}).click();await expect(page.getByRole('button',{name:'OB 활동',exact:true})).toHaveAttribute('aria-pressed','true');
- await page.getByRole('button',{name:'고객 약속',exact:true}).click();
+ await page.getByRole('tab',{name:'OB콜',exact:true}).click();await expect(page.getByRole('tab',{name:'OB콜',exact:true})).toHaveAttribute('aria-selected','true');
+ await page.getByRole('tab',{name:'고객약속&설치일정',exact:true}).click();
  await page.evaluate(()=>scrollTo(0,document.body.scrollHeight));
  const box=await nav.boundingBox();expect(box.y+box.height).toBeCloseTo(844,0);
  expect(await page.locator('.admin-content').evaluate(el=>parseFloat(getComputedStyle(el).paddingBottom))).toBeGreaterThanOrEqual(box.height);

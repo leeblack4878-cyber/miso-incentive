@@ -34,6 +34,7 @@ const EvaluationTab=React.lazy(()=>import('./components/EvaluationViews').then(m
 const ManagerPayrollPanel=React.lazy(()=>import('./components/EvaluationViews').then(m=>({default:m.ManagerPayrollPanel})));
 const CustomerCareManager=React.lazy(()=>import('./components/CustomerCareManager'));
 const ObActivityPanel=React.lazy(()=>import('./components/ObActivityPanel'));
+const StoreCalendar=React.lazy(()=>import('./components/StoreCalendar'));
 const DailyInputTab=React.lazy(()=>import('./components/DailyInputTab'));
 const RatesManager=React.lazy(()=>import('./components/RatesManager'));
 const PermissionsManager=React.lazy(()=>import('./components/PermissionsManager'));
@@ -3733,23 +3734,13 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {months.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
           </div>
-          <div className="flex gap-2" role="group" aria-label="고객관리 화면">
-            {['promises','ob'].map(key=><button key={key} onClick={()=>setCustomerCareMode(key)} aria-pressed={customerCareMode===key} className={`rounded-xl px-4 py-2 text-sm font-semibold ${customerCareMode===key?'bg-brand-50 text-brand-700':'bg-white text-gray-500'}`}>{key==='ob'?'OB 활동':'고객 약속'}</button>)}
-          </div>
-          {customerCareMode==='ob'?<React.Suspense fallback={<DeferredAdminPanelFallback label="OB 활동"/>}><ObActivityPanel userId={authUser?.id}/></React.Suspense>:<React.Suspense fallback={<DeferredAdminPanelFallback label="고객관리"/>}><CustomerCareManager
-            userId={viewedUserId}
-            month={month}
-            navIntent={careNavIntent}
-            homeProps={{
-              userId:viewedUserId,
-              month,
-              locked:monthLocked||policyInputBlocked,
-              dailyDays,
-              saveDailyDay,
-              onTeamCreditSaved,
-              onHomeOrdersChanged
-            }}
-          /></React.Suspense>}
+          <React.Suspense fallback={<DeferredAdminPanelFallback label="매장 공용 달력"/>}><StoreCalendar
+            userId={authUser?.id} month={month} onMonthChange={setMonth}
+            initialTab={customerCareMode} onTabChange={setCustomerCareMode}
+            promiseTools={<CustomerCareManager userId={viewedUserId} month={month} navIntent={careNavIntent}
+              homeProps={{userId:viewedUserId,month,locked:monthLocked||policyInputBlocked,dailyDays,saveDailyDay,onTeamCreditSaved,onHomeOrdersChanged:async()=>{await onHomeOrdersChanged?.();window.dispatchEvent(new CustomEvent('home-orders-changed'));}}}/>}
+            obTools={<ObActivityPanel userId={authUser?.id}/>}
+          /></React.Suspense>
         </div>
       )}
 
@@ -5598,7 +5589,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
       {adminTab === 'performance' && <ComparisonView rows={rows} />}
       {adminTab === 'evaluation' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><EvaluationTab month={month} config={config} isManagerView={true} canFinalApprove={isFullAdmin} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
       {adminTab === 'managerPayroll' && <React.Suspense fallback={<DeferredAdminPanelFallback label="평가·급여"/>}><ManagerPayrollPanel month={month} employees={employees} rows={rankingRows||rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} /></React.Suspense>}
-      {adminTab === 'customerCareAdmin' && <div className="space-y-3"><div className="flex gap-2" role="group" aria-label="관리자 고객관리 화면">{['promises','ob'].map(key=><button key={key} onClick={()=>setAdminCareMode(key)} aria-pressed={adminCareMode===key} className={`rounded-xl px-4 py-2 text-sm font-semibold ${adminCareMode===key?'bg-brand-50 text-brand-700':'bg-white text-gray-500'}`}>{key==='ob'?'OB 활동':'고객 약속'}</button>)}</div>{adminCareMode==='ob'?<React.Suspense fallback={<DeferredAdminPanelFallback label="OB 활동"/>}><ObActivityPanel admin userId={authUserId} employees={employees}/></React.Suspense>:<AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter} />}</div>}
+      {adminTab === 'customerCareAdmin' && <React.Suspense fallback={<DeferredAdminPanelFallback label="매장 공용 달력"/>}><StoreCalendar userId={authUserId} month={month} onMonthChange={setMonth} initialTab={adminCareMode} onTabChange={setAdminCareMode} promiseTools={<AdminCustomerCareOverview employees={employees} month={month} initialFilter={customerCareFilter}/>} obTools={<ObActivityPanel admin userId={authUserId} employees={employees}/>}/></React.Suspense>}
       {adminTab === 'homeCare' && <AdminHomeCare employees={employees} month={month} />}
       {adminTab === 'performanceApproval' && <div className="space-y-4"><PerformanceResetApprovals key={month} month={month} employees={employees} authUserId={authUserId} locked={monthLocked||policyInputBlocked}/><PerformanceCheckPanel month={month} rows={rows} dailyRecords={dailyRecords} employees={employees} /></div>}
       {adminTab === 'dailyBriefing' && canViewDailyBriefing && <DailyBriefingPanel month={month} rows={rankingRows||rows} dailyRecords={dailyRecords} employees={employees} authUserId={authUserId} config={config} />}

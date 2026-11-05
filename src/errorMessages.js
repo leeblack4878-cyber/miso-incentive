@@ -4,6 +4,12 @@ export function friendlyError(err) {
   const msg = (typeof err === 'string' ? err : err?.message || '') || '';
   const lower = msg.toLowerCase();
 
+  if (lower.includes('calendar_stale') || lower.includes('calendar_request_conflict')) return '다른 화면에서 일정이 변경됐어요. 새로고침 후 다시 확인해주세요.';
+  if (lower.includes('calendar_forbidden') || lower.includes('calendar_store_immutable')) return '현재 매장에서 처리할 수 있는 일정이 아니에요. 본인 일정 또는 점장의 같은 매장 일정만 처리할 수 있어요.';
+  if (lower.includes('calendar_use_specialized_editor')) return '이 항목은 기존 고객 약속·설치 관리 화면에서 필요한 절차를 확인하고 처리해주세요.';
+  if (lower.includes('calendar_new_must_be_pending')) return '새 일정은 예정 상태로 등록한 뒤 처리해주세요.';
+  if (lower.includes('calendar_')) return '일정의 날짜·내용·상태를 확인한 뒤 다시 시도해주세요.';
+
   if(lower.includes('home_cancel_expense_choice_required'))return '앱을 새로고침한 뒤 취소할 비용의 처리 방법을 선택해주세요.';
   if(lower.includes('home_cancel_pending_required'))return '완료된 청약은 먼저 완료 처리를 되돌린 뒤 취소해주세요.';
   if (/home_.*(mismatch|not_found)|sale_stale_data/.test(lower)) return '다른 화면에서 내역이 변경됐거나 수정 권한을 확인하지 못했어요. 새로고침 후 다시 확인해주세요.';

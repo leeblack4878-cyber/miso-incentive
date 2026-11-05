@@ -52,7 +52,7 @@ export default function ObActivityPanel({userId,admin=false,employees=[]}){
   try{
    const {data,error:err}=await supabase.rpc('append_ob_contact',{p_request_id:request.current,p_customer_name:draft.customer_name.trim(),p_subscription_number:subscriptionKey(draft.subscription_number),p_phone:phoneDigits(draft.phone),p_purpose:draft.purpose,p_call_result:draft.call_result,p_reaction:draft.call_result==='통화 완료'?draft.reaction:null,p_follow_up_date:draft.follow_up_date||null,p_visit_at:draft.visit_at?`${draft.visit_at}:00+09:00`:null,p_memo:draft.memo.trim()});
    if(err)throw err;if(!data)throw new Error('저장 결과를 확인할 수 없어요.');
-   setDraft(null);setRevision(v=>v+1);showAppToast('OB 활동을 기록했어요.',{tone:'success'});
+   setDraft(null);setRevision(v=>v+1);window.dispatchEvent(new CustomEvent('ob-contacts-changed',{detail:{userId}}));showAppToast('OB 활동을 기록했어요.',{tone:'success'});
   }catch(err){setFormError(friendlyError(err));}finally{saveGuard.current=false;setSaving(false);}
  };
  return <section className="rounded-3xl bg-white p-4 sm:p-6 space-y-4">
