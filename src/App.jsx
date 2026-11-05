@@ -3854,11 +3854,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
           {[
             { key: 'home', label: '홈', icon: Home },
             { key: 'daily', label: '실적입력', icon: Calendar },
-            { key: 'customerCare', label: '고객관리', icon: ClipboardList },
+            { key: 'customerCare', label: 'OB/고객관리', icon: ClipboardList },
             { key: 'evaluation', label: '평가', icon: ClipboardCheck },
             { key: 'history', label: '내역', icon: History },
           ].map((n) => (
-            <button key={n.key} aria-current={tab===n.key?'page':undefined} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${tab === n.key ? 'text-brand-700' : 'text-gray-400'}`}>
+            <button key={n.key} aria-current={tab===n.key?'page':undefined} onClick={() => setTab(n.key)} className={`flex flex-col items-center gap-0.5 py-2.5 text-[11px] ${n.key === 'customerCare' ? 'customer-care-nav whitespace-nowrap' : ''} ${tab === n.key ? 'text-brand-700' : 'text-gray-400'}`}>
               <n.icon size={18} />{n.label}
             </button>
           ))}
@@ -5395,7 +5395,7 @@ function AdminView({ adminTab, setAdminTab, months, month, setMonth, rows, ranki
     { key: 'performance', label: '실적 순위', icon: Trophy, section:'performance' },
     { key: 'performanceApproval', label: '실적 점검', icon: ClipboardCheck, section:'performance' },
     { key: 'storeGoals', label: '매장 목표', icon: Target, section:'performance' },
-    { key: 'customerCareAdmin', label: '고객 관리', icon: ClipboardList, section:'customer' },
+    { key: 'customerCareAdmin', label: 'OB/고객관리', icon: ClipboardList, section:'customer' },
     { key: 'homeCare', label: '홈 케어', icon: Home, section:'customer' },
     { key: 'evaluation', label: '평가', icon: ClipboardCheck, section:'settlement' },
     { key: 'managerPayroll', label: '관리자 급여', icon: Wallet, section:'settlement' },

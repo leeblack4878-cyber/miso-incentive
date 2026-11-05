@@ -20,13 +20,26 @@ async function openApp(page,{admin=false,failLedger=false}={}){
 for(const width of [320,390,768])test(`${width}px 직원 홈·고객관리·평가·내역의 화면과 지연로딩`,async({page},info)=>{
  await page.setViewportSize({width,height:844});const errors=await openApp(page);
  await expect(page.getByRole('heading',{name:'오늘 할 일'})).toBeVisible();
- for(const tab of ['홈','고객관리','평가','내역']){
+ for(const tab of ['홈','OB/고객관리','평가','내역']){
   await page.locator('.app-bottom-nav').getByRole('button',{name:tab,exact:true}).click();
   if(tab==='평가')await expect(page.getByRole('button',{name:'개인 커리어 등급',exact:true})).toBeVisible();
-  if(tab==='고객관리')await expect(page.getByRole('button',{name:'완료·취소',exact:true})).toBeVisible();
+  if(tab==='OB/고객관리'){
+   await expect(page.getByRole('button',{name:'완료·취소',exact:true})).toBeVisible();
+   const nav=page.locator('.app-bottom-nav').getByRole('button',{name:tab,exact:true});
+   await expect(nav).toHaveAttribute('aria-current','page');
+   expect(await nav.evaluate(button=>{
+    const text=[...button.childNodes].find(node=>node.nodeType===Node.TEXT_NODE&&node.textContent.includes('OB/'));
+    const range=document.createRange();range.selectNodeContents(text);
+    const bounds=button.getBoundingClientRect(),rects=[...range.getClientRects()];
+    return rects.length===1&&rects[0].left>=bounds.left&&rects[0].right<=bounds.right;
+   }),'navigation label fits on one line').toBe(true);
+   await page.getByRole('button',{name:'OB 활동',exact:true}).click();
+   await expect(page.getByRole('button',{name:'OB 활동',exact:true})).toHaveAttribute('aria-pressed','true');
+   await page.getByRole('button',{name:'고객 약속',exact:true}).click();
+  }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${tab} horizontal overflow`).toBe(true);
   if(tab==='홈'){await expect(page.locator('.performance-tile')).toHaveCount(10);expect(await page.locator('.performance-tile').evaluateAll(rows=>rows.every(row=>row.scrollWidth<=row.clientWidth))).toBe(true);}
-  if(width===390)await page.screenshot({path:info.outputPath(`${tab}.png`),fullPage:true});
+  if(width===390)await page.screenshot({path:info.outputPath(`${tab.replaceAll('/','-')}.png`),fullPage:true});
  }
  expect(errors).toEqual([]);
 });
@@ -36,6 +49,17 @@ for(const width of [320,390])test(`${width}px 관리자 주요 메뉴와 평가�
  await expect(page.getByText('핵심 성과',{exact:false})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  if(width===390)await page.screenshot({path:info.outputPath('admin.png'),fullPage:true});
+ await page.getByRole('button',{name:'고객·설치',exact:true}).click();
+ const customerNav=page.getByRole('button',{name:'OB/고객관리',exact:true});
+ await expect(customerNav).toBeVisible();
+ await customerNav.click();
+ await expect(page.getByRole('group',{name:'관리자 고객관리 화면',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'OB 활동',exact:true}).click();
+ await expect(page.getByRole('button',{name:'OB 활동',exact:true})).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('button',{name:'고객 약속',exact:true}).click();
+ expect(await customerNav.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ if(width===390)await page.screenshot({path:info.outputPath('admin-ob-navigation.png'),fullPage:true});
  await page.getByRole('button',{name:'평가·급여',exact:true}).click();
  await expect(page.getByRole('button',{name:'관리자 평가',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'관리자 급여',exact:true}).click();

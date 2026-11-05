@@ -5,7 +5,7 @@ test('actual Auth OB UI append, retry, customer history and other-employee isola
  expect(await result(world.admin.from('ob_contact_logs').select('id').in('user_id',[actor.id,world.other.id]))).toHaveLength(0);
  const before=await snapshot(world.admin,actor.id);
  try{
-  await openEmployee(page,world);await page.getByRole('button',{name:'고객관리',exact:true}).click();await page.getByRole('button',{name:'OB 활동',exact:true}).click();
+  await openEmployee(page,world);await page.getByRole('button',{name:'OB/고객관리',exact:true}).click();await page.getByRole('button',{name:'OB 활동',exact:true}).click();
   await page.getByRole('button',{name:'＋ OB 활동 기록',exact:true}).click();const dialog=page.getByRole('dialog',{name:'OB 활동 기록'});
   await dialog.getByLabel('가입번호 · 필수').fill('e2e ob 001');await dialog.getByLabel('고객명 · 필수').fill(name);await dialog.getByLabel('연락처 · 필수').fill('010-0000-0001');await dialog.getByLabel('통화 결과',{exact:true}).selectOption('통화 완료');await dialog.getByLabel('고객 반응',{exact:true}).selectOption('재연락 희망');await dialog.getByLabel('내용 · 선택').fill('E2E first contact');
   const response=page.waitForResponse(r=>r.url().endsWith('/rpc/append_ob_contact')&&r.request().method()==='POST');await dialog.getByRole('button',{name:'기록 저장',exact:true}).click();const saved=await response;expect(saved.ok(),await saved.text()).toBe(true);await expect(dialog).toHaveCount(0);

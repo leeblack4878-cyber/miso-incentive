@@ -14,7 +14,7 @@ test('home edit preserves completed and cancelled promise identities through rep
   expect(saved.customer_tasks).toHaveLength(3);
   for(const old of closed){const now=saved.customer_tasks.find(t=>t.id===old.id);expect(now).toMatchObject({status:old.status,completed_at:old.completed_at,created_at:old.created_at,task_meta:old.task_meta});expect(saved.customer_sales.some(s=>s.id===now.source_sale_id)).toBe(true);}
  }
- await page.getByRole('button',{name:'고객관리',exact:true}).click();
+ await page.getByRole('button',{name:'OB/고객관리',exact:true}).click();
  await page.getByRole('button',{name:'완료·취소',exact:true}).click();
  await expect(page.getByText(`${customer.name} · E2E_completed`,{exact:true})).toBeVisible();
  await expect(page.getByText(`${customer.name} · E2E_cancelled`,{exact:true})).toBeVisible();

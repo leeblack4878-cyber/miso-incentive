@@ -1,7 +1,7 @@
 import {test,expect,result,snapshot,openEmployee} from './fixtures.js';
 for(const action of ['exclude','keep'])test(`home cancellation ${action}: UI choice, dependent tasks, reload`,async({page,world})=>{
  await world.seed(world.employee);await openEmployee(page,world);
- await page.getByRole('button',{name:'고객관리',exact:true}).click();
+ await page.getByRole('button',{name:'OB/고객관리',exact:true}).click();
  await page.getByRole('button',{name:'여러 상품 취소',exact:true}).click();
  await page.getByRole('button',{name:'선택 2개 처리',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'홈 청약 취소'});
