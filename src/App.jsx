@@ -3739,7 +3739,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
             initialTab={customerCareMode} onTabChange={setCustomerCareMode}
             promiseTools={<CustomerCareManager userId={viewedUserId} month={month} navIntent={careNavIntent}
               homeProps={{userId:viewedUserId,month,locked:monthLocked||policyInputBlocked,dailyDays,saveDailyDay,onTeamCreditSaved,onHomeOrdersChanged:async()=>{await onHomeOrdersChanged?.();window.dispatchEvent(new CustomEvent('home-orders-changed'));}}}/>}
-            obTools={<ObActivityPanel userId={authUser?.id}/>}
+            obTools={({quickEntryId})=><ObActivityPanel userId={authUser?.id} quickEntryId={quickEntryId}/>}
           /></React.Suspense>
         </div>
       )}
