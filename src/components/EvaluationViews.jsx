@@ -243,7 +243,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   const plan115Count=actual('plan115');
   const plan115Base=storeRows.reduce((n,r)=>n+Number(r.pay?.plan115GeneralCount||0),0);
   const plan115Unknown=storeRows.some(r=>!r.pay||Number(r.pay.plan115Missing||0)>0||(managerActualFromDraft(r.draft,'hs')>0&&r.pay.plan115GeneralCount==null));
-  const plan115Ratio=basis==='employee'&&!plan115Unknown&&plan115Base>0?plan115Count/plan115Base*100:null;
+  const plan115Ratio=november?(basis==='employee'&&!plan115Unknown&&plan115Base>0?plan115Count/plan115Base*100:null):(hsActual>0?plan115Count/hsActual*100:0);
   const subTvSmartRatio=hsActual>0?(actual('subTvHousehold')+actual('smartHome'))/hsActual*100:null;
   const managerEstimate=calculateManager({
     actual:{hs:hsActual,home:actual('home'),tvFree:actual('tvFree'),smartHome:actual('smartHome')},
@@ -279,7 +279,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     managerScore:forecastManagerScore,
     strategicRatio:forecastHs>0?forecastStrategicPoints/forecastHs*100:0,
     homeRatio:forecastHs>0?forecastHome/forecastHs*100:0,
-    plan115Count:forecastPlan115Count,plan115Ratio,
+    plan115Count:forecastPlan115Count,plan115Ratio:november?plan115Ratio:(forecastHs>0?forecastPlan115Count/forecastHs*100:0),
     tailoredCount:forecastActual('tailoredCount'),bundledSecondCount:forecastActual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio:forecastHs>0?(forecastSubTvHousehold+forecastSmartHome)/forecastHs*100:null,
     levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
     complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
