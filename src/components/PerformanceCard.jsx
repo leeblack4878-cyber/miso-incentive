@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {monthLabel} from '../appShared';
-import {companyGoalDefaults} from '../viewShared';
+import {companyGoalDefaults,resolvedCompanyGoals} from '../viewShared';
 import {supabase} from '../supabase';
 import {comparisonChange,comparisonPeriods} from '../performancePeriod';
 import {loadPerformanceComparison} from '../performanceComparison';
@@ -37,7 +37,7 @@ export default function PerformanceCard({month,title,scopeLabel,metrics,scopeRow
     supabase.from('store_goals').select('store_name,company_goals,challenge_goals').eq('month',month).in('store_name',branches).then(({data,error})=>{
       if(!alive)return;if(error){setGoalStatus('error');return;}
       const result={};
-      for(const branch of branches){const saved=(data||[]).find(x=>x.store_name===branch);const values={...companyGoalDefaults(branch),...(saved?.company_goals||{}),...(saved?.challenge_goals||{})};for(const [key,value] of Object.entries(values))result[key]=(result[key]||0)+Number(value||0);}
+      for(const branch of branches){const saved=(data||[]).find(x=>x.store_name===branch);const values={...resolvedCompanyGoals(branch,month,saved?.company_goals),...(saved?.challenge_goals||{})};for(const [key,value] of Object.entries(values))result[key]=(result[key]||0)+Number(value||0);}
       setGoals(result);setGoalStatus('ready');
     });return()=>{alive=false;};
   },[open,month,branchKey,loadStoreGoals]);

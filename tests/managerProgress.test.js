@@ -13,7 +13,6 @@ test('ranks by normalized recognized HS and keeps half units in the shortfall', 
   const { rows } = report([
     snapshot(sammi2, { hs: 58, simMnp: 4, secondTotal: 3, home: 0 }),
     snapshot(sanbon, { hs: 100, simMnp: 0, secondTotal: 0 }),
-    snapshot(sammi, { hs: 200, simMnp: 0, secondTotal: 0 }),
   ]);
   assert.equal(rows[0].store, sammi2);
   assert.deepEqual(rows[0].progress.hs, {
@@ -22,7 +21,7 @@ test('ranks by normalized recognized HS and keeps half units in the shortfall', 
   assert.equal(rows[1].progress.hs.rank, 2);
   assert.equal(rows[0].progress.home.actual, 0);
   assert.equal(rows[0].progress.tvFree.actual, null);
-  assert.equal(rows.at(-1).status, '평가 제외');
+  assert.equal(rows.find(r=>r.store===sammi).excluded,false);assert.equal(rows.find(r=>r.store===sammi).progress.hs.target,88);
   assert.equal(rows.at(-1).progress.hs.rank, null);
 });
 

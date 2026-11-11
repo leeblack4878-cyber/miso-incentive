@@ -1,5 +1,7 @@
+import {summarizeHighPlanShare} from '../mobilePlans';
 import { managerActualFromDraft } from '../managerActual';
 import ManagerProgressPanel from './ManagerProgressPanel';
+import ManagerPaySimulator from './ManagerPaySimulator';
 import React from 'react';
 import { monthsSince, applyDailyToDraft, DEFAULT_KPI_ITEMS, hsCount, HS_PARTS, MATRIX_ROWS, NON_SALES_STORES, monthKeyOf, daysInMonth, monthLabel, fmtCount } from '../appShared';
 import { supabase } from '../supabase';
@@ -238,7 +240,10 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     impactRate:aa100/100,companyAaScore:ext.companyAaScore,closing:!!ext.closing,deputy:operator?.position==='부점장'};
   const strategicPoints=actual('strategicPoints');
   const strategicRatio=hsActual>0?strategicPoints/hsActual*100:0;
-  const plan115Count=actual('plan115'),plan115Ratio=hsActual>0?plan115Count/hsActual*100:0;
+  const plan115Count=actual('plan115');
+  const plan115Base=storeRows.reduce((n,r)=>n+Number(r.pay?.plan115GeneralCount||0),0);
+  const plan115Unknown=storeRows.some(r=>!r.pay||Number(r.pay.plan115Missing||0)>0||(managerActualFromDraft(r.draft,'hs')>0&&r.pay.plan115GeneralCount==null));
+  const plan115Ratio=november?(basis==='employee'&&!plan115Unknown&&plan115Base>0?plan115Count/plan115Base*100:null):(hsActual>0?plan115Count/hsActual*100:0);
   const subTvSmartRatio=hsActual>0?(actual('subTvHousehold')+actual('smartHome'))/hsActual*100:null;
   const managerEstimate=calculateManager({
     actual:{hs:hsActual,home:actual('home'),tvFree:actual('tvFree'),smartHome:actual('smartHome')},
@@ -274,7 +279,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
     managerScore:forecastManagerScore,
     strategicRatio:forecastHs>0?forecastStrategicPoints/forecastHs*100:0,
     homeRatio:forecastHs>0?forecastHome/forecastHs*100:0,
-    plan115Count:forecastPlan115Count,plan115Ratio:forecastHs>0?forecastPlan115Count/forecastHs*100:0,
+    plan115Count:forecastPlan115Count,plan115Ratio:november?plan115Ratio:(forecastHs>0?forecastPlan115Count/forecastHs*100:0),
     tailoredCount:forecastActual('tailoredCount'),bundledSecondCount:forecastActual('second'),storeType:septemberManagerStoreType(activeStore),subTvSmartRatio:forecastHs>0?(forecastSubTvHousehold+forecastSmartHome)/forecastHs*100:null,
     levelBelow4:ext.leveling==='below4',noExperienceRate:ext.noExperienceRate??null,
     complaintCount:Number(ext.complaintCount||0),unkindCount:Number(ext.unkindCount||0),
@@ -318,6 +323,9 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
       if(error)throw error;showLegacyAlert('AA임팩트 월 목표를 저장했어요.');
     }catch(error){showLegacyAlert(friendlyError(error));}finally{saveGuard.current=false;setSaving(false);}
   };
+  const ownSimulationAllowed=month==='2026-11'&&viewer?.role==='manager'&&['점장','부점장'].includes(viewer.position)&&viewer.branch===activeStore;
+  const simulationInitial={...ext,hs:live.hs,simMnpCount:live.simMnp,secondCount:live.secondTotal,home:live.home,tvFree:live.tvFree,smartHome:live.smartHome,strategicRatio:live.hs>0?live.strategicPoints/live.hs*100:'',tailoredCount:live.tailoredCount,subTvHousehold:live.subTvHousehold,hsMnpCount:Math.max(0,live.mnp-live.simMnp),bundledSecondCount:verified.managerBundleCount??'',strategyModelCount:verified.strategyModelCount??'',managerScore:scoreReady?total:'',impactPercent:scoreReady?aa100:'',leveling:ext.leveling||'',privacy:ext.privacyViolation===true?'yes':ext.privacyViolation===false?'no':''};
+  if(ownSimulationAllowed&&managerMode==='simulation')return <ManagerPaySimulator key={scopeKey} month={month} store={activeStore} userId={authUserId} position={viewer.position} initial={simulationInitial} onBack={()=>setManagerMode('dashboard')}/>;
   const canCompare=month==='2026-11'&&canEditStore;
   if(canCompare&&managerMode==='progress')return <ManagerProgressPanel key={month} month={month} backLabel={payrollOnly?'관리자 급여로':'평가 화면으로'} onBack={()=>setManagerMode('dashboard')}/>;
   const storePicker=canSwitchStores&&<select aria-label="평가 매장" value={activeStore} disabled={saving} onChange={e=>setStore(e.target.value)} className="w-full bg-white border rounded-xl px-3 py-2.5 text-sm">{stores.map(s=><option key={s} value={s}>{displayStoreName(s)}</option>)}</select>;
@@ -325,6 +333,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
   return <div className="space-y-3">
     {<div className={`grid gap-2 ${canEditStore?'grid-cols-2':'grid-cols-1'}`}><button onClick={()=>setManagerMode('dashboard')} className={`py-2 rounded-xl text-xs font-bold ${(activeManagerMode==='dashboard'||activeManagerMode==='incentive')?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>{payrollOnly?'월 급여 예상':'평가 현황'}</button>{canEditStore&&<button onClick={()=>setManagerMode('settings')} className={`py-2 rounded-xl text-xs font-bold ${activeManagerMode==='settings'?'bg-brand-600 text-white':'bg-white border text-gray-500'}`}>목표·실적 최신화</button>}</div>}
     {storePicker}
+    {ownSimulationAllowed&&<button type="button" onClick={()=>setManagerMode('simulation')} className="w-full rounded-xl bg-brand-600 text-white py-3 text-sm font-bold">본인 급여 가계산기</button>}
     {canCompare&&<button type="button" onClick={()=>setManagerMode('progress')} className="w-full rounded-xl border border-brand-200 bg-brand-50 py-3 text-sm font-bold text-brand-700">점장정책 진척도 비교</button>}
     {activeManagerMode!=='settings'&&<EvaluationBasisPanel basis={basis} savedBasis={savedBasis} onChange={setBasis} onSave={saveBasis} canSave={canEditStore} saving={saving} live={live} verified={verified} asOfDate={ext.companyAsOfDate} verifiedAt={snap.verified_at} report={companyReport} month={month}/>}
     {activeManagerMode==='dashboard'&&!exclusion&&!scoreReady&&<p role="status" className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">회사 미입력 항목이 있어 종합 점수·등급을 보류합니다. 직원입력기준으로 현재 진행 상황을 확인할 수 있어요.</p>}
@@ -366,7 +375,7 @@ function ManagerEvaluationPanel({ month, employees, rows, authUserId, canSwitchS
           <div className="mt-2 text-[10px] text-brand-100 text-right">현재 {Math.round(managerForecastFactor===1?100:100/managerForecastFactor)}% 경과 기준 예상</div>
           <div className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-[10px] leading-relaxed">{november?`부점장 최종50% · ${ext.closing?'마감 AA 지급률 반영':'월중 AA 지급률 미반영'}`:'임팩트 평가 지급률은 월중 금액에 적용하지 않고 월 마감 시 최종 반영해요.'}</div>
         </div>
-        <div className="grid grid-cols-2 gap-2"><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">전략P 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{fmtNum(strategicRatio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">전략P {fmtNum(strategicPoints,1)}P ÷ HS {fmtCount(hsActual)}건</div></div><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">115군 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{fmtNum(plan115Ratio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">115군 {fmtCount(plan115Count)}건 ÷ HS {fmtCount(hsActual)}건</div></div></div>
+        <div className="grid grid-cols-2 gap-2"><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">전략P 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{fmtNum(strategicRatio,1)}%</div><div className="text-[10px] text-gray-400 mt-1">전략P {fmtNum(strategicPoints,1)}P ÷ HS {fmtCount(hsActual)}건</div></div><div className="bg-white rounded-xl border p-3"><div className="text-[10px] text-gray-400">115군 비중 · 자동</div><div className="text-base font-black text-brand-700 mt-1">{plan115Ratio===null?'확인 필요':`${fmtNum(plan115Ratio,1)}%`}</div><div className="text-[10px] text-gray-400 mt-1">115~130군 {fmtCount(plan115Count)}건 ÷ 약자 제외 {fmtCount(plan115Base)}건</div></div></div>
         <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b"><div className="text-sm font-bold">성과 인센티브</div><div className="text-[10px] text-gray-400 mt-0.5">달성 구간의 건당 금액 × 실제 완료 건수 · 보라색은 월말 예상</div></div>{managerEstimate.metrics.map((m,index)=>{const forecast=forecastManagerEstimate.metrics[index];return <div key={m.key} className="px-4 py-3 border-b last:border-0"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold">{{hs:'HS',home:'홈(소호 포함)',tvFree:'TV프리(부)',smartHome:'스마트홈'}[m.key]}</div><div className="text-[10px] text-gray-400 mt-1">현재 {fmtNum(november?m.recognized:m.actual,1)} / {fmtNum(m.target,1)}건 · {m.achievement.toFixed(0)}% · {m.tier}</div><div className="text-[10px] font-semibold text-brand-600 mt-1">예상 {fmtNum(forecast.actual,1)}건 · {forecast.achievement.toFixed(0)}% · {forecast.tier}</div></div><div className="text-right"><div className="text-sm font-black text-gray-800">{won(m.amount)}</div><div className="text-[10px] font-bold text-brand-700 mt-1">예상 {won(forecast.amount)}</div><div className="text-[9px] text-gray-400">{forecast.rate?`예상 건당 ${won(forecast.rate)}`:'예상도 지급 전'}</div></div></div>{m.key==='hs'&&<div className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] ${m.withheld?'bg-red-50 text-red-600':'bg-gray-50 text-gray-500'}`}>{november?(m.halved?'전략P 180% 미만 · HS 50% 지급':'전략P 180% 기준'):<>{m.homeBonus>0?`가정망 홈 12% 이상 · HS +20% ${won(m.homeBonus)}`:'가정망 홈 12% 추가 조건 미달'} · {m.strategicKnown?(m.withheld?'전략P 160% 미만으로 HS 미지급':`전략P ${fmtNum(Number(strategicRatio),1)}%`):'전략P 비중 확인 전'}</>}</div>}</div>})}</div>
         <div className="space-y-3">
           <div className="bg-white rounded-2xl border overflow-hidden"><div className="px-4 py-3 border-b flex items-center justify-between gap-3"><div><div className="text-xs text-gray-400">추가 정책</div><div className="text-lg font-black text-gray-800 mt-0.5">현재 +{won(managerEstimate.bonusTotal)}</div></div><div className="text-right shrink-0"><div className="text-[10px] text-brand-500">월말 예상</div><div className="text-base font-black text-brand-700">+{won(forecastManagerEstimate.bonusTotal)}</div></div></div><div className="divide-y divide-gray-100">{managerEstimate.bonuses.map((x,index)=>{const forecast=forecastManagerEstimate.bonuses[index];return <div key={x.key} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-xs"><span className={x.achieved?'font-semibold text-gray-700':'text-gray-500'}>{x.label}</span><b className={`whitespace-nowrap ${x.amount?'text-gray-700':'text-gray-300'}`}>{x.amount?`+${won(x.amount)}`:'현재 —'}</b><b className={`min-w-[88px] text-right whitespace-nowrap ${forecast?.amount?'text-brand-700':'text-gray-300'}`}>{forecast?.amount?`예상 +${won(forecast.amount)}`:'예상 —'}</b></div>})}</div></div>
@@ -451,7 +460,7 @@ function qualityPct(n,d){return d>0?Number((Number(n||0)/d*100).toFixed(1)):0}
 function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
   const mobile=(sales||[]).filter(x=>x.source_type==='mobile');
   const hs=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))).length;
-  const plan115=mobile.filter(x=>HS_PARTS.some(p=>p.idx===Number(x.source_meta?.ri))&&Number(x.source_meta?.ci)===0).length;
+  const highPlan=summarizeHighPlanShare(mobile),plan115=highPlan.high;
   const mnpRi=MATRIX_ROWS.indexOf('일반모델 MNP');
   const mnp=mobile.filter(x=>Number(x.source_meta?.ri)===mnpRi).length;
   const second=mobile.reduce((sum,x)=>sum+(x.source_meta?.bundle2ndKeys||[]).length,0);
@@ -470,8 +479,8 @@ function qualityFromSales(sales=[], homeOrders=[], sonoCount=0){
 
   const {insurance,strategicVas,daemyungCount,strategicPointsWithoutDaemyung}=summarizeVasQuality(mobile);
   const revenuePoints=Number(strategicPointsWithoutDaemyung||0)+Math.max(Number(daemyungCount||0),Number(sonoCount||0))*2;
-  return {hs,plan115,home:internetKeys.size,freeSmart:free+smart,mnp,second,strategicPlan,insurance,strategicVas,sono:Number(sonoCount||0),revenuePoints,
-    plan115Pct:qualityPct(plan115,hs),homePct:qualityPct(internetKeys.size,hs),freeSmartPct:qualityPct(free+smart,hs),mnpPct:qualityPct(mnp,hs),secondPct:qualityPct(second,hs),revenuePct:qualityPct(revenuePoints,hs)};
+  return {hs,plan115,plan115Base:highPlan.base,plan115Missing:highPlan.missing,home:internetKeys.size,freeSmart:free+smart,mnp,second,strategicPlan,insurance,strategicVas,sono:Number(sonoCount||0),revenuePoints,
+    plan115Pct:highPlan.ratio===null?null:Number(highPlan.ratio.toFixed(1)),homePct:qualityPct(internetKeys.size,hs),freeSmartPct:qualityPct(free+smart,hs),mnpPct:qualityPct(mnp,hs),secondPct:qualityPct(second,hs),revenuePct:qualityPct(revenuePoints,hs)};
 }
 
 function QualityMetricCard({label,value,sub=''}){return <div className="bg-white border border-gray-100 rounded-xl p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="text-xl font-black text-gray-900 mt-1">{value}</div>{sub&&<div className="text-[9px] text-gray-400 mt-1">{sub}</div>}</div>}
@@ -498,7 +507,7 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
   if(loading)return <div className="bg-white rounded-xl border p-4 text-sm text-gray-400">판매 퀄리티 계산 중...</div>;
   const render=(q)=>{
     const safe={
-      hs:Number(q?.hs||0),plan115:Number(q?.plan115||0),home:Number(q?.home||0),
+      hs:Number(q?.hs||0),plan115:Number(q?.plan115||0),plan115Base:Number(q?.plan115Base||0),home:Number(q?.home||0),
       freeSmart:Number(q?.freeSmart||0),mnp:Number(q?.mnp||0),second:Number(q?.second||0),
       revenuePoints:Number(q?.revenuePoints||0),
       plan115Pct:Number(q?.plan115Pct||0),homePct:Number(q?.homePct||0),
@@ -506,7 +515,7 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
       secondPct:Number(q?.secondPct||0),revenuePct:Number(q?.revenuePct||0)
     };
     return <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-      <QualityMetricCard label="115군 비중" value={`${safe.plan115Pct}%`} sub={`${safe.plan115}/${safe.hs}건`} />
+      <QualityMetricCard label="115~130군 비중" value={q?.plan115Pct==null?'확인 필요':`${safe.plan115Pct}%`} sub={`${safe.plan115}/${safe.plan115Base}건 · 약자 제외`} />
       <QualityMetricCard label="홈(인터넷) 비중" value={`${safe.homePct}%`} sub={`${safe.home}/${safe.hs}건 · 올인원 포함`} />
       <QualityMetricCard label="프리+스홈 비중" value={`${safe.freeSmartPct}%`} sub={`${safe.freeSmart}/${safe.hs}건 · 상품수 기준`} />
       <QualityMetricCard label="MNP 비중" value={`${safe.mnpPct}%`} sub={`${safe.mnp}/${safe.hs}건`} />
@@ -520,9 +529,9 @@ function SalesQualityPanel({month,employee=null,employees=[],isManager=false,log
   const stores=sortStoresByOpenOrder([...new Set(scoped.map(e=>e.branch))]);
   const selectedStore=storeFilter||stores[0]||'';
   const members=scoped.filter(e=>e.branch===selectedStore);
-  const emptyAgg={hs:0,plan115:0,home:0,freeSmart:0,mnp:0,second:0,strategicPlan:0,insurance:0,strategicVas:0,sono:0,revenuePoints:0};
+  const emptyAgg={hs:0,plan115:0,plan115Base:0,plan115Missing:0,home:0,freeSmart:0,mnp:0,second:0,strategicPlan:0,insurance:0,strategicVas:0,sono:0,revenuePoints:0};
   const agg=members.reduce((a,e)=>{const q=data[e.id];if(!q)return a;Object.keys(emptyAgg).forEach(k=>a[k]=Number(a[k]||0)+Number(q[k]||0));return a},{...emptyAgg});
-  const storeQ={...agg,plan115Pct:qualityPct(agg.plan115,agg.hs),homePct:qualityPct(agg.home,agg.hs),freeSmartPct:qualityPct(agg.freeSmart,agg.hs),mnpPct:qualityPct(agg.mnp,agg.hs),secondPct:qualityPct(agg.second,agg.hs),revenuePct:qualityPct(agg.revenuePoints,agg.hs)};
+  const storeQ={...agg,plan115Pct:agg.plan115Missing||!agg.plan115Base?null:qualityPct(agg.plan115,agg.plan115Base),homePct:qualityPct(agg.home,agg.hs),freeSmartPct:qualityPct(agg.freeSmart,agg.hs),mnpPct:qualityPct(agg.mnp,agg.hs),secondPct:qualityPct(agg.second,agg.hs),revenuePct:qualityPct(agg.revenuePoints,agg.hs)};
   if(!stores.length)return <div className="bg-white rounded-xl border p-5"><div className="text-sm font-bold text-gray-800">판매 퀄리티</div><div className="text-xs text-gray-400 mt-1">조회 가능한 매장이 없습니다.</div></div>;
   return <div className="space-y-3"><div className="flex justify-between items-end gap-2"><div><div className="text-xs text-brand-600 font-semibold">판매 퀄리티</div><div className="text-lg font-bold">매장/직원 보조지표</div><div className="text-[10px] text-gray-400 mt-1">매장 수치는 직원 비율 평균이 아니라 매장 전체 HS 기준으로 재계산합니다.</div></div><select value={selectedStore} onChange={e=>setStoreFilter(e.target.value)} className="border rounded-lg px-2 py-2 text-xs">{stores.map(st=><option key={st} value={st}>{displayStoreName(st)}</option>)}</select></div>
     <div className="bg-brand-50/50 border border-brand-100 rounded-xl p-3"><div className="text-sm font-bold mb-2">{displayStoreName(selectedStore)} 전체</div>{render(storeQ)}</div>

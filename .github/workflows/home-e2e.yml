@@ -31,5 +31,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node tests/e2e/provision-ci.js
-      - run: npx playwright install --with-deps chromium
+      - run: google-chrome --version
       - run: npm run test:e2e
+        env:
+          PLAYWRIGHT_CHANNEL: chrome

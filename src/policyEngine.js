@@ -1,3 +1,4 @@
+import {calculateNovemberHomeBonusFromOrders} from './novemberHomePolicy.js';
 import {NOVEMBER_POLICY_VERSION,novemberBaseAdjustment} from './novemberPolicy.js';
 import {october23HomeBonus} from './october23Policy.js';
 import {OCTOBER9_START,OCTOBER9_END} from './october9Policy.js';
@@ -334,7 +335,7 @@ function homeSimulType(types) {
 
 export function enrichHomeOrdersForPolicy(orders=[],sales=[]){
   const metadata=new Map(sales.filter(s=>s.source_ref).map(s=>[String(s.source_ref),s.source_meta||{}]));
-  return orders.map(o=>({...o,smart_home_kind:metadata.get(String(o.id))?.smartHomeKind??o.smart_home_kind??null,internet_plan:metadata.get(String(o.id))?.internetPlan??o.internet_plan??null}));
+  return orders.map(o=>({...o,smart_home_kind:metadata.get(String(o.id))?.smartHomeKind??o.smart_home_kind??null,internet_plan:metadata.get(String(o.id))?.internetPlan??o.internet_plan??null,november_home_checks:metadata.get(String(o.id))?.novemberHomeChecks??o.november_home_checks??null}));
 }
 
 export function buildHomeBundlesFromOrders(orders = []) {
@@ -415,6 +416,7 @@ export function calculateSeptemberWeekendHomeBonus(bundles = []) {
 
 export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   const bundles = buildHomeBundlesFromOrders(orders);
+  const novemberWeekend=calculateNovemberHomeBonusFromOrders(orders);
   const weekendPolicy = calculateSeptemberWeekendHomeBonus(bundles);
   const octoberWeekend=calculateOctoberWeekendHomeBonus(bundles);
   const october9Weekend=calculateOctoberWeekendHomeBonus(bundles,OCTOBER9_START,OCTOBER9_END);
@@ -505,12 +507,13 @@ export function calculateHomePolicyFromOrders(orders = [], config = {}) {
   october9Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 9~12일 주말 홈 추가 지급',note:`개인 ${october9Weekend.count}건 · 건당 ${october9Weekend.rate.toLocaleString()}원 (소호 포함)`}));
   october16Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 16~19일 주말 홈 추가 지급',note:`개인 ${october16Weekend.count}건 · 건당 ${october16Weekend.rate.toLocaleString()}원 (소호 포함)`}));
   october23Weekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'10월 23~26일 홈·TV프리 추가 지급',note:'개인 누적 그레이드 · MNP 동시판매 +5만원'}));
-  const limitedPolicyPay = october23Weekend.total+weekendPolicy.total+octoberWeekend.total+october9Weekend.total+october16Weekend.total;
+  novemberWeekend.payouts.forEach(p=>details.push({...p,type:'한시정책',item:'11월 5~9일 개인 홈 활성화',note:'기간 내 청약·11월 설치·첫달유지·TV DPS 확인 완료'}));
+  const limitedPolicyPay = novemberWeekend.total+october23Weekend.total+weekendPolicy.total+octoberWeekend.total+october9Weekend.total+october16Weekend.total;
   const homeAddonPay = simulPay + smartHomeSimulPay + subSetTopPay + limitedPolicyPay;
   return {
     source: 'orders', totalInternetCount, tierMin, gradePay, soloPay, simulPay,
     tvFreePay, smartHomePay, smartHomeSimulPay, subSetTopPay,
-    limitedPolicyPay, weekendPolicy, octoberWeekend, october9Weekend, october16Weekend, october23Weekend,
+    limitedPolicyPay, novemberWeekend, weekendPolicy, octoberWeekend, october9Weekend, october16Weekend, october23Weekend,
     homeFlatPay, homeAddonPay, total: gradePay + homeFlatPay + homeAddonPay, details,
   };
 }

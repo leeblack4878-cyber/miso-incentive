@@ -6,7 +6,7 @@ export default defineConfig({
   globalSetup: './tests/e2e/preflight.js',
   testDir: './tests/e2e', testMatch: '**/*.spec.js', fullyParallel: false, workers: 1,
   retries: 0, timeout: 90000, expect: { timeout: 15000 }, reporter: 'list',
-  use: { baseURL: 'http://127.0.0.1:4179', browserName: 'chromium',
+  use: { channel:process.env.PLAYWRIGHT_CHANNEL||undefined, baseURL: 'http://127.0.0.1:4179', browserName: 'chromium',
     viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Seoul',
     serviceWorkers: 'block', trace: 'off', screenshot: 'only-on-failure', video: 'off' },
   webServer: configured ? {

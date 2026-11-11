@@ -178,7 +178,7 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
 
   const retailBoundary = nextAbove(retail.points, [150, 301, 401, 501, 701, 1001, 1501]);
   const retailNeeded = retailBoundary ? retailBoundary - retail.points : 1;
-  const retailNext = calculateRetailPartnerMonthlyPolicy({ hs: retail.hs, plan115Hs: retail.plan115Hs, second: retail.points + retailNeeded });
+  const retailNext = calculateRetailPartnerMonthlyPolicy({ hs: retail.hs, plan115Hs: retail.plan115Hs, plan115Base:retail.plan115Base, plan115Missing:retail.plan115Missing, second: retail.points + retailNeeded });
   const retailGuide = {
     text: retailBoundary ? `${countText(retailNeeded)}P 추가 시 ${countText(retailBoundary)}P 구간 진입` : '최고 단가 구간 · 1P 추가 수혜',
     increase: positiveIncrease(retailNext.totalAmount, retail.totalAmount),
@@ -378,12 +378,12 @@ export default function HqStructurePolicyView({ month, employeeIds = [], authUse
       <BenefitGuide {...retailGuide} />
       <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">{[
         ['월 포인트', `${countText(retail.points)}P`],
-        ['115군 비중', `${countText(retail.plan115Ratio)}%`],
+        ['115군 비중', retail.plan115Ratio===null?'확인 필요':`${countText(retail.plan115Ratio)}%`],
         ['지급률', `${countText(retail.paymentRate * 100)}%`],
         ['현재 기준액', wonText(retail.totalAmount)],
       ].map(([label,value])=><div key={label} className="rounded-xl bg-gray-50 p-3"><div className="text-[10px] text-gray-400">{label}</div><div className="mt-1 text-base font-black text-brand-700">{value}</div></div>)}</div>
       <div className="border-t px-4 py-3"><div className="text-xs font-bold text-gray-700">포인트 구간별 계산</div><div className="mt-2 space-y-1.5">{retail.tiers.map((tier,index)=><div key={tier.from} className="rounded-lg bg-gray-50 px-3 py-2 text-[11px]"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-gray-700">{index===0?'150~300P':index===retail.tiers.length-1?'1,501P 이상':`${tier.from+1}~${tier.to}P`}</span><b>{wonText(tier.amount)}</b></div><div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-gray-400"><span>1P당 {wonText(tier.rate)}</span><span>적용 {countText(tier.pointCount)}P</span></div></div>)}</div></div>
-      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500"><b className="text-gray-700">포인트:</b> MNP·010신규 2P, 기변 95군↑ 1P, 기변 95군 미만 0.3P, 2ND·SIM MNP 1P<br/><b className="text-gray-700">115군 비중:</b> HS 중 115군 비중이며 SIM MNP는 분모·자수 모두 제외 · 40%↑ 110%, 50%↑ 120%, 60%↑ 130%</div>
+      <div className="border-t px-4 py-3 text-[10px] leading-relaxed text-gray-500"><b className="text-gray-700">포인트:</b> MNP·010신규 2P, 기변 95군↑ 1P, 기변 95군 미만 0.3P, 2ND·SIM MNP 1P<br/><b className="text-gray-700">115군 비중:</b> 115~130군(시그니처 포함) ÷ 약자군 제외 HS · SIM MNP 제외 · 40%↑ 110%, 50%↑ 120%, 60%↑ 130%</div>
     </div>
 
     <div className="rounded-2xl border border-emerald-100 bg-white overflow-hidden">

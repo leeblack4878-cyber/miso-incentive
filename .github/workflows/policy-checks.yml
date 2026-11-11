@@ -27,5 +27,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npx playwright install --with-deps chromium
+      - run: google-chrome --version
       - run: npm run test:ui
+        env:
+          PLAYWRIGHT_CHANNEL: chrome

@@ -65,7 +65,7 @@ export function reportedEvaluation(snapshot){
 
 // Owner-confirmed operating suspension from September 2026; keep earlier evaluations.
 export function managerEvaluationExclusion(store, month) {
-  if (store === '신천동_삼미시장점' && /^\d{4}-\d{2}$/.test(month || '') && month >= '2026-09') {
+  if (store === '신천동_삼미시장점' && /^\d{4}-\d{2}$/.test(month || '') && month >= '2026-09' && month <= '2026-10') {
     return { fromMonth: '2026-09', reason: '매장 운영 중단' };
   }
   return null;

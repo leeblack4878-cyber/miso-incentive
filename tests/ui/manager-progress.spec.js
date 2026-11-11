@@ -44,7 +44,7 @@ for (const width of [320, 390]) {
     await expect(page.locator('tbody tr').first()).toContainText('남은 1.5건');
     await expect(page.locator('tbody tr').first()).toContainText('0 / 7건');
     await expect(page.locator('tbody tr').first()).toContainText('미입력');
-    await expect(page.locator('tbody tr').last()).toContainText('평가 제외');
+    await expect(page.locator('tbody')).toContainText('88건');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 
     const save = page.getByRole('link', { name: 'PNG 저장' });
@@ -53,7 +53,7 @@ for (const width of [320, 390]) {
       const bitmap = await createImageBitmap(blob);
       return { type: blob.type, width: bitmap.width, height: bitmap.height };
     });
-    expect(png).toEqual({ type: 'image/png', width: 1170, height: 7146 });
+    expect(png).toEqual({ type: 'image/png', width: 1170, height: 7527 });
     const downloadEvent = page.waitForEvent('download');
     await save.click();
     expect((await downloadEvent).suggestedFilename()).toMatch(/2026-11.*\.png$/);
@@ -62,7 +62,8 @@ for (const width of [320, 390]) {
     const imageText = await page.evaluate(() => window.imageText.join(' '));
     expect(imageText).toMatch(/63.5 \/ 65건/);
     expect(imageText).toMatch(/미입력/);
-    expect(imageText).toMatch(/평가 제외/);
+    expect(imageText).not.toMatch(/평가 제외/);
+    expect(imageText).toMatch(/88건/);
     expect(imageText).not.toMatch(/급여|지급액|1,234,567|2,456,789/);
     await page.evaluate(() => Object.defineProperty(navigator, 'canShare', { value: () => false }));
     await page.getByRole('button', { name: '이미지 공유' }).click();

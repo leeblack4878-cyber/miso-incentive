@@ -47,3 +47,15 @@ export function mobilePlanUsedMnpEligible(value){
  const plan=getMobilePlan(value);
  return !!plan&&Number(plan.key.split('_')[1])>=61;
 }
+
+// General 115/130 includes signature plans; junior/senior never enter the base.
+export function summarizeHighPlanShare(sales=[]){
+ const seen=new Set();let high=0,base=0,weak=0,missing=0;
+ for(const sale of sales){const m=sale.source_meta||{};
+  if(!['mobile','daily'].includes(sale.source_type)||sale.deleted||m.deleted||m.cancelled||m.secondOnlyBundle||['cancelled','deleted'].includes(sale.status)||!Number.isInteger(m.ri)||m.ri<0||m.ri>4)continue;
+  if(sale.id&&seen.has(sale.id))continue;if(sale.id)seen.add(sale.id);
+  const plan=getMobilePlan(m.planDetail);if(!plan){missing++;continue;}
+  if(plan.type!=='general'){weak++;continue;}base++;if(['general_115','general_130'].includes(plan.key))high++;
+ }
+ return {high,base,weak,missing,ratio:missing||!base?null:high/base*100};
+}
