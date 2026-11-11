@@ -1,7 +1,7 @@
 // Owner-confirmed notice, effective 2026-11-01. September engine stays unchanged.
-export const NOVEMBER_MANAGER_POLICY_VERSION='2026-11-v1';
+export const NOVEMBER_MANAGER_POLICY_VERSION='2026-11-v2-1111';
 export const NOVEMBER_MANAGER_GOALS=[
- [['삼미시장2호','삼미2'],65,7,83,5,3], [['삼미시장','삼미'],105,11,135,8,5],
+ [['삼미시장2호','삼미2'],65,7,83,5,3], [['삼미시장','삼미'],88,9,112.5,7,5],
  [['상록수역','상록'],95,10,122,8,4], [['롯데마트','대야'],55,6,70,5,2],
  [['주민센터','주민'],65,7,83,6,3], [['장곡역','장곡'],55,6,70,5,2],
  [['도일시장','거모'],105,11,135,8,5], [['월곶'],65,7,83,5,3],
@@ -28,7 +28,7 @@ export function calculateNovemberManagerIncentive({actual={},targets={},managerS
  const bonuses=[
   {key:'excellent',label:'종합 평가 95점 이상',achieved:n(managerScore)>=95,amount:n(managerScore)>=95?300000:0},
   {key:'second',label:'2ND 번들 (개인 판매 제외)',achieved:n(bundledSecondCount)>0,amount:n(bundledSecondCount)*50000},
-  {key:'mnp',label:'MNP 비중 20% 이상 · HS MNP',achieved:mnpRatio>=20,amount:mnpRatio>=20?n(hsMnpCount)*30000:0},
+  {key:'mnp',label:'MNP 비중 20% 이상 · HS+SIM MNP',achieved:mnpRatio>=20,amount:mnpRatio>=20?(n(hsMnpCount)+sim)*30000:0},
   {key:'strategyModel',label:'S26·폴더블8 (개인 판매 제외)',achieved:n(strategyModelCount)>0,amount:n(strategyModelCount)*30000},
  ];
  const deductions=[];const add=(key,label,amount)=>{if(amount>0)deductions.push({key,label,amount});};

@@ -76,9 +76,11 @@ export function calculateRetailPartnerMonthlyPolicy(input = {}) {
     return { ...tier, pointCount, amount: pointCount * tier.rate };
   });
   const baseAmount = tiers.reduce((sum, tier) => sum + tier.amount, 0);
-  const plan115Ratio = hs > 0 ? plan115Hs / hs * 100 : 0;
+  const plan115Base = Math.max(0, Number(input.plan115Base ?? hs));
+  const plan115Missing = Number(input.plan115Missing || 0);
+  const plan115Ratio = plan115Missing || !plan115Base ? null : plan115Hs / plan115Base * 100;
   const paymentRate = retailPartnerPaymentRate(plan115Ratio);
-  return { points, hs, plan115Hs, plan115Ratio, paymentRate, tiers, baseAmount, totalAmount: baseAmount * paymentRate };
+  return { points, hs, plan115Hs, plan115Base, plan115Missing, plan115Ratio, paymentRate, tiers, baseAmount, totalAmount: baseAmount * paymentRate };
 }
 
 export const SALES_METRIC_RATES = Object.freeze([
@@ -311,7 +313,7 @@ export function calculateRetailMonthlyAward(input = {}) {
 
 const FORECAST_KEYS = Object.freeze({
   selfStore: ['hs', 'second', 'internet', 'smartHome', 'extraSetTop'],
-  retail: ['hs', 'plan115Hs', 'mnp', 'new010', 'change95Plus', 'changeUnder95', 'second', 'simMnp'],
+  retail: ['hs', 'plan115Hs', 'plan115Base', 'plan115Missing', 'mnp', 'new010', 'change95Plus', 'changeUnder95', 'second', 'simMnp'],
   salesMetric: ['hs', 'salesMetricPoints'],
   award: ['hs', 'mnp', 'new010', 'change', 'simMnp', 'internet', 'salesMetricPoints'],
   homeGrade: ['hs','internet','renewalRecognized','mainTv','extraSetTop'],
@@ -359,7 +361,7 @@ export function calculateMonthlyRunRate(month, asOf = new Date()) {
 function scaledInput(input = {}, keys = [], factor = 1, preserved = {}) {
   return {
     ...preserved,
-    ...Object.fromEntries(keys.map(key => [key, Math.max(0, Number(input[key] || 0)) * factor])),
+    ...Object.fromEntries(keys.filter(key=>key!=='plan115Base'||input[key]!=null).map(key => [key, Math.max(0, Number(input[key] || 0)) * factor])),
   };
 }
 

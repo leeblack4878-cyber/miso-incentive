@@ -44,7 +44,7 @@ for (const width of [320, 390]) {
     await expect(page.locator('tbody tr').first()).toContainText('남은 1.5건');
     await expect(page.locator('tbody tr').first()).toContainText('0 / 7건');
     await expect(page.locator('tbody tr').first()).toContainText('미입력');
-    await expect(page.locator('tbody tr').last()).toContainText('평가 제외');
+    await expect(page.locator('tbody')).toContainText('88건');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
 
     const save = page.getByRole('link', { name: 'PNG 저장' });

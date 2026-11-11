@@ -1,3 +1,4 @@
+import {applyApprovedNovemberGoals} from './companyGoals.js';
 import React from 'react';
 import { displayStoreName, MATRIX_COLS } from './uiDefinitions';
 import { HOME_BASE_ITEMS, DEFAULT_RENEW, MATRIX_ROWS, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE } from './appShared';
@@ -119,4 +120,6 @@ function useFinalStorePerformance(month, storeName='') {
   },[month,storeName]);
   return data;
 }
-export { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, COMPANY_STORE_GOAL_BASE, useFinalStorePerformance, isFinalStorePerformance, finalStoreMetric };
+function resolvedCompanyGoals(store,month,saved={}){return applyApprovedNovemberGoals(store,month,{...companyGoalDefaults(store),...(saved||{})});}
+
+export { resolvedCompanyGoals, emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, COMPANY_STORE_GOAL_BASE, useFinalStorePerformance, isFinalStorePerformance, finalStoreMetric };

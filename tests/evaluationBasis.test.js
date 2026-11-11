@@ -49,7 +49,9 @@ test('stale update and denied save do not report success',async()=>{
 
 test('삼미 운영 중단은 9월 이후 평가 제외이며 과거·다른 매장은 보존한다',()=>{
  assert.equal(managerEvaluationExclusion('신천동_삼미시장점','2026-08'),null);
- for(const month of ['2026-09','2026-10','2027-01'])assert.equal(managerEvaluationExclusion('신천동_삼미시장점',month).reason,'매장 운영 중단');
+ for(const month of ['2026-09','2026-10'])assert.equal(managerEvaluationExclusion('신천동_삼미시장점',month).reason,'매장 운영 중단');
  assert.equal(managerEvaluationExclusion('신천동_삼미시장2호점','2026-09'),null);
  assert.equal(managerEvaluationExclusion('신천동_삼미시장점',''),null);
 });
+
+test('Sammi reopening ends suspension in November and preserves September/October',()=>{assert.equal(managerEvaluationExclusion('신천동_삼미시장점','2026-11'),null);assert.equal(managerEvaluationExclusion('신천동_삼미시장점','2027-01'),null)});

@@ -1,3 +1,4 @@
+import {summarizeHighPlanShare} from './mobilePlans.js';
 import {isSecondOnlyBundle} from './secondParentPolicy.js';
 import {summarizeVasQuality} from './policyRules.js';
 import {calculateHqStructureProjection} from './hqStructurePolicy.js';
@@ -24,6 +25,7 @@ export function structureProjectionFromRecords({sales=[],orders=[],daily=[],chan
       orders=unique(orders);
       const seenDays=new Set();daily=daily.filter(r=>{if(r.work_date&&!r.work_date.startsWith(`${month}-`))return false;const k=`${r.user_id}:${r.work_date}`;if(seenDays.has(k))return false;seenDays.add(k);return true;});
       let hs = 0, mnp = 0, new010 = 0, change95Plus = 0, changeUnder95 = 0, simMnp = 0, plan115Hs = 0;
+      const highPlan=summarizeHighPlanShare(sales);
       let second = 0;
       sales.filter(row => row.source_type === 'mobile').forEach(row => {
         const meta = row.source_meta || {};
@@ -68,7 +70,7 @@ export function structureProjectionFromRecords({sales=[],orders=[],daily=[],chan
       return calculateHqStructureProjection({
         month,
         selfStoreInput: { hs, second, internet, smartHome, extraSetTop },
-        retailInput: { hs, plan115Hs, mnp, new010, change95Plus, changeUnder95, second, simMnp },
+        retailInput: { hs, plan115Hs:highPlan.high, plan115Base:highPlan.base, plan115Missing:highPlan.missing, mnp, new010, change95Plus, changeUnder95, second, simMnp },
         salesMetricInput: { hs, salesMetricPoints },
         awardInput: { hs, mnp, new010, change:change95Plus+changeUnder95, simMnp, internet, salesMetricPoints, changeSupportRatio:savedChangeSupportRatio },
         homeGradeInput: { hs, internet: householdInternet, renewalRecognized, mainTv, extraSetTop: householdExtraSetTop },

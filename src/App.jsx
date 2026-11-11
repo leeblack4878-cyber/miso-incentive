@@ -13,7 +13,7 @@ import PerformanceCard from './components/PerformanceCard';
 import { resolveDashboardStore, performanceForecastFactor, dashboardScopeBranches, dashboardAreaOptions } from './dashboardScope';
 import { getPersonalGoalActuals, MyMonthlyPerformanceCard } from './components/MonthlyPerformance';
 import { payDisplay } from './payDisplay';
-import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, useFinalStorePerformance, finalStoreMetric } from './viewShared';
+import { emptyDraft, DEFAULT_HOME_FLAT, DEFAULT_HOME_ADDON, sortStoresByOpenOrder, DEFAULT_STORES, companyGoalDefaults, resolvedCompanyGoals, useFinalStorePerformance, finalStoreMetric } from './viewShared';
 import { isIncentiveUnpaidSpecial, currentPolicySnapshot, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, homeNetworkLabel, DEFAULT_RENEW, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, tierBonus, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, HOME_ORDER_PRODUCTS, careTaskCategory, addDaysDate, HS_PARTS, matrixRowCount, hsCount } from './appShared';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Download, Trophy, Home, ClipboardList, History, Users, ChevronDown, Plus, Minus, Award, Loader2, Check, Settings, LayoutDashboard, Wallet, Trash2, UserPlus, Info, Calendar, ChevronRight, AlertTriangle, Zap, UploadCloud, X, Target, ShieldCheck, LogOut, Bell, ClipboardCheck, Building2, Share2, Send, HelpCircle, Star } from 'lucide-react';
@@ -2751,13 +2751,13 @@ function StoreGoalCard({ month, storeName, mergedDraft, pay }) {
       const base=companyGoalDefaults(storeName);
       setGoal({
         ...(data||{}),
-        company_goals:{...base,...(data?.company_goals||{})},
+        company_goals:resolvedCompanyGoals(storeName,month,data?.company_goals),
         challenge_goals:{...(data?.challenge_goals||{})}
       });
     })();
   },[month,storeName]);
   if(!goal)return null;
-  const company={...companyGoalDefaults(storeName),...(goal.company_goals||{})}, challenge=goal.challenge_goals||{};
+  const company=resolvedCompanyGoals(storeName,month,goal.company_goals), challenge=goal.challenge_goals||{};
   return <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <button onClick={()=>setOpen(v=>!v)} className="w-full p-4 flex items-center justify-between text-left">
       <div><div className="text-xs text-gray-400">🏪 우리 매장 목표</div><div className="font-bold text-gray-900 mt-0.5">{displayStoreName(storeName)} · {monthLabel(month)}</div></div>
@@ -2885,7 +2885,7 @@ function StoreGoalAdmin({ month, employees, rows, isFullAdmin, authUserId }) {
     const base=companyGoalDefaults(selected);
     setGoal({
       ...(data||{}),
-      company_goals:{...base,...(data?.company_goals||{})},
+      company_goals:resolvedCompanyGoals(selected,month,data?.company_goals),
       challenge_goals:{...(data?.challenge_goals||{})}
     });
   },[month,selected]);
@@ -3777,6 +3777,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.tvFreePay||0)!==0&&<RowKV label="└ TV프리(부)" value={won(pay.tvFreePay)} />}
               {Number(pay.smartHomePay||0)!==0&&<RowKV label="└ 스마트홈" value={won(pay.smartHomePay)} />}
               {Number(pay.homePolicy?.subSetTopPay||0)!==0&&<RowKV label="└ 부셋탑" value={won(pay.homePolicy.subSetTopPay)} />}
+              {Number(pay.homePolicy?.novemberWeekend?.total||0)>0&&<RowKV label="└ 11월 5~9일 개인 홈 추가 지급" value={won(pay.homePolicy.novemberWeekend.total)}/>}
+              {Number(pay.homePolicy?.novemberWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700 p-2">11/5~9 홈 정책 확인 대기 {pay.homePolicy.novemberWeekend.pendingCount}건 · 청약·설치·요금제 확인 필요</div>}
               {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
               {Number(pay.homePolicy?.octoberWeekend?.total||0)!==0&&<RowKV label="└ 10월 주말 홈 추가 지급" value={won(pay.homePolicy.octoberWeekend.total)} />}
               {Number(pay.homePolicy?.october9Weekend?.total||0)!==0&&<RowKV label="└ 10월 9~12일 주말 홈 추가 지급" value={won(pay.homePolicy.october9Weekend.total)} />}
@@ -4428,7 +4430,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
 
   const goalMap=Object.fromEntries((goalRows||[]).map(g=>[
     g.store_name,
-    {...companyGoalDefaults(g.store_name),...(g.company_goals||{})}
+    resolvedCompanyGoals(g.store_name,month,g.company_goals)
   ]));
 
   const branches=[...new Set((allRows||[])
@@ -4439,7 +4441,7 @@ function StoreChallengeCard({ month, allRows, employees, authUserId, onOpenGoals
 
   const ranked=branches.map(branch=>{
     const branchRows=(allRows||[]).filter(r=>r.branch===branch);
-    const company=goalMap[branch]||companyGoalDefaults(branch);
+    const company=goalMap[branch]||resolvedCompanyGoals(branch,month);
     const achievement=storeGoalAchievement(company,branchRows,finalPerformances[branch]);
     return {branch,...achievement};
   }).filter(x=>x.total>0)
@@ -4497,7 +4499,7 @@ function StoreGoalDashboardCard({ rows, employees, authUserId, month, onOpen, br
       const {data}=await supabase.from('store_goals').select('company_goals,challenge_goals')
         .eq('month',month).eq('store_name',branch).maybeSingle();
       setGoal({
-        company_goals:{...companyGoalDefaults(branch),...(data?.company_goals||{})},
+        company_goals:resolvedCompanyGoals(branch,month,data?.company_goals),
         challenge_goals:data?.challenge_goals||{}
       });
     })();
@@ -4983,7 +4985,7 @@ function DailyBriefingPanel({month,rows=[],dailyRecords={},employees=[],authUser
   const briefingStores=branches.map(branch=>{
     const members=(employees||[]).filter(emp=>emp.branch===branch);
     const storeRows=periodRows.filter(row=>row.branch===branch);
-    const goal=goalMap[branch]||companyGoalDefaults(branch);
+    const goal=goalMap[branch]||resolvedCompanyGoals(branch,month);
     const inputRows=members.map(emp=>{
       const raw=dailyRecords?.[emp.id]?.[selectedDay];
       const d=normalizeDay(raw),daily=dailyCalendarMetrics(raw);
