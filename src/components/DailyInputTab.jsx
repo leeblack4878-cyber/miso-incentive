@@ -729,7 +729,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
     const rowDef = MATRIX_ROW_DEFS[ri];
     const label = customerMeta.secondOnlyBundle?'2ND · 번들':rowDef.hasTiers
-      ? `${rowDef.dailyLabel || rowDef.label} · ${MATRIX_COLS[ci]}`
+      ? `${rowDef.dailyLabel || rowDef.label} · ${activeMatrixCols[ci]}`
       : (rowDef.dailyLabel || rowDef.label);
 
     // 이번 한 건으로 실제 목표를 넘었는지 확인
@@ -809,7 +809,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const rowDef=MATRIX_ROW_DEFS[ri];
     if(!rowDef)return '';
     return rowDef.hasTiers
-      ? `${rowDef.dailyLabel||rowDef.label} · ${MATRIX_COLS[ci]}`
+      ? `${rowDef.dailyLabel||rowDef.label} · ${activeMatrixCols[ci]}`
       : (rowDef.dailyLabel||rowDef.label);
   };
 
@@ -889,7 +889,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
           id:`legacy-mobile-${ri}-${ci}-${i}`,
           kind:'mobile',ri,ci,
           title:rd?.dailyLabel||rd?.label||'모바일',
-          detail:rd?.hasTiers?(MATRIX_COLS[ci]||''):'',
+          detail:rd?.hasTiers?(activeMatrixCols[ci]||''):'',
         });
       }
     }));
