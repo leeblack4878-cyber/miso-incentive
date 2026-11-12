@@ -90,7 +90,7 @@ test('automatically classified October plans flow into real payroll including no
  const {octoberConfig}=await import('../src/octoberPolicy.js');
  const {MOBILE_PLANS,mobilePlanCommissionColumn}=await import('../src/mobilePlans.js');
  const config=octoberConfig(api.defaultConfig());
- for(const [key,ri,amount] of [['general_75',1,0],['general_33',5,0],['senior_33',1,40000],['senior_44',0,0],['junior_37',5,40000],['junior_75',1,40000],['general_105',1,50000],['junior_85',1,70000]]){
+ for(const [key,ri,amount] of [['general_75',1,40000],['general_33',5,40000],['senior_33',1,40000],['senior_44',0,0],['junior_37',5,40000],['junior_75',1,40000],['general_105',1,50000],['junior_85',1,70000]]){
   const ci=mobilePlanCommissionColumn(MOBILE_PLANS.find(p=>p.key===key),ri),day=api.normalizeDay();day.matrix[ri][ci]=1;
   const draft=api.applyDailyToDraft(api.emptyDraft(),{'01':day},'2026-10',config.categoryMap,config.gibyeonColumnMap);
   const metric={strategicPointsWithoutDaemyung:2,daemyungCount:0,plan115Counts:{general:1,high:1,known:1,missing:0}};

@@ -1,6 +1,7 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+ {id:'2026-11-12-general33-mnp',month:'2026-11',date:'2026-11-12',effective:'지급표 단가 정정 없음 · 입력 연결 오류 수정',title:'일반33군 이상 MNP 지급 연결 정정',changes:['일반33~84군 MNP·SIM MNP: 미지급 분류 → 기존 건당4만원 지급 구간 연결.'],details:['등록·수정 저장 적용. 기존 원장·확정급여 일괄 변경 없음.']},
  {id:'2026-11-11-high-plan-home-clarification',month:'2026-11',effective:'11월 비중·홈 인정조건 정정',date:'2026-11-11',title:'115군 비중 및 홈 인정조건 정정',changes:['115~130군(시그니처 포함) 비중의 모수에서 주니어·시니어 제외.','홈 인터넷+TV 동시청약 DPS 자동판정, 방송패스/소호프리미엄 개통으로 인정.'],details:['원본 요금제 미확인은 확인 필요로 유지. 첫달유지·DPS 별도 체크 제거.']},
   {id:'2026-11-11-app-transfer',month:'2026-11',date:'2026-11-11',title:'삼미 휴점 조정·SIM MNP 인정·개인 홈 활성화',effective:'삼미 11월 목표 / 홈 11월5~9일 청약·11월설치',changes:['삼미 HS88·홈9·생산성112.5·프리7·스마트홈5. 9~10월 운영중단 제외는 보존,11월부터 평가 재개.','MNP20% 퀄리티 지급건수에 SIM MNP 포함(HS 구간 지급은 HS만 유지).','개인 홈1건10만원/2건이상전건15만원. 인터넷+TV 동시청약·11월설치 및 방송패스(소호 프리미엄) 개통건 자동계산.'],details:['기존 11월 관리자 단가·차감 대부분은 이미 반영돼 있어 재추가하지 않음.','홈 미확인 정보는 확인대기·추정없음. 점장 본인 가계산 저장은 평가·확정급여와 별도 브라우저 저장. 제공표의 실제 매장실적은 공개코드에 싣지 않고 기존 권한 있는 직원데이터 조회 사용.']},
   {id:'2026-11-manager',month:'2026-11',date:'2026-11-01',title:'11월 관리자 지급정책',effective:'11월1일부터',changes:['4구간90/100/120/150%,전략P180%미만HS50%.','2ND번들5만원·MNP20%이상HS MNP3만원·S26/폴더블8 3만원.'],details:['150%는맞춤제안위탁80/자가40건필수.부점장최종50%.','점장본인매장실적수정허용,회사공통면제/마감설정은전체관리자만수정.이전월계산보존.']},

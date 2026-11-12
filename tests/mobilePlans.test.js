@@ -78,7 +78,7 @@ test('October automatic bands cover all 29 plans and all subscription types with
  const {octoberConfig}=await import('../src/octoberPolicy.js');
  const {matrix}=octoberConfig();
  const expected={general_130:0,general_115:0,general_105:2,general_95:2,general_85:2,
- general_75:5,general_70:5,general_61:5,general_55:5,general_47:5,general_37:5,general_33:5,general_28:5,
+ general_75:3,general_70:3,general_61:3,general_55:3,general_47:3,general_37:3,general_33:3,general_28:5,
  senior_47:4,senior_44:3,senior_37:3,senior_33:3,senior_28:5,senior_under28:5,
  junior_85:1,junior_75:4,junior_70:4,junior_61:4,junior_55:4,junior_47:4,junior_37:3,junior_33:3,junior_28:5,junior_under28:5};
  const amounts=[[50000,90000,50000,50000,25000,90000],[40000,70000,40000,40000,20000,70000],[20000,50000,20000,20000,10000,50000],[0,40000,0,0,0,40000],[20000,40000,20000,20000,10000,40000],[0,0,0,0,0,0]];
