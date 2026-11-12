@@ -93,8 +93,8 @@ test('시니어 저가 MNP 자동 지급·가입구분 변경·일반 미지급 
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[2].p_meta.ci).toBe(3);expect(state.day.matrix[5][3]).toBe(1);
  await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await dialog.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,dialog,'general_75');
  await expect(dialog.getByRole('button',{name:/중고 MNP 61군/})).toBeVisible();
- await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[3].p_meta.ci).toBe(5);expect(state.day.matrix[5][3]).toBe(0);expect(state.day.matrix[5][5]).toBe(1);
- await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(5);expect(state.day.matrix[5][5]).toBe(0);
+ await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[3].p_meta.ci).toBe(3);expect(state.day.matrix[5][3]).toBe(1);expect(state.day.matrix[5][5]).toBe(0);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(5);expect(state.day.matrix[5][3]).toBe(0);
 });
 
 test('중고 신규 실제 요금제 61→70 전환과 삭제는 생산성 인정 구간을 이동한다',async({page})=>{
@@ -306,4 +306,12 @@ for(const width of [320,390])test(`${width}px 회사수익 VAS와 번들은 별�
  await panel.getByText('수익 계산 기준 보기',{exact:true}).click();
  await expect(panel.getByText(/아이패드 단가와 모단말 세부 모델/)).toBeVisible();
  expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+});
+
+for(const width of [320,390])for(const ri of [1,5])test(`${width}px general 33 MNP row ${ri} saves paid band, edit stays stable and delete clears it`,async({page})=>{
+ const state=await open(page,{width});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('일반33 검증');await d.getByLabel('가입구분',{exact:true}).selectOption(String(ri));await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_33');
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.ci).toBe(3);expect(state.day.matrix[ri][3]).toBe(1);
+ const saved=structuredClone(state.day);await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.day).toEqual(saved);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[ri][3]).toBe(0);
 });
