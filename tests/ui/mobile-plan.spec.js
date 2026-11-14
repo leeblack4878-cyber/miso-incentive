@@ -315,3 +315,27 @@ for(const width of [320,390])for(const ri of [1,5])test(`${width}px general 33 M
  const saved=structuredClone(state.day);await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.day).toEqual(saved);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[ri][3]).toBe(0);
 });
+
+for(const width of [320,390])for(const choice of ['keep','93'])test(`${width}px reminder ${choice} never returns focus to native picker and same customer type preserves input`,async({page})=>{
+ await page.addInitScript(()=>{
+  const show=HTMLDialogElement.prototype.showModal;
+  window.reminderOpeners=[];
+  HTMLDialogElement.prototype.showModal=function(...args){if(this.getAttribute('aria-label')==='요금제 변경 안내')window.reminderOpeners.push(document.activeElement?.tagName);return show.apply(this,args);};
+ });
+ const state=await open(page,{width});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('포커스 검증');await d.getByLabel('가입구분',{exact:true}).selectOption('2');
+ const general=d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true});await general.click();
+ const select=d.getByLabel('세부 요금제');await select.focus();await select.selectOption('general_47');
+ const reminder=page.getByRole('dialog',{name:'요금제 변경 안내',exact:true});await expect(reminder).toBeVisible();
+ await reminder.getByRole('button',{name:choice==='93'?'3개월 뒤 (93일)':'유지',exact:true}).click();await expect(reminder).toHaveCount(0);
+ const trigger=d.getByRole('button',{name:/요금제 변경 안내/});await expect(trigger).toBeFocused();await expect(select).toHaveValue('general_47');
+ expect(await page.evaluate(()=>window.reminderOpeners)).toHaveLength(1);expect(await page.evaluate(()=>window.reminderOpeners)).not.toContain('SELECT');
+ await general.click();await expect(select).toHaveValue('general_47');await expect(reminder).toHaveCount(0);await expect(trigger).toContainText(choice==='93'?'3개월 뒤':'유지');
+ await trigger.click();await reminder.getByRole('button',{name:'기존 선택 유지하고 닫기',exact:true}).click();await expect(trigger).toBeFocused();
+ await trigger.click();await page.keyboard.press('Escape');await expect(reminder).toHaveCount(0);await expect(trigger).toBeFocused();
+ // Clearing the plan retains customer type but blocks incomplete submission.
+ await select.selectOption('');await expect(general).toHaveAttribute('aria-pressed','true');await expect(d.getByRole('button',{name:'실적 등록',exact:true})).toBeDisabled();expect(state.writes).toHaveLength(0);
+ await choosePlan(page,d,'general_47');await trigger.click();await reminder.getByRole('button',{name:choice==='93'?'3개월 뒤 (93일)':'유지',exact:true}).click();
+ await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes).toHaveLength(1);expect(state.writes[0].p_meta.reminders.plan).toBe(choice);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+});

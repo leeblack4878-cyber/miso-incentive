@@ -1,11 +1,19 @@
 import {useEffect,useRef} from 'react';
 import {createPortal} from 'react-dom';
 export const PLAN_REMINDER_LABELS={93:'3개월 뒤 (93일)',183:'6개월 뒤 (183일)',both:'둘 다 (93일·183일)',keep:'유지'};
-export default function PlanReminderDialog({value,onSelect,onClose,service=null}) {
+export default function PlanReminderDialog({value,onSelect,onClose,service=null,returnFocusRef=null}) {
  const ref=useRef(null);
  const labels=service?{93:service.insurance?'93일 뒤 유지·해지 확인':'93일 뒤 삭제 안내',keep:'유지'}:PLAN_REMINDER_LABELS;
- useEffect(()=>{const dialog=ref.current;dialog.showModal();return()=>dialog.close();},[]);
- return createPortal(<dialog ref={ref} aria-label={service?'부가서비스 삭제 안내':'요금제 변경 안내'} onCancel={onClose} className="rounded-3xl p-5 max-w-sm backdrop:bg-black/40" style={{width:'calc(100% - 2rem)'}}>
+ useEffect(()=>{
+  const dialog=ref.current,opener=document.activeElement;
+  const target=returnFocusRef?.current||(opener instanceof HTMLElement&&!opener.matches('select,input,textarea')?opener:null);
+  // Native dialog restoration can reopen an iOS select picker. Detach that
+  // focus before showModal records it, then return to a plain button on close.
+  if(opener instanceof HTMLSelectElement)opener.blur();
+  dialog.showModal();
+  return()=>{dialog.close();if(target?.isConnected)target.focus({preventScroll:true});};
+ },[returnFocusRef]);
+ return createPortal(<dialog ref={ref} aria-label={service?'부가서비스 삭제 안내':'요금제 변경 안내'} onCancel={event=>{event.preventDefault();onClose();}} className="rounded-3xl p-5 max-w-sm backdrop:bg-black/40" style={{width:'calc(100% - 2rem)'}}>
  <h2 className="text-lg font-bold text-gray-900">{service?(service.insurance?'보험 유지·해지를 확인할까요?':'부가서비스 삭제를 안내할까요?'):'요금제 변경을 언제 안내할까요?'}</h2>
  {service&&<p className="mt-2 text-sm font-semibold text-brand-700">{service.label}</p>}
  <p className="mt-2 text-xs text-gray-500">개통일 기준으로 약속이 자동 등록돼요.</p>
