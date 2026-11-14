@@ -12,7 +12,9 @@ export function changeStrategicMetric(metric, meta, direction, month = metric?.m
   if (!metric) return null;
   const part = summarizeStrategicProducts([{source_meta:meta,sale_date:meta.saleDate||month}]);
   const plan115Counts=Object.fromEntries(['general','high','known','missing'].map(key=>[key,Math.max(0,Number(metric.plan115Counts?.[key]||0)+direction*Number(part.plan115Counts?.[key]||0))]));
-  return {...Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount','october23SimCount'].map(key =>
+  const w=metric.novemberWeekendMobile,partW=part.novemberWeekendMobile;
+  const weekend=w?{...w,...Object.fromEntries(['points','hsCount','bundleCount','pendingCount'].map(k=>[k,Math.max(0,Number(w[k]||0)+direction*Number(partW?.[k]||0))])),counts:Object.fromEntries(['general','strategy','bundle'].map(k=>[k,Math.max(0,Number(w.counts?.[k]||0)+direction*Number(partW?.counts?.[k]||0))]))}:undefined;
+  return {...metric,novemberWeekendMobile:weekend,...Object.fromEntries(['strategicPointsWithoutDaemyung','daemyungCount','october23SimCount'].map(key =>
     [key, Math.max(0, Number((Number(metric[key]||0)+direction*Number(part[key]||0)).toFixed(10)))])),plan115Counts};
 }
 

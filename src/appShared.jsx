@@ -1,3 +1,4 @@
+import {calculateNovemberWeekendGrade} from './novemberWeekendPolicy.js';
 import {NOVEMBER_POLICY_VERSION,NOVEMBER_RENEWAL_RATES} from './novemberPolicy.js';
 import {october23SimBonus} from './october23Policy.js';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
@@ -506,6 +507,7 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
     mobilePoint: { ...draft.mobilePoint, ...autoMobilePoint },
     kpi: { ...draft.kpi, ...autoKpi },
     septemberWeekendSimMnpCount,
+    novemberWeekendExpected:month==='2026-11'?Object.entries(dailyDaysMap||{}).filter(([day])=>Number(day)>=13&&Number(day)<=16).reduce((r,[,raw])=>{const d=normalizeDay(raw);r.hs+=d.matrix.slice(0,6).flat().reduce((n,v)=>n+Number(v||0),0);r.bundles+=Object.values(d.groups.bundle2nd||{}).reduce((n,v)=>n+Number(v||0),0);r.home+=['homeBase','homeFlat'].reduce((n,k)=>n+Object.values(d.groups[k]||{}).reduce((a,v)=>a+Number(v||0),0),0);return r;},{hs:0,bundles:0,home:0}):null,
   };
 }
 
@@ -649,10 +651,11 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   );
 
   const october23SimPolicy=october23SimBonus(month==='2026-10'?Number(strategicMetric?.october23SimCount||0):0);
+  const novemberWeekendGrade=month==='2026-11'?calculateNovemberWeekendGrade(strategicMetric?.month===month?strategicMetric.novemberWeekendMobile:null,draft.weekendHomeMetric?.month===month?draft.weekendHomeMetric:null,{expectedHs:draft.novemberWeekendExpected?.hs,expectedBundles:draft.novemberWeekendExpected?.bundles,legacyHome:draft.novemberWeekendExpected?.home}):null;
   const settlement=calculatePayrollSettlement({
     minimumGuarantee,tenurePay,mobilePlanPay,bundle2ndPay,vasPay,approvedMobileSpotPay,
     specialReplacementPay,strategicAdjustment:employeeStrategic.amount+Number(employeeStrategic.plan115Bonus||0),positionAllowance,
-    extras:{chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount+october23SimPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
+    extras:{novemberWeekendGrade:Number(novemberWeekendGrade?.amount||0),chuseokPay:month==='2026-09'?Number(draft.chuseokPolicy?.total||0):0,gradeBonus,homeGradePay,homeFlatPay,homeAddonPay,renewPay,mnpBundlePay,septemberWeekendSimMnpBonus:septemberWeekendSimMnpPolicy.amount+october23SimPolicy.amount,sonoPay,custRegBonus,tailoredBonus,tailoredAmountBonus},
   });
   const {mobileGuaranteeBasis,guaranteedComponent,postGuaranteeExtras,currentPerformanceAmount,closingAmount,total}=settlement;
 
@@ -664,6 +667,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const performanceWithAllowance = mobileGuaranteeBasis;
 
   return {
+    novemberWeekendGrade,novemberPolicyReview:month==='2026-11'&&strategicMetric?.month===month?strategicMetric.novemberA176Review||[]:[],
     chuseokPolicy:month==='2026-09'?draft.chuseokPolicy:null,
     months, bucket, activityCount, baseActivityCount, bundle2ndActivityCount, tenurePay,
     mobilePoints, bundle2ndPoints, homeGatePoints, homeAddonPoints, addonApplies, totalPoints,

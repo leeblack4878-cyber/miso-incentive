@@ -447,8 +447,10 @@ function ManagerPayrollPanel({month,employees=[],rows=[],authUserId,canSwitchSto
   const viewer=employees.find(employee=>employee.id===authUserId);
   const canViewSales=COMPANY_SCOPE_VIEWERS.has(viewer?.id)||!!SALES_MANAGER_AREAS[viewer?.id];
   const [mode,setMode]=useState('store');
+  const ownWeekend=rows.find(r=>r.id===authUserId)?.pay?.novemberWeekendGrade;
   return <div className="space-y-3">
     <div><div className="text-xs text-brand-600 font-semibold">관리자 급여</div><div className="text-xl font-bold text-gray-900">월 급여 예상</div><div className="text-xs text-gray-400 mt-1">현재 입력·완료 실적 기준이며 월 마감 시 최종 금액이 달라질 수 있어요.</div></div>
+    {month==='2026-11'&&ownWeekend&&<section aria-label="본인 주말 판촉비" className="bg-brand-50 border border-brand-100 rounded-xl p-3 text-xs"><b>본인 11/13~16 주말 판촉비</b><div className="mt-1">확인된 {ownWeekend.points}P · {ownWeekend.pendingCount?'확인 필요 · 금액 미합산':`${won(ownWeekend.rate)}/P · ${won(ownWeekend.amount)}`}</div><p className="mt-1 text-gray-500">개인 실적 기준이며 점장정책 수수료와 별도입니다.</p></section>}
     {canViewSales&&<div className="grid grid-cols-2 bg-gray-100 rounded-xl p-1 gap-1"><button onClick={()=>setMode('store')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='store'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>매장 운영 관리자</button><button onClick={()=>setMode('sales')} className={`py-2.5 rounded-lg text-xs font-bold ${mode==='sales'?'bg-white text-brand-700 shadow-sm':'text-gray-500'}`}>영업담당</button></div>}
     {mode==='sales'&&canViewSales?<SalesManagerPayrollPanel month={month} rows={rows}/>:<ManagerEvaluationPanel month={month} employees={employees} rows={rows} authUserId={authUserId} canSwitchStores={canSwitchStores} loginBranch={loginBranch} payrollOnly/>}
   </div>;

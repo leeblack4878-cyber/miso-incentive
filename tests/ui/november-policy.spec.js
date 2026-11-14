@@ -39,3 +39,12 @@ for(const width of [320,390])test(`${width}px 11월 모델 기본금·외국인 
  await dialog.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(dialog).toHaveCount(0);expect(state.writes[1].p_meta.foreigner).toBe(true);expect(state.day.mobileBaseAdjustment).toBe(20000);
  await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.mobileBaseAdjustment).toBe(0);expect(state.day.matrix[1][0]).toBe(0);
 });
+
+for(const width of [320,390])test(`${width}px weekend model classification stays explicit and survives edit without duplication`,async({page})=>{
+ const state=await open(page,{width,date:'2026-11-13'});await page.getByRole('button',{name:/모바일 실적 입력/}).click();const d=page.getByRole('dialog',{name:'모바일 실적 입력',exact:true});
+ await d.getByRole('button',{name:'일반 판매',exact:true}).click();await d.getByPlaceholder('고객명을 입력해주세요').fill('주말 입력');await d.getByLabel('가입구분',{exact:true}).selectOption('1');await d.getByRole('group',{name:'요금제 유형',exact:true}).getByRole('button',{name:'일반',exact:true}).click();await choosePlan(page,d,'general_115');
+ await expect(d.getByLabel('주말 모델 분류')).toHaveValue('');await d.getByLabel('주말 모델 분류').selectOption('strategy');await d.getByRole('button',{name:'실적 등록',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[0].p_meta.weekendModelKind).toBe('strategy');
+ await page.getByRole('button',{name:'판매건 수정',exact:true}).click();await expect(d.getByLabel('주말 모델 분류')).toHaveValue('strategy');await d.getByLabel('주말 모델 분류').selectOption('general');await d.getByRole('button',{name:'수정 저장',exact:true}).click();await expect(d).toHaveCount(0);expect(state.writes[1].p_meta.weekendModelKind).toBe('general');expect(state.day.matrix[1][0]).toBe(1);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+ await page.getByRole('button',{name:'삭제',exact:true}).click();await page.getByRole('button',{name:'판매건 삭제',exact:true}).click();await expect.poll(()=>state.writes.length).toBe(3);expect(state.day.matrix[1][0]).toBe(0);
+});
