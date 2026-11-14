@@ -842,7 +842,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if(ci===null || ci<0)ci=0;
 
     return {
-      ri,ci,baseModel:meta.baseModel,foreigner:meta.foreigner,mobileBaseAdjustment:meta.mobileBaseAdjustment,novemberStockBundlePay:meta.novemberStockBundlePay,saleDate:meta.saleDate||sale.sale_date,simMnpPolicyEligible:meta.simMnpPolicyEligible,strategicPlan:!!meta.strategicPlan,planDetail:meta.planDetail,secondOnlyBundle:isSecondOnlyBundle(meta),secondParent:meta.secondParent,
+      ri,ci,weekendModelKind:meta.weekendModelKind,baseModel:meta.baseModel,foreigner:meta.foreigner,mobileBaseAdjustment:meta.mobileBaseAdjustment,novemberStockBundlePay:meta.novemberStockBundlePay,saleDate:meta.saleDate||sale.sale_date,simMnpPolicyEligible:meta.simMnpPolicyEligible,strategicPlan:!!meta.strategicPlan,planDetail:meta.planDetail,secondOnlyBundle:isSecondOnlyBundle(meta),secondParent:meta.secondParent,
       vasKeys:cleanArray(meta.vasKeys),
       bundle2ndKeys:cleanArray(meta.bundle2ndKeys),
       bundleVasMap:cleanObj(meta.bundleVasMap),
