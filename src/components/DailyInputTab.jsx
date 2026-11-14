@@ -1,3 +1,4 @@
+import {inNovemberWeekend,novemberWeekendModel} from '../novemberWeekendPolicy';
 import {NOVEMBER_RENEWAL_OPTIONS,novemberBaseAdjustment,novemberStockBundlePay} from '../novemberPolicy.js';
 import {isOctober16Date,isOctober16Bundle,isAppleBundle,bundleAvailableForDate} from '../october16Policy';
 import {toggleStrategicService} from '../additionalStrategicServices';
@@ -84,6 +85,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [secondParent,setSecondParent]=useState(null);
   const [planDetail,setPlanDetail]=useState(null);
   const [mobileBaseModel,setMobileBaseModel]=useState('general');
+  const [weekendModelKind,setWeekendModelKind]=useState('');
   const [mobileForeigner,setMobileForeigner]=useState(false);
   const [simMnpPolicyEligible,setSimMnpPolicyEligible]=useState(false);
   const secondOnlyBundle=!!secondParent;
@@ -840,7 +842,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     if(ci===null || ci<0)ci=0;
 
     return {
-      ri,ci,baseModel:meta.baseModel,foreigner:meta.foreigner,mobileBaseAdjustment:meta.mobileBaseAdjustment,novemberStockBundlePay:meta.novemberStockBundlePay,saleDate:meta.saleDate||sale.sale_date,simMnpPolicyEligible:meta.simMnpPolicyEligible,strategicPlan:!!meta.strategicPlan,planDetail:meta.planDetail,secondOnlyBundle:isSecondOnlyBundle(meta),secondParent:meta.secondParent,
+      ri,ci,weekendModelKind:meta.weekendModelKind,baseModel:meta.baseModel,foreigner:meta.foreigner,mobileBaseAdjustment:meta.mobileBaseAdjustment,novemberStockBundlePay:meta.novemberStockBundlePay,saleDate:meta.saleDate||sale.sale_date,simMnpPolicyEligible:meta.simMnpPolicyEligible,strategicPlan:!!meta.strategicPlan,planDetail:meta.planDetail,secondOnlyBundle:isSecondOnlyBundle(meta),secondParent:meta.secondParent,
       vasKeys:cleanArray(meta.vasKeys),
       bundle2ndKeys:cleanArray(meta.bundle2ndKeys),
       bundleVasMap:cleanObj(meta.bundleVasMap),
@@ -1066,7 +1068,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setPolicyEligibilityConfirmed(!!sale.source_meta?.policyEligibilityConfirmed);
     setMobileSaleDraft({ri:meta.ri,ci:editableCi,label:mobileLabelFor(meta.ri,editableCi)});
     setSecondParent(isSecondOnlyBundle(meta)?{...meta.secondParent,customerName:meta.secondParent?.customerName||sale.customers?.customer_name||''}:null);
-    setMobileBaseModel(meta.baseModel||'general');setMobileForeigner(!!meta.foreigner);
+    setWeekendModelKind(meta.weekendModelKind||'');setMobileBaseModel(meta.baseModel||'general');setMobileForeigner(!!meta.foreigner);
     setPlanDetail(getMobilePlan(meta.planDetail));setSimMnpPolicyEligible(meta.simMnpPolicyEligible===true);
     if(isSecondOnlyBundle(meta))setMobileSaleDraft({ri:7,ci:0,label:'2ND · 번들'});
     setMobileCustomerName(sale.customers?.customer_name||'');
@@ -1103,7 +1105,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     const label=Number.isInteger(ri)&&Number.isInteger(ci)?mobileLabelFor(ri,ci):'';
     setMobileSaleDraft({ri,ci,label});
     setSecondParent(null);
-    setMobileBaseModel('general');setMobileForeigner(false);
+    setWeekendModelKind('');setMobileBaseModel('general');setMobileForeigner(false);
     setPlanDetail(null);setSimMnpPolicyEligible(false);
     setMobileDetailsOpen(false);
     setMobileCalcOpen(false);
@@ -1128,7 +1130,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
     setMobileExpenseMemo('');
   };
 
-  const novemberBaseMeta=()=>({baseModel:specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.model==='A176'?'A176':mobileBaseModel,foreigner:mobileForeigner});
+  const novemberBaseMeta=()=>({baseModel:specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.model==='A176'?'A176':mobileBaseModel,foreigner:mobileForeigner,weekendModelKind:inNovemberWeekend(`${month}-${selectedDay}`)?weekendModelKind:undefined});
 
   const bundleFreeAmounts = (bundleKeys=mobileBundle2ndKeys, vasMap=mobileBundleVasMap, saleTypeMap=mobileBundleSaleTypeMap, includeLegacyVasOffset=false, parentCi=secondOnlyBundle?secondParent.ci:mobileSaleDraft?.ci) => {
     const bundleTable=config.bundle2nd||DEFAULT_BUNDLE2ND;
@@ -1931,6 +1933,10 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
                 if(getMobilePlan(value)&&![0,1].includes(ci)&&value.key!=='general_105')setMobileStrategicPlan(false);
               }
             }} required={month>='2026-10'}/>}
+            {inNovemberWeekend(`${month}-${selectedDay}`)&&Number.isInteger(mobileSaleDraft.ri)&&mobileSaleDraft.ri<=5&&!secondOnlyBundle&&<div className="mt-3 rounded-xl border border-brand-100 bg-brand-50 p-3 text-xs">
+              <b>11/13~16 개인 주말 포인트</b>
+              {mobileSaleDraft.ri===5?<p className="mt-2">SIM MNP · 일반 1P</p>:novemberWeekendModel({baseModel:mobileBaseModel,specialPolicy:{policyId:mobileSpecialPolicyId}})?<p className="mt-2">선택 모델 기준 {novemberWeekendModel({baseModel:mobileBaseModel,specialPolicy:{policyId:mobileSpecialPolicyId}})==='strategy'?'전략모델 3P':'일반모델 1P'}</p>:specialPolicies.find(p=>p.id===mobileSpecialPolicyId)?.model==='S741'?<p className="mt-2 text-amber-700">FE 포인트 기준 확인 필요</p>:<label className="block mt-2">주말 모델 분류<select aria-label="주말 모델 분류" value={weekendModelKind} onChange={e=>setWeekendModelKind(e.target.value)} className="mt-1 block w-full rounded-lg border p-2"><option value="">확인 필요</option><option value="general">일반모델 · 1P</option><option value="strategy">S26·폴더블8 전략모델 · 3P</option></select><span className="block mt-1 text-gray-500">전략: S942/947/948, F776/971/976. 미지정 건은 확인 필요로 남습니다.</span></label>}
+            </div>}
             {month>='2026-11'&&Number.isInteger(mobileSaleDraft.ri)&&mobileSaleDraft.ri<=5&&<div className="mt-3 space-y-2 rounded-xl bg-gray-50 p-3">
               <label className="block text-xs font-semibold">기본 수수료 모델
                 <select aria-label="기본 수수료 모델" value={mobileBaseModel} onChange={e=>setMobileBaseModel(e.target.value)} className="mt-1 w-full rounded-lg border bg-white p-2.5">

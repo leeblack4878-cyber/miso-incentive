@@ -1,3 +1,4 @@
+import {novemberWeekendHome} from './novemberWeekendPolicy';
 import AdminBottomNavigation from './components/AdminBottomNavigation';
 import {mobilePlanLabel} from './mobilePlans';
 import { isSecondOnlyBundle } from './secondParentPolicy.js';
@@ -507,6 +508,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const [goalSaving, setGoalSaving] = useState(false);
   const [approvedMobileSpotMap, setApprovedMobileSpotMap] = useState({}); // { empId: approved mobile spot total }
   const [chuseokMap,setChuseokMap]=useState({});
+  const [homeWeekendMetricMap,setHomeWeekendMetricMap]=useState({});
   const [homePolicyMap, setHomePolicyMap] = useState({}); // { empId: 새 홈 정책 계산 결과 }
   const [cancelledLegacyHomeMap,setCancelledLegacyHomeMap]=useState({}); // customer_sales 없는 취소 홈의 일일 잔여 차감
   const [shadowLedgerMap, setShadowLedgerMap] = useState({}); // 관리자용 판매별 계산 검증, 실제 급여에는 미반영
@@ -988,16 +990,17 @@ export default function App({ authUser, authProfile, onSignOut }) {
   },[]);
 
   const loadHomePolicies = useCallback(async (m,list)=>{
-    const ids=(list||[]).map(e=>e.id),mapped={};
-    if(!ids.length){setHomePolicyMap({});return;}
+    const ids=(list||[]).map(e=>e.id),mapped={},weekendMapped={};
+    setHomeWeekendMetricMap({});
+    if(!ids.length){setHomePolicyMap({});setHomeWeekendMetricMap({});return;}
     const [yy,mm]=m.split('-').map(Number),next=new Date(yy,mm,1),to=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-01`;
     const {data,error}=await readAllPages(()=>supabase.from('home_orders')
       .select('id,user_id,customer_id,customer_name,product_type,network_type,sale_type,main_tv_plan,status,source_work_date,source_group,source_key,actual_install_date')
       .in('user_id',ids).or(`source_work_date.gte.${m}-01,actual_install_date.gte.${m}-01`).order('id'));
-    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
+    if(error){console.error('HOME POLICY LOAD ERROR',error);setHomePolicyMap({});setHomeWeekendMetricMap({});setCancelledLegacyHomeMap({});return;}
     let metadata;
     try{metadata=await loadHomePolicyMetadata(supabase,data||[]);}
-    catch(error){console.error('HOME POLICY METADATA ERROR',error);setHomePolicyMap({});setCancelledLegacyHomeMap({});return;}
+    catch(error){console.error('HOME POLICY METADATA ERROR',error);setHomePolicyMap({});setHomeWeekendMetricMap({});setCancelledLegacyHomeMap({});return;}
     const saleRes={data:metadata.sales};
     const linkedRefs=new Set((saleRes.data||[]).map(s=>String(s.source_ref||'')).filter(Boolean));
     const cancelledMap={};
@@ -1010,11 +1013,13 @@ export default function App({ authUser, authProfile, onSignOut }) {
     });
     setCancelledLegacyHomeMap(cancelledMap);
     ids.forEach(id=>{
-      const userOrders=homeOrdersForMonth(enrichHomeOrdersForPolicy((data||[]).filter(o=>o.user_id===id),saleRes.data||[]),m,'completed');
+      const rawUserOrders=metadata.orders.filter(o=>o.user_id===id);
+      const userOrders=homeOrdersForMonth(rawUserOrders,m,'completed');
       const completed=userOrders.filter(o=>o.status==='completed');
       mapped[id]=completed.length?calculateHomePolicyEngine(userOrders,config):null;
+      if(m==='2026-11')weekendMapped[id]={...novemberWeekendHome(rawUserOrders),month:m};
     });
-    setHomePolicyMap(mapped);
+    setHomePolicyMap(mapped);setHomeWeekendMetricMap(weekendMapped);
   },[config]);
 
   const loadShadowLedgers = useCallback(async (m,list)=>{
@@ -1361,7 +1366,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   const rows = employees.filter(e=>hasMonthHistory(e,{dailyRecords,monthRecords,homePolicyMap,shadowLedgerMap,approvedMobileSpotMap})).map((e) => {
     const rec = monthRecords[e.id] || { draft: emptyDraft(), status: 'none' };
     const mergedBase = applyDailyToDraft(rec.draft, effectiveDailyRecords[e.id], month, config.categoryMap, config.gibyeonColumnMap);
-    const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null,chuseokPolicy:chuseokMap[e.id]||null};
+    const mergedDraft = {...mergedBase,homePolicy:homePolicyMap[e.id]||null,weekendHomeMetric:homeWeekendMetricMap[e.id]||null,chuseokPolicy:chuseokMap[e.id]||null};
     const pay = computePay(mergedDraft, e.position, e.hireDate, month, config, approvedMobileSpotMap[e.id]||0, strategicMetricMap[e.id]);
     const shadow=shadowLedgerMap[e.id]||{totalSales:0,snapshotSales:0,missingSnapshots:0,shadowMobilePay:0};
     const existingMobilePay=Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0);
@@ -1410,7 +1415,7 @@ export default function App({ authUser, authProfile, onSignOut }) {
   }, [scopedEmployees, empId]);
 
   const myMergedBase = applyDailyToDraft(draft, effectiveDailyRecords[empId], month, config.categoryMap, config.gibyeonColumnMap);
-  const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null,chuseokPolicy:chuseokMap[empId]||null};
+  const myMergedDraft = {...myMergedBase,homePolicy:homePolicyMap[empId]||null,weekendHomeMetric:homeWeekendMetricMap[empId]||null,chuseokPolicy:chuseokMap[empId]||null};
   const myPay = computePay(myMergedDraft, currentEmp?.position || '사원', currentEmp?.hireDate, month, config, approvedMobileSpotMap[empId]||0, strategicMetricMap[empId]);
   const teamCreditDaysByStore=(teamSalesCredits||[]).reduce((map,credit)=>{
     if(credit.source_type==='home'&&!credit.is_completed)return map;
@@ -3743,7 +3748,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
 
             <button type="button" onClick={()=>setHistoryOpen(v=>({...v,mobile:!v.mobile}))} className="w-full px-4 py-3 flex justify-between items-center text-sm">
               <span className="font-semibold">모바일 관련 수수료</span>
-              <span className="flex items-center gap-2 font-bold text-gray-800">{won(month>='2026-11'?Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.mnpBundlePay||0):Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0)+Number(pay.october23SimPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
+              <span className="flex items-center gap-2 font-bold text-gray-800">{won(month>='2026-11'?Number(pay.novemberWeekendGrade?.amount||0)+Number(pay.mobilePlanPay||0)+Number(pay.bundle2ndPay||0)+Number(pay.vasPay||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.mnpBundlePay||0):Number(pay.mobilePlanPay||0)+Number(pay.mnpBundlePay||0)+Number(pay.rawBundle2ndTotal||0)+Number(pay.rawVasPay||0)-Number(pay.bundleFreeOffset||0)-Number(pay.bundleFreeVasOffset||0)-Number(pay.specialMatrixOffset||0)-Number(pay.specialVasOffset||0)+Number(pay.specialReplacementPay||0)+Number(pay.approvedMobileSpotPay||0)+Number(pay.strategicAdjustment||0)+Number(pay.plan115Bonus||0)+Number(pay.septemberWeekendSimMnpPolicy?.amount||0)+Number(pay.october23SimPolicy?.amount||0))}<ChevronDown size={15} className={historyOpen.mobile?'rotate-180':''}/></span>
             </button>
             {historyOpen.mobile&&<div className="bg-gray-50/70 px-4 py-2 divide-y divide-gray-100">
               {Number(pay.mobilePlanPay||0)!==0&&<RowKV label="└ 요금제 유치 수수료" value={won(pay.mobilePlanPay)} />}
@@ -3752,6 +3757,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.plan115Bonus||0)!==0&&<RowKV label="└ 일반 115·130군 비중 70% 보너스" value={won(pay.plan115Bonus)} />}
               {Number(pay.mnpBundlePay||0)!==0&&<RowKV label="└ 중고 MNP 결합 수수료" value={won(pay.mnpBundlePay)} />}
               {Number(pay.october23SimPolicy?.amount||0)!==0&&<RowKV label="└ 10월 23~26일 SIM MNP 추가 지급" value={won(pay.october23SimPolicy.amount)} />}
+              {pay.novemberPolicyReview?.length>0&&<div className="px-4 py-2 text-xs text-amber-800 bg-amber-50 rounded-lg"><b>A176 판활 저장분 확인 필요</b><ul>{pay.novemberPolicyReview.map(r=><li key={r.id}>{r.date} · {r.customer} · 저장 {won(r.saved)} / 정책 {won(r.expected)} · {r.reason}</li>)}</ul></div>}
+              {pay.novemberWeekendGrade&&<div className="px-4 py-2 text-xs rounded-lg bg-brand-50"><b>11/13~16 개인 주말 포인트</b><div>확인된 {pay.novemberWeekendGrade.points}P · {pay.novemberWeekendGrade.pendingCount>0?`확인 필요 ${pay.novemberWeekendGrade.pendingCount}건 · 모델 분류/원본 대조 필요 · 미확인 금액 미합산`:`P당 ${won(pay.novemberWeekendGrade.rate)} · ${won(pay.novemberWeekendGrade.amount)}`}</div>{pay.novemberWeekendGrade.pendingSales?.length>0&&<ul>{pay.novemberWeekendGrade.pendingSales.map(r=><li key={r.id}>{r.date} · {r.customer} · {r.reason}</li>)}</ul>}</div>}
               {Number(pay.october23SimMissing||0)>0&&<div className="text-xs text-amber-700">주말 SIM MNP 정책 대상 여부 확인 필요 {pay.october23SimMissing}건 · 판매 수정에서 확인해주세요.</div>}
               {Number(pay.septemberWeekendSimMnpPolicy?.amount||0)!==0&&<RowKV label="└ 9월 주말 SIM MNP 추가 지급" value={won(pay.septemberWeekendSimMnpPolicy.amount)} />}
               {Number(pay.rawBundle2ndTotal||0)!==0&&<RowKV label="└ 2ND 번들 유치 수수료" value={won(pay.rawBundle2ndTotal)} />}
@@ -3778,6 +3785,8 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.smartHomePay||0)!==0&&<RowKV label="└ 스마트홈" value={won(pay.smartHomePay)} />}
               {Number(pay.homePolicy?.subSetTopPay||0)!==0&&<RowKV label="└ 부셋탑" value={won(pay.homePolicy.subSetTopPay)} />}
               {Number(pay.homePolicy?.novemberWeekend?.total||0)>0&&<RowKV label="└ 11월 5~9일 개인 홈 추가 지급" value={won(pay.homePolicy.novemberWeekend.total)}/>}
+              {Number(pay.homePolicy?.novemberSecondWeekend?.total||0)>0&&<RowKV label="└ 11월 13~16일 개인 홈 추가 지급" value={won(pay.homePolicy.novemberSecondWeekend.total)}/>}
+              {Number(pay.homePolicy?.novemberSecondWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700">11/13~16 홈 정책 확인 대기 {pay.homePolicy.novemberSecondWeekend.pendingCount}건</div>}
               {Number(pay.homePolicy?.novemberWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700 p-2">11/5~9 홈 정책 확인 대기 {pay.homePolicy.novemberWeekend.pendingCount}건 · 청약·설치·요금제 확인 필요</div>}
               {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
               {Number(pay.homePolicy?.octoberWeekend?.total||0)!==0&&<RowKV label="└ 10월 주말 홈 추가 지급" value={won(pay.homePolicy.octoberWeekend.total)} />}

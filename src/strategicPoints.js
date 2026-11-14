@@ -1,3 +1,4 @@
+import {novemberA176Review,novemberWeekendMobile} from './novemberWeekendPolicy.js';
 import {october23SimEligible} from './october23Policy.js';
 import {getMobilePlan} from './mobilePlans.js';
 import {ADDITIONAL_STRATEGIC_SERVICES} from './additionalStrategicServices.js';
@@ -42,7 +43,7 @@ export function summarizeStrategicProducts(sales = []) {
     insurance += keys.filter(key => key === 'vasPhonePass' || key === 'vasSafePass').length;
     strategicVas += keys.filter(key => ['vasKyobo', 'vasVcolor', 'vasVcolorBundle'].includes(key)).length;
   });
-  return { october23SimCount,october23SimMissing,plan115Counts, insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
+  return { novemberA176Review:novemberA176Review(sales),novemberWeekendMobile:novemberWeekendMobile(sales),october23SimCount,october23SimMissing,plan115Counts, insurance, strategicVas, daemyungCount, insurancePoints:Number((insurance*.8).toFixed(10)),
     strategicPoints:Number(strategicPoints.toFixed(10)), strategicPointsWithoutDaemyung:Number((strategicPoints-daemyungCount*2).toFixed(10)) };
 }
 

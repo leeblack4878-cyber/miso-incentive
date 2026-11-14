@@ -1,3 +1,4 @@
+import {novemberWeekendMobile,novemberWeekendHome} from '../src/novemberWeekendPolicy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -31,7 +32,7 @@ test('November period, complete model prices and old October selection are isola
  assert.equal(specialSalesForDate('2026-10-31').find(p=>p.model==='S942-256/512'&&p.saleType==='MNP').additionalAmount,200000);
  assert.equal(specialSalesForDate('2026-11-01').find(p=>p.model==='S942-256/512'&&p.saleType==='MNP').additionalAmount,160000);
  assert(specialSalesForDate('2026-11-01').every(p=>p.november));assert(!specialSalesForDate('2026-11-01').some(p=>p.model.includes('F946')));
- for(const p of NOVEMBER_SPECIAL_SALES){const args={policyKey:p.key,saleDate:'2026-11-01',saleType:p.saleType,ri:4,planDetail:plan(),strategicPoints:2};assert.equal(calculateMonthlySpecialSale(args).additionalAmount,p.additionalAmount);assert.equal(calculateMonthlySpecialSale({...args,strategicPoints:1.8}).eligible,false);assert.equal(calculateMonthlySpecialSale({...args,saleDate:'2026-10-31'}).eligible,false);}
+ for(const p of NOVEMBER_SPECIAL_SALES){const args={policyKey:p.key,saleDate:p.startDate,saleType:p.saleType,ri:4,planDetail:plan(),strategicPoints:2};assert.equal(calculateMonthlySpecialSale(args).additionalAmount,p.additionalAmount);assert.equal(calculateMonthlySpecialSale({...args,strategicPoints:1.8}).eligible,false);assert.equal(calculateMonthlySpecialSale({...args,saleDate:'2026-10-31'}).eligible,false);}
  const p=NOVEMBER_SPECIAL_SALES.find(p=>p.model==='S942-256/512'&&p.saleType==='기기변경');
  for(const [key,rate] of [['general_85',35000],['general_95',35000],['general_105',35000],['general_115',70000],['junior_85',70000],['senior_47',0]])assert.equal(calculateMonthlySpecialSale({policyKey:p.key,saleDate:'2026-11-01',saleType:'기기변경',ri:4,planDetail:plan(key),strategicPoints:2}).additionalAmount,rate);
 });
@@ -55,7 +56,7 @@ test('A176/A185 C base 30%, M140 flat base and foreign MNP do not change model a
  const r=paid({ri:4,ci:0,baseModel:'A176',specialPolicy:{replacementAmount:amount}});assert.equal(r.pay.specialReplacementPay,15000);assert.equal(r.pay.mobilePlanPay,7500);
 });
 test('stock is additive with full amount even home-less C, validates inventory product conditions',()=>{
- for(const p of NOVEMBER_STOCK_SALES){const args={policyKey:p.key,saleDate:'2026-11-01',saleType:p.saleType,ri:4,planDetail:plan(p.stockRule==='kids'?'junior_28':'general_85'),vasKeys:['vasPhonePass','vasKyobo']};
+ for(const p of NOVEMBER_STOCK_SALES){const args={policyKey:p.key,saleDate:p.startDate,saleType:p.saleType,ri:4,planDetail:plan(p.stockRule==='kids'?'junior_28':'general_85'),vasKeys:['vasPhonePass','vasKyobo']};
  assert.equal(calculateMonthlySpecialSale(args).additionalAmount,p.additionalAmount);assert.equal(calculateMonthlySpecialSale({...args,vasKeys:[]}).additionalAmount,0);
  const r=paid({ri:p.stockRule==='watch'?7:4,ci:0,vasKeys:args.vasKeys,specialPolicy:{policyId:p.key,replacementAmount:p.additionalAmount,homePenaltyExempt:true}});assert.equal(r.pay.specialReplacementPay,p.additionalAmount);assert.equal(r.pay.mobilePlanPay,p.stockRule==='watch'?0:12500);
  }
@@ -93,4 +94,17 @@ test('November renewal UI other-plan key pays 60000, all posted rates and stale 
  assert.equal(api.computePay(draft,'기타',null,'2026-11',config).renewPay,60000);assert.deepEqual(raw,before);
  const oct=resolvePolicyConfigForMonth('2026-10',api.defaultConfig());const historical=api.applyDailyToDraft(api.emptyDraft(),{'01':raw},'2026-10',oct.categoryMap,oct.gibyeonColumnMap);assert.equal(api.computePay(historical,'기타',null,'2026-10',oct).renewPay,80000);
  const mixed={...raw,householdRenewLegacyCounts:{renewOther500:1}};const merged=api.applyDailyToDraft(api.emptyDraft(),{'01':mixed},'2026-11',config.categoryMap,config.gibyeonColumnMap);assert.equal(api.computePay(merged,'기타',null,'2026-11',config).renewPay,120000);
+});
+
+test('weekend reward is added once after guarantee; incomplete source and stale month do not invent amounts',()=>{
+ const sale={id:'a',sale_date:'2026-11-13',source_meta:{ri:1,weekendModelKind:'general',bundle2ndKeys:[]}};
+ const sales=Array.from({length:5},(_,i)=>({...sale,id:String(i)}));
+ const day=api.normalizeDay();day.matrix[1][0]=5;
+ const draft=api.applyDailyToDraft(api.emptyDraft(),{'13':day},month,config.categoryMap,config.gibyeonColumnMap);
+ draft.weekendHomeMetric={...novemberWeekendHome([]),month};const original=JSON.stringify(draft);
+ const metrics={month,strategicPointsWithoutDaemyung:10,plan115Counts:{general:5,high:5,known:5,missing:0},novemberWeekendMobile:novemberWeekendMobile(sales)};
+ const paid=api.computePay(draft,'사원','2026-10-01',month,config,0,metrics),pending=api.computePay(draft,'사원','2026-10-01',month,config,0,{...metrics,novemberWeekendMobile:null});
+ assert.equal(paid.novemberWeekendGrade.amount,50000);assert.equal(paid.total-pending.total,50000);assert.equal(paid.currentPerformanceAmount-pending.currentPerformanceAmount,50000);assert.equal(JSON.stringify(draft),original);
+ assert.equal(api.computePay(draft,'사원',null,month,config,0,{...metrics,month:'2026-10'}).novemberWeekendGrade.amount,null);
+ assert.equal(api.computePay({...draft,weekendHomeMetric:null},'사원',null,month,config,0,metrics).novemberWeekendGrade.amount,null);
 });
