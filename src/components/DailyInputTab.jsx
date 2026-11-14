@@ -88,6 +88,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
   const [simMnpPolicyEligible,setSimMnpPolicyEligible]=useState(false);
   const secondOnlyBundle=!!secondParent;
   const [planReminderOpen,setPlanReminderOpen]=useState(false);
+  const planReminderFocusRef=useRef(null);
   const [serviceReminder,setServiceReminder]=useState(null);
   const toggleMainService=(service)=>{
     const selected=mobileVasKeys.includes(service.key);
@@ -1384,7 +1385,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
 
   return (
     <div className="space-y-3 relative">
-      {mobileSaleDraft&&planReminderOpen&&<PlanReminderDialog value={mobileReminders.plan} onSelect={plan=>{setMobileReminders(v=>({...v,plan}));setPlanReminderOpen(false);}} onClose={()=>setPlanReminderOpen(false)}/>}
+      {mobileSaleDraft&&planReminderOpen&&<PlanReminderDialog returnFocusRef={planReminderFocusRef} value={mobileReminders.plan} onSelect={plan=>{setMobileReminders(v=>({...v,plan}));setPlanReminderOpen(false);}} onClose={()=>setPlanReminderOpen(false)}/>}
       {mobileSaleDraft&&serviceReminder&&<PlanReminderDialog service={serviceReminder} value={mobileReminders.services?.[serviceReminder.key]||'keep'} onSelect={choice=>{setMobileReminders(v=>({...v,services:{...v.services,[serviceReminder.key]:choice}}));setServiceReminder(null);}} onClose={()=>setServiceReminder(null)}/>}
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-700">{monthLabel(month)} 일일입력</div>
@@ -1940,7 +1941,7 @@ export default function DailyInputTab({ month, dailyDays, saveDailyDay, config, 
               <p className="text-[10px] text-gray-500">A176·A185 기변 C 기본금30% · M140 기본금1만원 · 판매 활성화 추가금은 C 감액 제외</p>
             </div>}
             {mobileSaleDraft.ri===6&&getMobilePlan(planDetail)&&<p className="mt-2 text-xs text-gray-500">{mobileSaleDraft.ci===0?'생산성 반영 대상':'생산성 미반영 요금제'}</p>}
-            {Number.isInteger(mobileSaleDraft.ci)&&<button type="button" onClick={()=>setPlanReminderOpen(true)} className="mt-2 w-full rounded-xl bg-brand-50 px-3 py-2.5 text-left text-xs text-brand-700">요금제 변경 안내 · <b>{PLAN_REMINDER_LABELS[mobileReminders.plan]||'유지'}</b><span className="ml-2 text-[10px]">변경</span></button>}
+            {Number.isInteger(mobileSaleDraft.ci)&&<button ref={planReminderFocusRef} type="button" onClick={()=>setPlanReminderOpen(true)} className="mt-2 w-full rounded-xl bg-brand-50 px-3 py-2.5 text-left text-xs text-brand-700">요금제 변경 안내 · <b>{PLAN_REMINDER_LABELS[mobileReminders.plan]||'유지'}</b><span className="ml-2 text-[10px]">변경</span></button>}
 
             {MATRIX_ROW_DEFS[mobileSaleDraft.ri]?.hasTiers && (Number.isInteger(mobileSaleDraft.ci)&&mobileSaleDraft.ci<=1 || month>='2026-10'&&planDetail?.key==='general_105') && (
               <div className="mt-3">
