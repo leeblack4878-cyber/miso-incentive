@@ -3779,7 +3779,7 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.homeGradePay||0)!==0&&<RowKV label="└ 인터넷+TV 그레이드" value={won(pay.homeGradePay)} />}
               {Number(pay.homePolicy?.soloPay||0)!==0&&<RowKV label="└ 인터넷 단독" value={won(pay.homePolicy.soloPay)} />}
               {Number(pay.homePolicy?.simulPay||0)!==0&&<>
-                {Object.entries((pay.homePolicy?.details||[]).filter(x=>String(x.item||'').includes('동시판매')).reduce((a,x)=>{a[x.item]=(a[x.item]||0)+Number(x.amount||0);return a;},{})).map(([l,v])=><RowKV key={l} label={`└ ${l}`} value={won(v)} />)}
+                {Object.entries((pay.homePolicy?.details||[]).filter(x=>String(x.item||'').includes('동시판매')&&x.item!=='11월 17~30일 HS MNP·홈 동시판매').reduce((a,x)=>{a[x.item]=(a[x.item]||0)+Number(x.amount||0);return a;},{})).map(([l,v])=><RowKV key={l} label={`└ ${l}`} value={won(v)} />)}
               </>}
               {Number(pay.tvFreePay||0)!==0&&<RowKV label="└ TV프리(부)" value={won(pay.tvFreePay)} />}
               {Number(pay.smartHomePay||0)!==0&&<RowKV label="└ 스마트홈" value={won(pay.smartHomePay)} />}
@@ -3787,6 +3787,11 @@ function EmployeeView({ tab, setTab, months, month, setMonth, draft, setDraft, c
               {Number(pay.homePolicy?.novemberWeekend?.total||0)>0&&<RowKV label="└ 11월 5~9일 개인 홈 추가 지급" value={won(pay.homePolicy.novemberWeekend.total)}/>}
               {Number(pay.homePolicy?.novemberSecondWeekend?.total||0)>0&&<RowKV label="└ 11월 13~16일 개인 홈 추가 지급" value={won(pay.homePolicy.novemberSecondWeekend.total)}/>}
               {Number(pay.homePolicy?.novemberSecondWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700">11/13~16 홈 정책 확인 대기 {pay.homePolicy.novemberSecondWeekend.pendingCount}건</div>}
+              {Number(pay.homePolicy?.novemberThirdWeekend?.total||0)>0&&<RowKV label="└ 11월 20~23일 개인 홈 가정산" value={won(pay.homePolicy.novemberThirdWeekend.total)}/>}
+              {Number(pay.homePolicy?.novemberThirdWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700">11/20~23 홈 정책 확인 대기 {pay.homePolicy.novemberThirdWeekend.pendingCount}건</div>}
+              {Number(pay.homePolicy?.novemberMnpHome?.total||0)>0&&<RowKV label="└ 11월 17~30일 MNP 동시판매 가정산" value={won(pay.homePolicy.novemberMnpHome.total)}/>}
+              {Number(pay.homePolicy?.novemberMnpHome?.pendingCount||0)>0&&<div className="text-xs text-amber-700">11/17~30 MNP 동시판매 확인 대기 {pay.homePolicy.novemberMnpHome.pendingCount}건 (중복 지급 등)</div>}
+              {Number(pay.homePolicy?.novemberMnpHome?.total||0)>0&&<div className="text-xs text-gray-500">HS MNP 실제 개통일은 최종 정산에서 확인합니다.</div>}
               {Number(pay.homePolicy?.novemberWeekend?.pendingCount||0)>0&&<div className="text-xs text-amber-700 p-2">11/5~9 홈 정책 확인 대기 {pay.homePolicy.novemberWeekend.pendingCount}건 · 청약·설치·요금제 확인 필요</div>}
               {Number(pay.homePolicy?.weekendPolicy?.homeBonus||0)!==0&&<RowKV label="└ 9월 주말 홈 추가 지급" value={won(pay.homePolicy.weekendPolicy.homeBonus)} />}
               {Number(pay.homePolicy?.octoberWeekend?.total||0)!==0&&<RowKV label="└ 10월 주말 홈 추가 지급" value={won(pay.homePolicy.octoberWeekend.total)} />}

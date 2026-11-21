@@ -1,5 +1,6 @@
 export const NOVEMBER_HOME_PROMOTION={id:'2026-11-05-home',start:'2026-11-05',end:'2026-11-09',installEnd:'2026-11-30'};
 export const NOVEMBER_SECOND_HOME_PROMOTION={id:'2026-11-13-home',start:'2026-11-13',end:'2026-11-16',installEnd:'2026-11-30'};
+export const NOVEMBER_THIRD_HOME_PROMOTION={id:'2026-11-20-home',start:'2026-11-20',end:'2026-11-23',installEnd:'2026-11-30'};
 const validDate=d=>/^\d{4}-\d{2}-\d{2}$/.test(String(d))&&!Number.isNaN(Date.parse(`${d}T00:00:00Z`))&&new Date(`${d}T00:00:00Z`).toISOString().slice(0,10)===d;
 export function calculateNovemberHomeBonusFromOrders(orders=[],period=NOVEMBER_HOME_PROMOTION){
  const unique=new Map(),conflicts=new Set(),pending=[],groups=new Map();

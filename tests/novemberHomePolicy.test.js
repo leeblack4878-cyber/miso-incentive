@@ -8,3 +8,16 @@ test('missing metadata/date, conflicting IDs, ambiguous circuits cannot become p
 test('stored source metadata feeds existing payroll engine once, no monthly-count or name inference',()=>{const raw=orders('x',{internet_plan:null});const sales=raw.map(o=>({source_ref:o.id,source_meta:{internetPlan:'premiumSafe'}}));const before=calculateHomePolicyFromOrders(raw),after=calculateHomePolicyFromOrders(enrichHomeOrdersForPolicy(raw,sales));assert.equal(before.novemberWeekend.total,0);assert.equal(after.novemberWeekend.total,100000);assert.equal(after.total-before.total,100000);assert.equal(after.details.filter(x=>x.item==='11월 5~9일 개인 홈 활성화').length,1)});
 
 test('DPS and first-month qualification follow installed TV plan without manual checks',()=>{assert.equal(calc(orders('x',{november_home_checks:null})).total,100000);assert.equal(calc(orders('x',{network_type:'soho',main_tv_plan:'premium',november_home_checks:null})).total,100000)});
+
+test('November 20–23 personal promotion is separate from earlier weekends and staff scope',()=>{
+ const rows=[...orders('old'),...orders('mid',{source_work_date:'2026-11-13'}),...orders('pre',{source_work_date:'2026-11-19'}),
+  ...orders('first',{source_work_date:'2026-11-20'}),...orders('last',{source_work_date:'2026-11-23',network_type:'soho',main_tv_plan:'premium'}),
+  ...orders('first',{source_work_date:'2026-11-20'}),...orders('next',{source_work_date:'2026-11-24'}),
+  ...orders('team',{source_work_date:'2026-11-20',team_only:true}),...orders('late',{source_work_date:'2026-11-23',actual_install_date:'2026-12-01'}),
+  ...orders('other',{source_work_date:'2026-11-23',user_id:'b'})];
+ const result=calculateHomePolicyFromOrders(rows);
+ assert.equal(result.novemberWeekend.total,100000);
+ assert.equal(result.novemberSecondWeekend.total,100000);
+ assert.equal(result.novemberThirdWeekend.total,400000);
+ assert.equal(result.limitedPolicyPay,600000);
+});

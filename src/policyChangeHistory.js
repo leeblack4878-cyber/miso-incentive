@@ -1,6 +1,7 @@
 // Curated from confirmed policy code, dated notices and owner corrections.
 // Append a record with each policy release; this is not an automatic chat import.
 export const POLICY_CHANGE_HISTORY = [
+ {id:'2026-11-20-home-policies',month:'2026-11',date:'2026-11-20',effective:'개인 홈 11/20~23 · HS MNP 동시판매 11/17~30',title:'11월 개인 홈 활성화·HS MNP 동시판매',changes:['개인 홈 1건 10만원, 2건 이상 전건 15만원인 별도 기간 추가. 기존 기간은 유지.','HS MNP와 인터넷+TV 동시 유치, 11월 설치 완료 시 가정산 건당 10만원.'],details:['동시판매 실제 HS MNP 개통일은 최종 검증. 두 기간 중복 또는 불명확한 원본은 별도 동시판매 추가금 확인 대기.','확정급여·원본 데이터 변경 없음.']},
  {id:'2026-11-14-weekend-policy',month:'2026-11',date:'2026-11-14',effective:'A17611/7부터 · 개인 주말/홈11/13~16',title:'A176 판활 변경·11/13~16 주말 P 및 홈 정책',changes:['A176 MNP추가금6만→5만,기변추가금 종료(11/1~6 보존).','개인5/8/11/14/17/20P 구간에 P당1만/1.3만/1.6만/2만/2.3만/2.5만 지급.','11/13~16 청약·11월 설치 개인홈1건10만/2건↑전건15만,11/5~9와 구간 독립.'],details:['모델/원본 미확인은 확인필요. S741(FE) 전략 인정은 별도 확인 필요.','기존 A176 저장금액 차이는 검토목록 표시, 원본·확정급여 일괄변경 없음.']},
  {id:'2026-11-12-general33-mnp',month:'2026-11',date:'2026-11-12',effective:'지급표 단가 정정 없음 · 입력 연결 오류 수정',title:'일반33군 이상 MNP 지급 연결 정정',changes:['일반33~84군 MNP·SIM MNP: 미지급 분류 → 기존 건당4만원 지급 구간 연결.'],details:['등록·수정 저장 적용. 기존 원장·확정급여 일괄 변경 없음.']},
  {id:'2026-11-11-high-plan-home-clarification',month:'2026-11',effective:'11월 비중·홈 인정조건 정정',date:'2026-11-11',title:'115군 비중 및 홈 인정조건 정정',changes:['115~130군(시그니처 포함) 비중의 모수에서 주니어·시니어 제외.','홈 인터넷+TV 동시청약 DPS 자동판정, 방송패스/소호프리미엄 개통으로 인정.'],details:['원본 요금제 미확인은 확인 필요로 유지. 첫달유지·DPS 별도 체크 제거.']},
