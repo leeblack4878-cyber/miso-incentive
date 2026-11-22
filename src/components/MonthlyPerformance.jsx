@@ -1,7 +1,7 @@
 import PerformanceCard from './PerformanceCard';
 import React from 'react';
 import {emptyDraft} from '../viewShared';
-import {DEFAULT_KPI_ITEMS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, fmtCount, monthKeyOf, monthLabel, daysInMonth, normalizeDay, applyDailyToDraft, hsCount} from '../appShared';
+import {DEFAULT_KPI_ITEMS, renewalKpiItems, DEFAULT_BUNDLE2ND, DEFAULT_SONO, fmtCount, monthKeyOf, monthLabel, daysInMonth, normalizeDay, applyDailyToDraft, hsCount} from '../appShared';
 import {useState, useEffect, useMemo} from 'react';
 import {Check} from 'lucide-react';
 import {MATRIX_ROW_DEFS, MATRIX_COLS, fmtNum, won} from '../uiDefinitions';
@@ -309,7 +309,7 @@ function MyMonthlyPerformanceCard({ scopeRows=[], draft, pay, personalGoals, dai
         });
       } else if(detailMetric.key==='productivity'){
         const one=applyDailyToDraft(emptyDraft(),{[dd]:d},month,config?.categoryMap,config?.gibyeonColumnMap);
-        (config?.kpiItems||DEFAULT_KPI_ITEMS).forEach(item=>{
+        renewalKpiItems(config?.kpiItems).forEach(item=>{
           const cnt=Number(one.kpi?.[item.key]||0); if(cnt)add(dd,item.label,cnt*Number(item.point||0),'point',`${fmtCount(cnt)}건 × ${fmtNum(Number(item.point||0),1)}P`);
         });
       } else if(detailMetric.key==='home'){
