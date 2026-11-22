@@ -112,7 +112,18 @@ const DEFAULT_KPI_ITEMS = [
   { key: 'kpiSmartHome', label: '스마트홈', point: 0.5 },
   { key: 'kpiInternetRenew', label: '인터넷 재약정', point: 0.3 },
   { key: 'kpiTvRenew', label: 'TV 재약정', point: 0.3 },
+  { key: 'kpiRenewSubSetTop', label: '재약정 TV 부셋탑', point: 0.3 },
+  { key: 'kpiRenewSmartHome', label: '재약정 스마트홈', point: 0.3 },
 ];
+
+// Previous saved KPI settings may not contain renewal-only items.
+// Add missing default rates without changing regular home rates or configured values.
+function renewalKpiItems(savedItems){
+  const items=Array.isArray(savedItems)?savedItems:DEFAULT_KPI_ITEMS;
+  return [...items,...DEFAULT_KPI_ITEMS.filter(item=>
+    ['kpiRenewSubSetTop','kpiRenewSmartHome'].includes(item.key)&&!items.some(saved=>saved.key===item.key)
+  )];
+}
 
 const HOME_BASE_ITEMS = [
   { key: 'homeOnly', label: '홈 단독', point: 1 },
@@ -203,7 +214,7 @@ function aggregateHouseholdRenewals(items,config){
 }
 
 function emptyHouseholdRenewForm(){
-  return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,speedUp:false,downSpeed:false,temporaryUpgradeSame:false};
+  return {customer:'',speed:'1g',plan:'premiumSafe',homeOnly:false,hsSimul:false,tvUpsell:false,subSetTop:false,smartHome:false,speedUp:false,downSpeed:false,temporaryUpgradeSame:false};
 }
 
 const MATRIX_ROWS = MATRIX_ROW_DEFS.map((r) => r.label);
@@ -481,15 +492,21 @@ function applyDailyToDraft(draft, dailyDaysMap, month, categoryMap, gibyeonColum
   // v21.54: 재약정 KPI는 실제 계약 건수 기준으로 계산
   let internetRenewKpiCount = 0;
   let tvRenewKpiCount = 0;
+  let renewSubSetTopKpiCount = 0;
+  let renewSmartHomeKpiCount = 0;
   Object.values(dailyDaysMap || {}).forEach((raw) => {
     const rec = normalizeDay(raw);
     (rec.householdRenewals || []).forEach((item) => {
       internetRenewKpiCount += 1;
       if (!item.homeOnly) tvRenewKpiCount += 1;
+      if (item.subSetTop) renewSubSetTopKpiCount += 1;
+      if (item.smartHome) renewSmartHomeKpiCount += 1;
     });
   });
   autoKpi.kpiInternetRenew = internetRenewKpiCount;
   autoKpi.kpiTvRenew = tvRenewKpiCount;
+  autoKpi.kpiRenewSubSetTop = renewSubSetTopKpiCount;
+  autoKpi.kpiRenewSmartHome = renewSmartHomeKpiCount;
 
   const numeric = {};
   DAILY_NUMERIC_KEYS.forEach((k) => { numeric[k] = agg[k] || 0; });
@@ -517,7 +534,7 @@ function computePay(draft, position, hireDate, month, config, mobileSpotPay = 0,
   const bucket = config.tenure.find((t) => t.key === bucketKey) || config.tenure[0];
 
   const mobileItems = config.mobilePointItems || DEFAULT_MOBILE_POINT_ITEMS;
-  const kpiItems = config.kpiItems || DEFAULT_KPI_ITEMS;
+  const kpiItems = renewalKpiItems(config.kpiItems);
   const baseKpiScore = sumPoint(draft.kpi || {}, kpiItems);
 
   // 영업 활동 지원 정책 대상 = HS + SIM MNP + 2ND
@@ -1018,4 +1035,4 @@ const HS_PARTS = HS_ROWS.map((r) => ({ short: r.short, idx: MATRIX_ROWS.indexOf(
 const matrixRowCount = (d, ri) => ((d && d.matrix && d.matrix[ri]) || []).reduce((s, v) => s + (v || 0), 0);
 
 const hsCount = (d) => HS_PARTS.reduce((s, p) => s + matrixRowCount(d, p.idx), 0);
-export { CURRENT_SALE_SCHEMA_VERSION, FREE_PHONE_SPECIAL_TITLE, isIncentiveUnpaidSpecial, septemberPlanGroup, saleSchemaVersion, withCurrentSaleSchema, currentPolicySnapshot, legacySaleBadge, inferHomeProductTypeFromLabel, compatHomeRows, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, HOME_GATE_WEIGHTS, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, HOME_BASE_ITEMS, HOME_NETWORK_TYPES, homeNetworkLabel, homeMainTvPlanLabel, DEFAULT_RENEW, HOUSEHOLD_RENEW_PLANS, householdRenewBaseKey, renewRate, calculateHouseholdRenew, aggregateHouseholdRenewals, emptyHouseholdRenewForm, MATRIX_ROWS, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, sumPoint, tierBonus, homeGradeTotal, monthsSince, tenureBucketOf, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, mobileTeamCreditMetrics, homeTeamCreditMetrics, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, mobileStrategicPoint, HOME_ORDER_PRODUCTS, notifyStoreManagers, CARE_TEMPLATES, AFFILIATE_CARD_STAGES, AFFILIATE_CARD_NAMES, careTaskCategory, addDaysDate, addMonthsDate, ensureCustomer, ensurePromiseCustomer, buildMobileTasks, CareTemplatePicker, StandalonePromiseModal, DailySaveBadge, HS_ROWS, HS_PARTS, matrixRowCount, hsCount };
+export { CURRENT_SALE_SCHEMA_VERSION, FREE_PHONE_SPECIAL_TITLE, isIncentiveUnpaidSpecial, septemberPlanGroup, saleSchemaVersion, withCurrentSaleSchema, currentPolicySnapshot, legacySaleBadge, inferHomeProductTypeFromLabel, compatHomeRows, NON_SALES_STORES, HOME_GATE_MIN, ADDON_GATE, HOME_GATE_WEIGHTS, DEFAULT_MOBILE_POINT_ITEMS, DEFAULT_KPI_ITEMS, renewalKpiItems, HOME_BASE_ITEMS, HOME_NETWORK_TYPES, homeNetworkLabel, homeMainTvPlanLabel, DEFAULT_RENEW, HOUSEHOLD_RENEW_PLANS, householdRenewBaseKey, renewRate, calculateHouseholdRenew, aggregateHouseholdRenewals, emptyHouseholdRenewForm, MATRIX_ROWS, DEFAULT_GIBYEON_COLUMN_MAP, DEFAULT_VAS, DEFAULT_BUNDLE2ND, DEFAULT_SONO, DEFAULT_MNP_BUNDLE, fmtCount, fmtShortDate, monthKeyOf, monthLabel, sumPoint, tierBonus, homeGradeTotal, monthsSince, tenureBucketOf, daysInMonth, emptyDayMatrix, DAILY_GROUP_DEFS, DAILY_GROUP_KEYS, DAILY_NUMERIC_KEYS, HOME_KPI_MAP, emptyDay, normalizeDay, mobileTeamCreditMetrics, homeTeamCreditMetrics, calendarCoreMetrics, dayHasPerformanceData, dayHasData, aggregateDaily, applyDailyToDraft, computePay, mobileStrategicPoint, HOME_ORDER_PRODUCTS, notifyStoreManagers, CARE_TEMPLATES, AFFILIATE_CARD_STAGES, AFFILIATE_CARD_NAMES, careTaskCategory, addDaysDate, addMonthsDate, ensureCustomer, ensurePromiseCustomer, buildMobileTasks, CareTemplatePicker, StandalonePromiseModal, DailySaveBadge, HS_ROWS, HS_PARTS, matrixRowCount, hsCount };
